@@ -54,10 +54,12 @@ export class ProjectFileIpc {
         }
         let command: FileCommand
         if (kind === 'status' && (input === null || isOpenInput(input))) command = { kind: 'status', scope: input, recheck: false }
-        else if (kind === 'save' && isSaveInput(input)) command = { kind: 'save', input, grant: input.token ? this.consume(event, input.token, 'save', input.scope, input.operationId) : null }
-        else if (kind === 'open' && isSelectedInput(input)) command = { kind: 'open', operationId: input.operationId, grant: this.consume(event, input.token, 'open', null, input.operationId) }
+        else if ((kind === 'save' || kind === 'backup' || kind === 'move') && isSaveInput(input)) command = { kind, input, grant: input.token ? this.consume(event, input.token, kind, input.scope, input.operationId) : null }
+        else if ((kind === 'open' || kind === 'restore') && isSelectedInput(input)) command = { kind, operationId: input.operationId, grant: this.consume(event, input.token, kind, null, input.operationId) }
         else if (kind === 'locate' && isLocateInput(input)) command = { kind: 'locate', scope: input.scope, operationId: input.operationId, grant: this.consume(event, input.token, 'locate', input.scope, input.operationId) }
         else if (kind === 'inspect' && isInspectInput(input)) command = { kind: 'inspect', ...input }
+        else if (kind === 'duplicate' && record(input) && exact(input, ['scope','operationId','expectedHead']) && isOpenInput(input.scope) && isId(input.operationId) && isId(input.expectedHead)) command = { kind, scope: input.scope, operationId: input.operationId, expectedHead: input.expectedHead }
+        else if (kind === 'recover' && record(input) && exact(input, ['operationId','artifactId']) && isId(input.operationId) && isId(input.artifactId)) command = { kind, operationId: input.operationId, artifactId: input.artifactId }
         else if (kind === 'cancel' && isId(input)) command = { kind: 'cancel', id: input }
         else if (kind === 'answer' && record(input) && exact(input, ['id','choice']) && isId(input.id) && isFileChoice(input.choice)) command = { kind: 'answer', id: input.id, choice: input.choice, challenge: null }
         else throw new ProjectError('VALIDATION')
@@ -89,12 +91,12 @@ export class ProjectFileIpc {
       } catch { /* A picker hint never establishes or changes a project destination. */ }
       const filters = [{ name: 'Collie Writer project', extensions: ['collie'] }]
       let path: string | undefined
-      if (input.purpose === 'save') {
-        const filename = `Untitled-${input.scope!.projectId.slice(0, 8)}.collie`
-        const result = await dialog.showSaveDialog(window, { title: 'Save Collie Writer project', defaultPath: hint ? join(hint, filename) : filename, filters, properties: ['createDirectory','showOverwriteConfirmation'], message: 'Choose this project’s location. Cloud upload is managed by your storage provider.' })
+      if (['save','backup','move'].includes(input.purpose)) {
+        const filename = `Untitled-${input.scope!.projectId.slice(0, 8)}${input.purpose === 'backup' ? '-backup' : ''}.collie`
+        const result = await dialog.showSaveDialog(window, { title: input.purpose === 'backup' ? 'Back up to a new file' : input.purpose === 'move' ? 'Move to a new file (keep original)' : 'Save Collie Writer project', defaultPath: hint ? join(hint, filename) : filename, filters, properties: ['createDirectory','showOverwriteConfirmation'], message: input.purpose === 'backup' ? 'Choose a new filename. Backup does not change the project’s save location.' : input.purpose === 'move' ? 'Choose a new filename. The old file will be retained after the move.' : 'Choose this project’s location. Cloud upload is managed by your storage provider.' })
         if (!result.canceled) path = result.filePath
       } else {
-        const result = await dialog.showOpenDialog(window, { title: input.purpose === 'locate' ? 'Locate the saved project file' : 'Open Collie Writer project', defaultPath: hint, filters, properties: ['openFile','dontAddToRecent'] })
+        const result = await dialog.showOpenDialog(window, { title: input.purpose === 'locate' ? 'Locate the saved project file' : input.purpose === 'restore' ? 'Restore a backup as an independent project' : 'Open Collie Writer project', defaultPath: hint, filters, properties: ['openFile','dontAddToRecent'] })
         if (!result.canceled && result.filePaths.length === 1) path = result.filePaths[0]
       }
       if (!path || window.isDestroyed() || event.sender !== this.owner() || !event.senderFrame) return null

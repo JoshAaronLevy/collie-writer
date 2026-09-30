@@ -43,7 +43,19 @@ async function receive(message: unknown): Promise<void> {
       if (!repository) { parent.postMessage({ kind: 'project-result', result: projectFailure(message.requestId, 'STORAGE_LOCATION_REQUIRED') }); return }
       const command = message.command
       if (command.kind === 'open' || command.kind === 'create') files?.beforeProjectChange()
-      const value = command.kind === 'list' ? await repository.list() : command.kind === 'create' ? await repository.create(command.input) : command.kind === 'open' ? await repository.open(command.input) : await repository.commit(command.input)
+      let value: ProjectValue
+      switch (command.kind) {
+        case 'list': value = await repository.list(); break
+        case 'create': value = await repository.create(command.input); break
+        case 'open': value = await repository.open(command.input); break
+        case 'commit': value = await repository.commit(command.input); break
+        case 'rename': value = await repository.rename(command.input); break
+        case 'archive': value = await repository.archive(command.input); break
+        case 'data': if (!files) throw new Error('UNAVAILABLE'); value = await files.overview(); break
+        case 'cleanup': if (!files) throw new Error('UNAVAILABLE'); value = await files.cleanup(); break
+        case 'reset': if (!files) throw new Error('UNAVAILABLE'); value = await files.reset(command.input.review); break
+        case 'recoverReset': if (!files) throw new Error('UNAVAILABLE'); value = await files.recoverReset(command.input); break
+      }
       result = { ok: true, requestId: message.requestId, value }
     } catch (error) { result = projectFailure(message.requestId, projectError(error)) }
     parent.postMessage({ kind: 'project-result', result })

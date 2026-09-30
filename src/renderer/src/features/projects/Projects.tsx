@@ -1,3 +1,5 @@
+import type { DataLocations, RenameInput } from '../../../../shared/project-lifecycle'
+import { ProjectManagement, RecoveryPanel } from './LifecyclePanel'
 import { useEffect, useRef, useState } from 'react'
 import type { StorageStatus } from '../../../../shared/storage'
 import { projectMessages, type CommitInput, type CreateInput, type LocationStatus, type OpenInput, type OpenProject, type ProjectList, type ProjectResult } from '../../../../shared/projects'
@@ -31,6 +33,8 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
   const [committing, setCommitting] = useState(false), [retry, setRetry] = useState<CommitInput | null>(null)
   const [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [files, setFiles] = useState<FileStatus>(emptyFiles)
+  const [data, setData] = useState<DataLocations | null>(null), [showArchived, setShowArchived] = useState(false)
+  const renamePending = useRef<RenameInput | null>(null)
   const [unsupported, setUnsupported] = useState(false)
   const current = useRef<OpenProject | null>(null), buffer = useRef(''), protectedBuffer = useRef('')
   const retryCommit = useRef<CommitInput | null>(null), committingTask = useRef<Promise<OpenProject | null> | null>(null)
@@ -45,6 +49,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
   function updateProject(next: OpenProject | null): void { current.current = next; setProject(next) }
   function applyFiles(next: FileStatus): void {
     fileState.current = next; setFiles(next)
+    if (next.job?.kind === 'backup' && next.job.capturedHead && ['archive','staging','replacing','verifying'].includes(next.job.phase)) setBusy(false)
     if (current.current && sameScope(scopeOf(current.current), next.scope)) updateProject({ ...current.current, destination: next.destination })
     if (next.job && !fileBusy(next.job)) {
       finishedJobs.current.set(next.job.id, next.job)
@@ -63,7 +68,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
   }, [])
   useEffect(() => { window.collie.setUnprotectedChanges(dirty) }, [dirty])
   useEffect(() => {
-    if (storage.state === 'ready') { void refresh(); return }
+    if (storage.state === 'ready') { void refreshData(); return }
     if (storage.state === 'unavailable') { for (const group of jobWaiters.current.values()) for (const resolve of group) resolve(null); jobWaiters.current.clear() }
   }, [storage.state])
   useEffect(() => {
@@ -76,6 +81,11 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     const result = await window.collie.listProjects()
     if (!alive.current) return
     if (result.ok) setList(result.value); else setError(result.error.message)
+  }
+  async function refreshData(): Promise<void> {
+    const result = await window.collie.getDataLocations()
+    if (!alive.current) return
+    if (result.ok) { setData(result.value); setList(result.value.projects) } else { setError(result.error.message); await refresh() }
   }
   async function refreshFiles(): Promise<void> {
     const result = await window.collie.getProjectFileStatus(current.current ? scopeOf(current.current) : null)
@@ -195,6 +205,70 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     if (job?.state === 'completed' && job.opened) await openLocal(job.opened)
     await refresh()
   }
+  async function lifecycleFile(kind: 'backup' | 'move' | 'duplicate' | 'restore' | 'recover', artifactId?: string): Promise<void> {
+    if (!await waitActive()) return
+    setBusy(true)
+    const p = current.current ? await flush() : null
+    if (current.current && !p) return
+    const operationId = crypto.randomUUID()
+    let result: ProjectResult<FileStatus>
+    if (kind === 'recover' && artifactId) result = await window.collie.recoverProjectVersion({ operationId, artifactId })
+    else if (kind === 'restore') {
+      const selection = await window.collie.pickProjectFile({ purpose: 'restore', scope: null })
+      if (!selection.ok || !selection.value) { if (!selection.ok) setError(selection.error.message); return }
+      result = await window.collie.restoreProject({ operationId, token: selection.value.token })
+    } else if (p && kind === 'duplicate') result = await window.collie.duplicateProject({ operationId, scope: scopeOf(p), expectedHead: p.headCommitId })
+    else if (p && (kind === 'backup' || kind === 'move')) {
+      await refreshFiles(); if (!await waitActive()) return
+      const selection = await window.collie.pickProjectFile({ purpose: kind, scope: scopeOf(p) })
+      if (!selection.ok || !selection.value) { if (!selection.ok) setError(selection.error.message); return }
+      const input: SaveInput = { operationId, scope: scopeOf(p), minimumHead: p.headCommitId, expectedGeneration: fileState.current.destination?.generationId ?? null, token: selection.value.token }
+      result = kind === 'backup' ? await window.collie.backupProject(input) : await window.collie.moveProject(input)
+    } else return
+    const job = await finishJob(result, operationId)
+    if (job?.state === 'completed') {
+      if (job.opened) await openLocal(job.opened)
+      setNotice(kind === 'backup' ? `Backup written and reopened at revision ${job.capturedHead?.slice(0, 8) ?? ''}. The save location is unchanged; later typing may still need protection.` : kind === 'move' ? 'New location written and reopened. The old file is retained.' : 'Independent project opened. The original work is retained.')
+    }
+    if (!await waitActive()) return
+    await refreshData()
+  }
+  async function manage(title?: string): Promise<void> {
+    if (!await waitActive()) return
+    setBusy(true)
+    const p = await flush()
+    if (!p) return
+    if (renamePending.current && !sameScope(renamePending.current.scope, scopeOf(p))) { setError('Reopen the project with the pending rename before retrying it.'); return }
+    if (title !== undefined) {
+      renamePending.current ??= { scope: scopeOf(p), operationId: crypto.randomUUID(), expectedHead: p.headCommitId, title }
+      const result = await window.collie.renameProject(renamePending.current)
+      if (result.ok) { renamePending.current = null; await select(result.value) }
+      else { if (result.error.code !== 'UNAVAILABLE') renamePending.current = null; setError(result.error.message); return }
+    } else {
+      const result = await window.collie.archiveProject({ scope: scopeOf(p), archived: !p.archived })
+      if (result.ok) { updateProject(result.value); setNotice(result.value.archived ? 'Archived locally. Enable Show archived projects to find it again.' : 'Project returned to the active list.') }
+      else { setError(result.error.message); return }
+    }
+    await waitActive(); await refreshData()
+  }
+  async function resetLocal(review: string): Promise<void> {
+    if (!await waitActive()) return
+    setBusy(true)
+    const wasDirty = isDirty()
+    if (current.current && !await flush()) return
+    if (wasDirty) { await refreshData(); setError('Writing was protected. Review the updated project list before confirming reset again.'); return }
+    const result = await window.collie.resetLocalWork({ review, confirmation: 'RESET LOCAL WORK' })
+    if (!result.ok) {
+      setError(result.error.message)
+      // A lost response is not proof that reset rolled back. Keep the buffer visible for copying.
+      if (result.error.code === 'UNAVAILABLE') setNotice('Reset outcome is unknown. Refresh recovery before opening or creating another project. Your visible writing remains available for copying.')
+      return
+    }
+    updateProject(null); buffer.current = ''; protectedBuffer.current = ''; setText(''); setProtectedText(''); setUnsupported(false)
+    retryCommit.current = null; setRetry(null); pendingSave.current = null; pendingCreate.current = null; renamePending.current = null
+    applyFiles(emptyFiles); window.collie.setUnprotectedChanges(false)
+    setData(result.value); setList(result.value.projects); setNotice('Local list reset. Recover the retained projects in Reset recovery.')
+  }
   async function handleAction(action: FileAction): Promise<void> {
     if (action.kind === 'close-cancelled') { closingRef.current = false; setClosing(false); return }
     if (action.kind === 'resume') { await refreshFiles(); return }
@@ -250,18 +324,21 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
         if (result.ok) { pendingCreate.current = null; await select(result.value); await refresh() } else setError(result.error.message)
       })}>{pendingCreate.current ? 'Retry project creation' : 'New blank project'}</button>
       <button disabled={!available || acting || fileActive || closing} onClick={() => run(() => openFile())}>Open project file…</button>
-      <button disabled={!available || acting || fileActive || closing} onClick={() => run(refresh)}>Refresh projects</button>
+      <button disabled={!available || acting || fileActive || closing} onClick={() => run(() => lifecycleFile('restore'))}>Restore backup…</button>
+      <button disabled={!available || acting || fileActive || closing} onClick={() => run(refreshData)}>Refresh projects</button>
     </div>
-    <h2>Recent and local projects</h2>
-    <ul className="project-list">{list.projects.map(p => <li key={p.projectId}>
+    <h2>Recent and recovered local projects</h2>
+    <p>Each entry shows its last local commit. Open it to check the selected file and reconcile an interrupted save.</p>
+    <label><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} /> Show archived projects</label>
+    <ul className="project-list">{list.projects.filter(p => showArchived || !p.archived).map(p => <li key={p.projectId}>
       <button aria-current={project?.projectId === p.projectId ? 'true' : undefined} disabled={!available || acting || fileActive || closing} onClick={() => run(async () => { setBusy(true); if (current.current && !await flush()) return; await openLocal(scopeOf(p)) })}>
-        {p.title} <span className="project-id">{p.projectId.slice(0, 8)}</span>
-        <small>{p.destination ? `${p.destination.path}${p.headCommitId !== p.destination.headCommitId ? ' · newer edits protected locally' : ''}` : 'Local recovery · no file destination'} · {new Date(p.updatedAt).toLocaleString()}</small>
+        {p.title}{p.archived ? ' · archived' : ''} <span className="project-id">{p.projectId.slice(0, 8)}</span>
+        <small>{p.destination ? `${p.destination.path} · availability checked on open${p.headCommitId !== p.destination.headCommitId ? ' · newer edits protected locally' : ''}` : 'Local recovery · no file destination'} · {new Date(p.updatedAt).toLocaleString()}</small>
       </button>
     </li>)}</ul>
     {list.issues.map(issue => <p role="alert" key={issue.projectId}>Project {issue.projectId.slice(0, 8)}: {projectMessages[issue.code]}</p>)}
     {project ? <div className="draft-panel">
-      <h2>Draft · {project.projectId.slice(0, 8)}</h2>
+      <h2>{project.title} · {project.projectId.slice(0, 8)}</h2>
       {unsupported ? <p role="alert">This document contains structured content that the basic draft screen cannot edit. It has been retained without conversion.</p> : <>
         <label htmlFor="draft">Writing</label>
         <textarea ref={area} id="draft" value={text} readOnly={busy || closing} maxLength={2000000} spellCheck={false} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onChange={event => { buffer.current = event.target.value; setText(buffer.current); window.collie.setUnprotectedChanges(true); setNotice('New typing is not yet protected. Use Protect locally or Save.'); }} />
@@ -272,6 +349,15 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
       <p role="status">{notice}</p>
     </div> : <p>Select a local project, open a file or create a blank project to begin.</p>}
     {project || fileActive ? <FilePanel status={files} dirty={dirty} disabled={!project || !available || acting || closing} save={as => run(() => save(as))} locate={() => run(() => openFile(false, true))} inspect={() => run(() => openFile(true))} answer={(id, choice) => { void window.collie.answerFileJob({ id, choice }).then(result => { if (!result.ok) setError(result.error.message) }) }} cancel={id => { void window.collie.cancelFileJob(id).then(result => { if (!result.ok) setError(result.error.message) }) }} consent={id => { void window.collie.confirmFileOverwrite(id).then(result => { if (!result.ok) setError(result.error.message) }) }} /> : null}
+    {project ? <ProjectManagement key={`${project.projectId}-${project.title}`} project={project} disabled={!available || acting || fileActive || closing} rename={title => run(() => manage(title))} archive={() => run(() => manage())} backup={() => run(() => lifecycleFile('backup'))} move={() => run(() => lifecycleFile('move'))} duplicate={() => run(() => lifecycleFile('duplicate'))} /> : null}
+    <RecoveryPanel data={data} openProject={scope => run(async () => { setBusy(true); if (current.current && !await flush()) return; await openLocal(scope); await waitActive(); await refreshData() })} disabled={!available || acting || fileActive || closing} refresh={() => run(refreshData)} inspect={id => run(() => lifecycleFile('recover', id))} reset={review => run(() => resetLocal(review))} recoverReset={id => run(async () => {
+      setBusy(true); if (current.current && !await flush()) return
+      const result = await window.collie.recoverReset(id)
+      if (result.ok) { setData(result.value); setList(result.value.projects) } else setError(result.error.message)
+    })} cleanup={() => run(async () => {
+      const result = await window.collie.clearPickerHistory()
+      if (result.ok) { setData(result.value); setList(result.value.projects); setNotice('Picker history cleared. All work and retained recovery were kept.') } else setError(result.error.message)
+    })} />
     {closing ? <p role="status">Protecting writing and finishing file work before closing…</p> : null}
     {error ? <p className="project-error" role="alert">{error}</p> : null}
   </section>

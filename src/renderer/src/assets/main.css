@@ -159,3 +159,11 @@ button {
     padding: 2.5rem 1rem;
   }
 }
+
+.recovery-panel { margin-top: 2rem; padding: 1rem; border: 1px solid #b7c2b6; border-radius: 0.5rem; }
+.recovery-panel summary { cursor: pointer; font-weight: 650; }
+.projects form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.projects input:not([type='checkbox']) { font: inherit; padding: 0.5rem; max-width: 100%; min-width: 0; border: 1px solid #526357; border-radius: 0.3rem; }
+.projects form input { flex: 1 1 14rem; }
+.recovery-panel label { display: block; margin-block: 0.75rem; }
+.recovery-panel li { overflow-wrap: anywhere; margin-block: 0.75rem; }

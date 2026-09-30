@@ -8,7 +8,7 @@ import { contained, directory, syncDirectory, writeJson } from '../storage/files
 import { LIMITS, SnapshotError, cancelled, isHash, isUtc, readManifest, type BlobRef, type SnapshotCode, type SnapshotManifest } from './manifest'
 import { captureDatabase, buildSnapshot, type CaptureSource } from './snapshot'
 
-export type SnapshotRequest = { operationId: string; minimumHeadCommitId: string; parentSnapshotId: string | null }
+export type SnapshotRequest = { operationId: string; minimumHeadCommitId: string; parentSnapshotId: string | null; expectedHeadCommitId?: string }
 export type SnapshotJob = {
   version: 1; id: string; projectId: string; operations: { id: string; digest: string; minimumHead: string }[]
   parentSnapshotId: string | null; state: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'failed' | 'interrupted' | 'completed'
@@ -24,6 +24,7 @@ export type SnapshotProgress = Pick<SnapshotJob, 'id' | 'state' | 'phase' | 'byt
 export class SnapshotJobs {
   private readonly jobs = new Map<string, SnapshotJob>()
   private pending: SnapshotJob[] = []
+  private exactHeads = new Map<string, string>()
   private active: Running | undefined
   private task: Promise<void> | undefined
   private stopping = false
@@ -105,7 +106,7 @@ export class SnapshotJobs {
         return structuredClone(job) // Never silently replay a failed/interrupted operation.
       }
     }
-    const previous = this.pending.find(item => item.parentSnapshotId === input.parentSnapshotId && item.operations.length < 1000)
+    const previous = input.expectedHeadCommitId ? undefined : this.pending.find(item => !item.operations.some(op => this.exactHeads.has(op.id)) && item.parentSnapshotId === input.parentSnapshotId && item.operations.length < 1000)
     let job: SnapshotJob
     if (!previous) {
       if (this.pending.length >= 8) throw new SnapshotError('LIMIT_EXCEEDED')
@@ -113,6 +114,10 @@ export class SnapshotJobs {
       await mkdir(this.folder(job.id), { mode: 0o700 })
       await syncDirectory(join(this.source.workspace, 'snapshots'))
     } else job = structuredClone(previous)
+    if (input.expectedHeadCommitId) {
+      if (!isId(input.expectedHeadCommitId) || input.expectedHeadCommitId !== input.minimumHeadCommitId) throw new SnapshotError('STALE_REVISION')
+      this.exactHeads.set(input.operationId, input.expectedHeadCommitId)
+    }
     job.operations.push({ id: input.operationId, digest, minimumHead: input.minimumHeadCommitId })
     await this.persist(job)
     this.jobs.set(job.id, job)
@@ -147,6 +152,8 @@ export class SnapshotJobs {
         cancelled(controller.signal)
         job.state = 'running'; job.phase = 'capture'; await this.persist(job); cancelled(controller.signal); this.emit(job)
         const capture = await this.boundary(async () => {
+          const head = (this.source.db.prepare('SELECT head_commit_id FROM projects WHERE id=?').get(this.source.projectId) as { head_commit_id: string }).head_commit_id
+          if (job.operations.some(op => this.exactHeads.has(op.id) && this.exactHeads.get(op.id) !== head)) throw new SnapshotError('STALE_REVISION')
           const result = await captureDatabase(this.source, join(this.folder(job.id), 'capture.sqlite'), job.operations.map(op => op.minimumHead), controller.signal, progress)
           job.blobs = result.graph.blobs; job.capturedHead = result.graph.headCommitId; job.lease = 'exact'; await this.persist(job)
           return result // Exact durable leases precede release of the mutation/GC barrier.

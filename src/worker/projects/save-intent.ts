@@ -13,8 +13,8 @@ export type SaveIntent = {
   phase: 'capturing' | 'staged' | 'replacing' | 'replaced' | 'acknowledged'
   snapshotId: string | null; head: string | null; candidateHash: string | null; snapshotJob: string | null
 }
-export async function readIntent(root: string, folder: string): Promise<SaveIntent> {
-  const path = join(folder, 'save.json')
+export async function readIntent(root: string, folder: string, name: 'save.json' | 'backup.json' = 'save.json'): Promise<SaveIntent> {
+  const path = join(folder, name)
   await contained(root, folder, true); await contained(root, path, false)
   if ((await lstat(path)).size > 32768) throw new ProjectError('JOB_INTERRUPTED')
   const v: unknown = JSON.parse(await readFile(path, 'utf8'))
@@ -22,4 +22,4 @@ export async function readIntent(root: string, folder: string): Promise<SaveInte
   if (v.phase !== 'capturing' && (!v.snapshotId || !v.head || !v.snapshotJob || !v.candidateHash)) throw new ProjectError('JOB_INTERRUPTED')
   return v as SaveIntent
 }
-export async function persistIntent(folder: string, intent: SaveIntent): Promise<void> { await writeJson(join(folder, 'save.json'), intent) }
+export async function persistIntent(folder: string, intent: SaveIntent, name: 'save.json' | 'backup.json' = 'save.json'): Promise<void> { await writeJson(join(folder, name), intent) }

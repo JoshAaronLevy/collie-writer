@@ -1,10 +1,12 @@
+import { isRenameInput, isArchiveInput, isDataLocations, isResetInput, type RenameInput, type ArchiveInput, type DataLocations, type ResetInput } from './project-lifecycle'
 import { isId, readDocument, type DocumentPayload } from '../domain/editor/schema'
 
 export const PROJECT_CHANNELS = {
   location: 'projects.location', chooseLocation: 'projects.chooseLocation',
+  rename: 'projects.rename', archive: 'projects.archive', data: 'projects.data', reset: 'projects.reset', recoverReset: 'projects.recoverReset', cleanup: 'projects.cleanup',
   list: 'projects.list', create: 'projects.create', open: 'projects.open', commit: 'document.commit'
 } as const
-export type ProjectCode = 'VALIDATION' | 'DENIED' | 'UNAVAILABLE' | 'STORAGE_LOCATION_REQUIRED' | 'PROJECT_LOCKED' | 'STALE_REVISION' | 'OPERATION_CONFLICT' | 'DISK_FULL' | 'FORMAT_TOO_NEW' | 'CORRUPT_PROJECT' | 'MIGRATION_FAILED' | 'NOT_FOUND' | 'CANCELLED' | 'EXTERNAL_CHANGE' | 'DESTINATION_UNAVAILABLE' | 'UNSAFE_DESTINATION' | 'JOB_INTERRUPTED' | 'INVALID_ARCHIVE' | 'LIMIT_EXCEEDED'
+export type ProjectCode = 'VALIDATION' | 'DENIED' | 'UNAVAILABLE' | 'STORAGE_LOCATION_REQUIRED' | 'PROJECT_LOCKED' | 'STALE_REVISION' | 'OPERATION_CONFLICT' | 'DISK_FULL' | 'FORMAT_TOO_NEW' | 'CORRUPT_PROJECT' | 'MIGRATION_FAILED' | 'NOT_FOUND' | 'CANCELLED' | 'EXTERNAL_CHANGE' | 'DESTINATION_UNAVAILABLE' | 'UNSAFE_DESTINATION' | 'JOB_INTERRUPTED' | 'INVALID_ARCHIVE' | 'LIMIT_EXCEEDED' | 'DESTINATION_EXISTS'
 export const projectMessages: Record<ProjectCode, string> = {
   VALIDATION: 'This document or request is not supported. Your current text has been kept.',
   DENIED: 'Access to local storage was denied. Your current text has been kept.',
@@ -24,20 +26,21 @@ export const projectMessages: Record<ProjectCode, string> = {
   UNSAFE_DESTINATION: 'This location cannot support the selected-file save safely. Choose a local APFS/HFS+ or fixed NTFS/ReFS folder, including a local cloud-sync folder.',
   JOB_INTERRUPTED: 'An interrupted file operation needs inspection. Retained candidates and previous files have not been removed. Use Save As to preserve another copy.',
   INVALID_ARCHIVE: 'This file is not a supported, intact Collie Writer project. The original has been kept.',
+  DESTINATION_EXISTS: 'Backup and Move need a new, unused filename. The existing file and current save location have been kept.',
   LIMIT_EXCEEDED: 'This file exceeds the supported size or resource limits. The original and local work have been kept.'
 }
 export type ProjectResult<T> = { ok: true; requestId: string; value: T } | { ok: false; requestId: string; error: { code: ProjectCode; message: string; retryable: boolean } }
 export type LocationStatus = { state: 'ready' | 'required'; path: string | null; message: string }
 export type DestinationView = { path: string; snapshotId: string; headCommitId: string; generationId: string }
-export type ProjectSummary = { projectId: string; workspaceId: string; title: string; headCommitId: string; updatedAt: string; destination: DestinationView | null }
+export type ProjectSummary = { projectId: string; workspaceId: string; title: string; headCommitId: string; updatedAt: string; archived: boolean; destination: DestinationView | null }
 export type ProjectList = { projects: ProjectSummary[]; issues: { projectId: string; code: ProjectCode }[] }
 export type OpenProject = ProjectSummary & { documentId: string; revisionId: string; payload: DocumentPayload }
 export type CreateInput = { operationId: string; template: 'blank' }
 export type OpenInput = { projectId: string; workspaceId: string }
 export type CommitInput = OpenInput & { operationId: string; documentId: string; expectedRevisionId: string; payload: DocumentPayload }
 export type CommitReceipt = { projectId: string; documentId: string; revisionId: string; headCommitId: string }
-export type ProjectCommand = { kind: 'list' } | { kind: 'create'; input: CreateInput } | { kind: 'open'; input: OpenInput } | { kind: 'commit'; input: CommitInput }
-export type ProjectValue = ProjectList | OpenProject | CommitReceipt
+export type ProjectCommand = { kind: 'rename'; input: RenameInput } | { kind: 'archive'; input: ArchiveInput } | { kind: 'data' | 'cleanup' } | { kind: 'reset'; input: ResetInput } | { kind: 'recoverReset'; input: string } | { kind: 'list' } | { kind: 'create'; input: CreateInput } | { kind: 'open'; input: OpenInput } | { kind: 'commit'; input: CommitInput }
+export type ProjectValue = ProjectList | OpenProject | CommitReceipt | DataLocations
 export type ProjectAPI = {
   getWorkingLocation: () => Promise<ProjectResult<LocationStatus>>
   chooseWorkingLocation: () => Promise<ProjectResult<LocationStatus>>
@@ -62,21 +65,26 @@ export function isCommitInput(v: unknown): v is CommitInput {
 }
 export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (!record(v)) return false
-  if (v.kind === 'list') return exact(v, ['kind'])
+  if (['list','data','cleanup'].includes(String(v.kind))) return exact(v, ['kind'])
   if (!exact(v, ['kind', 'input'])) return false
+  if (v.kind === 'rename') return isRenameInput(v.input)
+  if (v.kind === 'archive') return isArchiveInput(v.input)
+  if (v.kind === 'reset') return isResetInput(v.input)
+  if (v.kind === 'recoverReset') return isId(v.input)
   return v.kind === 'create' ? isCreateInput(v.input) : v.kind === 'open' ? isOpenInput(v.input) : v.kind === 'commit' && isCommitInput(v.input)
 }
 export function isDestination(v: unknown): v is DestinationView {
   return record(v) && exact(v, ['path', 'snapshotId', 'headCommitId', 'generationId']) && typeof v.path === 'string' && v.path.length > 0 && v.path.length <= 4096 && [v.snapshotId, v.headCommitId, v.generationId].every(isId)
 }
 function summary(v: unknown): v is ProjectSummary {
-  return record(v) && [v.projectId, v.workspaceId, v.headCommitId].every(isId) && typeof v.title === 'string' && v.title.length <= 500 && typeof v.updatedAt === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v.updatedAt) && (v.destination === null || isDestination(v.destination))
+  return record(v) && [v.projectId, v.workspaceId, v.headCommitId].every(isId) && typeof v.archived === 'boolean' && typeof v.title === 'string' && v.title.length <= 500 && typeof v.updatedAt === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v.updatedAt) && (v.destination === null || isDestination(v.destination))
 }
 export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is ProjectValue {
   if (!record(v)) return false
-  if (kind === 'list') return exact(v, ['projects', 'issues']) && Array.isArray(v.projects) && v.projects.length <= 10000 && v.projects.every(p => summary(p) && exact(p, ['projectId', 'workspaceId', 'title', 'headCommitId', 'updatedAt', 'destination'])) && Array.isArray(v.issues) && v.issues.length <= 10000 && v.issues.every(p => record(p) && exact(p, ['projectId', 'code']) && isId(p.projectId) && isProjectCode(p.code))
+  if (['data','cleanup','reset','recoverReset'].includes(kind)) return isDataLocations(v)
+  if (kind === 'list') return exact(v, ['projects', 'issues']) && Array.isArray(v.projects) && v.projects.length <= 10000 && v.projects.every(p => summary(p) && exact(p, ['projectId', 'workspaceId', 'title', 'headCommitId', 'updatedAt', 'archived', 'destination'])) && Array.isArray(v.issues) && v.issues.length <= 10000 && v.issues.every(p => record(p) && exact(p, ['projectId', 'code']) && isId(p.projectId) && isProjectCode(p.code))
   if (kind === 'commit') return exact(v, ['projectId', 'documentId', 'revisionId', 'headCommitId']) && Object.values(v).every(isId)
-  if (!summary(v) || !exact(v, ['projectId', 'workspaceId', 'title', 'headCommitId', 'updatedAt', 'destination', 'documentId', 'revisionId', 'payload']) || !isId(v.documentId) || !isId(v.revisionId)) return false
+  if (!summary(v) || !exact(v, ['projectId', 'workspaceId', 'title', 'headCommitId', 'updatedAt', 'archived', 'destination', 'documentId', 'revisionId', 'payload']) || !isId(v.documentId) || !isId(v.revisionId)) return false
   try { readDocument(v.payload); return true } catch { return false }
 }
 export function isProjectResult<T>(v: unknown, requestId: string, valid: (value: unknown) => boolean): v is ProjectResult<T> {

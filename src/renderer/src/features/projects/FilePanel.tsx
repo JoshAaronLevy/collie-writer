@@ -6,6 +6,7 @@ export default function FilePanel({ status, dirty, disabled, save, locate, inspe
   status: FileStatus; dirty: boolean; disabled: boolean; save: (as: boolean) => void; locate: () => void; inspect: () => void
   answer: (id: string, choice: FileChoice) => void; cancel: (id: string) => void; consent: (id: string) => void
 }): React.JSX.Element {
+  const restoring = status.job?.kind === 'restore' || status.job?.kind === 'recover'
   const job = status.job, active = fileBusy(job), destination = status.destination
   const labels: Record<FileStatus['state'], string> = {
     unsaved: dirty ? 'New typing is not yet protected. No file destination selected.' : 'Unsaved project — recovery on this computer.', checking: 'Checking the chosen file…',
@@ -32,13 +33,13 @@ export default function FilePanel({ status, dirty, disabled, save, locate, inspe
       {job.cancellable ? <button onClick={() => cancel(job.id)}>Cancel file operation</button> : <p>Finishing the replacement and acknowledgment. Keep Collie Writer open.</p>}
     </div> : null}
     {job?.state === 'awaiting-choice' && job.inspection ? <div className="file-inspection">
-      <h3>File ready to open</h3>
+      <h3>{restoring ? 'Restore an independent copy' : 'File ready to open'}</h3>
       <p>{job.inspection.title} · project {job.inspection.projectId.slice(0, 8)} · revision {job.inspection.headCommitId.slice(0, 8)}</p>
       <p className="location-path">{job.path}</p>
-      <p>{job.inspection.local ? 'This project already has local work. Open an independent copy of the incoming file to compare it, or keep your local version.' : 'The file has been read into local storage. Choose how to open it.'}</p>
+      <p>{restoring ? 'Restore keeps current work intact and opens a new identity without a destination.' : job.inspection.local ? 'This project already has local work. Open an independent copy of the incoming file to compare it, or keep your local version.' : 'The file has been read into local storage. Choose how to open it.'}</p>
       <div className="project-actions">
-        {job.inspection.local ? <button onClick={() => answer(job.id, 'use-local')}>Keep local version</button> : <button onClick={() => answer(job.id, 'import')}>Open project</button>}
-        <button onClick={() => answer(job.id, 'open-copy')}>Open independent copy</button>
+        {restoring ? null : job.inspection.local ? <button onClick={() => answer(job.id, 'use-local')}>Keep local version</button> : <button onClick={() => answer(job.id, 'import')}>Open project</button>}
+        <button onClick={() => answer(job.id, 'open-copy')}>{restoring ? 'Restore as new project' : 'Open independent copy'}</button>
         <button onClick={() => cancel(job.id)}>Cancel</button>
       </div>
       <p>An independent copy starts without a destination. Its first Save asks for a new location.</p>

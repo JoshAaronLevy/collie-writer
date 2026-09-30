@@ -72,11 +72,7 @@ export class StorageWorker {
     this.clearStartupTimer()
     this.rejectPending()
     if (this.status.state !== 'unavailable') this.update({ state: 'unavailable' })
-    try {
-      child.kill()
-    } catch {
-      // Status already reflects that storage is unavailable.
-    }
+    try { child.postMessage({ kind: 'shutdown' }) } catch { /* Keep ownership until the process exits; never kill an unresolved writer. */ }
   }
 
   start(workingRoot: string | null = null): void {
@@ -159,36 +155,18 @@ export class StorageWorker {
     // A crash never replays a write automatically.
   }
 
-  async stop(): Promise<void> {
+  async stop(onSlow: () => void = () => {}): Promise<void> {
     this.stopping = true
     this.clearStartupTimer()
     this.rejectPending()
     const child = this.child
     if (!child) return
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        try {
-          child.kill()
-        } catch {
-          // The child may already have exited.
-        }
-        resolve()
-      }, 30_000)
-      child.once('exit', () => {
-        clearTimeout(timer)
-        resolve()
-      })
-      try {
-        child.postMessage({ kind: 'shutdown' })
-      } catch {
-        clearTimeout(timer)
-        try {
-          child.kill()
-        } catch {
-          // The child may already have exited.
-        }
-        resolve()
-      }
+    await new Promise<void>((resolve, reject) => {
+      // The notice is bounded; writer lifetime is not. Only cooperative exit releases ownership.
+      const timer = setTimeout(onSlow, 30000)
+      child.once('exit', () => { clearTimeout(timer); resolve() })
+      try { child.postMessage({ kind: 'shutdown' }) }
+      catch { clearTimeout(timer); reject(new Error('STORAGE_SHUTDOWN_PENDING')) }
     })
   }
 }

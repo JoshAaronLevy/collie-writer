@@ -1,3 +1,4 @@
+import { isDataLocations, type DataLocations } from '../shared/project-lifecycle'
 import { contextBridge, ipcRenderer } from 'electron'
 import {
   GET_INFO,
@@ -21,6 +22,17 @@ async function projectCall<T>(channel: string, validate: (value: unknown) => boo
 
 if (!process.contextIsolated || !process.sandboxed) throw new Error('Secure preload required')
 const api: CollieAPI = {
+  renameProject: input => projectCall<OpenProject>(PROJECT_CHANNELS.rename, value => isProjectValue('rename', value), input),
+  archiveProject: input => projectCall<OpenProject>(PROJECT_CHANNELS.archive, value => isProjectValue('archive', value), input),
+  getDataLocations: () => projectCall<DataLocations>(PROJECT_CHANNELS.data, isDataLocations),
+  resetLocalWork: input => projectCall<DataLocations>(PROJECT_CHANNELS.reset, isDataLocations, input),
+  recoverReset: id => projectCall<DataLocations>(PROJECT_CHANNELS.recoverReset, isDataLocations, id),
+  clearPickerHistory: () => projectCall<DataLocations>(PROJECT_CHANNELS.cleanup, isDataLocations),
+  backupProject: input => projectCall<FileStatus>(FILE_CHANNELS.backup, isFileStatus, input),
+  moveProject: input => projectCall<FileStatus>(FILE_CHANNELS.move, isFileStatus, input),
+  restoreProject: input => projectCall<FileStatus>(FILE_CHANNELS.restore, isFileStatus, input),
+  duplicateProject: input => projectCall<FileStatus>(FILE_CHANNELS.duplicate, isFileStatus, input),
+  recoverProjectVersion: input => projectCall<FileStatus>(FILE_CHANNELS.recover, isFileStatus, input),
   pickProjectFile: input => projectCall<FileSelection | null>(FILE_CHANNELS.pick, isSelection, input),
   saveProjectFile: input => projectCall<FileStatus>(FILE_CHANNELS.save, isFileStatus, input),
   openProjectFile: input => projectCall<FileStatus>(FILE_CHANNELS.open, isFileStatus, input),

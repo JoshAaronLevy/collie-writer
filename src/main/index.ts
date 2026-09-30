@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol, session } from 'electron'
+import { app, BrowserWindow, dialog, protocol, session } from 'electron'
 import { join } from 'node:path'
 import { APP_ID, STORAGE_STATUS_CHANGED, type AppInfo } from '../shared/commands'
 import { registerAppIpc, registerStorageIpc } from './ipc'
@@ -112,7 +112,10 @@ app.on('before-quit', (event) => {
   void lifecycle.close().then(async allowed => {
     if (!allowed) { shutdownStarted = false; return }
     closeApproved = true
-    await storage.stop().catch(() => {})
+    await storage.stop(() => {
+      const options = { type: 'warning' as const, title: 'Finishing local work', message: 'Collie Writer is still waiting for storage to close safely.', detail: 'Pending writes have not been terminated. Keep the app open while storage finishes.', buttons: ['Keep waiting'], noLink: true }
+      void (window && !window.isDestroyed() ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options))
+    })
     shutdownFinished = true; app.quit()
-  }).catch(() => { shutdownStarted = false })
+  }).catch(() => { shutdownStarted = false; closeApproved = false; files.action('close-cancelled'); void dialog.showMessageBox({ type: 'warning', title: 'Closing paused', message: 'Storage has not confirmed shutdown. Keep the app open and preserve any visible writing.', buttons: ['Keep open'] }) })
 })

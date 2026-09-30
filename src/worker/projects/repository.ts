@@ -1,10 +1,12 @@
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { readdir, lstat } from 'node:fs/promises'
+import { readdir, lstat, readFile, rename } from 'node:fs/promises'
 import { isId, readDocument, type DocumentPayload } from '../../domain/editor/schema'
 import { requestDigest } from '../storage/digest'
 import { ProjectError, projectError } from '../../domain/projects/errors'
+import { exact, record } from '../../shared/projects'
+import type { RenameInput, ArchiveInput } from '../../shared/project-lifecycle'
 import type { CommitInput, CommitReceipt, CreateInput, OpenInput, OpenProject, ProjectList, ProjectSummary } from '../../shared/projects'
 import { inWriteTransaction, openStorageDatabase } from '../storage/driver'
 import { contained, directory, syncDirectory, writeJson } from '../storage/files'
@@ -22,7 +24,7 @@ const operationsSchema = [
   'CREATE TABLE jobs (id TEXT PRIMARY KEY, operation_id TEXT NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL, result TEXT) STRICT',
   'CREATE TABLE delivery (operation_id TEXT PRIMARY KEY, state TEXT NOT NULL) STRICT'
 ]
-type Owned = { projectId: string; workspaceId: string; workspace: string; db: Database.Database; operations: Database.Database; lock: Database.Database; destination: SavedLocation | null; snapshots?: SnapshotJobs }
+type Owned = { projectId: string; workspaceId: string; workspace: string; db: Database.Database; operations: Database.Database; lock: Database.Database; destination: SavedLocation | null; archived: boolean; snapshots?: SnapshotJobs }
 async function exists(path: string): Promise<boolean> { try { await lstat(path); return true } catch (e) { if (e && typeof e === 'object' && 'code' in e && e.code === 'ENOENT') return false; throw e } }
 
 export class ProjectRepository {
@@ -74,6 +76,78 @@ export class ProjectRepository {
   snapshotJobs(input: OpenInput): SnapshotJobs {
     if (this.active?.projectId !== input.projectId || this.active.workspaceId !== input.workspaceId || !this.active.snapshots) throw new ProjectError('DENIED')
     return this.active.snapshots
+  }
+  private async readArchived(workspace: string): Promise<boolean> {
+    const path = join(workspace, 'organization-v1.json')
+    if (!await exists(path)) return false
+    await contained(this.root, path, false)
+    if ((await lstat(path)).size > 1024) throw new ProjectError('CORRUPT_PROJECT')
+    const v: unknown = JSON.parse(await readFile(path, 'utf8'))
+    if (!record(v) || !exact(v, ['version','archived']) || v.version !== 1 || typeof v.archived !== 'boolean') throw new ProjectError('CORRUPT_PROJECT')
+    return v.archived
+  }
+  archive(input: ArchiveInput): Promise<OpenProject> {
+    return this.serial(async () => {
+      if (this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
+      const context = this.fileContext(input.scope)
+      await writeJson(join(context.workspace, 'organization-v1.json'), { version: 1, archived: input.archived })
+      this.active!.archived = input.archived
+      return this.read(this.active!)
+    })
+  }
+  rename(input: RenameInput): Promise<OpenProject> {
+    return this.serial(async () => {
+      if (this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
+      this.fileContext(input.scope)
+      const owned = this.active!, digest = requestDigest({ kind: 'rename', ...input })
+      inWriteTransaction(owned.db, () => {
+        const prior = owned.db.prepare('SELECT digest FROM domain_operations WHERE project_id=? AND operation_id=?').get(owned.projectId, input.operationId) as { digest: string } | undefined
+        if (prior) { if (prior.digest !== digest) throw new ProjectError('OPERATION_CONFLICT'); return }
+        const before = this.read(owned)
+        if (before.headCommitId !== input.expectedHead) throw new ProjectError('STALE_REVISION')
+        const headCommitId = randomUUID(), time = new Date().toISOString()
+        owned.db.prepare('INSERT INTO commits VALUES (?,?,?,?)').run(owned.projectId, headCommitId, before.headCommitId, time)
+        owned.db.prepare('UPDATE projects SET title=?,head_commit_id=?,updated_at=? WHERE id=?').run(input.title, headCommitId, time, owned.projectId)
+        // Existing portable ID-only receipt contract; document content/revision is unchanged.
+        owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(owned.projectId, input.operationId, digest, JSON.stringify({ projectId: owned.projectId, documentId: before.documentId, revisionId: before.revisionId, headCommitId }))
+      })
+      await this.discovery(owned)
+      return this.read(owned)
+    })
+  }
+  resetWorkspaces(expected: string): Promise<void> {
+    return this.serial(async () => {
+      if (this.fileBusy || this.active?.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
+      const list = await this.listUnlocked()
+      if (list.issues.length || requestDigest(list) !== expected) throw new ProjectError('STALE_REVISION')
+      const parent = join(this.root, 'reset-recovery')
+      await directory(this.root, parent)
+      const batch = join(parent, randomUUID())
+      await directory(this.root, batch)
+      // One same-volume rename retains every SQLite file and sidecar together. No deletion.
+      if (this.active) { this.release(this.active); this.active = undefined }
+      await rename(join(this.root, 'workspaces'), join(batch, 'workspaces'))
+      await syncDirectory(batch); await syncDirectory(this.root)
+      await directory(this.root, join(this.root, 'workspaces'))
+    })
+  }
+  recoverReset(id: string): Promise<void> {
+    return this.serial(async () => {
+      if (!isId(id) || this.fileBusy || this.active?.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
+      const source = join(this.root, 'reset-recovery', id, 'workspaces')
+      await contained(this.root, source, true)
+      const names = await readdir(source)
+      if (names.length > 10000 || names.some(name => !isId(name))) throw new ProjectError('CORRUPT_PROJECT')
+      for (const name of names) {
+        await contained(source, join(source, name), true)
+        if (await exists(join(this.root, 'workspaces', name))) throw new ProjectError('OPERATION_CONFLICT')
+      }
+      // Each project moves atomically. A stopped restore leaves remaining projects in the batch.
+      for (const name of names) {
+        await rename(join(source, name), join(this.root, 'workspaces', name))
+        await syncDirectory(source); await syncDirectory(join(this.root, 'workspaces'))
+      }
+    })
   }
   private async safeDatabase(path: string): Promise<void> {
     for (const suffix of ['', '-wal', '-shm', '-journal']) if (await exists(path + suffix)) await contained(this.root, path + suffix, false)
@@ -127,7 +201,7 @@ export class ProjectRepository {
     if (!project[0].title.length || project[0].title.length > 500 || !Number.isFinite(Date.parse(project[0].updated_at))) throw new ProjectError('CORRUPT_PROJECT')
     let payload: DocumentPayload
     try { payload = readDocument(JSON.parse(documents[0].payload)) } catch { throw new ProjectError('CORRUPT_PROJECT') }
-    return { projectId: owned.projectId, workspaceId: owned.workspaceId, title: project[0].title, headCommitId: project[0].head_commit_id, updatedAt: project[0].updated_at, destination: destinationView(owned.destination), documentId: documents[0].id, revisionId: documents[0].revision_id, payload }
+    return { projectId: owned.projectId, workspaceId: owned.workspaceId, title: project[0].title, headCommitId: project[0].head_commit_id, updatedAt: project[0].updated_at, archived: owned.archived, destination: destinationView(owned.destination), documentId: documents[0].id, revisionId: documents[0].revision_id, payload }
   }
   private async discovery(owned: Owned): Promise<void> {
     const p = this.read(owned)
@@ -147,7 +221,7 @@ export class ProjectRepository {
       operations = await this.localDatabase(join(workspace, 'operations.sqlite'), operationsSchema)
       // No job is silently replayed after interruption.
       operations.prepare("UPDATE jobs SET state='interrupted' WHERE state IN ('queued','running','cancelling')").run()
-      const owned: Owned = { ...input, workspace, db, operations, lock, destination: await readDestination(this.root, workspace) }
+      const owned: Owned = { ...input, workspace, db, operations, lock, archived: await this.readArchived(workspace), destination: await readDestination(this.root, workspace) }
       this.read(owned)
       this.catalog.prepare('INSERT OR IGNORE INTO destinations VALUES (?,NULL,NULL,NULL)').run(input.projectId)
       await this.discovery(owned)
@@ -180,12 +254,12 @@ export class ProjectRepository {
         else owned = await this.acquire({ projectId, workspaceId: workspaces[0] })
         try {
           const p = this.read(owned)
-          const summary: ProjectSummary = { projectId, workspaceId: p.workspaceId, title: p.title, headCommitId: p.headCommitId, updatedAt: p.updatedAt, destination: p.destination }
+          const summary: ProjectSummary = { projectId, workspaceId: p.workspaceId, title: p.title, headCommitId: p.headCommitId, updatedAt: p.updatedAt, archived: p.archived, destination: p.destination }
           result.projects.push(summary)
         } finally { if (!active) this.release(owned) }
       } catch (error) { result.issues.push({ projectId, code: projectError(error) }) }
     }
-    result.projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    result.projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.projectId.localeCompare(b.projectId))
     return result
   }
   private async createUnlocked(input: CreateInput): Promise<OpenProject> {

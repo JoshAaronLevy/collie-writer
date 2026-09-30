@@ -7,6 +7,7 @@ import { isId } from '../../domain/editor/schema'
 import { ProjectError, projectError } from '../../domain/projects/errors'
 import { type OpenInput, type ProjectCode } from '../../shared/projects'
 import { sameScope, type FileChoice, type FileJobView, type FileStatus, type SaveInput } from '../../shared/project-files'
+import type { DataLocations, RecoveryItem } from '../../shared/project-lifecycle'
 import type { FileCommand, FileGrant } from '../../shared/file-worker'
 import { contained, directory, syncDirectory } from '../storage/files'
 import { requestDigest } from '../storage/digest'
@@ -40,6 +41,8 @@ export class ProjectFiles {
   private needsCheck = true
   private stopping = false
   private readonly operations = new Map<string, string>()
+  private artifacts = new Map<string, { path: string; local: boolean; hash: string | null }>()
+  private review: { id: string; digest: string } | null = null
   private readonly results = new Map<string, FileJobView>()
   constructor(private readonly root: string, private readonly repository: ProjectRepository, private readonly changed: (status: FileStatus) => void, private readonly nativeBinding?: string) {}
   private get jobsRoot(): string { return join(this.root, 'file-operations') }
@@ -88,10 +91,10 @@ export class ProjectFiles {
     running.task = Promise.resolve().then(() => work(running)).then(() => { running.view.state = 'completed'; running.view.phase = 'done' }).catch(error => {
       running.view.error = running.controller.signal.aborted ? 'CANCELLED' : fileError(error)
       running.view.state = running.view.error === 'CANCELLED' ? 'cancelled' : 'failed'
-      if (kind === 'save' || kind === 'check' || kind === 'locate') {
+      if (kind === 'save' || kind === 'move' || kind === 'check' || kind === 'locate') {
         if (running.view.error === 'EXTERNAL_CHANGE') this.state = 'external-change'
         else if (running.view.error === 'JOB_INTERRUPTED') this.state = 'interrupted'
-        else if (running.view.error !== 'CANCELLED' && running.view.error !== 'STALE_REVISION') this.state = 'unavailable'
+        else if (running.view.error !== 'CANCELLED' && running.view.error !== 'STALE_REVISION' && running.view.error !== 'DESTINATION_EXISTS') this.state = 'unavailable'
         else if (kind === 'check') { this.state = 'unavailable'; this.needsCheck = true }
       }
     }).finally(() => {
@@ -145,8 +148,15 @@ export class ProjectFiles {
         if (command.scope && this.needsCheck && !this.running) this.startCheck(command.scope)
         this.watchDestination(); return this.current()
       }
-      case 'save': return this.save(command.input, command.grant)
+      case 'backup': case 'move': case 'save': return this.save(command.input, command.grant, command.kind)
+      case 'restore': return this.open(command.operationId, command.grant, undefined, undefined, 'restore')
       case 'open': return this.open(command.operationId, command.grant)
+      case 'duplicate': return this.duplicate(command.operationId, command.scope, command.expectedHead)
+      case 'recover': {
+        const artifact = this.artifacts.get(command.artifactId)
+        if (!artifact) throw new ProjectError('STALE_REVISION')
+        return this.open(command.operationId, { id: command.artifactId, path: artifact.path, purpose: 'restore', scope: null }, undefined, undefined, 'recover', artifact.local, artifact.hash)
+      }
       case 'locate': return this.open(command.operationId, command.grant, command.scope)
       case 'inspect': {
         const destination = this.repository.fileContext(command.scope).destination
@@ -222,25 +232,29 @@ export class ProjectFiles {
     }
     return unresolved
   }
-  private save(input: SaveInput, grant: FileGrant | null): FileStatus {
+  private save(input: SaveInput, grant: FileGrant | null, mode: 'save' | 'backup' | 'move' = 'save'): FileStatus {
     const context = this.repository.fileContext(input.scope)
-    if (grant && (grant.purpose !== 'save' || !sameScope(grant.scope, input.scope) || input.token !== grant.id)) throw new ProjectError('DENIED')
+    if (grant && (grant.purpose !== mode || !sameScope(grant.scope, input.scope) || input.token !== grant.id)) throw new ProjectError('DENIED')
     if (!grant && (input.token !== null || !context.destination)) throw new ProjectError('DESTINATION_UNAVAILABLE')
+    if (mode !== 'save' && !grant) throw new ProjectError('DENIED')
+    if (mode === 'move' && !context.destination) throw new ProjectError('DESTINATION_UNAVAILABLE')
+    const backup = mode === 'backup', journal = backup ? 'backup.json' : 'save.json'
     const path = grant?.path ?? context.destination!.path
-    const digest = requestDigest({ ...input, token: grant?.id ?? null, path })
+    const digest = requestDigest({ mode, ...input, token: grant?.id ?? null, path })
     if (this.operations.has(input.operationId)) { this.remember(input.operationId, digest); return this.priorResult(input.operationId) }
     if (this.running) throw new ProjectError('PROJECT_LOCKED')
     this.remember(input.operationId, digest)
-    return this.begin(input.operationId, 'save', input.scope, path, async running => {
+    return this.begin(input.operationId, mode, input.scope, path, async running => {
       const signal = running.controller.signal, progress = this.progress(running), folder = this.folder(input.operationId)
       if (await present(folder)) {
-        const prior = await readIntent(this.root, folder)
+        const prior = await readIntent(this.root, folder, journal)
         if (prior.digest !== digest) throw new ProjectError('OPERATION_CONFLICT')
+        if (backup) throw new ProjectError('JOB_INTERRUPTED')
         await this.reconcile(input.scope, signal)
         if (this.repository.fileContext(input.scope).destination?.generationId === input.operationId) { this.state = 'saved'; return }
         throw new ProjectError('JOB_INTERRUPTED')
       }
-      await this.reconcile(input.scope, signal)
+      if (!backup) await this.reconcile(input.scope, signal)
       const destination = this.repository.fileContext(input.scope).destination
       if ((destination?.generationId ?? null) !== input.expectedGeneration) throw new ProjectError('STALE_REVISION')
       const target = await selectedPath(this.root, path)
@@ -249,12 +263,14 @@ export class ProjectFiles {
       const expected = await observe(target, signal, progress)
       const replacingAssigned = !!destination && (target === destination.path || !!expected && expected.dev === destination.fingerprint.dev && expected.ino === destination.fingerprint.ino)
       if ((!grant || replacingAssigned) && !sameGeneration(expected, destination?.fingerprint ?? null)) throw new ProjectError(expected ? 'EXTERNAL_CHANGE' : 'DESTINATION_UNAVAILABLE')
+      // Backup/Move require a fresh filename; neither can replace an assigned file.
+      if (mode !== 'save' && (expected || target === destination?.path)) throw new ProjectError('DESTINATION_EXISTS')
       // Save As to an existing unrelated file always gets generation-bound native consent.
       if (grant && !replacingAssigned && expected && await this.choice(running, true) !== 'overwrite') throw new SnapshotError('CANCELLED')
       cancelled(signal)
       await mkdir(folder, { mode: 0o700 }); await syncDirectory(this.jobsRoot)
       const intent: SaveIntent = { version: 1, id: input.operationId, digest, scope: input.scope, path: target, grantId: grant?.id ?? destination!.grantId, priorGeneration: destination?.generationId ?? null, expected, phase: 'capturing', snapshotId: null, head: null, candidateHash: null, snapshotJob: null }
-      await persistIntent(folder, intent)
+      await persistIntent(folder, intent, journal)
       running.view.phase = 'capture'; this.emit()
       const jobs = this.repository.snapshotJobs(input.scope)
       const captureStartBytes = running.view.bytes
@@ -265,8 +281,8 @@ export class ProjectFiles {
       })
       let snapshot: SnapshotJob
       try {
-        const queued = await this.repository.queueSnapshot(input.scope, { operationId: input.operationId, minimumHeadCommitId: input.minimumHead, parentSnapshotId: destination?.snapshotId ?? null })
-        intent.snapshotJob = queued.id; await persistIntent(folder, intent)
+        const queued = await this.repository.queueSnapshot(input.scope, { operationId: input.operationId, minimumHeadCommitId: input.minimumHead, parentSnapshotId: destination?.snapshotId ?? null, ...(backup ? { expectedHeadCommitId: input.minimumHead } : {}) })
+        intent.snapshotJob = queued.id; await persistIntent(folder, intent, journal)
         snapshot = await jobs.finish(queued.id, signal)
       } catch (error) {
         if (intent.snapshotJob) {
@@ -294,7 +310,7 @@ export class ProjectFiles {
       // Reopen the sibling stage through the full archive validator before replacing anything.
       const staged = await extractArchive(staging, join(folder, 'stage-inspection'), this.nativeBinding, signal, progress)
       if (staged.snapshotId !== intent.snapshotId || staged.headCommitId !== intent.head || staged.projectId !== input.scope.projectId) throw new ProjectError('INVALID_ARCHIVE')
-      intent.phase = 'staged'; await persistIntent(folder, intent); await syncDirectory(dirname(target))
+      intent.phase = 'staged'; await persistIntent(folder, intent, journal); await syncDirectory(dirname(target))
       if (!sameGeneration(expected, await observe(target, signal, progress))) throw new ProjectError('EXTERNAL_CHANGE')
       if (expected) {
         const retained = await observe(target, signal, progress, previous)
@@ -303,7 +319,7 @@ export class ProjectFiles {
       }
       cancelled(signal)
       if ((await observe(staging, signal, progress))?.sha256 !== intent.candidateHash) throw new ProjectError('EXTERNAL_CHANGE')
-      intent.phase = 'replacing'; await persistIntent(folder, intent)
+      intent.phase = 'replacing'; await persistIntent(folder, intent, journal)
       // Final generation/parent check occurs after intent and retention are durable.
       if (await selectedPath(this.root, target) !== target || !sameGeneration(expected, await observe(target, signal, progress))) throw new ProjectError('EXTERNAL_CHANGE')
       cancelled(signal)
@@ -320,32 +336,33 @@ export class ProjectFiles {
         await unlink(staging)
       }
       await syncDirectory(dirname(target))
-      intent.phase = 'replaced'; await persistIntent(folder, intent)
+      intent.phase = 'replaced'; await persistIntent(folder, intent, journal)
       running.view.phase = 'verifying'; this.emit()
       // Cancellation stops at replacement: finish acknowledgment or retain an unknown-outcome intent.
       const final = await observe(target, undefined, progress)
       if (!final || final.sha256 !== intent.candidateHash) throw new ProjectError('EXTERNAL_CHANGE')
       const reopened = await extractArchive(target, join(folder, 'final-inspection'), this.nativeBinding, undefined, progress)
       if (reopened.projectId !== input.scope.projectId || reopened.snapshotId !== intent.snapshotId || reopened.headCommitId !== intent.head || !sameGeneration(final, await observe(target, undefined, progress))) throw new ProjectError('EXTERNAL_CHANGE')
-      await this.repository.acknowledgeFile(input.scope, { path: target, snapshotId: intent.snapshotId, headCommitId: intent.head, generationId: intent.id, fingerprint: final, grantId: intent.grantId })
-      intent.phase = 'acknowledged'; await persistIntent(folder, intent)
-      this.state = 'saved'; this.needsCheck = false
+      if (!backup) await this.repository.acknowledgeFile(input.scope, { path: target, snapshotId: intent.snapshotId, headCommitId: intent.head, generationId: intent.id, fingerprint: final, grantId: intent.grantId })
+      intent.phase = 'acknowledged'; await persistIntent(folder, intent, journal)
+      if (!backup) { this.state = 'saved'; this.needsCheck = false }
       // Only redundant app-owned copies go away after durable acknowledgment. Previous file stays.
       await jobs.discardTransferredCandidate(snapshot.id, intent.snapshotId).catch(() => {})
       for (const name of ['stage-inspection','final-inspection']) await rm(join(folder, name), { recursive: true }).catch(() => {})
     })
   }
-  private open(operationId: string, grant: FileGrant, locate?: OpenInput, inspect?: OpenInput): FileStatus {
-    if (grant.purpose !== (locate ? 'locate' : 'open') || locate && !sameScope(locate, grant.scope)) throw new ProjectError('DENIED')
+  private open(operationId: string, grant: FileGrant, locate?: OpenInput, inspect?: OpenInput, restore?: 'restore' | 'recover', localArchiveSource = false, expectedHash: string | null = null): FileStatus {
+    if (grant.purpose !== (locate ? 'locate' : restore ? 'restore' : 'open') || locate && !sameScope(locate, grant.scope)) throw new ProjectError('DENIED')
     const scope = locate ?? inspect ?? this.scope
     if (locate) this.repository.fileContext(locate)
-    const digest = requestDigest({ grant, locate: locate ?? null, inspect: inspect ?? null })
+    const digest = requestDigest({ grant, restore: restore ?? null, localArchiveSource, expectedHash, locate: locate ?? null, inspect: inspect ?? null })
     if (this.operations.has(operationId)) { this.remember(operationId, digest); return this.priorResult(operationId) }
     if (this.running) throw new ProjectError('PROJECT_LOCKED')
     this.remember(operationId, digest)
-    return this.begin(operationId, locate ? 'locate' : inspect ? 'inspect' : 'open', scope, grant.path, async running => {
+    return this.begin(operationId, locate ? 'locate' : inspect ? 'inspect' : restore ?? 'open', scope, grant.path, async running => {
       const signal = running.controller.signal, progress = this.progress(running), folder = this.folder(operationId)
-      const path = await selectedPath(this.root, grant.path)
+      if (localArchiveSource) await contained(this.root, grant.path, false)
+      const path = localArchiveSource ? grant.path : await selectedPath(this.root, grant.path)
       running.view.path = path
       await mkdir(folder, { mode: 0o700 }); await syncDirectory(this.jobsRoot)
       const localArchive = join(folder, 'incoming.collie')
@@ -355,12 +372,13 @@ export class ProjectFiles {
       // Reading hydrates placeholders through the OS. All later parsing uses this retained local copy.
       const generation = await observe(path, signal, progress, localArchive)
       if (!generation) throw new ProjectError('DESTINATION_UNAVAILABLE')
+      if (expectedHash && generation.sha256 !== expectedHash) throw new ProjectError('EXTERNAL_CHANGE')
       const staging = join(folder, 'incoming')
       const manifest = await extractArchive(localArchive, staging, this.nativeBinding, signal, progress)
       const db = new Database(join(staging, 'project.sqlite'), { nativeBinding: this.nativeBinding, readonly: true, fileMustExist: true })
       let title: string
       try { db.pragma('trusted_schema=OFF'); title = (db.prepare('SELECT title FROM projects').get() as { title: string }).title } finally { db.close() }
-      const local = await this.repository.knownProject(manifest.projectId)
+      const local = restore ? null : await this.repository.knownProject(manifest.projectId)
       running.view.inspection = { projectId: manifest.projectId, snapshotId: manifest.snapshotId, headCommitId: manifest.headCommitId, title, local }
       if (locate) {
         const current = this.repository.fileContext(locate).destination
@@ -370,6 +388,7 @@ export class ProjectFiles {
         this.state = 'saved'; this.needsCheck = false; return
       }
       const choice = await this.choice(running, false)
+      if (restore && choice !== 'open-copy') throw new ProjectError('VALIDATION')
       if (choice === 'use-local') {
         if (!local) throw new ProjectError('VALIDATION')
         running.view.opened = local; return
@@ -385,6 +404,138 @@ export class ProjectFiles {
       running.view.cancellable = false // Promotion is an atomic local ownership transition.
       running.view.opened = await promoteIncoming(this.root, staging, manifest, copy, destination, this.nativeBinding)
     })
+  }
+  private duplicate(operationId: string, scope: OpenInput, expectedHead: string): FileStatus {
+    const digest = requestDigest({ kind: 'duplicate', scope, expectedHead })
+    if (this.operations.has(operationId)) { this.remember(operationId, digest); return this.priorResult(operationId) }
+    const context = this.repository.fileContext(scope)
+    if (context.head !== expectedHead) throw new ProjectError('STALE_REVISION')
+    if (this.running) throw new ProjectError('PROJECT_LOCKED')
+    this.remember(operationId, digest)
+    return this.begin(operationId, 'duplicate', scope, '', async running => {
+      const folder = this.folder(operationId), signal = running.controller.signal
+      await mkdir(folder, { mode: 0o700 }); await syncDirectory(this.jobsRoot)
+      const jobs = this.repository.snapshotJobs(scope)
+      running.view.phase = 'capture'; this.emit()
+      const unsubscribe = jobs.subscribe(job => { running.view.phase = job.phase === 'archive' ? 'archive' : 'capture'; running.view.bytes = job.bytesProcessed; running.view.capturedHead = job.capturedHead; this.emit() })
+      let id: string | undefined
+      try {
+        const job = await this.repository.queueSnapshot(scope, { operationId, minimumHeadCommitId: expectedHead, expectedHeadCommitId: expectedHead, parentSnapshotId: context.destination?.snapshotId ?? null })
+        id = job.id
+        const snapshot = await jobs.finish(id, signal)
+        const staging = join(folder, 'duplicate')
+        running.view.phase = 'verifying'; running.view.capturedHead = snapshot.capturedHead; this.emit()
+        const manifest = await extractArchive(jobs.candidate(id), staging, this.nativeBinding, signal, this.progress(running))
+        if (manifest.headCommitId !== expectedHead || manifest.projectId !== scope.projectId) throw new ProjectError('STALE_REVISION')
+        cancelled(signal); running.view.cancellable = false
+        running.view.opened = await promoteIncoming(this.root, staging, manifest, true, null, this.nativeBinding)
+        // The source candidate remains a complete recovery checkpoint.
+      } catch (error) {
+        if (id) { await jobs.cancel(id).catch(() => {}); await jobs.finish(id, signal).catch(() => {}) }
+        throw error
+      } finally { unsubscribe() }
+    })
+  }
+  async overview(): Promise<DataLocations> {
+    if (this.running) throw new ProjectError('PROJECT_LOCKED')
+    const projects = await this.repository.list(), items: RecoveryItem[] = []
+    const artifacts = new Map<string, { path: string; local: boolean; hash: string | null }>()
+    let issues = 0
+    const add = (kind: RecoveryItem['kind'], path: string, projectId: string | null, head: string | null, status: string, local: boolean, hash: string | null = null): void => {
+      if (items.length >= 10000) { issues++; return }
+      const id = randomUUID(); artifacts.set(id, { path, local, hash }); items.push({ id, kind, path, projectId, head, status })
+    }
+    const names = await readdir(this.jobsRoot)
+    if (names.length > 10000) throw new ProjectError('LIMIT_EXCEEDED')
+    for (const id of names.filter(isId)) {
+      const folder = this.folder(id)
+      try {
+        await contained(this.root, folder, true)
+        for (const journal of ['save.json','backup.json'] as const) {
+          if (!await present(join(folder, journal))) continue
+          const intent = await readIntent(this.root, folder, journal)
+          if (intent.id !== id) throw new ProjectError('JOB_INTERRUPTED')
+          const local = projects.projects.find(p => sameScope({ projectId: p.projectId, workspaceId: p.workspaceId }, intent.scope))
+          // Reconcile local acknowledgment at startup without hydrating every external destination.
+          if (journal === 'save.json' && local?.destination?.generationId === id && local.destination.snapshotId === intent.snapshotId && local.destination.headCommitId === intent.head && intent.phase !== 'acknowledged') {
+            intent.phase = 'acknowledged'; await persistIntent(folder, intent)
+          }
+          if (intent.phase !== 'acknowledged') issues++
+          if (journal === 'backup.json') add('backup', intent.path, intent.scope.projectId, intent.head, intent.phase === 'acknowledged' ? 'Verified when written; inspect to check the current file.' : 'Interrupted backup; inspect before using.', false, intent.candidateHash)
+          if (intent.expected) add('previous', join(dirname(intent.path), `.collie-${id}.previous.collie`), null, null, 'Previous-copy location; incomplete saves may not have written it. Inspect to check.', false, intent.expected.sha256)
+        }
+        if (await present(join(folder, 'incoming.collie'))) add('incoming', join(folder, 'incoming.collie'), null, null, 'Retained incoming file; inspection validates it again.', true)
+      } catch { issues++ }
+    }
+    for (const p of projects.projects) {
+      const folder = join(this.root, 'workspaces', p.projectId, p.workspaceId, 'snapshots')
+      try {
+        await contained(this.root, folder, true)
+        const names = await readdir(folder)
+        if (names.length > 10000) throw new ProjectError('LIMIT_EXCEEDED')
+        for (const id of names.filter(isId)) {
+          const path = join(folder, id, 'candidate.collie')
+          if (await present(path)) { await contained(this.root, path, false); add('candidate', path, p.projectId, null, 'Retained snapshot; inspection reads its actual revision.', true) }
+        }
+      } catch { issues++ }
+    }
+    const resets: DataLocations['resets'] = [], resetRoot = join(this.root, 'reset-recovery')
+    if (await present(resetRoot)) {
+      await contained(this.root, resetRoot, true)
+      const names = await readdir(resetRoot)
+      if (names.length > 10000) throw new ProjectError('LIMIT_EXCEEDED')
+      for (const id of names.filter(isId)) {
+        try {
+          const path = join(resetRoot, id, 'workspaces'); await contained(this.root, path, true)
+          const count = (await readdir(path)).filter(isId).length
+          if (count) resets.push({ id, projects: count })
+        } catch { issues++ }
+      }
+    }
+    // Metadata-only size accounting. Never follow links or classify recovery as disposable cache.
+    let bytes = 0, visited = 0, sizeComplete = true
+    const pending = [this.root], deadline = Date.now() + 1500
+    while (pending.length && visited < 200000 && Date.now() < deadline) {
+      const path = pending.pop()!; visited++
+      try {
+        const info = await lstat(path)
+        if (info.isSymbolicLink()) { sizeComplete = false; continue }
+        if (info.isDirectory()) {
+          await contained(this.root, path, true)
+          const names = await readdir(path)
+          if (pending.length + names.length + visited > 200000) { sizeComplete = false; continue }
+          for (const name of names) pending.push(join(path, name))
+        } else if (info.isFile()) bytes += info.size
+      } catch { sizeComplete = false }
+    }
+    if (pending.length) sizeComplete = false
+    this.artifacts = artifacts
+    this.review = { id: randomUUID(), digest: requestDigest(projects) }
+    return { root: this.root, bytes, sizeComplete, projects, items, issues, resets, review: this.review.id }
+  }
+  async reset(review: string): Promise<DataLocations> {
+    if (this.running?.view.kind === 'check') { this.running.controller.abort(); await this.running.task }
+    if (!this.review || this.review.id !== review || this.running) throw new ProjectError('STALE_REVISION')
+    const expected = this.review.digest
+    this.beforeProjectChange(); this.review = null
+    await this.repository.resetWorkspaces(expected)
+    await this.clearPicker()
+    this.last = null; this.emit()
+    return this.overview()
+  }
+  async recoverReset(id: string): Promise<DataLocations> {
+    if (this.running) throw new ProjectError('PROJECT_LOCKED')
+    await this.repository.recoverReset(id)
+    return this.overview()
+  }
+  private async clearPicker(): Promise<void> {
+    const path = join(this.root, 'settings', 'picker-v1.json')
+    if (await present(path)) { await contained(this.root, path, false); await unlink(path); await syncDirectory(dirname(path)) }
+  }
+  async cleanup(): Promise<DataLocations> {
+    if (this.running) throw new ProjectError('PROJECT_LOCKED')
+    await this.clearPicker()
+    return this.overview()
   }
   async stop(): Promise<void> {
     this.stopping = true; this.watcher?.close(); if (this.watchTimer) clearTimeout(this.watchTimer)
