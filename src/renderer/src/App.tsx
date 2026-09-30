@@ -1,35 +1,67 @@
-import Versions from './components/Versions'
-import electronLogo from './assets/electron.svg'
+import { useEffect, useState } from 'react'
+import type { AppInfo } from '../../shared/commands'
 
-function App(): React.JSX.Element {
-  const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
-
+export default function App(): React.JSX.Element {
+  const [info, setInfo] = useState<AppInfo | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let active = true
+    window.collie
+      .getInfo()
+      .then((result) => {
+        if (!active) return
+        if (result.ok) setInfo(result.value)
+        else setFailed(true)
+      })
+      .catch(() => {
+        if (active) setFailed(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
   return (
-    <>
-      <img alt="logo" className="logo" src={electronLogo} />
-      <div className="creator">Powered by electron-vite</div>
-      <div className="text">
-        Build an Electron app with <span className="react">React</span>
-        &nbsp;and <span className="ts">TypeScript</span>
-      </div>
-      <p className="tip">
-        Please try pressing <code>F12</code> to open the devTool
-      </p>
-      <div className="actions">
-        <div className="action">
-          <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">
-            Documentation
-          </a>
-        </div>
-        <div className="action">
-          <a target="_blank" rel="noreferrer" onClick={ipcHandle}>
-            Send IPC
-          </a>
-        </div>
-      </div>
-      <Versions></Versions>
-    </>
+    <div className="shell">
+      <a
+        className="skip-link"
+        href="#workspace"
+        onClick={(event) => {
+          event.preventDefault()
+          document.getElementById('workspace')?.focus()
+        }}
+      >
+        Skip to workspace
+      </a>
+      <header className="app-header">
+        <span className="wordmark">Collie Writer</span>
+        <span className="build-label">Development</span>
+      </header>
+      <main id="workspace" tabIndex={-1}>
+        <p className="eyebrow">A place for thoughtful work</p>
+        <h1>Room for your next idea.</h1>
+        <p className="intro">A workspace for research and writing is taking shape.</p>
+        <section className="welcome" aria-labelledby="welcome-title">
+          <h2 id="welcome-title">Welcome to Collie Writer</h2>
+          <p>
+            This early development build establishes the application shell. Project creation and
+            writing will arrive in later stages.
+          </p>
+          <p>
+            You can select and copy text, adjust the text size from the View menu, and find
+            application information in Help.
+          </p>
+        </section>
+      </main>
+      <footer>
+        <p role="status">
+          {failed
+            ? 'Application information could not be loaded. Reopen this window to try again.'
+            : info
+              ? `Collie Writer ${info.version} · Development build`
+              : 'Starting Collie Writer…'}
+        </p>
+        <span>Ad-free, always.</span>
+      </footer>
+    </div>
   )
 }
-
-export default App

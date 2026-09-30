@@ -1,6 +1,6 @@
 # Working in Collie Writer
 
-This is a fresh Electron/React/TypeScript product. The authoritative specification and stage index is [mvp-implementation-plan.md](mvp-implementation-plan.md). [mvp-planning-prompt.md](mvp-planning-prompt.md) records the original documentation request. The Cultural Analysis application is reference history, not a dependency; do not copy its code/private data or require its checkout. Make project changes only here.
+This is a fresh Electron/React/TypeScript product. The authoritative specification and stage index is [mvp-implementation-plan.md](mvp-implementation-plan.md). `mvp-planning-prompt.md` is referenced by the planning history but is absent from this checkout; do not invent a replacement. The Cultural Analysis application is reference history, not a dependency; do not copy its code/private data or require its checkout. Make project changes only here.
 
 ## Implementing a requested stage
 
@@ -25,8 +25,8 @@ A request such as “Please implement Stage 4 of the MVP implementation plan” 
 
 ## Commands and repository state
 
-At planning time only the scaffold exists. Existing checks are `npm run typecheck`, `npm run lint` and `npm run build`; `npm run build:unpack`, `npm run build:mac` and `npm run build:win` exist but are not proof of production readiness. The current Mac packaging script bypasses typecheck until Stage 1 fixes it. `npm run dev` starts development; `npm start` previews a build.
+Stage 1 has a validated local macOS arm64 checkpoint; native Intel Mac/Windows and human checks remain pending. Read [docs/validation/stage-01.md](docs/validation/stage-01.md) and [D1](docs/decisions/D1-runtime-and-shell.md) before relying on its results. Current commands include `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:integration`, `npm run test:desktop`, `npm run build`, `npm run build:unpack` and `npm run test:desktop:unpacked`. macOS and Windows packaging both run typecheck and never publish. `npm run dev` starts development; `npm start` previews a build.
 
-There is **no test script yet**. The plan explicitly assigns introduction of test/package/benchmark commands to stages; verify a command exists before claiming to run it. Use the lockfile (`npm ci` when installation is needed), inspect installed versions and follow the stage's runtime compatibility decision.
+Use Node 24.21.0 and npm 11.19.0 with `npm ci`. Electron 44.5.0, electron-vite 5.0.0 and builder 26.15.3 are pinned. Tests generate guarded OS-temporary roots and must never use normal app data. Runtime network denial is built into the test profile. Stage 2's general `test:package` and `audit:artifact` commands do not exist yet; neither do later storage/export/benchmark commands. Verify a command exists before claiming to run it.
 
 Use targeted formatting, for example `./node_modules/.bin/prettier --check mvp-implementation-plan.md AGENTS.md`; avoid `npm run format` for narrow changes because it rewrites the repository. Prefer `rg` for searches. Never run destructive fixtures against normal app data, saved user projects or the reference workspace.

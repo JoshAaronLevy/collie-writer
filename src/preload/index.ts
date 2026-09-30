@@ -1,22 +1,26 @@
-import { contextBridge } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
+import { contextBridge, ipcRenderer } from 'electron'
+import { GET_INFO, type CollieAPI } from '../shared/commands'
+import { isInfoResult } from '../shared/schemas'
 
-// Custom APIs for renderer
-const api = {}
-
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
-  } catch (error) {
-    console.error(error)
+if (!process.contextIsolated || !process.sandboxed) throw new Error('Secure preload required')
+const api: CollieAPI = {
+  getInfo: async () => {
+    const requestId = crypto.randomUUID()
+    try {
+      const result: unknown = await ipcRenderer.invoke(GET_INFO, { requestId })
+      if (isInfoResult(result, requestId)) return result
+    } catch {
+      /* Transport failure is converted to a bounded application error. */
+    }
+    return {
+      ok: false,
+      requestId,
+      error: {
+        code: 'UNAVAILABLE',
+        message: 'Application information is unavailable. Try reopening this window.',
+        retryable: true
+      }
+    }
   }
-} else {
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
-  // @ts-ignore (define in dts)
-  window.api = api
 }
+contextBridge.exposeInMainWorld('collie', Object.freeze(api))

@@ -1,8 +1,6 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
-
+import type { CollieAPI } from '../shared/commands'
 declare global {
   interface Window {
-    electron: ElectronAPI
-    api: unknown
+    collie: CollieAPI
   }
 }

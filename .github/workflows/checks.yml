@@ -1,0 +1,38 @@
+name: Native shell checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, windows-2025]
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm install --global npm@11.19.0
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:integration
+      - run: npm run test:desktop
+      - run: npm run build:unpack
+      - run: npm run test:desktop:unpacked
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: shell-evidence-${{ matrix.os }}
+          path: |
+            output/playwright/
+            test-results/
+          if-no-files-found: ignore

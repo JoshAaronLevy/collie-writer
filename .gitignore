@@ -4,3 +4,9 @@ out
 .DS_Store
 .eslintcache
 *.log*
+
+.tools/
+out-tests/
+test-results/
+playwright-report/
+output/
