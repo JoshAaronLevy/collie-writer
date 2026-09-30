@@ -44,7 +44,7 @@ All calls carry a transport `requestId` UUID; mutations additionally carry a sta
 | `getWorkingLocation` / `projects.location` | No path input → ready/required, local path when ready, bounded explanation |
 | `chooseWorkingLocation` / `projects.chooseLocation` | Native picker owned by main → location status; no project-file grant |
 | `listProjects` / `projects.list` | No input → safe summaries and per-project issue codes |
-| `createProject` / `projects.create` | Operation ID, `template: 'blank'` → project/workspace/document/revision/head IDs, payload and `destination: null` |
+| `createProject` / `projects.create` | Operation ID and one of five template IDs → project/workspace/section/revision/head IDs, selected payload and `destination: null` (Stage 8; Stage 4 originally supported only `blank`) |
 | `openProject` / `projects.open` | Project/workspace IDs from discovery → same current local-project shape; this is not portable archive Open |
 | `commitDocument` / `document.commit` | Project/workspace/document IDs, operation ID, expected revision, payload → project/document/revision/head IDs only |
 | `setUnprotectedChanges` / `document.unprotectedChanges` | Validated boolean notification from the owning frame → native close/quit protection |

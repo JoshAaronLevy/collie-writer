@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, protocol, session } from 'electron'
 import { join } from 'node:path'
-import { APP_ID, STORAGE_STATUS_CHANGED, type AppInfo } from '../shared/commands'
+import { APP_ID, EDITOR_ACTION, STORAGE_STATUS_CHANGED, type AppInfo } from '../shared/commands'
 import { registerAppIpc, registerStorageIpc } from './ipc'
 import { denyTestNetwork } from './test-network'
 import { installMenu } from './menus'
@@ -81,7 +81,7 @@ app
     registerProjectIpc(() => window?.webContents, location, storage, value => { unprotected = value }, devOrigin)
     files.register()
     lifecycle.register()
-    installMenu(testMode, kind => { files.action(kind) })
+    installMenu(testMode, kind => { files.action(kind) }, kind => { if (window && !window.isDestroyed()) window.webContents.send(EDITOR_ACTION, kind) })
     shellReady = true
     openWindow()
     if (location.path()) storage.start(location.path()!)

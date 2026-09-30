@@ -48,7 +48,11 @@ async function receive(message: unknown): Promise<void> {
         case 'list': value = await repository.list(); break
         case 'create': value = await repository.create(command.input); break
         case 'open': value = await repository.open(command.input); break
+        case 'section': value = await repository.section(command.input); break
+        case 'meta': value = await repository.meta(command.input); break
         case 'commit': value = await repository.commit(command.input); break
+        case 'importImage': value = await repository.importImage(command.input); break
+        case 'readImage': value = await repository.readImage(command.input); break
         case 'rename': value = await repository.rename(command.input); break
         case 'archive': value = await repository.archive(command.input); break
         case 'data': if (!files) throw new Error('UNAVAILABLE'); value = await files.overview(); break

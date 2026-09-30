@@ -2,11 +2,15 @@ import { Editor, Extension, Mark, Node as TiptapNode, type Extensions } from '@t
 import { Plugin } from '@tiptap/pm/state'
 import { history, undo, redo } from '@tiptap/pm/history'
 import { keymap } from '@tiptap/pm/keymap'
-import { baseKeymap } from '@tiptap/pm/commands'
+import { baseKeymap, toggleMark } from '@tiptap/pm/commands'
 import { Fragment, Slice, type DOMOutputSpec } from '@tiptap/pm/model'
 import { readDocument, safeLink, type DocumentPayload } from '../../../domain/editor/schema'
 
 const blockId = { default: null, rendered: false }
+const inTableCell = (selection: { $from: { depth: number; node: (depth: number) => { type: { name: string } } }; $to: { depth: number; node: (depth: number) => { type: { name: string } } } }): boolean => {
+  for (const edge of [selection.$from, selection.$to]) for (let depth = edge.depth; depth > 0; depth--) if (['tableCell','tableHeader'].includes(edge.node(depth).type.name)) return true
+  return false
+}
 /** Community-only schema. Managed image URLs and formatted citation labels come from the host. */
 export function manuscriptExtensions(
   imageUrl: (assetId: string) => string | undefined,
@@ -34,7 +38,7 @@ export function manuscriptExtensions(
         const image: DOMOutputSpec = url
           ? ['img', { src: url, alt: node.attrs.alt, width: node.attrs.width, height: node.attrs.height }]
           : ['span', {}, 'Image unavailable']
-        return ['figure', {}, image, ['figcaption', {}, node.attrs.caption]]
+        return ['figure', { contenteditable: 'false' }, image, ['figcaption', {}, node.attrs.caption]]
       }
     }),
     TiptapNode.create({ name: 'table', group: 'block', content: 'tableRow+', isolating: true, addAttributes: () => ({ blockId }), renderHTML: () => ['table', ['tbody', 0]] }),
@@ -50,7 +54,8 @@ export function manuscriptExtensions(
     Extension.create({
       name: 'localEditing',
       addProseMirrorPlugins() {
-        return [history(), keymap({ 'Mod-z': undo, 'Mod-Shift-z': redo, 'Mod-y': redo }), keymap(baseKeymap), new Plugin({
+        const mark = (name: 'bold' | 'italic' | 'underline' | 'strike') => (state: Parameters<ReturnType<typeof toggleMark>>[0], dispatch: Parameters<ReturnType<typeof toggleMark>>[1]) => inTableCell(state.selection) || toggleMark(state.schema.marks[name])(state, dispatch)
+        return [history(), keymap({ 'Mod-z': undo, 'Mod-Shift-z': redo, 'Mod-y': redo, 'Mod-b': mark('bold'), 'Mod-i': mark('italic'), 'Mod-u': mark('underline'), 'Mod-Shift-x': mark('strike') }), keymap(baseKeymap), new Plugin({
           appendTransaction(transactions, _old, state) {
             if (!transactions.some(t => t.docChanged)) return null
             const seen = new Set<string>()
@@ -82,7 +87,7 @@ export function createManuscriptEditor(options: {
   onIssue: (message: string) => void
 }): Editor {
   const payload = readDocument(options.payload)
-  return new Editor({
+  const editor = new Editor({
     element: options.element,
     extensions: manuscriptExtensions(options.imageUrl, options.citationLabel),
     content: payload.ast,
@@ -90,14 +95,52 @@ export function createManuscriptEditor(options: {
     injectCSS: false,
     editorProps: {
       attributes: { role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Manuscript', spellcheck: 'true' },
+      handleDOMEvents: {
+        copy(view, event) {
+          const clipboard = (event as ClipboardEvent).clipboardData
+          if (!clipboard || view.state.selection.empty) return false
+          const { from, to } = view.state.selection
+          const slice = view.state.selection.content()
+          let unsupported = false
+          slice.content.descendants(node => { if (node.type.name === 'citation' || node.type.name === 'footnote') unsupported = true })
+          if (unsupported) { options.onIssue('Copying citation or footnote anchors is available after their managed editor is added. Select plain writing instead.'); return false }
+          clipboard.setData('application/x-collie-editor-slice+json', JSON.stringify(slice.toJSON()))
+          clipboard.setData('text/plain', view.state.doc.textBetween(from, to, '\n'))
+          event.preventDefault()
+          return true
+        }
+      },
       handleClick: (_view, _pos, event) => {
         if (!(event.target as HTMLElement).closest('a')) return false
         event.preventDefault()
         return true
       },
       handlePaste(view, event) {
+        const own = event.clipboardData?.getData('application/x-collie-editor-slice+json')
+        if (own) {
+          try {
+            const source: unknown = JSON.parse(own)
+            if (!source || typeof source !== 'object' || JSON.stringify(source).length > 4_000_000) throw new Error('Invalid clipboard')
+            const visit = (value: unknown): void => {
+              if (!value || typeof value !== 'object') return
+              for (const [key, child] of Object.entries(value)) {
+                if (key === 'blockId' && typeof child === 'string') (value as Record<string, unknown>)[key] = crypto.randomUUID()
+                else visit(child)
+              }
+            }
+            visit(source)
+            const slice = Slice.fromJSON(view.state.schema, source)
+            if (inTableCell(view.state.selection)) {
+              let marked = false
+              slice.content.descendants(node => { if (node.marks.length > 0) marked = true })
+              if (marked) { options.onIssue('Table cells accept plain text only. Use Paste as Plain Text here.'); return true }
+            }
+            view.dispatch(view.state.tr.replaceSelection(slice))
+          } catch { options.onIssue('This Collie Writer clipboard content could not be pasted safely. The original content is still on the clipboard.') }
+          return true
+        }
         if (event.clipboardData?.types.includes('text/html')) {
-          options.onIssue('Formatted paste is not connected yet. Paste plain text, or keep the original until managed copy is available.')
+          options.onIssue('Active HTML was refused. Use Paste as Plain Text to insert the text without embedded code or external resources.')
           return true
         }
         const text = event.clipboardData?.getData('text/plain')
@@ -119,6 +162,16 @@ export function createManuscriptEditor(options: {
     onUpdate: () => options.onChange(),
     onContentError: () => options.onIssue('This content cannot be loaded without loss. Keep the original for repair.')
   })
+  const normalized = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(normalized)
+    if (!value || typeof value !== 'object') return value
+    return Object.fromEntries(Object.entries(value).filter(([key, child]) => key !== 'content' || !Array.isArray(child) || child.length > 0).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, normalized(child)]))
+  }
+  if (JSON.stringify(normalized(editor.getJSON())) !== JSON.stringify(normalized(payload.ast))) {
+    editor.destroy()
+    throw new Error('EDITOR_CONTENT_CHANGED_ON_LOAD')
+  }
+  return editor
 }
 
 export function serializeEditor(editor: Editor, footnotesById: DocumentPayload['footnotesById']): DocumentPayload {

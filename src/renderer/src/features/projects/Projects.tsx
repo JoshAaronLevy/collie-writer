@@ -2,51 +2,64 @@ import type { DataLocations, RenameInput } from '../../../../shared/project-life
 import { ProjectManagement, RecoveryPanel } from './LifecyclePanel'
 import { useEffect, useRef, useState } from 'react'
 import type { StorageStatus } from '../../../../shared/storage'
-import { projectMessages, type CommitInput, type CreateInput, type LocationStatus, type OpenInput, type OpenProject, type ProjectList, type ProjectResult } from '../../../../shared/projects'
+import { projectMessages, type CommitInput, type CreateInput, type LocationStatus, type OpenInput, type OpenProject, type ProjectList, type ProjectResult, type SectionMetaInput } from '../../../../shared/projects'
 import { fileBusy, sameScope, type FileAction, type FileJobView, type FileStatus, type SaveInput } from '../../../../shared/project-files'
 import type { DocumentPayload } from '../../../../domain/editor/schema'
+import type { Editor } from '@tiptap/core'
+import { templateNames, type ProjectTemplate } from '../../../../domain/projects/templates'
+import RichDraft from '../../editor/RichDraft'
+import { serializeEditor } from '../../editor/adapter'
 import FilePanel from './FilePanel'
-
-function plainText(payload: DocumentPayload): string | null {
-  if (Object.keys(payload.footnotesById).length) return null
-  const lines: string[] = []
-  for (const paragraph of payload.ast.content) {
-    if (paragraph.type !== 'paragraph') return null
-    let line = ''
-    for (const node of paragraph.content ?? []) { if (node.type !== 'text' || node.marks?.length) return null; line += node.text }
-    lines.push(line)
-  }
-  return lines.join('\n')
-}
-function plainPayload(text: string, previous: DocumentPayload): DocumentPayload {
-  return { schemaVersion: 1, ast: { type: 'doc', content: text.split('\n').map((line, index) => ({ type: 'paragraph', attrs: { blockId: previous.ast.content[index]?.attrs.blockId ?? crypto.randomUUID() }, ...(line ? { content: [{ type: 'text' as const, text: line }] } : {}) })) }, footnotesById: {} }
-}
 function scopeOf(project: OpenInput): OpenInput { return { projectId: project.projectId, workspaceId: project.workspaceId } }
 const emptyFiles: FileStatus = { scope: null, destination: null, state: 'unsaved', job: null }
+function readableDocument(payload: DocumentPayload): string {
+  const pieces: string[] = []
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return
+    if ('type' in value && value.type === 'text' && 'text' in value && typeof value.text === 'string') { pieces.push(value.text); return }
+    if ('type' in value && value.type === 'hardBreak') { pieces.push('\n'); return }
+    if ('content' in value && Array.isArray(value.content)) { for (const child of value.content) visit(child); if ('type' in value && ['paragraph','heading','tableRow'].includes(String(value.type))) pieces.push('\n') }
+  }
+  visit(payload.ast)
+  return pieces.join('')
+}
 
 export default function Projects({ storage }: { storage: StorageStatus }): React.JSX.Element {
   const [location, setLocation] = useState<LocationStatus | null>(null)
   const [list, setList] = useState<ProjectList>({ projects: [], issues: [] })
   const [project, setProject] = useState<OpenProject | null>(null)
-  const [text, setText] = useState(''), [protectedText, setProtectedText] = useState('')
+  const [editVersion, setEditVersion] = useState(0), [protectedVersion, setProtectedVersion] = useState(0), [editorEpoch, setEditorEpoch] = useState(0)
+  const [newTemplate, setNewTemplate] = useState<ProjectTemplate>('blank')
+  const [sectionTitle, setSectionTitle] = useState(''), [sectionStatus, setSectionStatus] = useState<'draft' | 'review' | 'complete'>('draft'), [sectionSynopsis, setSectionSynopsis] = useState('')
+  const sectionFields = useRef({ title: '', status: 'draft' as 'draft' | 'review' | 'complete', synopsis: '' })
   const [busy, setBusy] = useState(false), [acting, setActing] = useState(false), [closing, setClosing] = useState(false)
   const [committing, setCommitting] = useState(false), [retry, setRetry] = useState<CommitInput | null>(null)
   const [error, setError] = useState(''), [notice, setNotice] = useState('')
+  const [conflict, setConflict] = useState<OpenProject | null>(null)
   const [files, setFiles] = useState<FileStatus>(emptyFiles)
   const [data, setData] = useState<DataLocations | null>(null), [showArchived, setShowArchived] = useState(false)
   const renamePending = useRef<RenameInput | null>(null)
-  const [unsupported, setUnsupported] = useState(false)
-  const current = useRef<OpenProject | null>(null), buffer = useRef(''), protectedBuffer = useRef('')
+  const metaPending = useRef<SectionMetaInput | null>(null)
+  const current = useRef<OpenProject | null>(null), editorRef = useRef<Editor | null>(null)
+  const imageUrls = useRef(new Map<string, string>())
+  const editVersionRef = useRef(0), protectedVersionRef = useRef(0), retryVersion = useRef(0)
   const retryCommit = useRef<CommitInput | null>(null), committingTask = useRef<Promise<OpenProject | null> | null>(null)
   const pendingCreate = useRef<CreateInput | null>(null), pendingSave = useRef<SaveInput | null>(null)
-  const actionTask = useRef<Promise<unknown> | null>(null), closingRef = useRef(false), composing = useRef(false)
-  const fileState = useRef<FileStatus>(emptyFiles), alive = useRef(true), area = useRef<HTMLTextAreaElement>(null)
+  const pendingImage = useRef<{ projectId: string; workspaceId: string; operationId: string; token: string; alt: string; caption: string } | null>(null)
+  const actionTask = useRef<Promise<unknown> | null>(null), closingRef = useRef(false)
+  const fileState = useRef<FileStatus>(emptyFiles), alive = useRef(true)
   const jobWaiters = useRef(new Map<string, Set<(job: FileJobView | null) => void>>())
   const finishedJobs = useRef(new Map<string, FileJobView>())
   const handlers = useRef<{ action: (action: FileAction) => Promise<void>; save: () => void }>({ action: async () => {}, save: () => {} })
-  const dirty = text !== protectedText || retry !== null || committing
+  const selectedSection = project?.documents.find(doc => doc.id === project.documentId)
+  const sectionDirty = !!selectedSection && (sectionTitle !== selectedSection.title || sectionStatus !== selectedSection.status || sectionSynopsis !== selectedSection.synopsis)
+  const dirty = editVersion !== protectedVersion || sectionDirty || retry !== null || committing
   const fileActive = fileBusy(files.job)
   function updateProject(next: OpenProject | null): void { current.current = next; setProject(next) }
+  function updateHead(next: OpenProject): void {
+    updateProject(next)
+    if (sameScope(scopeOf(next), fileState.current.scope) && ['saved','pending'].includes(fileState.current.state)) applyFiles({ ...fileState.current, state: next.headCommitId === fileState.current.destination?.headCommitId ? 'saved' : 'pending' })
+  }
   function applyFiles(next: FileStatus): void {
     fileState.current = next; setFiles(next)
     if (next.job?.kind === 'backup' && next.job.capturedHead && ['archive','staging','replacing','verifying'].includes(next.job.phase)) setBusy(false)
@@ -58,13 +71,22 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
       jobWaiters.current.delete(next.job.id)
     }
   }
-  function isDirty(): boolean { return buffer.current !== protectedBuffer.current || !!retryCommit.current || !!committingTask.current }
+  function isMetaDirty(): boolean {
+    const doc = current.current?.documents.find(item => item.id === current.current?.documentId), fields = sectionFields.current
+    return !!doc && (fields.title !== doc.title || fields.status !== doc.status || fields.synopsis !== doc.synopsis)
+  }
+  function isDirty(): boolean { return editVersionRef.current !== protectedVersionRef.current || isMetaDirty() || !!retryCommit.current || !!committingTask.current }
+  function changed(): void {
+    editVersionRef.current += 1; setEditVersion(editVersionRef.current)
+    window.collie.setUnprotectedChanges(true)
+    setNotice('Writing changed. Waiting for a local commit…')
+  }
   useEffect(() => {
     alive.current = true
     void window.collie.getWorkingLocation().then(result => { if (alive.current) { if (result.ok) setLocation(result.value); else setError(result.error.message) } })
     const offFiles = window.collie.onFileStatus(applyFiles)
     const offActions = window.collie.onFileAction(action => { void handlers.current.action(action).catch(() => { setError('The action could not finish. Keep this window open and copy any unprotected writing.') }) })
-    return () => { alive.current = false; offFiles(); offActions(); for (const group of jobWaiters.current.values()) for (const resolve of group) resolve(null); jobWaiters.current.clear() }
+    return () => { alive.current = false; offFiles(); offActions(); for (const url of imageUrls.current.values()) URL.revokeObjectURL(url); imageUrls.current.clear(); for (const group of jobWaiters.current.values()) for (const resolve of group) resolve(null); jobWaiters.current.clear() }
   }, [])
   useEffect(() => { window.collie.setUnprotectedChanges(dirty) }, [dirty])
   useEffect(() => {
@@ -76,7 +98,17 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     if (!dirty && project.headCommitId === project.destination.headCommitId) return
     const timer = setTimeout(() => handlers.current.save(), 30000)
     return () => clearTimeout(timer)
-  }, [text, project?.headCommitId, project?.destination?.headCommitId, files.state, dirty, fileActive, acting, closing, storage.state])
+  }, [editVersion, project?.headCommitId, project?.destination?.headCommitId, files.state, dirty, fileActive, acting, closing, storage.state])
+  useEffect(() => {
+    if (!project || !dirty || closing || storage.state !== 'ready') return
+    const timer = setTimeout(() => { if (!actionTask.current && !retryCommit.current && !metaPending.current) void flush() }, 900)
+    return () => clearTimeout(timer)
+  }, [editVersion, sectionTitle, sectionStatus, sectionSynopsis, project?.documentId, closing, storage.state])
+  useEffect(() => {
+    if (!project || storage.state !== 'ready') return
+    const timer = setInterval(() => { if (isDirty() && !retryCommit.current && !metaPending.current && !actionTask.current && !closingRef.current) void flush() }, 5000)
+    return () => clearInterval(timer)
+  }, [project?.documentId, storage.state])
   async function refresh(): Promise<void> {
     const result = await window.collie.listProjects()
     if (!alive.current) return
@@ -92,42 +124,121 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     if (result.ok) applyFiles(result.value); else setError(result.error.message)
   }
   async function select(next: OpenProject): Promise<void> {
-    const content = plainText(next.payload)
-    updateProject(next); setUnsupported(content === null)
-    buffer.current = content ?? ''; protectedBuffer.current = content ?? ''
-    setText(buffer.current); setProtectedText(protectedBuffer.current)
+    const referenced = new Set<string>()
+    const visit = (node: unknown): void => { if (!node || typeof node !== 'object') return; for (const [key, value] of Object.entries(node)) { if (key === 'assetId' && typeof value === 'string') referenced.add(value); else visit(value) } }
+    visit(next.payload.ast)
+    const loaded = new Map<string, string>()
+    let imageIssue = '', imageBytes = 0
+    for (const assetId of referenced) {
+      const result = await window.collie.readImage({ ...scopeOf(next), assetId })
+      if (!result.ok) { imageIssue = `Image ${assetId.slice(0, 8)} could not be loaded: ${result.error.message}`; continue }
+      imageBytes += result.value.base64.length * 3 / 4
+      if (imageBytes > 256 * 1024 * 1024) { imageIssue = 'This section has more than 256 MiB of image data. Some images were left as placeholders to keep editing available.'; break }
+      const binary = atob(result.value.base64), bytes = new Uint8Array(binary.length)
+      for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
+      loaded.set(assetId, URL.createObjectURL(new Blob([bytes], { type: result.value.mediaType })))
+    }
+    for (const url of imageUrls.current.values()) URL.revokeObjectURL(url)
+    imageUrls.current = loaded
+    updateProject(next); setConflict(null); setEditorEpoch(value => value + 1)
+    const selected = next.documents.find(doc => doc.id === next.documentId)!
+    setSectionTitle(selected.title); setSectionStatus(selected.status as 'draft' | 'review' | 'complete'); setSectionSynopsis(selected.synopsis); metaPending.current = null
+    sectionFields.current = { title: selected.title, status: selected.status as 'draft' | 'review' | 'complete', synopsis: selected.synopsis }
+    editVersionRef.current = 0; protectedVersionRef.current = 0; setEditVersion(0); setProtectedVersion(0)
     retryCommit.current = null; setRetry(null); pendingSave.current = null
-    window.collie.setUnprotectedChanges(false); setError(''); setNotice('Draft protected locally.')
+    window.collie.setUnprotectedChanges(false); setError(imageIssue); setNotice('Draft protected locally.')
     await refreshFiles()
   }
-  async function protectText(value: string, prior?: CommitInput): Promise<OpenProject | null> {
+  async function importImage(): Promise<void> {
+    const p = await flush()
+    if (!p) return
+    if (pendingImage.current && !sameScope(scopeOf(p), pendingImage.current)) { setError('Reopen the project with the pending image import before retrying it.'); return }
+    if (!pendingImage.current) {
+      const chosen = await window.collie.pickImage(scopeOf(p))
+      if (!chosen.ok) { setError(chosen.error.message); return }
+      if (!chosen.value) return
+      const alt = window.prompt('Describe the image for readers using assistive technology. Leave empty only for a decorative image.', '')
+      if (alt === null) return
+      const caption = window.prompt('Caption (optional)', '')
+      if (caption === null) return
+      if (alt.length > 2000 || caption.length > 10000) { setError('Image description or caption is too long. The image was not imported.'); return }
+      pendingImage.current = { ...scopeOf(p), operationId: crypto.randomUUID(), token: chosen.value.token, alt, caption }
+    }
+    const input = pendingImage.current
+    const imported = await window.collie.importImage(input)
+    if (!imported.ok) { if (imported.error.code !== 'UNAVAILABLE') pendingImage.current = null; setError(imported.error.message); return }
+    pendingImage.current = null
+    const data = await window.collie.readImage({ ...scopeOf(p), assetId: imported.value.assetId })
+    if (!data.ok) { setError(data.error.message); return }
+    const binary = atob(data.value.base64), bytes = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
+    imageUrls.current.set(imported.value.assetId, URL.createObjectURL(new Blob([bytes], { type: data.value.mediaType })))
+    const latest = await window.collie.openSection({ ...scopeOf(p), documentId: p.documentId })
+    if (latest.ok) updateHead(latest.value)
+    const scale = Math.min(1, 800 / imported.value.width, 1600 / imported.value.height)
+    editorRef.current?.commands.insertContent({ type: 'image', attrs: { blockId: crypto.randomUUID(), assetId: imported.value.assetId, alt: input.alt, caption: input.caption, width: Math.max(1, Math.round(imported.value.width * scale)), height: Math.max(1, Math.round(imported.value.height * scale)) } })
+    setNotice('Image copied into the project. Its placement is waiting for a local document commit.')
+  }
+  async function saveSectionMeta(): Promise<void> {
+    if (await flush()) await refresh()
+  }
+  async function protectText(value: DocumentPayload, version: number, prior?: CommitInput): Promise<OpenProject | null> {
     const p = current.current
     if (!p) return null
-    const input = prior ?? { ...scopeOf(p), documentId: p.documentId, operationId: crypto.randomUUID(), expectedRevisionId: p.revisionId, payload: plainPayload(value, p.payload) }
+    const input = prior ?? { ...scopeOf(p), documentId: p.documentId, operationId: crypto.randomUUID(), expectedRevisionId: p.revisionId, payload: value }
     setCommitting(true); setError(''); setNotice('Protecting edits locally…'); window.collie.setUnprotectedChanges(true)
     const result = await window.collie.commitDocument(input)
     if (!alive.current) return null
     if (result.ok) {
       const next = { ...current.current!, payload: input.payload, revisionId: result.value.revisionId, headCommitId: result.value.headCommitId }
-      updateProject(next); protectedBuffer.current = plainText(input.payload)!
-      if (sameScope(scopeOf(next), fileState.current.scope) && ['saved','pending'].includes(fileState.current.state)) applyFiles({ ...fileState.current, state: next.headCommitId === fileState.current.destination?.headCommitId ? 'saved' : 'pending' })
-      setProtectedText(protectedBuffer.current); retryCommit.current = null; setRetry(null)
-      setNotice(buffer.current === protectedBuffer.current ? 'Draft protected locally.' : 'The submitted draft is protected locally. Newer typing still needs protection.')
+      updateHead(next); protectedVersionRef.current = version; setProtectedVersion(version)
+      retryCommit.current = null; setRetry(null)
+      setNotice(editVersionRef.current === protectedVersionRef.current ? 'Draft protected locally.' : 'The submitted draft is protected locally. Newer typing still needs protection.')
       setCommitting(false); return next
     }
-    retryCommit.current = input; setRetry(input); setError(result.error.message)
-    setNotice('Local acknowledgment failed. Your current text is still visible; Retry keeps the same operation.')
+    retryCommit.current = input; retryVersion.current = version; setRetry(input); setError(result.error.message)
+    if (result.error.code === 'STALE_REVISION') {
+      const stored = await window.collie.openSection({ ...scopeOf(p), documentId: p.documentId })
+      if (stored.ok) setConflict(stored.value)
+    }
+    setNotice('Local acknowledgment failed. Your current writing is still visible and selectable; Retry keeps the same operation.')
     setCommitting(false); return null
   }
   async function flush(): Promise<OpenProject | null> {
-    if (composing.current) { setError('Finish composing the current text before saving or closing.'); return null }
-    if (unsupported) return current.current
-    const requested = buffer.current
+    if (!current.current) return null
+    const editor = editorRef.current
+    if (!editor) { setError('This document could not be opened safely for editing. Its stored copy is retained.'); return null }
+    if (editor.view.composing) { setError('Finish composing the current text before saving or closing.'); return null }
+    let requested: DocumentPayload
+    try { requested = serializeEditor(editor, current.current.payload.footnotesById) }
+    catch { setError('This edit cannot be protected yet. Keep the window open and copy the visible writing; unsupported content was not discarded.'); return null }
+    const version = editVersionRef.current
     const previous = committingTask.current
     const task = (previous ?? Promise.resolve(current.current)).then(async result => {
       if (previous && !result) return null
-      if (retryCommit.current && !await protectText(requested, retryCommit.current)) return null
-      return requested !== protectedBuffer.current ? protectText(requested) : current.current
+      if (retryCommit.current && !await protectText(retryCommit.current.payload, retryVersion.current, retryCommit.current)) return null
+      const written = version !== protectedVersionRef.current ? await protectText(requested, version) : current.current
+      if (!written || !isMetaDirty()) return written
+      const fields = { ...sectionFields.current }
+      metaPending.current ??= { ...scopeOf(written), documentId: written.documentId, operationId: crypto.randomUUID(), expectedHead: written.headCommitId, title: fields.title.trim(), status: fields.status, synopsis: fields.synopsis }
+      const meta = await window.collie.updateSectionMeta(metaPending.current)
+      if (!meta.ok) {
+        if (meta.error.code !== 'UNAVAILABLE') metaPending.current = null
+        setError(meta.error.message)
+        if (meta.error.code === 'STALE_REVISION') {
+          const stored = await window.collie.openSection({ ...scopeOf(written), documentId: written.documentId })
+          if (stored.ok) setConflict(stored.value)
+        }
+        return null
+      }
+      metaPending.current = null; updateHead(meta.value)
+      if (fields.title === sectionFields.current.title && fields.status === sectionFields.current.status && fields.synopsis === sectionFields.current.synopsis) {
+        const saved = meta.value.documents.find(doc => doc.id === meta.value.documentId)!
+        sectionFields.current = { title: saved.title, status: saved.status as 'draft' | 'review' | 'complete', synopsis: saved.synopsis }
+        setSectionTitle(saved.title); setSectionStatus(saved.status as 'draft' | 'review' | 'complete'); setSectionSynopsis(saved.synopsis)
+      }
+      setNotice('Section details protected locally. The selected file may still need Save.')
+      return meta.value
     })
     committingTask.current = task
     try { return await task } finally { if (committingTask.current === task) committingTask.current = null; window.collie.setUnprotectedChanges(isDirty()) }
@@ -242,11 +353,19 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     if (title !== undefined) {
       renamePending.current ??= { scope: scopeOf(p), operationId: crypto.randomUUID(), expectedHead: p.headCommitId, title }
       const result = await window.collie.renameProject(renamePending.current)
-      if (result.ok) { renamePending.current = null; await select(result.value) }
+      if (result.ok) {
+        renamePending.current = null
+        const selected = await window.collie.openSection({ ...scopeOf(result.value), documentId: p.documentId })
+        await select(selected.ok ? selected.value : result.value)
+      }
       else { if (result.error.code !== 'UNAVAILABLE') renamePending.current = null; setError(result.error.message); return }
     } else {
       const result = await window.collie.archiveProject({ scope: scopeOf(p), archived: !p.archived })
-      if (result.ok) { updateProject(result.value); setNotice(result.value.archived ? 'Archived locally. Enable Show archived projects to find it again.' : 'Project returned to the active list.') }
+      if (result.ok) {
+        const selected = await window.collie.openSection({ ...scopeOf(result.value), documentId: p.documentId })
+        await select(selected.ok ? selected.value : result.value)
+        setNotice(result.value.archived ? 'Archived locally. Enable Show archived projects to find it again.' : 'Project returned to the active list.')
+      }
       else { setError(result.error.message); return }
     }
     await waitActive(); await refreshData()
@@ -264,7 +383,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
       if (result.error.code === 'UNAVAILABLE') setNotice('Reset outcome is unknown. Refresh recovery before opening or creating another project. Your visible writing remains available for copying.')
       return
     }
-    updateProject(null); buffer.current = ''; protectedBuffer.current = ''; setText(''); setProtectedText(''); setUnsupported(false)
+    updateProject(null); editVersionRef.current = 0; protectedVersionRef.current = 0; setEditVersion(0); setProtectedVersion(0)
     retryCommit.current = null; setRetry(null); pendingSave.current = null; pendingCreate.current = null; renamePending.current = null
     applyFiles(emptyFiles); window.collie.setUnprotectedChanges(false)
     setData(result.value); setList(result.value.projects); setNotice('Local list reset. Recover the retained projects in Reset recovery.')
@@ -317,12 +436,13 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     </details>}
     {storage.state === 'unavailable' ? <p role="alert">The storage process is unavailable. Keep this window open and copy any unprotected text before quitting.</p> : null}
     <div className="project-actions">
+      <label>Template <select value={newTemplate} disabled={!available || acting || fileActive || closing} onChange={event => { setNewTemplate(event.target.value as ProjectTemplate); pendingCreate.current = null }}>{(Object.keys(templateNames) as ProjectTemplate[]).map(template => <option key={template} value={template}>{templateNames[template]}</option>)}</select></label>
       <button disabled={!available || acting || fileActive || closing} onClick={() => run(async () => {
         setBusy(true); if (current.current && !await flush()) return
-        pendingCreate.current ??= { operationId: crypto.randomUUID(), template: 'blank' }
+        pendingCreate.current ??= { operationId: crypto.randomUUID(), template: newTemplate }
         const result = await window.collie.createProject(pendingCreate.current)
         if (result.ok) { pendingCreate.current = null; await select(result.value); await refresh() } else setError(result.error.message)
-      })}>{pendingCreate.current ? 'Retry project creation' : 'New blank project'}</button>
+      })}>{pendingCreate.current ? 'Retry project creation' : 'Create project'}</button>
       <button disabled={!available || acting || fileActive || closing} onClick={() => run(() => openFile())}>Open project file…</button>
       <button disabled={!available || acting || fileActive || closing} onClick={() => run(() => lifecycleFile('restore'))}>Restore backup…</button>
       <button disabled={!available || acting || fileActive || closing} onClick={() => run(refreshData)}>Refresh projects</button>
@@ -339,14 +459,23 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     {list.issues.map(issue => <p role="alert" key={issue.projectId}>Project {issue.projectId.slice(0, 8)}: {projectMessages[issue.code]}</p>)}
     {project ? <div className="draft-panel">
       <h2>{project.title} · {project.projectId.slice(0, 8)}</h2>
-      {unsupported ? <p role="alert">This document contains structured content that the basic draft screen cannot edit. It has been retained without conversion.</p> : <>
-        <label htmlFor="draft">Writing</label>
-        <textarea ref={area} id="draft" value={text} readOnly={busy || closing} maxLength={2000000} spellCheck={false} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onChange={event => { buffer.current = event.target.value; setText(buffer.current); window.collie.setUnprotectedChanges(true); setNotice('New typing is not yet protected. Use Protect locally or Save.'); }} />
+      <nav className="section-list" aria-label="Sections">{project.documents.map(doc => <button key={doc.id} type="button" aria-current={doc.id === project.documentId ? 'page' : undefined} disabled={busy || acting || closing || committing || doc.id === project.documentId} onClick={() => run(async () => {
+        setBusy(true); const p = await flush(); if (!p) return
+        const result = await window.collie.openSection({ ...scopeOf(p), documentId: doc.id })
+        if (result.ok) await select(result.value); else setError(result.error.message)
+      })}>{doc.title}</button>)}</nav>
+      <form className="section-details" onSubmit={event => { event.preventDefault(); run(saveSectionMeta) }}>
+        <label>Section title <input value={sectionTitle} maxLength={500} required disabled={busy || closing} onChange={event => { sectionFields.current.title = event.target.value; setSectionTitle(event.target.value); metaPending.current = null }} /></label>
+        <label>Status <select value={sectionStatus} disabled={busy || closing} onChange={event => { sectionFields.current.status = event.target.value as 'draft' | 'review' | 'complete'; setSectionStatus(sectionFields.current.status); metaPending.current = null }}><option value="draft">Draft</option><option value="review">Review</option><option value="complete">Complete</option></select></label>
+        <label>Synopsis <textarea value={sectionSynopsis} maxLength={10000} disabled={busy || closing} onChange={event => { sectionFields.current.synopsis = event.target.value; setSectionSynopsis(event.target.value); metaPending.current = null }} /></label>
+        <button type="submit" disabled={busy || acting || closing}>{metaPending.current ? 'Retry section details' : 'Save section details'}</button>
+      </form>
+      <RichDraft key={`${project.projectId}-${project.documentId}-${editorEpoch}`} payload={project.payload} disabled={busy || closing || storage.state !== 'ready'} onReady={editor => { editorRef.current = editor }} onChange={changed} onIssue={setError} onBlur={() => { if (isDirty() && !actionTask.current) void flush() }} imageUrl={assetId => imageUrls.current.get(assetId)} importImage={() => run(importImage)} />
         <div className="project-actions"><button disabled={busy || committing || closing || !dirty || storage.state !== 'ready'} onClick={() => { void flush().then(() => refresh()) }}>{committing ? 'Protecting…' : retry ? 'Retry local commit' : 'Protect locally'}</button>
-        <button onClick={() => { area.current?.focus(); area.current?.select() }}>Select all for copying</button></div>
-        <p>For an emergency copy, select the draft and use your system Copy command, then paste into another local document.</p>
-      </>}
+        <button onClick={() => { editorRef.current?.commands.focus(); editorRef.current?.commands.selectAll() }}>Select all for copying</button></div>
+        <p>For an emergency copy, select this section and use your system Copy command, then paste into another local document.</p>
       <p role="status">{notice}</p>
+      {conflict ? <details className="conflict-panel" open><summary>Stored version differs from this visible draft</summary><p>Keep this draft open for copying. The stored section below is a separate read-only copy; Collie Writer has not overwritten either version.</p><textarea readOnly aria-label="Stored section text for copying" value={readableDocument(conflict.payload)} /></details> : null}
     </div> : <p>Select a local project, open a file or create a blank project to begin.</p>}
     {project || fileActive ? <FilePanel status={files} dirty={dirty} disabled={!project || !available || acting || closing} save={as => run(() => save(as))} locate={() => run(() => openFile(false, true))} inspect={() => run(() => openFile(true))} answer={(id, choice) => { void window.collie.answerFileJob({ id, choice }).then(result => { if (!result.ok) setError(result.error.message) }) }} cancel={id => { void window.collie.cancelFileJob(id).then(result => { if (!result.ok) setError(result.error.message) }) }} consent={id => { void window.collie.confirmFileOverwrite(id).then(result => { if (!result.ok) setError(result.error.message) }) }} /> : null}
     {project ? <ProjectManagement key={`${project.projectId}-${project.title}`} project={project} disabled={!available || acting || fileActive || closing} rename={title => run(() => manage(title))} archive={() => run(() => manage())} backup={() => run(() => lifecycleFile('backup'))} move={() => run(() => lifecycleFile('move'))} duplicate={() => run(() => lifecycleFile('duplicate'))} /> : null}

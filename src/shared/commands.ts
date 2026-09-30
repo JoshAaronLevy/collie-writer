@@ -6,6 +6,7 @@ import type { FileAPI } from './project-files'
 export const GET_INFO = 'app.getInfo'
 export const GET_STORAGE_STATUS = 'storage.getStatus'
 export const STORAGE_STATUS_CHANGED = 'storage.statusChanged'
+export const EDITOR_ACTION = 'editor.action'
 export const APP_ID = 'com.colliewriter.app.dev'
 export type AppInfo = {
   name: 'Collie Writer'
@@ -23,6 +24,7 @@ export type Result<T> =
       error: { code: AppErrorCode; message: string; retryable: boolean }
     }
 export type CollieAPI = ProjectAPI & FileAPI & LifecycleAPI & {
+  onEditorAction: (callback: (action: 'undo' | 'redo' | 'find' | 'paste-plain') => void) => () => void
   getInfo: () => Promise<Result<AppInfo>>
   getStorageStatus: () => Promise<Result<StorageStatus>>
   onStorageStatus: (callback: (status: StorageStatus) => void) => () => void

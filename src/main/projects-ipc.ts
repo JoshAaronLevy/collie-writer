@@ -1,15 +1,18 @@
 import { isRenameInput, isArchiveInput, isResetInput } from '../shared/project-lifecycle'
-import { BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
+import { BrowserWindow, clipboard, dialog, ipcMain, type WebContents } from 'electron'
+import { randomUUID } from 'node:crypto'
+import { basename } from 'node:path'
 import { isTrustedSender } from './ipc'
 import { isInfoRequest } from '../shared/schemas'
 import { isId } from '../domain/editor/schema'
-import { DIRTY_CHANGED, PROJECT_CHANNELS, exact, record, isCreateInput, isOpenInput, isCommitInput, projectFailure, type ProjectCommand } from '../shared/projects'
+import { DIRTY_CHANGED, PROJECT_CHANNELS, exact, record, isCreateInput, isOpenInput, isSectionInput, isSectionMetaInput, isCommitInput, isImageImportInput, isImageReadInput, projectFailure, type OpenInput, type ProjectCommand } from '../shared/projects'
 import type { WorkingLocation } from './paths/working-root'
 import type { StorageWorker } from './storage-worker'
 
 export function registerProjectIpc(owner: () => WebContents | undefined, location: WorkingLocation, storage: StorageWorker, dirty: (value: boolean) => void, devOrigin?: string): void {
   let hasUnprotectedChanges = false
   let resetting = false
+  const imageGrants = new Map<string, { path: string; name: string; scope: OpenInput; owner: number; frame: number; process: number; expires: number; operationId: string | null }>()
   const access = (event: Electron.IpcMainInvokeEvent, payload: unknown): boolean => isTrustedSender(event, owner(), devOrigin) && record(payload) && isId(payload.requestId)
   ipcMain.on(DIRTY_CHANGED, (event, payload: unknown) => {
     if (isTrustedSender(event, owner(), devOrigin) && typeof payload === 'boolean') { hasUnprotectedChanges = payload; dirty(payload) }
@@ -27,12 +30,42 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
         }
         return { ok: true, requestId, value: location.current() }
       }
+      if (kind === 'plainClipboard') {
+        if (!isInfoRequest(value)) return projectFailure(requestId, 'VALIDATION')
+        const text = clipboard.readText()
+        if (text.length > 1_000_000) return projectFailure(requestId, 'LIMIT_EXCEEDED')
+        return { ok: true, requestId, value: text }
+      }
       if (!location.path()) return projectFailure(requestId, 'STORAGE_LOCATION_REQUIRED')
+      if (kind === 'pickImage') {
+        if (!exact(value, ['requestId','input']) || !isOpenInput(value.input) || !event.senderFrame) return projectFailure(requestId, 'VALIDATION')
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window) return projectFailure(requestId, 'DENIED')
+        const answer = await dialog.showOpenDialog(window, { title: 'Import image into this project', filters: [{ name: 'Images', extensions: ['png','jpg','jpeg'] }], properties: ['openFile','dontAddToRecent'] })
+        if (answer.canceled || answer.filePaths.length !== 1) return { ok: true, requestId, value: null }
+        if (window.isDestroyed() || !isTrustedSender(event, owner(), devOrigin) || !event.senderFrame) return projectFailure(requestId, 'DENIED')
+        const path = answer.filePaths[0], name = basename(path)
+        if (path.length > 4096 || name.length > 255 || !/\.(png|jpe?g)$/i.test(name) || /[\\/:\u0000-\u001f]/.test(name)) return projectFailure(requestId, 'VALIDATION')
+        for (const [id, grant] of imageGrants) if (grant.expires < Date.now()) imageGrants.delete(id)
+        if (imageGrants.size >= 32) return projectFailure(requestId, 'UNAVAILABLE')
+        const token = randomUUID()
+        imageGrants.set(token, { path, name, scope: value.input, owner: event.sender.id, frame: event.senderFrame.routingId, process: event.senderFrame.processId, expires: Date.now() + 10 * 60_000, operationId: null })
+        return { ok: true, requestId, value: { token, name } }
+      }
       let command: ProjectCommand
       if ((kind === 'list' || kind === 'data' || kind === 'cleanup') && isInfoRequest(value)) command = { kind }
       else if (exact(value, ['requestId', 'input']) && kind === 'create' && isCreateInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'open' && isOpenInput(value.input)) command = { kind, input: value.input }
+      else if (exact(value, ['requestId', 'input']) && kind === 'section' && isSectionInput(value.input)) command = { kind, input: value.input }
+      else if (exact(value, ['requestId', 'input']) && kind === 'meta' && isSectionMetaInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'commit' && isCommitInput(value.input)) command = { kind, input: value.input }
+      else if (exact(value, ['requestId','input']) && kind === 'readImage' && isImageReadInput(value.input)) command = { kind, input: value.input }
+      else if (exact(value, ['requestId','input']) && kind === 'importImage' && isImageImportInput(value.input)) {
+        const input = value.input, grant = imageGrants.get(input.token)
+        if (!grant || !event.senderFrame || grant.owner !== event.sender.id || grant.frame !== event.senderFrame.routingId || grant.process !== event.senderFrame.processId || grant.expires < Date.now() || grant.scope.projectId !== input.projectId || grant.scope.workspaceId !== input.workspaceId || grant.operationId !== null && grant.operationId !== input.operationId) return projectFailure(requestId, 'DENIED')
+        grant.operationId = input.operationId
+        command = { kind, input: { projectId: input.projectId, workspaceId: input.workspaceId, operationId: input.operationId, sourcePath: grant.path, originalName: grant.name } }
+      }
       else if (exact(value, ['requestId','input']) && kind === 'rename' && isRenameInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId','input']) && kind === 'archive' && isArchiveInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId','input']) && kind === 'recoverReset' && isId(value.input)) command = { kind, input: value.input }
@@ -48,7 +81,9 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
         } finally { resetting = false }
       }
       else return projectFailure(requestId, 'VALIDATION')
-      return storage.request(requestId, command)
+      const result = await storage.request(requestId, command)
+      if (kind === 'importImage' && result.ok && isImageImportInput(value.input)) imageGrants.delete(value.input.token)
+      return result
     })
   }
 }

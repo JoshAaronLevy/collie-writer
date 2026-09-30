@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3'
 import { isId, readDocument } from '../../domain/editor/schema'
+import { isProjectTemplate } from '../../domain/projects/templates'
 import { exact, record } from '../../shared/projects'
 import { validateProjectSchema } from '../storage/schema'
 import { isHash, isUtc, LIMITS, SnapshotError, type BlobRef } from './manifest'
@@ -14,7 +15,7 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
   const projects = db.prepare('SELECT * FROM projects').all() as Record<string, unknown>[]
   if (projects.length !== 1) return invalid()
   const project = projects[0]
-  if (!isId(project.id) || !isId(project.head_commit_id) || project.template !== 'blank' || project.locale !== 'en-US' || !text(project.title, 500) || project.title === '' || !isUtc(project.created_at) || !isUtc(project.updated_at)) return invalid()
+  if (!isId(project.id) || !isId(project.head_commit_id) || !isProjectTemplate(project.template) || project.locale !== 'en-US' || !text(project.title, 500) || project.title === '' || !isUtc(project.created_at) || !isUtc(project.updated_at)) return invalid()
   const projectId = project.id, headCommitId = project.head_commit_id
   const blobs = new Map<string, BlobRef>(), assetIds = new Set<string>()
   for (const raw of db.prepare('SELECT * FROM managed_assets').iterate()) {
@@ -26,10 +27,12 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
   }
   // Every registered asset is retained, even if currently unused. Later history must retain asset rows.
   let documentCount = 0, editorCount = 0
+  const positions = new Set<number>()
   const lookup = db.prepare('SELECT document_id,kind FROM editor_ids WHERE project_id=? AND id=?')
   for (const raw of db.prepare('SELECT * FROM documents').iterate()) {
     const doc = raw as Record<string, unknown>
-    if (++documentCount > 1 || doc.project_id !== projectId || !isId(doc.id) || !isId(doc.revision_id) || doc.parent_id !== null || doc.position !== 0 || doc.kind !== 'text' || doc.editor_version !== 1 || !text(doc.title, 500) || !text(doc.status, 100) || !text(doc.synopsis, 100000) || typeof doc.payload !== 'string' || Buffer.byteLength(doc.payload) > 64 * 1024 ** 2) return invalid()
+    if (++documentCount > 10000 || doc.project_id !== projectId || !isId(doc.id) || !isId(doc.revision_id) || doc.parent_id !== null || !Number.isSafeInteger(doc.position) || Number(doc.position) < 0 || positions.has(Number(doc.position)) || doc.kind !== 'text' || doc.editor_version !== 1 || !text(doc.title, 500) || !text(doc.status, 100) || !text(doc.synopsis, 100000) || typeof doc.payload !== 'string' || Buffer.byteLength(doc.payload) > 64 * 1024 ** 2) return invalid()
+    positions.add(Number(doc.position))
     const payload = readDocument(JSON.parse(doc.payload))
     const visit = (node: unknown): void => {
       if (!node || typeof node !== 'object') return
@@ -45,7 +48,7 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
     }
     visit(payload)
   }
-  if (documentCount !== 1 || (db.prepare('SELECT count(*) AS n FROM editor_ids').get() as { n: number }).n !== editorCount) return invalid()
+  if (documentCount < 1 || positions.size !== documentCount || [...positions].some(position => position >= documentCount) || (db.prepare('SELECT count(*) AS n FROM editor_ids').get() as { n: number }).n !== editorCount) return invalid()
   let commits = 0
   for (const raw of db.prepare('SELECT * FROM commits').iterate()) {
     const commit = raw as Record<string, unknown>

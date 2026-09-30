@@ -87,6 +87,31 @@ h1 {
 .draft-panel { margin-top: 2rem; }
 .draft-panel label { display: block; font-weight: 650; margin-bottom: 0.5rem; }
 .draft-panel textarea { box-sizing: border-box; width: 100%; min-height: 320px; resize: vertical; padding: 1rem; border: 1px solid #526357; border-radius: 0.4rem; font: 1rem/1.6 Georgia, serif; color: #24382d; background: white; }
+.section-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-block: 1rem; }
+.section-list [aria-current='page'] { border-color: #397a53; background: #edf4ed; font-weight: 650; }
+.section-details { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; gap: 0.75rem; padding: 1rem; border: 1px solid #cbd4c8; border-radius: 0.4rem; background: white; }
+.section-details label { display: grid; gap: 0.2rem; }
+.section-details label:has(textarea) { grid-column: 1 / -1; }
+.section-details textarea { min-height: 4rem; width: 100%; font: inherit; }
+.section-details button { justify-self: start; }
+.editor-toolbar { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-block: 1rem; }
+.editor-toolbar button { padding: 0.3rem 0.55rem; }
+.editor-toolbar [aria-pressed='true'] { background: #d9e8dc; border-color: #397a53; }
+.editor-host .tiptap { min-height: 320px; padding: 1rem; border: 1px solid #526357; border-radius: 0.4rem; background: #fff; color: #24382d; font: 1rem/1.7 Georgia, serif; white-space: pre-wrap; overflow-wrap: anywhere; }
+.editor-host .tiptap:focus { outline: 3px solid #397a53; outline-offset: 2px; }
+.editor-host .tiptap p { margin-block: 0 0.8rem; }
+.editor-host .tiptap blockquote { border-left: 3px solid #9eb4a1; padding-left: 1rem; margin-left: 0; }
+.editor-host .tiptap figure { max-width: 100%; margin-inline: 0; }
+.editor-host .tiptap img { max-width: 100%; height: auto; }
+.editor-host .tiptap figcaption { color: #526357; font-size: 0.9rem; }
+.editor-host .tiptap hr[data-kind='pageBreak'] { border: 0; border-top: 2px dashed #9eb4a1; margin-block: 1.5rem; }
+.editor-host .tiptap table { border-collapse: collapse; max-width: 100%; }
+.editor-host .tiptap td, .editor-host .tiptap th { border: 1px solid #9eb4a1; min-width: 5rem; padding: 0.35rem; vertical-align: top; }
+.word-count { color: #526357; font-size: 0.9rem; }
+.editor-find { display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem; margin-block: 1rem; }
+.editor-find label { display: grid; gap: 0.2rem; }
+.conflict-panel { border: 1px solid #a6342b; padding: 1rem; margin-block: 1rem; }
+.conflict-panel textarea { min-height: 8rem; width: 100%; }
 .project-error { border-left: 4px solid #a6342b; padding: 0.75rem; background: #fff1ec; }
 .file-panel { margin-top: 1.5rem; padding: 1rem; border: 1px solid #b7c2b6; border-radius: 0.5rem; background: #fff; }
 .file-progress, .file-inspection { padding: 1rem; margin-block: 1rem; background: #edf4ed; border-radius: 0.3rem; }

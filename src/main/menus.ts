@@ -18,7 +18,7 @@ export async function confirmExternalLink(raw: unknown, testMode: boolean): Prom
   })
   if (choice.response === 1) await shell.openExternal(url)
 }
-export function installMenu(testMode: boolean, fileAction: (kind: 'save' | 'save-as' | 'open') => void): void {
+export function installMenu(testMode: boolean, fileAction: (kind: 'save' | 'save-as' | 'open') => void, editorAction: (kind: 'undo' | 'redo' | 'find' | 'paste-plain') => void): void {
   const about = (): void => {
     void dialog.showMessageBox({
       type: 'info',
@@ -57,7 +57,16 @@ export function installMenu(testMode: boolean, fileAction: (kind: 'save' | 'save
         ...(process.platform === 'darwin' ? [] : [{ role: 'quit' } as MenuItemConstructorOptions])
       ]
     },
-    { role: 'editMenu' },
+    { label: 'Edit', submenu: [
+      { label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: () => editorAction('undo') },
+      { label: 'Redo', accelerator: 'CmdOrCtrl+Shift+Z', click: () => editorAction('redo') },
+      { type: 'separator' },
+      { role: 'cut' }, { role: 'copy' }, { role: 'paste' },
+      { label: 'Paste as Plain Text', accelerator: 'CmdOrCtrl+Shift+V', click: () => editorAction('paste-plain') },
+      { role: 'selectAll' },
+      { type: 'separator' },
+      { label: 'Find in Section', accelerator: 'CmdOrCtrl+F', click: () => editorAction('find') }
+    ] },
     {
       label: 'View',
       submenu: [

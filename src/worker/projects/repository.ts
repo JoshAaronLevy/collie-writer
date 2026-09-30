@@ -1,20 +1,24 @@
 import Database from 'better-sqlite3'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { readdir, lstat, readFile, rename } from 'node:fs/promises'
+import { readdir, lstat, readFile, rename, open, writeFile, unlink } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { isId, readDocument, type DocumentPayload } from '../../domain/editor/schema'
+import { emptyDocument, templateSections } from '../../domain/projects/templates'
 import { requestDigest } from '../storage/digest'
 import { ProjectError, projectError } from '../../domain/projects/errors'
 import { exact, record } from '../../shared/projects'
 import type { RenameInput, ArchiveInput } from '../../shared/project-lifecycle'
-import type { CommitInput, CommitReceipt, CreateInput, OpenInput, OpenProject, ProjectList, ProjectSummary } from '../../shared/projects'
+import type { CommitInput, CommitReceipt, CreateInput, OpenInput, OpenProject, ProjectList, ProjectSummary, SectionInput, SectionMetaInput, WorkerImageImport, ImageReadInput, ImageAsset, ImageData } from '../../shared/projects'
 import { inWriteTransaction, openStorageDatabase } from '../storage/driver'
 import { contained, directory, syncDirectory, writeJson } from '../storage/files'
 import { createProjectSchema, validateProjectSchema, inspectVersion } from '../storage/schema'
 import { openProjectDatabase } from '../storage/migrations'
 import { SnapshotJobs, type SnapshotRequest, type SnapshotJob } from './snapshot-jobs'
-import { SnapshotError } from './manifest'
+import { SnapshotError, isHash } from './manifest'
 import { destinationView, readDestination, writeDestination, type SavedLocation } from './file-state'
+import { stageBlob } from './blobs'
+import { fileHash } from './streams'
 
 const catalogSchema = [
   'CREATE TABLE creation_intents (operation_id TEXT PRIMARY KEY, digest TEXT NOT NULL, project_id TEXT NOT NULL UNIQUE, workspace_id TEXT NOT NULL UNIQUE) STRICT',
@@ -26,6 +30,43 @@ const operationsSchema = [
 ]
 type Owned = { projectId: string; workspaceId: string; workspace: string; db: Database.Database; operations: Database.Database; lock: Database.Database; destination: SavedLocation | null; archived: boolean; snapshots?: SnapshotJobs }
 async function exists(path: string): Promise<boolean> { try { await lstat(path); return true } catch (e) { if (e && typeof e === 'object' && 'code' in e && e.code === 'ENOENT') return false; throw e } }
+const IMAGE_LIMIT = 25 * 1024 * 1024
+function imageInfo(bytes: Buffer): Omit<ImageAsset, 'assetId'> {
+  let mediaType: ImageAsset['mediaType'], width: number, height: number
+  if (bytes.length >= 33 && bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) && bytes.readUInt32BE(8) === 13 && bytes.toString('ascii', 12, 16) === 'IHDR') {
+    mediaType = 'image/png'; width = bytes.readUInt32BE(16); height = bytes.readUInt32BE(20)
+  } else if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    mediaType = 'image/jpeg'; width = 0; height = 0
+    let pos = 2
+    while (pos + 4 < bytes.length) {
+      if (bytes[pos] !== 0xff) break
+      while (bytes[pos] === 0xff) pos++
+      const marker = bytes[pos++]
+      if (marker === 0xd9 || marker === 0xda) break
+      if ([0x01,0xd0,0xd1,0xd2,0xd3,0xd4,0xd5,0xd6,0xd7].includes(marker)) continue
+      if (pos + 2 > bytes.length) break
+      const length = bytes.readUInt16BE(pos)
+      if (length < 2 || pos + length > bytes.length) break
+      if ([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf].includes(marker) && length >= 7) { height = bytes.readUInt16BE(pos + 3); width = bytes.readUInt16BE(pos + 5); break }
+      pos += length
+    }
+  } else throw new ProjectError('VALIDATION')
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width > 12000 || height > 12000 || width * height > 40_000_000) throw new ProjectError('LIMIT_EXCEEDED')
+  return { mediaType, width, height }
+}
+async function selectedImage(path: string): Promise<Buffer> {
+  const before = await lstat(path)
+  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1 || before.size < 1 || before.size > IMAGE_LIMIT) throw new ProjectError('LIMIT_EXCEEDED')
+  const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+  try {
+    const opened = await handle.stat()
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino || opened.size !== before.size) throw new ProjectError('VALIDATION')
+    const bytes = await handle.readFile()
+    const after = await handle.stat()
+    if (bytes.length !== before.size || bytes.length > IMAGE_LIMIT || after.size !== before.size || after.mtimeMs !== opened.mtimeMs) throw new ProjectError('VALIDATION')
+    return bytes
+  } finally { await handle.close() }
+}
 
 export class ProjectRepository {
   private catalog!: Database.Database
@@ -39,9 +80,32 @@ export class ProjectRepository {
     return task
   }
   open(input: OpenInput): Promise<OpenProject> { return this.serial(() => this.openUnlocked(input)) }
+  section(input: SectionInput): Promise<OpenProject> { return this.serial(async () => { this.fileContext(input); return this.read(this.active!, input.documentId) }) }
+  meta(input: SectionMetaInput): Promise<OpenProject> {
+    return this.serial(async () => {
+      if (this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
+      this.fileContext(input)
+      const owned = this.active!, digest = requestDigest({ kind: 'sectionMeta', ...input })
+      inWriteTransaction(owned.db, () => {
+        const prior = owned.db.prepare('SELECT digest FROM domain_operations WHERE project_id=? AND operation_id=?').get(input.projectId, input.operationId) as { digest: string } | undefined
+        if (prior) { if (prior.digest !== digest) throw new ProjectError('OPERATION_CONFLICT'); return }
+        const before = this.read(owned, input.documentId)
+        if (before.headCommitId !== input.expectedHead) throw new ProjectError('STALE_REVISION')
+        const head = randomUUID(), time = new Date().toISOString()
+        owned.db.prepare('UPDATE documents SET title=?,status=?,synopsis=? WHERE project_id=? AND id=?').run(input.title, input.status, input.synopsis, input.projectId, input.documentId)
+        owned.db.prepare('INSERT INTO commits VALUES (?,?,?,?)').run(input.projectId, head, before.headCommitId, time)
+        owned.db.prepare('UPDATE projects SET head_commit_id=?,updated_at=? WHERE id=?').run(head, time, input.projectId)
+        owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(input.projectId, input.operationId, digest, JSON.stringify({ projectId: input.projectId, documentId: input.documentId, revisionId: before.revisionId, headCommitId: head }))
+      })
+      await this.discovery(owned)
+      return this.read(owned, input.documentId)
+    })
+  }
   create(input: CreateInput): Promise<OpenProject> { return this.serial(() => this.createUnlocked(input)) }
   list(): Promise<ProjectList> { return this.serial(() => this.listUnlocked()) }
   commit(input: CommitInput): Promise<CommitReceipt> { return this.serial(() => this.commitUnlocked(input)) }
+  importImage(input: WorkerImageImport): Promise<ImageAsset> { return this.serial(() => this.importImageUnlocked(input)) }
+  readImage(input: ImageReadInput): Promise<ImageData> { return this.serial(() => this.readImageUnlocked(input)) }
   holdFiles(value: boolean): void { this.fileBusy = value }
   fileContext(input: OpenInput): { workspace: string; destination: SavedLocation | null; head: string } {
     const owned = this.active
@@ -194,14 +258,18 @@ export class ProjectRepository {
     if (this.active) { this.release(this.active); this.active = undefined }
     if (this.catalog?.open) this.catalog.close()
   }
-  private read(owned: Owned): OpenProject {
-    const project = owned.db.prepare('SELECT * FROM projects').all() as { id: string; title: string; head_commit_id: string; updated_at: string }[]
-    const documents = owned.db.prepare('SELECT * FROM documents WHERE project_id=? ORDER BY position').all(owned.projectId) as { id: string; revision_id: string; payload: string }[]
-    if (project.length !== 1 || project[0].id !== owned.projectId || documents.length !== 1 || !isId(project[0].head_commit_id) || !isId(documents[0].id) || !isId(documents[0].revision_id)) throw new ProjectError('CORRUPT_PROJECT')
+  private read(owned: Owned, selectedId?: string): OpenProject {
+    const project = owned.db.prepare('SELECT * FROM projects').all() as { id: string; template: OpenProject['template']; title: string; head_commit_id: string; updated_at: string }[]
+    const documents = owned.db.prepare('SELECT id,revision_id,title,status,synopsis,position,parent_id,kind,editor_version FROM documents WHERE project_id=? ORDER BY position').all(owned.projectId) as { id: string; revision_id: string; title: string; status: string; synopsis: string; position: number; parent_id: string | null; kind: string; editor_version: number }[]
+    const selected = selectedId ? documents.find(doc => doc.id === selectedId) : documents[0]
+    if (project.length !== 1 || project[0].id !== owned.projectId || !Object.hasOwn(templateSections, project[0].template) || documents.length < 1 || documents.length > 10000 || !selected || !isId(project[0].head_commit_id) || !documents.every((doc, index) => isId(doc.id) && isId(doc.revision_id) && doc.position === index && doc.parent_id === null && doc.kind === 'text' && doc.editor_version === 1 && typeof doc.title === 'string' && doc.title.length <= 500 && typeof doc.status === 'string' && doc.status.length <= 100 && typeof doc.synopsis === 'string' && doc.synopsis.length <= 100000)) throw new ProjectError('CORRUPT_PROJECT')
     if (!project[0].title.length || project[0].title.length > 500 || !Number.isFinite(Date.parse(project[0].updated_at))) throw new ProjectError('CORRUPT_PROJECT')
     let payload: DocumentPayload
-    try { payload = readDocument(JSON.parse(documents[0].payload)) } catch { throw new ProjectError('CORRUPT_PROJECT') }
-    return { projectId: owned.projectId, workspaceId: owned.workspaceId, title: project[0].title, headCommitId: project[0].head_commit_id, updatedAt: project[0].updated_at, archived: owned.archived, destination: destinationView(owned.destination), documentId: documents[0].id, revisionId: documents[0].revision_id, payload }
+    try {
+      const row = owned.db.prepare('SELECT payload FROM documents WHERE project_id=? AND id=?').get(owned.projectId, selected.id) as { payload: string }
+      payload = readDocument(JSON.parse(row.payload))
+    } catch { throw new ProjectError('CORRUPT_PROJECT') }
+    return { projectId: owned.projectId, workspaceId: owned.workspaceId, title: project[0].title, headCommitId: project[0].head_commit_id, updatedAt: project[0].updated_at, archived: owned.archived, destination: destinationView(owned.destination), template: project[0].template, documents: documents.map(doc => ({ id: doc.id, title: doc.title, status: doc.status, synopsis: doc.synopsis })), documentId: selected.id, revisionId: selected.revision_id, payload }
   }
   private async discovery(owned: Owned): Promise<void> {
     const p = this.read(owned)
@@ -307,15 +375,17 @@ export class ProjectRepository {
       try {
         const objects = db.prepare("SELECT name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").all()
         if (!objects.length && db.pragma('user_version', { simple: true }) === 0) {
-          const projectId = intent.project_id, documentId = randomUUID(), head = randomUUID(), revision = randomUUID(), time = new Date().toISOString()
-          const payload: DocumentPayload = { schemaVersion: 1, ast: { type: 'doc', content: [{ type: 'paragraph', attrs: { blockId: randomUUID() } }] }, footnotesById: {} }
+          const projectId = intent.project_id, head = randomUUID(), time = new Date().toISOString()
+          const sections = templateSections[input.template].map((title, position) => ({ title, position, documentId: randomUUID(), revision: randomUUID(), payload: emptyDocument(randomUUID) }))
           inWriteTransaction(db, () => {
             createProjectSchema(db)
             db.prepare('INSERT INTO commits VALUES (?,?,NULL,?)').run(projectId, head, time)
-            db.prepare('INSERT INTO projects VALUES (?,?,?,?,?,?,?)').run(projectId, 'blank', 'Untitled project', 'en-US', head, time, time)
-            db.prepare('INSERT INTO documents VALUES (?,?,NULL,0,?,?,?,?,?,?,?)').run(projectId, documentId, 'text', 'Draft', 'draft', '', revision, 1, JSON.stringify(payload))
-            this.indexIds(db, projectId, documentId, payload)
-            db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(projectId, input.operationId, digest, JSON.stringify({ projectId, documentId, revisionId: revision, headCommitId: head }))
+            db.prepare('INSERT INTO projects VALUES (?,?,?,?,?,?,?)').run(projectId, input.template, 'Untitled project', 'en-US', head, time, time)
+            for (const section of sections) {
+              db.prepare('INSERT INTO documents VALUES (?,?,NULL,?,?,?,?,?,?,?,?)').run(projectId, section.documentId, section.position, 'text', section.title, 'draft', '', section.revision, 1, JSON.stringify(section.payload))
+              this.indexIds(db, projectId, section.documentId, section.payload)
+            }
+            db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(projectId, input.operationId, digest, JSON.stringify({ projectId, documentId: sections[0].documentId, revisionId: sections[0].revision, headCommitId: head }))
           })
         }
         validateProjectSchema(db)
@@ -372,5 +442,54 @@ export class ProjectRepository {
     })
     await this.discovery(owned)
     return result
+  }
+  private async importImageUnlocked(input: WorkerImageImport): Promise<ImageAsset> {
+    const owned = this.active
+    if (!owned || owned.projectId !== input.projectId || owned.workspaceId !== input.workspaceId) throw new ProjectError('DENIED')
+    if (this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
+    const prior = owned.db.prepare('SELECT media_type,sha256,byte_size FROM managed_assets WHERE project_id=? AND id=?').get(input.projectId, input.operationId) as { media_type: ImageAsset['mediaType']; sha256: string; byte_size: number } | undefined
+    if (prior) {
+      if (!isHash(prior.sha256) || prior.byte_size > IMAGE_LIMIT || !['image/png','image/jpeg'].includes(prior.media_type)) throw new ProjectError('OPERATION_CONFLICT')
+      const path = join(owned.workspace, 'blobs', prior.sha256)
+      await contained(this.root, path, false)
+      const ref = await fileHash(path, IMAGE_LIMIT)
+      if (ref.sha256 !== prior.sha256 || ref.bytes !== prior.byte_size) throw new ProjectError('CORRUPT_PROJECT')
+      const bytes = await readFile(path)
+      if (bytes.length !== prior.byte_size || createHash('sha256').update(bytes).digest('hex') !== prior.sha256) throw new ProjectError('CORRUPT_PROJECT')
+      return { assetId: input.operationId, ...imageInfo(bytes) }
+    }
+    const bytes = await selectedImage(input.sourcePath)
+    const info = imageInfo(bytes)
+    const temporary = join(owned.workspace, 'blobs', `.image-${randomUUID()}`)
+    try {
+      await writeFile(temporary, bytes, { flag: 'wx', mode: 0o600 })
+      const blob = await stageBlob(this.root, owned.workspace, temporary)
+      inWriteTransaction(owned.db, () => {
+        const project = owned.db.prepare('SELECT head_commit_id FROM projects WHERE id=?').get(input.projectId) as { head_commit_id: string }
+        const head = randomUUID(), time = new Date().toISOString()
+        owned.db.prepare('INSERT INTO managed_assets VALUES (?,?,?,?,?,?)').run(input.projectId, input.operationId, input.originalName, info.mediaType, blob.bytes, blob.sha256)
+        owned.db.prepare('INSERT INTO commits VALUES (?,?,?,?)').run(input.projectId, head, project.head_commit_id, time)
+        owned.db.prepare('UPDATE projects SET head_commit_id=?,updated_at=? WHERE id=?').run(head, time, input.projectId)
+        const section = this.read(owned)
+        owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(input.projectId, input.operationId, requestDigest({ kind: 'image', id: input.operationId, sha256: blob.sha256 }), JSON.stringify({ projectId: input.projectId, documentId: section.documentId, revisionId: section.revisionId, headCommitId: head }))
+      })
+      await this.discovery(owned)
+      return { assetId: input.operationId, ...info }
+    } finally { await unlink(temporary).catch(() => {}) }
+  }
+  private async readImageUnlocked(input: ImageReadInput): Promise<ImageData> {
+    const owned = this.active
+    if (!owned || owned.projectId !== input.projectId || owned.workspaceId !== input.workspaceId) throw new ProjectError('DENIED')
+    const row = owned.db.prepare('SELECT sha256,byte_size,media_type FROM managed_assets WHERE project_id=? AND id=?').get(input.projectId, input.assetId) as { sha256: string; byte_size: number; media_type: ImageAsset['mediaType'] } | undefined
+    if (!row || !['image/png','image/jpeg'].includes(row.media_type)) throw new ProjectError('NOT_FOUND')
+    if (!isHash(row.sha256)) throw new ProjectError('CORRUPT_PROJECT')
+    if (row.byte_size > IMAGE_LIMIT) throw new ProjectError('LIMIT_EXCEEDED')
+    const path = join(owned.workspace, 'blobs', row.sha256)
+    await contained(this.root, path, false)
+    const ref = await fileHash(path, IMAGE_LIMIT)
+    if (ref.bytes !== row.byte_size || ref.sha256 !== row.sha256) throw new ProjectError('CORRUPT_PROJECT')
+    const bytes = await readFile(path)
+    if (bytes.length !== row.byte_size || imageInfo(bytes).mediaType !== row.media_type) throw new ProjectError('CORRUPT_PROJECT')
+    return { mediaType: row.media_type, base64: bytes.toString('base64') }
   }
 }

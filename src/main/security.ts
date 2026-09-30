@@ -1,7 +1,7 @@
 export const APP_ORIGIN = 'collie://app'
 export const APP_URL = `${APP_ORIGIN}/index.html`
 export const PRODUCTION_CSP =
-  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'"
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'"
 
 export function developmentOrigin(raw: string | undefined, packaged: boolean): string | undefined {
   if (!raw || packaged) return undefined
@@ -23,12 +23,16 @@ export function developmentOrigin(raw: string | undefined, packaged: boolean): s
 export function contentSecurityPolicy(devOrigin?: string): string {
   if (!devOrigin) return PRODUCTION_CSP
   // Vite React refresh uses an inline preamble; Vite injects styles during HMR.
-  return `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ${devOrigin} ${devOrigin.replace('http:', 'ws:')}; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'`
+  return `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src ${devOrigin} ${devOrigin.replace('http:', 'ws:')}; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'`
 }
 export function allowedRequest(raw: string, devOrigin?: string): boolean {
   try {
     const url = new URL(raw)
     if (url.username || url.password) return false
+    if (url.protocol === 'blob:') {
+      const inner = new URL(url.pathname)
+      return devOrigin ? inner.origin === devOrigin : inner.protocol === 'collie:' && inner.host === 'app'
+    }
     if (devOrigin)
       return url.origin === devOrigin || url.origin === devOrigin.replace('http:', 'ws:')
     return url.protocol === 'collie:' && url.host === 'app'

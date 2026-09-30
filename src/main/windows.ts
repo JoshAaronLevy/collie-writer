@@ -1,4 +1,4 @@
-import { BrowserWindow, type Session } from 'electron'
+import { BrowserWindow, Menu, type MenuItemConstructorOptions, type Session } from 'electron'
 import { join } from 'node:path'
 import { APP_URL, allowedRequest, contentSecurityPolicy } from './security'
 
@@ -45,11 +45,23 @@ export function createWindow(devOrigin?: string): BrowserWindow {
       webSecurity: true,
       allowRunningInsecureContent: false,
       webviewTag: false,
-      spellcheck: false,
+      spellcheck: true,
       navigateOnDragDrop: false
     }
   })
   protectWindow(window)
+  window.webContents.on('context-menu', (_event, params) => {
+    if (!params.isEditable) return
+    const suggestions = params.dictionarySuggestions.slice(0, 5).map(suggestion => ({ label: suggestion, click: () => window.webContents.replaceMisspelling(suggestion) }))
+    const entries: MenuItemConstructorOptions[] = [
+      ...suggestions,
+      ...(params.misspelledWord ? [{ label: 'Add to dictionary', click: () => window.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord) }] : []),
+      ...(suggestions.length || params.misspelledWord ? [{ type: 'separator' as const }] : []),
+      { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }
+    ]
+    const menu = Menu.buildFromTemplate(entries)
+    menu.popup({ window })
+  })
   window.once('ready-to-show', () => window.show())
   void window.loadURL(devOrigin ? `${devOrigin}/` : APP_URL).catch(() => {
     // No exception serialization: loader errors can contain paths.
