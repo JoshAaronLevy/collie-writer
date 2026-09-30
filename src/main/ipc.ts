@@ -1,5 +1,6 @@
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
-import { GET_INFO, type AppInfo, type Result } from '../shared/commands'
+import { GET_INFO, GET_STORAGE_STATUS, type AppInfo, type Result } from '../shared/commands'
+import type { StorageStatus } from '../shared/storage'
 import { isAppInfo, isInfoRequest } from '../shared/schemas'
 import { trustedDocument } from './security'
 
@@ -54,5 +55,33 @@ export function registerAppIpc(
       }
     }
     return { ok: true, requestId: payload.requestId, value }
+  })
+}
+
+export function registerStorageIpc(
+  owner: () => WebContents | undefined,
+  storageStatus: () => StorageStatus,
+  devOrigin?: string
+): void {
+  ipcMain.handle(GET_STORAGE_STATUS, (event, payload: unknown): Result<StorageStatus> => {
+    if (!isTrustedSender(event, owner(), devOrigin)) {
+      return {
+        ok: false,
+        requestId: '',
+        error: { code: 'DENIED', message: 'This window cannot use that command.', retryable: false }
+      }
+    }
+    if (!isInfoRequest(payload)) {
+      return {
+        ok: false,
+        requestId: '',
+        error: { code: 'VALIDATION', message: 'Invalid storage status request.', retryable: false }
+      }
+    }
+    return {
+      ok: true,
+      requestId: payload.requestId,
+      value: storageStatus()
+    }
   })
 }

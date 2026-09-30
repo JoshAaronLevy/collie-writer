@@ -1,11 +1,22 @@
 import { useEffect, useState } from 'react'
 import type { AppInfo } from '../../shared/commands'
+import type { StorageStatus } from '../../shared/storage'
 
 export default function App(): React.JSX.Element {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [failed, setFailed] = useState(false)
+  const [storageStatus, setStorageStatus] = useState<StorageStatus>({ state: 'starting', sequence: 0 })
   useEffect(() => {
     let active = true
+    const applyStorageStatus = (next: StorageStatus): void => {
+      if (active)
+        setStorageStatus((previous) => (next.sequence >= previous.sequence ? next : previous))
+    }
+    const unsubscribe = window.collie.onStorageStatus(applyStorageStatus)
+    window.collie.getStorageStatus().then((result) => {
+      if (result.ok) applyStorageStatus(result.value)
+      else applyStorageStatus({ state: 'unavailable', sequence: 0 })
+    })
     window.collie
       .getInfo()
       .then((result) => {
@@ -18,6 +29,7 @@ export default function App(): React.JSX.Element {
       })
     return () => {
       active = false
+      unsubscribe()
     }
   }, [])
   return (
@@ -43,12 +55,22 @@ export default function App(): React.JSX.Element {
         <section className="welcome" aria-labelledby="welcome-title">
           <h2 id="welcome-title">Welcome to Collie Writer</h2>
           <p>
-            This early development build establishes the application shell. Project creation and
-            writing will arrive in later stages.
+            This development build loads the SQLite engine in a separate process. Project creation
+            and writing will arrive in later stages.
           </p>
           <p>
             You can select and copy text, adjust the text size from the View menu, and find
             application information in Help.
+          </p>
+        </section>
+        <section className="storage-panel" aria-labelledby="storage-title">
+          <h2 id="storage-title">SQLite engine</h2>
+          <p role="status">
+            {storageStatus.state === 'starting'
+              ? 'Starting local storage…'
+              : storageStatus.state === 'ready'
+                ? `Loaded · SQLite ${storageStatus.runtime.sqliteVersion} · Node ${storageStatus.runtime.nodeVersion} · Node-API ${storageStatus.runtime.napiVersion}`
+                : 'Could not load. Quit and reopen Collie Writer to try again.'}
           </p>
         </section>
       </main>

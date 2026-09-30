@@ -1,4 +1,5 @@
 import type { AppInfo, InfoRequest, Result } from './commands'
+import { isStorageStatus, type StorageStatus } from './storage'
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -32,6 +33,22 @@ export function isAppInfo(value: unknown): value is AppInfo {
 export function isInfoResult(value: unknown, requestId: string): value is Result<AppInfo> {
   if (!record(value) || value.requestId !== requestId) return false
   if (value.ok === true) return keys(value, ['ok', 'requestId', 'value']) && isAppInfo(value.value)
+  if (value.ok !== false || !keys(value, ['ok', 'requestId', 'error']) || !record(value.error))
+    return false
+  const error = value.error
+  return (
+    keys(error, ['code', 'message', 'retryable']) &&
+    ['VALIDATION', 'DENIED', 'UNAVAILABLE'].includes(String(error.code)) &&
+    typeof error.message === 'string' &&
+    error.message.length <= 160 &&
+    typeof error.retryable === 'boolean'
+  )
+}
+
+export function isStorageResult(value: unknown, requestId: string): value is Result<StorageStatus> {
+  if (!record(value) || value.requestId !== requestId) return false
+  if (value.ok === true)
+    return keys(value, ['ok', 'requestId', 'value']) && isStorageStatus(value.value)
   if (value.ok !== false || !keys(value, ['ok', 'requestId', 'error']) || !record(value.error))
     return false
   const error = value.error

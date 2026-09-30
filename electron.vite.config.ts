@@ -3,7 +3,9 @@ import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
-  main: {},
+  main: {
+    build: { externalizeDeps: { include: ['better-sqlite3'] } }
+  },
   preload: {
     build: {
       externalizeDeps: false,

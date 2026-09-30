@@ -1,12 +1,13 @@
 import { app, BrowserWindow, protocol, session } from 'electron'
 import { join } from 'node:path'
-import { APP_ID, type AppInfo } from '../shared/commands'
-import { registerAppIpc } from './ipc'
+import { APP_ID, STORAGE_STATUS_CHANGED, type AppInfo } from '../shared/commands'
+import { registerAppIpc, registerStorageIpc } from './ipc'
 import { denyTestNetwork } from './test-network'
 import { installMenu } from './menus'
 import { configureProfile } from './profile'
 import { createAssetHandler } from './protocol'
 import { developmentOrigin } from './security'
+import { StorageWorker } from './storage-worker'
 import { createWindow, protectSession } from './windows'
 
 app.setName('Collie Writer')
@@ -22,6 +23,10 @@ protocol.registerSchemesAsPrivileged([
   }
 ])
 let window: BrowserWindow | undefined
+const storage = new StorageWorker((status) => {
+  if (window && !window.isDestroyed() && !window.webContents.isDestroyed())
+    window.webContents.send(STORAGE_STATUS_CHANGED, status)
+})
 function openWindow(): void {
   window = createWindow(devOrigin)
   window.on('closed', () => {
@@ -44,8 +49,10 @@ app
       }),
       devOrigin
     )
+    registerStorageIpc(() => window?.webContents, () => storage.current(), devOrigin)
     installMenu(testMode)
     openWindow()
+    storage.start()
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) openWindow()
     })
@@ -56,4 +63,16 @@ app
   })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+let shutdownStarted = false
+let shutdownFinished = false
+app.on('before-quit', (event) => {
+  if (shutdownFinished) return
+  event.preventDefault()
+  if (shutdownStarted) return
+  shutdownStarted = true
+  void storage.stop().catch(() => {}).finally(() => {
+    shutdownFinished = true
+    app.quit()
+  })
 })

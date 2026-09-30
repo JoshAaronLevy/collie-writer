@@ -8,11 +8,20 @@ files:
   - out/preload/**
   - out/renderer/**
   - package.json
+  - '!node_modules/better-sqlite3/prebuilds/**'
+  - '!node_modules/better-sqlite3/src/**'
+  - '!node_modules/better-sqlite3/deps/**'
+  - '!node_modules/better-sqlite3/binding.gyp'
+  - '!node_modules/node-addon-api/**'
 asar: true
+allowMissingDependencies: false
 win:
   executableName: collie-writer-dev
   target: nsis
   signAndEditExecutable: false
+  extraResources:
+    - from: node_modules/better-sqlite3/prebuilds/win32-${arch}.node
+      to: native/better_sqlite3.node
 nsis:
   artifactName: collie-writer-dev-${version}-${arch}-setup.${ext}
   shortcutName: Collie Writer (Development)
@@ -25,8 +34,12 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   notarize: false
+  extraResources:
+    - from: node_modules/better-sqlite3/prebuilds/darwin-${arch}.node
+      to: native/better_sqlite3.node
 dmg:
   artifactName: collie-writer-dev-${version}-${arch}.${ext}
-# No native production dependencies until Stage 2 records the rebuild decision.
+# better-sqlite3 13 uses Node-API 10 prebuilds; copy only the target binary above.
+# Source compilation is a documented target-specific fallback, not the default.
 npmRebuild: false
 publish: null
