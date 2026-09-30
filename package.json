@@ -22,7 +22,13 @@
     "test:desktop:unpacked": "node scripts/test-unpacked.mjs"
   },
   "dependencies": {
-    "better-sqlite3": "13.0.3"
+    "@tiptap/core": "3.31.3",
+    "@tiptap/pm": "3.31.3",
+    "better-sqlite3": "13.0.3",
+    "citeproc": "2.4.63",
+    "docx": "9.8.1",
+    "pagedjs": "0.4.3",
+    "parse5": "8.0.0"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",

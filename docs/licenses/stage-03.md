@@ -1,0 +1,27 @@
+# Stage 3 dependency and asset licenses
+
+September 29, 2026. This records inspected source/artifact notices and implementation choices, not a passed dependency audit or legal certification. No audit/check commands were run. Exact npm resolutions/integrities are in `package-lock.json`; asset commit URLs, SHA-256 identifiers and sizes are in [the asset manifest](../../resources/asset-manifest.json).
+
+| Component | Exact direct pin | Distributed terms and implementation |
+| --- | --- | --- |
+| Tiptap core / PM | 3.31.3 / 3.31.3 | MIT community modules. Retain copyright/permission notices; custom nodes use no paid extension |
+| ProseMirror modules | Per lockfile and bundled dependency inventory | MIT; individual module notices retained |
+| docx | 9.8.1 | MIT; notice retained. Native OOXML construction, no hosted converter |
+| citeproc | 2.4.63 | Actual artifact: CPAL 1.0-or-later OR AGPL 3.0-or-later. Select CPAL 1.0; source, full license, Exhibit B initial-session attribution and source-availability notice implemented; see [D4](../decisions/D4-citations-and-licenses.md) |
+| Paged.js | 0.4.3 | MIT; unmodified normal browser bundle and notices retained. No polyfill auto-start or legacy browser build |
+| parse5 | 8.0.0 | MIT; notice retained. Citation output parsing only, no remote resource retrieval |
+| APA 7 / Chicago 18 CSL | Manifest commit/hash; XML identities/updated fields | CC BY-SA 3.0; unmodified assets, author and license notices preserved |
+| en-US CSL locale | Manifest commit/hash | CC BY-SA 3.0; project/contributor notices preserved |
+| Source Serif 4 | Four exact TTF files in manifest | SIL OFL 1.1, Adobe copyright and reserved “Source” name retained |
+| Noto Sans CJK SC | Exact regular OTF in manifest | SIL OFL 1.1; unmodified full font, copyright retained |
+| Noto Naskh Arabic / Noto Sans Hebrew | Exact regular TTF files in manifest | SIL OFL 1.1; unmodified fonts, copyright retained |
+
+`resources/licenses/dependencies/inventory.json` records installed direct/transitive artifact versions and notice filenames, including nested package versions. Notices accompany the normal Paged browser bundle as well as the npm dependencies. JSZip's MIT alternative is selected; Pako's MIT/Zlib terms, CSS data's CC0 dedication and the BSD/ISC/Blue Oak notices of other transitive packages are retained. The hash.js artifact puts its MIT grant in README; that grant is copied as its notice. No library source was patched.
+
+The Paged.js npm dependency tree emits deprecation warnings for `@babel/polyfill` and `core-js` 2 during installation. The print service uses the supplied normal browser bundle, not a polyfill import or legacy build. Record those warnings as maintenance risk; no blanket upgrades, audit pass, compatibility proof or upstream fixes are claimed. Reassess the dependency set when D5 is accepted or changed.
+
+Bundled resources are allowlisted under `collie/` in installed resources. The Help menu reveals `licenses/NOTICE.txt`; citation processor source is in `licenses/citeproc-source/`. These resources are independent of the main application protocol: the print service exposes only its exact fonts/CSS/vendor script, not the license-source directory or arbitrary files. Styles/locales are worker reads from the trusted bundle. No installer downloads a runtime/font/style.
+
+On redistribution, preserve complete notices and unmodified font/CSL identities. Do not sell fonts by themselves or use reserved names for modified fonts. Changes to licensed CSL assets must carry appropriate attribution/share-alike notices; changes to CPAL-covered code need corresponding source/change notices and continued attribution. Application terms must preserve third-party source rights. User documents do not inherit font or CSL asset licenses merely from embedding fonts or formatting references. Release-stage license review remains required for the actual shipped artifact and any subsequent dependency changes.
+
+Primary references: [Tiptap license](https://github.com/ueberdosis/tiptap/blob/main/LICENSE.md), [docx](https://github.com/dolanmiu/docx), [citeproc license](https://github.com/Juris-M/citeproc-js/blob/master/LICENSE), [CPAL/Exhibit B](https://github.com/Juris-M/citeproc-js/blob/master/CPAL), [CSL styles](https://github.com/citation-style-language/styles#licensing), [CSL locales](https://github.com/citation-style-language/locales#licensing), [Source Serif license](https://github.com/adobe-fonts/source-serif/blob/release/LICENSE.md). Exact downloaded source URLs take precedence over moving branch links and are retained in the manifest.

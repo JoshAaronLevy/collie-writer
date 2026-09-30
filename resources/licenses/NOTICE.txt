@@ -1,0 +1,37 @@
+Collie Writer — editor, citation and export components
+
+citeproc-js implements the Citation Style Language
+(c) Frank Bennett
+https://citationstyles.org/
+
+citeproc 2.4.63 is used under CPAL 1.0. The unmodified, readable source
+distributed in the npm artifact is supplied beside this notice in
+citeproc-source/citeproc_commonjs.js with its original license and package
+metadata. The complete CPAL (including Exhibits A and B) is in
+citeproc-CPAL-1.0.txt. Upstream: https://github.com/Juris-M/citeproc-js
+No changes have been made to the distributed processor source. Collie
+provides an independent adapter. Source rights are not restricted by the
+application's terms. Any application support or warranty is offered by
+Collie's distributor alone, not the processor author or contributors.
+
+CSL styles: APA Style 7th edition, by Brenton M. Wiernik and Andrew Dunning;
+Chicago Manual of Style 18th edition (notes and bibliography), by Andrew
+Dunning. Locale: en-US, by the Citation Style Language project and its
+contributors. These XML assets are unmodified, licensed CC BY-SA 3.0.
+Author and license notices remain in the supplied XML and READMEs.
+https://github.com/citation-style-language/styles
+https://github.com/citation-style-language/locales
+https://creativecommons.org/licenses/by-sa/3.0/
+These licenses apply to the assets, not the user's manuscripts.
+
+Source Serif 4 by Adobe; Noto Sans CJK SC, Noto Naskh Arabic and Noto Sans
+Hebrew by their named copyright holders. Unmodified fonts are bundled under
+SIL OFL 1.1. Keep the accompanying OFL notices. Do not sell fonts alone or
+reuse reserved names for modified fonts. Font embedding does not license
+the user's document under OFL.
+
+Tiptap community core and ProseMirror, docx, Paged.js, parse5 and their
+dependency notices are included here. No paid editor extension or hosted
+conversion service is used. Pinned asset origins and SHA-256 identifiers
+are recorded in ../asset-manifest.json; npm artifacts are pinned in the
+application package lockfile. Required legal attribution is not advertising.

@@ -76,6 +76,15 @@ h1 {
 .storage-panel p {
   margin-bottom: 0;
 }
+.citation-attribution {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #cbd4c8;
+  overflow-wrap: anywhere;
+}
+.citation-attribution p {
+  margin: 0.25rem 0;
+}
 h2 {
   font-size: 1rem;
   font-weight: 650;

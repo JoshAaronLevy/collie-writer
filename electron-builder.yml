@@ -15,6 +15,17 @@ files:
   - '!node_modules/node-addon-api/**'
 asar: true
 allowMissingDependencies: false
+extraResources:
+  - from: resources
+    to: collie
+    filter:
+      - asset-manifest.json
+      - styles/*.csl
+      - locales/*.xml
+      - fonts/*.ttf
+      - fonts/*.otf
+      - vendor/paged.js
+      - licenses/**
 win:
   executableName: collie-writer-dev
   target: nsis

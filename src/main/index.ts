@@ -20,6 +20,10 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'collie',
     privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }
+  },
+  {
+    scheme: 'collie-print',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }
   }
 ])
 let window: BrowserWindow | undefined

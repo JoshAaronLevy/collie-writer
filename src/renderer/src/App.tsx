@@ -73,6 +73,11 @@ export default function App(): React.JSX.Element {
                 : 'Could not load. Quit and reopen Collie Writer to try again.'}
           </p>
         </section>
+        <aside className="citation-attribution" aria-label="Citation software attribution">
+          <p>citeproc-js implements the Citation Style Language</p>
+          <p>© Frank Bennett · https://citationstyles.org/</p>
+          <p>Source and licenses are available in Help → Third-party licenses.</p>
+        </aside>
       </main>
       <footer>
         <p role="status">

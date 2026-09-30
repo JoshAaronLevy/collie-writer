@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "path": "styles/apa.csl",
+      "url": "https://raw.githubusercontent.com/citation-style-language/styles/2e9355847feffe53d0e9f82cd8ee119c4a0ff2db/apa.csl",
+      "sha256": "1ece4fb3c295e66d04b4394e295aa58a87741ceeef1658192437eb9953c2f13e",
+      "bytes": 85658
+    },
+    {
+      "path": "styles/chicago-notes-bibliography.csl",
+      "url": "https://raw.githubusercontent.com/citation-style-language/styles/2e9355847feffe53d0e9f82cd8ee119c4a0ff2db/chicago-notes-bibliography.csl",
+      "sha256": "4b6be4bceaf8f3c31b49331c9f9e38c977f666d6ab80e19a2ac8482c7511abeb",
+      "bytes": 242663
+    },
+    {
+      "path": "locales/locales-en-US.xml",
+      "url": "https://raw.githubusercontent.com/citation-style-language/locales/a89adece41013402236e2c9020972d7e931fbab8/locales-en-US.xml",
+      "sha256": "ac864c7c21166b4390d82c31792cdc509400727fa0060b43d8aa17e07f9cb079",
+      "bytes": 32649
+    },
+    {
+      "path": "licenses/CSL-locales-README.md",
+      "url": "https://raw.githubusercontent.com/citation-style-language/locales/a89adece41013402236e2c9020972d7e931fbab8/README.md",
+      "sha256": "f8e1b34d3e1b66f101b45bc45e5fca0397aa923fe4abeab6f98139c8f731c320",
+      "bytes": 1777
+    },
+    {
+      "path": "licenses/CSL-styles-README.md",
+      "url": "https://raw.githubusercontent.com/citation-style-language/styles/2e9355847feffe53d0e9f82cd8ee119c4a0ff2db/README.md",
+      "sha256": "eeda35e6ab1c71ef74ba98e8d63f3f5c07e1b1c458b92d54cdd7515afcb1b04e",
+      "bytes": 6573
+    },
+    {
+      "path": "licenses/citeproc-CPAL-1.0.txt",
+      "url": "https://raw.githubusercontent.com/Juris-M/citeproc-js/cc9153c45293af878de08cafddbefe6ea150c380/CPAL",
+      "sha256": "a953615139d8c767eb5e95f14215bf5c356ea23397a15137f6e119babf3fe69b",
+      "bytes": 28740
+    },
+    {
+      "path": "fonts/SourceSerif4-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/adobe-fonts/source-serif/80d3f8894c09c937bebfa9011247d2e1c79fd6f4/TTF/SourceSerif4-Regular.ttf",
+      "sha256": "e5a4ee6a3d87bb9024796be390c6771e2a0eb1883dae25effaf57ca01668e24b",
+      "bytes": 261868
+    },
+    {
+      "path": "fonts/SourceSerif4-Bold.ttf",
+      "url": "https://raw.githubusercontent.com/adobe-fonts/source-serif/80d3f8894c09c937bebfa9011247d2e1c79fd6f4/TTF/SourceSerif4-Bold.ttf",
+      "sha256": "7cf4f4e1ad74f45058d5bc61716b82560442fbdcd9d3654d2dea96bf6c683d86",
+      "bytes": 271568
+    },
+    {
+      "path": "fonts/SourceSerif4-It.ttf",
+      "url": "https://raw.githubusercontent.com/adobe-fonts/source-serif/80d3f8894c09c937bebfa9011247d2e1c79fd6f4/TTF/SourceSerif4-It.ttf",
+      "sha256": "9d2950a8f1da66e21502c35d646a1d2148e79f9ea43fd2158cf02f5232e7f430",
+      "bytes": 187808
+    },
+    {
+      "path": "fonts/SourceSerif4-BoldIt.ttf",
+      "url": "https://raw.githubusercontent.com/adobe-fonts/source-serif/80d3f8894c09c937bebfa9011247d2e1c79fd6f4/TTF/SourceSerif4-BoldIt.ttf",
+      "sha256": "7b215b37f8873f5579f3f8d2ded3ca7c588e2f435cd996605ebfc5befe2cd5eb",
+      "bytes": 191832
+    },
+    {
+      "path": "licenses/SourceSerif4-OFL.txt",
+      "url": "https://raw.githubusercontent.com/adobe-fonts/source-serif/80d3f8894c09c937bebfa9011247d2e1c79fd6f4/LICENSE.md",
+      "sha256": "c21d7293d87b6d7ab1d0229a2f55b77f33a7613a6a4e66f6693d68d7d8d09464",
+      "bytes": 4491
+    },
+    {
+      "path": "fonts/NotoSansCJKsc-Regular.otf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+      "sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+      "bytes": 16437364
+    },
+    {
+      "path": "licenses/NotoCJK-OFL.txt",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/LICENSE",
+      "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+      "bytes": 4301
+    },
+    {
+      "path": "fonts/NotoNaskhArabic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoNaskhArabic/NotoNaskhArabic-Regular.ttf",
+      "sha256": "2f4b88e6ee50fa82c617e2d1d4ba18281cb1c6cd71c3af3ec64970c23995db4b",
+      "bytes": 178388
+    },
+    {
+      "path": "fonts/NotoSansHebrew-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSansHebrew/NotoSansHebrew-Regular.ttf",
+      "sha256": "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85",
+      "bytes": 26900
+    },
+    {
+      "path": "licenses/Noto-OFL.txt",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/LICENSE",
+      "sha256": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb",
+      "bytes": 4377
+    },
+    {
+      "path": "licenses/citeproc-source/citeproc_commonjs.js",
+      "source": "node_modules/citeproc/citeproc_commonjs.js",
+      "sha256": "55abba1a8b8b48c14323fd053f9646013b4b7a0c977938064ecf5195a502b9f1",
+      "bytes": 967493
+    },
+    {
+      "path": "licenses/citeproc-source/LICENSE",
+      "source": "node_modules/citeproc/LICENSE",
+      "sha256": "b96ca8e1716f93449b480083c7510c18d129fa9afa4644d62c6347c06177ce30",
+      "bytes": 1017
+    },
+    {
+      "path": "licenses/citeproc-source/package.json",
+      "source": "node_modules/citeproc/package.json",
+      "sha256": "fce7b24d1555ef8a32f0b07ecbc45720c812dae850104560739602ed89c98944",
+      "bytes": 641
+    },
+    {
+      "path": "vendor/paged.js",
+      "source": "node_modules/pagedjs/dist/paged.js",
+      "sha256": "4cae0c875c89084b353ceee87bcc742388de3133f2bbf48830b63f1d2d357e4f",
+      "bytes": 920798
+    },
+    {
+      "path": "licenses/pagedjs-MIT.txt",
+      "source": "node_modules/pagedjs/LICENSE.md",
+      "sha256": "f49bdde202ca66880e2d7cb7fd8103f43a917a60b61681484a66cf370e7647e0",
+      "bytes": 1076
+    },
+    {
+      "path": "licenses/docx-MIT.txt",
+      "source": "node_modules/docx/LICENSE",
+      "sha256": "b5b2364c0c95a26b2a2399d7e706a61acac680be1d5b180b00592ee85830bffb",
+      "bytes": 1072
+    },
+    {
+      "path": "licenses/tiptap-MIT.txt",
+      "source": "node_modules/@tiptap/core/LICENSE.md",
+      "sha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9",
+      "bytes": 1069
+    },
+    {
+      "path": "licenses/parse5-MIT.txt",
+      "source": "node_modules/parse5/LICENSE",
+      "sha256": "8c535800331e1e4439835555b3f9edc7fe9dee2fab0d8bbbd5a982e8b8343d4d",
+      "bytes": 1109
+    }
+  ]
+}

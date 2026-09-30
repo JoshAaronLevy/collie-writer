@@ -2,11 +2,11 @@
 
 An offline-first desktop workspace for research and writing, built with Electron, React and TypeScript. Permanently ad-free.
 
-Stages 1–2 provide a development shell, native menus, a sandboxed narrow bridge and a separate SQLite utility process. Project storage and editing are not implemented. The [implementation plan](mvp-implementation-plan.md) is the authoritative scope and stage index; see [Stage 1 evidence](docs/validation/stage-01.md), [Stage 2 evidence](docs/validation/stage-02.md) and [D2](docs/decisions/D2-native-sqlite-and-worker.md) for current status and pending native results.
+Stages 1–3 provide a development shell, native menus, a sandboxed narrow bridge, a separate SQLite utility process and internal editor/citation/export adapters with pinned local assets. Project storage and editing are not implemented. The [implementation plan](mvp-implementation-plan.md) is the authoritative scope and stage index; see [Stage 1 evidence](docs/validation/stage-01.md), [Stage 2 evidence](docs/validation/stage-02.md), [Stage 3 evidence](docs/validation/stage-03.md) and [D3–D5 decisions](docs/decisions/D3-editor-and-compilation.md) for current status and pending native/fidelity results.
 
 ## Current implementation workflow
 
-Josh owns all testing, effective September 29, 2026. The assistant must not write/maintain tests, add automated verification infrastructure or run any testing/check/build/launch/browser-verification activity. Each implemented stage ends with `Stage X complete. As a user:` and an ordered list of actions with expected outcomes, then waits for Josh's feedback. See the standing [instructions](AGENTS.md) and [Stage 2 manual guide](docs/manual-testing/stage-02.md).
+Josh owns all testing, effective September 29, 2026. The assistant must not write/maintain tests, add automated verification infrastructure or run any testing/check/build/launch/browser-verification activity. Each implemented stage ends with `Stage X complete. As a user:` and an ordered list of actions with expected outcomes, then waits for Josh's feedback. See the standing [instructions](AGENTS.md) and [Stage 3 manual guide](docs/manual-testing/stage-03.md).
 
 Existing Stage 1 tests, package scripts and results remain historical. The former automatic native CI is archived under `.github/disabled-workflows/` and no longer runs on push/pull request. Do not re-enable or extend it. Implementation completion is recorded separately from user-confirmed acceptance.
 
@@ -42,3 +42,9 @@ All builds currently use `com.colliewriter.app.dev`. Chromium settings live unde
 Tests generate a marked `collie-writer-test-*` directory directly in the OS temporary directory and provide `COLLIE_TEST_ROOT` plus an ownership token before Electron starts. Missing/invalid ownership or unsafe paths fail closed. Cleanup revalidates ownership and only removes that generated root. Do not supply personal paths. Test-mode Node transports and Electron session networking deny outgoing requests; package installation and Playwright's local debugger connection are harness infrastructure, not app network capabilities.
 
 Historical screenshots were generated in ignored `output/playwright/`. No tests, fixture preloads, source documents or development tools are intended for packaging. The target SQLite native binary is copied as a resource outside ASAR; native packaging still awaits Josh's manual results. The formerly proposed Stage 2 package/storage audit harness and later automated commands are cancelled under P7; do not add them.
+
+## Editor and export implementation checkpoint
+
+The Stage 3 adapters are not yet mounted in a writing screen or wired to export jobs. They define schema v1, immutable compilation, local APA 7/Chicago 18 processing, native DOCX structures and isolated Paged.js PDF printing. The [D3 subset](docs/decisions/D3-editor-and-compilation.md), [D4 license/citation decision](docs/decisions/D4-citations-and-licenses.md) and [D5 pagination decision](docs/decisions/D5-local-pdf-pagination.md) govern their later integration. No DOCX/PDF, IME or visual fidelity result is claimed.
+
+Exact direct pins: Tiptap core/PM 3.31.3, citeproc 2.4.63 (CPAL 1.0), docx 9.8.1, Paged.js 0.4.3 and parse5 8.0.0. Fonts/styles/locales and the normal Paged browser bundle live in `resources/`; the builder copies only allowlisted resources. Help → Third-party licenses reveals notices and unmodified processor source. Preserve the required visible citeproc attribution when replacing the welcome screen. See the [license inventory](docs/licenses/stage-03.md).

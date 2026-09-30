@@ -45,8 +45,14 @@ A request such as “Please implement Stage 4 of the MVP implementation plan” 
 
 ## Commands and repository state
 
-Stages 1–2 implementation is complete and awaiting user testing under the standing policy above. Earlier macOS arm64 results in [docs/validation/stage-01.md](docs/validation/stage-01.md) and [D1](docs/decisions/D1-runtime-and-shell.md) are historical, not instructions to repeat them. Stage 2 has no assistant-run checks; its [record](docs/validation/stage-02.md), [D2](docs/decisions/D2-native-sqlite-and-worker.md) and [manual guide](docs/manual-testing/stage-02.md) are the current handoff. Native packaged behavior and real storage operations remain unverified.
+Stages 1–3 implementation is complete and awaiting user testing under the standing policy above. Earlier macOS arm64 results in [docs/validation/stage-01.md](docs/validation/stage-01.md) and [D1](docs/decisions/D1-runtime-and-shell.md) are historical, not instructions to repeat them. Stage 2 has no assistant-run checks; its [record](docs/validation/stage-02.md), [D2](docs/decisions/D2-native-sqlite-and-worker.md) and [manual guide](docs/manual-testing/stage-02.md) describe its handoff. Native packaged behavior and real storage operations remain unverified.
 
 Node 24.21.0, npm 11.19.0, Electron 44.5.0, electron-vite 5.0.0, builder 26.15.3 and better-sqlite3 13.0.3 remain pinned. Historical test scripts and dependencies remain for historical/user control; the product build path no longer includes `typecheck:tests`. Their presence does not authorize assistant use. Do not add the formerly proposed package/storage/export/benchmark/entitlement test commands. The former automatic native-check workflow is archived outside `.github/workflows/` and must not be re-enabled by the assistant.
 
 Use `rg` and ordinary file/Git reads when inspecting source or guidance. Edit only relevant files; do not run formatters or validation commands to verify the edits. Never use normal app data, saved user projects or the reference workspace for test activity. For user-owned verification, give safe manual actions and expected outcomes rather than scripts or agent-driven checks.
+
+## Stage 3 adapter checkpoint
+
+[Stage 3](docs/validation/stage-03.md) and its [manual guide](docs/manual-testing/stage-03.md) are the current handoff. Read [D3](docs/decisions/D3-editor-and-compilation.md), [D4](docs/decisions/D4-citations-and-licenses.md) and [D5](docs/decisions/D5-local-pdf-pagination.md) before adopting editor/compilation schema v1. Adapters are deliberately unmounted/unwired until their owning product stages; do not add test-only UI or probes. IME, clipboard, citation and DOCX/PDF fidelity/native results are unverified.
+
+Preserve citeproc CPAL initial-session attribution, same-media source and complete notices when changing the shell or packaging. Do not describe citeproc as MIT. Pinned APA 7/Chicago 18, en-US and OFL font assets have independent notices. Keep Paged.js selected with its explicit pending footnote gate and bounded Typst fallback decision; never silently substitute endnotes. Resource/version origins are in `resources/asset-manifest.json` and the lockfile.
