@@ -1,6 +1,8 @@
 # Stage 1 — Shell and test foundation
 
-September 29, 2026. **Status: partial — external checks pending.** Local implementation and macOS arm64 checkpoint pass. Native Intel Mac/Windows execution and human interactive checks remain pending; the stage is not globally complete.
+> **Workflow update — September 29, 2026 (P7):** This document records work performed before Josh prohibited assistant-written tests and assistant-performed testing. Its commands and results are historical, not instructions to repeat or maintain tests. Future work uses the [standing manual-testing policy](../../AGENTS.md) and user-owned guides. Existing test code stays untouched; native CI is archived outside the active workflow directory. No checks were run for this policy update.
+
+Current status under P7: **implementation complete — awaiting user testing**. Follow the [Stage 1 manual guide](../manual-testing/stage-01.md). The pre-P7 record below reported a passing local macOS arm64 checkpoint with native Intel Mac/Windows and human checks pending; those are historical observations, not new acceptance.
 
 ## Scope and review
 
@@ -57,7 +59,7 @@ Final commands run with Node 24.21.0 first on PATH (locally `PATH="$PWD/.tools/n
 
 Security coverage includes unknown commands without a handler, real same-origin iframe and separate-window senders, invalid URL schemes/credentials, traversal and encoded/backslash forms, symlinked assets/test roots, unexpected schema fields, million-character payloads, bounded response validation, inline-script CSP enforcement, production remote-fetch/Node-fetch/Electron-net rejection, blocked popups/navigation, sandboxed preload and absent renderer Node/environment/generic IPC globals. Network transport denial is exercised before any external request can be sent.
 
-The integration fixture deliberately permits child frames and exposes a hostile fixture preload to attack the IPC boundary independently. Actual desktop tests use production restrictions. Playwright's main-process evaluation is privileged test instrumentation, not a shipped renderer capability. `getLastWebPreferences` is an internal Electron accessor used only by the test; future runtime upgrades may require adapting that assertion.
+The integration fixture deliberately permits child frames and exposes a hostile fixture preload to attack the IPC boundary independently. Actual desktop tests use production restrictions. Playwright's main-process evaluation is privileged test instrumentation, not a shipped renderer capability. `getLastWebPreferences` is an internal Electron accessor used only by the test; future runtime upgrades must not maintain that historical assertion under P7.
 
 Initial harness failures were corrected: React JSX test transform, macOS `/var` realpath expectations, fixture preload path normalization, a frame test stopped by navigation protection, and a native menu invocation that needed a real keyboard shortcut. Electron's first binary download exceeded the initial test timeout; subsequent native runs passed. The initially selected Happy DOM version had an advisory; the final 20.14.5 pin clears it. No failing product check is hidden by a skipped assertion.
 
@@ -68,10 +70,10 @@ Initial harness failures were corrected: React JSX test transform, macOS `/var` 
 - Packaged desktop screenshot: `output/playwright/stage-01-shell.png`. Automated keyboard Tab→skip link→main focus, text selection and Cmd+A passed. Actual macOS close→activate→new window and app shutdown passed. Screenshots are ignored reproducible evidence, not included in packages.
 - React review: effect cancellation handles unmount/StrictMode, failures are bounded, error boundary works, semantic landmarks/status/focus and selectable text are present; no unnecessary fetching library, memoization or external resource is introduced.
 
-Pending human checks: full native-menu pointer operation and dialog confirmation, VoiceOver, high contrast and prolonged zoom/keyboard use. Windows 11 interactive close/menus and Intel/oldest-supported Mac execution are unavailable here. CI jobs are authored for `macos-15`, `macos-15-intel`, `windows-2025`; none was pushed/dispatched or observed passing. Windows Server CI will still need Windows 11 human QA.
+Pending human checks: full native-menu pointer operation and dialog confirmation, VoiceOver, high contrast and prolonged zoom/keyboard use. Windows 11 interactive close/menus and Intel/oldest-supported Mac execution are unavailable here. Historical CI jobs were authored for `macos-15`, `macos-15-intel`, `windows-2025`; none was dispatched in that implementation session, and P7 now archives/disables the workflow. Windows Server CI will still need Windows 11 human QA.
 
 ## Contracts, limits and handoff
 
 [D1](../decisions/D1-runtime-and-shell.md) specifies runtime pins, protocol/CSP development exceptions, profiles and packaging. No persistent project format exists and no migration is required. All new projects/destination-null/save/recovery behavior remains unimplemented. The current `.dev` preference root is not the future verified working-storage root. Native code rebuild policy remains a Stage 2 decision.
 
-Acceptance on the available host: shell without broad API, attack rejection, bundled assets, native CI definitions, removal of Linux/template permissions and protected test roots all pass. Overall stage remains **partial — external checks pending**, because native cross-platform claims require execution. The local checkpoint is sufficient to request Stage 2's local work. Stage 2 has **not** been started. No accounts, purchases, publication, deployments or remote CI runs were performed.
+Acceptance on the available host: shell without broad API, attack rejection, bundled assets, native CI definitions, removal of Linux/template permissions and protected test roots all pass. That pre-P7 validation status was **partial — external checks pending**. Current status is **implementation complete — awaiting user testing**; the manual guide now controls the handoff and the assistant waits for user feedback before further stages. Native cross-platform acceptance remains pending. Stage 2 has **not** been started. No accounts, purchases, publication, deployments or remote CI runs were performed.

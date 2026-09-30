@@ -1,5 +1,7 @@
 # D1 — Runtime and shell foundation
 
+> **Workflow update — September 29, 2026 (P7):** This document records work performed before Josh prohibited assistant-written tests and assistant-performed testing. Its commands and results are historical, not instructions to repeat or maintain tests. Future work uses the [standing manual-testing policy](../../AGENTS.md) and user-owned guides. Existing test code stays untouched; native CI is archived outside the active workflow directory. No checks were run for this policy update.
+
 Accepted for the local Stage 1 checkpoint, September 29, 2026. Native Windows and Intel Mac results remain pending. See [validation](../validation/stage-01.md).
 
 ## Runtime choice
