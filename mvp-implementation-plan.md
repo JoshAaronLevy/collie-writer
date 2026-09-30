@@ -352,6 +352,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 1 — Harden the existing shell and establish checks
 
+#### Model: Astra | Effort: Extra High
+
 **1. Outcome and demonstration:** A developer launches a minimal Collie shell with native menus and a verified narrow bridge; malicious renderer requests cannot access files or environment variables.
 
 **2. Prerequisites:** Existing scaffold and this plan; no product answer or commercial credential required. Read actual Git state before changing files.
@@ -379,6 +381,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 **10. Completion record:** [Stage 1 record](docs/validation/stage-01.md): implementation complete — awaiting user testing under P7. Earlier unsigned macOS arm64 results are historical. [Current manual guide](docs/manual-testing/stage-01.md). [D1](docs/decisions/D1-runtime-and-shell.md) records pins, protocol/CSP exceptions, profile/package boundaries and limitations. Stopped before Stage 2.
 
 ### Stage 2 — Prove native SQLite in actual packages
+
+#### Model: Sol | Effort: High
 
 **1. Outcome and demonstration:** An unpacked/installed developer build starts its utility process, writes a synthetic database, performs FTS search and creates/reopens a consistent backup without system Node or development dependencies.
 
@@ -408,6 +412,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 3 — Prove the editor, citation and export subset
 
+#### Model: Astra | Effort: High
+
 **1. Outcome and demonstration:** A synthetic manuscript renders in the candidate editor and produces inspectable DOCX/PDF with real citations and page footnotes. The developer can state the exact supported nodes and redistribution obligations before building the workflow.
 
 **2. Prerequisites:** Stage 1; Stage 2 package target for final packaged checks. The selected editor/citation/export subset in Section 1 applies. No real manuscript, live model or hosted converter.
@@ -435,6 +441,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 **10. Completion record:** `docs/validation/stage-03.md`, D3–D5 and dependency/asset pins; include golden outputs, visual findings, selected fallback if any, open limits and shared fields. Do not leave an unowned choice of editor/export engine for later stages.
 
 ### Stage 4 — Durable working projects and migrations
+
+#### Model: Astra | Effort: High
 
 **1. Outcome and demonstration:** Create two isolated untitled projects, commit synthetic document data, restart and recover acknowledged revisions while rejecting stale or duplicate conflicting commands.
 
@@ -464,6 +472,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 5 — Portable snapshot codec and large-library proof
 
+#### Model: Astra | Effort: Extra High
+
 **1. Outcome and demonstration:** Save a synthetic working project into a self-contained `.collie` archive and open it into a clean isolated workspace with identical content and attachments.
 
 **2. Prerequisites:** Stage 4 transactions/migrations and native driver backup proof. This stage writes only fixture paths, not native user destinations.
@@ -491,6 +501,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 **10. Completion record:** `docs/validation/stage-05.md`, format v1 specification and D6; include machine/filesystem/fixture sizes, peak space, chosen limits, timing distributions and all shared fields. Unmet format budgets block consumers until a documented fix/decision.
 
 ### Stage 6 — Native Save/Open, chosen locations and conflicts
+
+#### Model: Astra | Effort: Extra High
 
 **1. Outcome and demonstration:** Create projects A/B, choose different first-save destinations, cancel another first Save, open an archive, and preserve both histories when another copy changes externally.
 
@@ -520,6 +532,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 7 — Recovery, backups and complete project lifecycle
 
+#### Model: Astra | Effort: High
+
 **1. Outcome and demonstration:** Recover an unsaved project after force quit, create/restore a complete backup into a new project, and move/duplicate/archive a project without losing the original.
 
 **2. Prerequisites:** Stage 6 save/open lineage and archive validator.
@@ -547,6 +561,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 **10. Completion record:** `docs/validation/stage-07.md`, recovery user flow/retention decisions and shared fields; document unavoidable loss after deletion of local recovery and all still-pending installed-app checks.
 
 ### Stage 8 — Offline writing, templates and stable anchors
+
+#### Model: Sol | Effort: High
 
 **1. Outcome and demonstration:** Start any of five templates, write offline with the supported rich formatting, insert images/tables/annotations anchors, and reopen the same content with honest save state.
 
@@ -576,6 +592,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 9 — Outline transformations and revision history
 
+#### Model: Astra | Effort: High
+
 **1. Outcome and demonstration:** Reorder/move/split/merge sections and restore an earlier human checkpoint while keeping citations, block anchors and later work intact.
 
 **2. Prerequisites:** Stages 7–8 storage/lifecycle/AST contracts.
@@ -604,6 +622,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 10 — Notes, inbox and annotations
 
+#### Model: Sol | Effort: Medium
+
 **1. Outcome and demonstration:** Capture an idea without AI, edit/tag it, connect it to sections, annotate a passage and restore a deleted note.
 
 **2. Prerequisites:** Stages 8–9 editor/anchor/history behavior.
@@ -630,6 +650,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 **10. Completion record:** `docs/validation/stage-10.md`, note schema/annotation mapping rules and shared fields; include fixture counts and manual navigation results.
 
 ### Stage 11 — Canonical sources and bibliographic interchange
+
+#### Model: Sol | Effort: High
 
 **1. Outcome and demonstration:** Enter/import references, attach local originals, resolve duplicates deliberately, and export a usable CSL JSON/BibTeX/RIS library offline.
 
@@ -659,6 +681,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 12 — PDF inspection, excerpts and safe reimport
 
+#### Model: Sol | Effort: High
+
 **1. Outcome and demonstration:** Inspect a local PDF beside a draft, capture a page-linked excerpt, and reimport a changed source without losing prior quotations or annotations.
 
 **2. Prerequisites:** Stage 11 sources/attachments and Stage 10 annotation model.
@@ -686,6 +710,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 **10. Completion record:** `docs/validation/stage-12.md`, extractor/version limits, fixture licenses and visual navigation results plus shared fields. Record which documents cannot yield reliable text; do not claim OCR.
 
 ### Stage 13 — Claims, research questions and evidence relationships
+
+#### Model: Sol | Effort: Medium
 
 **1. Outcome and demonstration:** Connect one source to three sections, link supporting/challenging excerpts to a claim, reject a source for one question and restore that decision without changing other uses.
 
@@ -715,6 +741,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 14 — Local full-text search and indexing activity
 
+#### Model: Sol | Effort: High
+
 **1. Outcome and demonstration:** Find a phrase across drafts, notes, source metadata, claims and extracted pages, navigate to its original location, and see which sources remain unindexed.
 
 **2. Prerequisites:** Stages 12–13 normalized extraction and evidence entities.
@@ -742,6 +770,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 **10. Completion record:** `docs/validation/stage-14.md`, index version/rebuild rules, corpus/timing evidence and shared fields; document language tokenization limitations.
 
 ### Stage 15 — Citations, footnotes and bibliography integrity
+
+#### Model: Astra | Effort: High
 
 **1. Outcome and demonstration:** Insert manual citation clusters/locators and author footnotes, change the supported style, reorder sections and obtain correct renumbered notes and bibliography without AI.
 
@@ -771,6 +801,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 16 — Immutable compilation and dependable DOCX
 
+#### Model: Sol | Effort: High
+
 **1. Outcome and demonstration:** Select chapters/order and a standard manuscript preset, preview a compilation summary, and produce editable DOCX containing all supported writing, notes and references.
 
 **2. Prerequisites:** Stages 9 and 15 plus Stage 3 DOCX adapter proof.
@@ -798,6 +830,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 **10. Completion record:** `docs/validation/stage-16.md`, compile model version/presets, golden artifacts and viewer versions, failure results and shared fields. Missing Word/native checks keep fidelity gate pending.
 
 ### Stage 17 — PDF/text outputs and reusable compilation
+
+#### Model: Sol | Effort: High
 
 **1. Outcome and demonstration:** Export the same frozen manuscript to PDF, Markdown and plain text; save a reusable compilation recipe and run a multi-format batch with per-file results.
 
@@ -827,6 +861,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 18 — Untimed free capabilities and safe entitlement changes
 
+#### Model: Astra | Effort: High
+
 **1. Outcome and demonstration:** Use one designated project indefinitely, switch designation explicitly, unlock unlimited editing through a synthetic signed grant, then expire it while keeping all work readable/exportable/recoverable.
 
 **2. Prerequisites:** Stages 7 and 17; The approved capability matrix and permanent no-ads rule apply. No real checkout or provider account required.
@@ -855,6 +891,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 19 — Onboarding, accessibility and privacy controls
 
+#### Model: Sol | Effort: High
+
 **1. Outcome and demonstration:** A new user completes template→write→first Save→source/excerpt→citation→export unaided, using keyboard and screen reader, and can locate or back up local recovery.
 
 **2. Prerequisites:** Stages 14, 17 and 18 coherent local workflow.
@@ -882,6 +920,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 **10. Completion record:** `docs/validation/stage-19.md`, accessibility matrix, privacy/file inventory, tutorial feedback and shared fields; list unresolved accessibility issues with severity and release effect.
 
 ### Stage 20 — Direct checkout, signed activation and restore
+
+#### Model: Astra | Effort: High
 
 **1. Outcome and demonstration:** Through a configured test merchant flow, buy monthly/lifetime nonfiction, activate/restore on Mac and Windows, cancel/refund and observe the correct cached entitlement without sending project data.
 
@@ -912,6 +952,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 21 — Signed direct installers and secure updates
 
+#### Model: Sol | Effort: High
+
 **1. Outcome and demonstration:** Install a signed Mac/Windows direct build on clean machines, update to a signed newer build, reopen a project and recover safely from interrupted installation/migration.
 
 **2. Prerequisites:** Stages 2, 7, 19 and Stage 20 local entitlement contract. Verified legal signing identity, production identifier/namespace checks and Apple/Windows signing credentials and native test environments are required for actual signed results; full Stage 20 is required for paid release.
@@ -940,6 +982,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 
 ### Stage 22 — Independently gated app-store channels
 
+#### Model: Astra | Effort: High
+
 **1. Outcome and demonstration:** Prepare each store variant, verify its actual sandbox/file/purchase/update behavior and identify exactly what remains for that channel's review. Direct launch can proceed without this stage's completion.
 
 **2. Prerequisites:** Stages 18–19 and Stage 21 local release architecture. Use the confirmed product name, United States launch scope and selected identifier; registration still needs verified legal seller/account details. Promise only each channel's proven restore behavior; cross-store portability remains deferred. Store accounts/certificates/products/native testing/review are external dependencies.
@@ -967,6 +1011,8 @@ The stage record captures changed paths, implementation decisions, migrations, l
 **10. Completion record:** `docs/validation/stage-22.md`, one status per channel, effective policy dates, D8 and selected purchase-portability behavior plus shared fields. A pending review may leave this stage partial without invalidating Stage 23's direct readiness.
 
 ### Stage 23 — Beta evidence and direct release readiness
+
+#### Model: Astra | Effort: High
 
 **1. Outcome and demonstration:** A target writer independently completes the entire offline connected workflow on a signed clean-install build, exports usable documents and restores a complete project on another supported computer.
 
