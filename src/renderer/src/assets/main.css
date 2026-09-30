@@ -76,6 +76,19 @@ h1 {
 .storage-panel p {
   margin-bottom: 0;
 }
+.project-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1rem 0; }
+.working-location { border: 1px solid #cbd4c8; padding: 1rem; border-radius: 0.5rem; }
+.location-path { overflow-wrap: anywhere; }
+.project-list { list-style: none; padding: 0; display: grid; gap: 0.5rem; }
+.project-list button { width: 100%; text-align: left; }
+.project-list small { display: block; }
+.project-list [aria-current='true'] { border: 2px solid #397a53; background: #edf4ed; }
+.project-id { color: #526357; margin-left: 0.5rem; }
+.draft-panel { margin-top: 2rem; }
+.draft-panel label { display: block; font-weight: 650; margin-bottom: 0.5rem; }
+.draft-panel textarea { box-sizing: border-box; width: 100%; min-height: 320px; resize: vertical; padding: 1rem; border: 1px solid #526357; border-radius: 0.4rem; font: 1rem/1.6 Georgia, serif; color: #24382d; background: white; }
+.project-error { border-left: 4px solid #a6342b; padding: 0.75rem; background: #fff1ec; }
+button:disabled { opacity: 0.6; cursor: default; }
 .citation-attribution {
   margin-top: 2rem;
   padding-top: 1rem;

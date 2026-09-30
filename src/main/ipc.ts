@@ -5,7 +5,7 @@ import { isAppInfo, isInfoRequest } from '../shared/schemas'
 import { trustedDocument } from './security'
 
 export function isTrustedSender(
-  event: IpcMainInvokeEvent,
+  event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>,
   owner: WebContents | undefined,
   devOrigin?: string
 ): boolean {

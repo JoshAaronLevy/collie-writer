@@ -1,4 +1,5 @@
 import type { StorageStatus } from './storage'
+import type { ProjectAPI } from './projects'
 
 export const GET_INFO = 'app.getInfo'
 export const GET_STORAGE_STATUS = 'storage.getStatus'
@@ -19,7 +20,7 @@ export type Result<T> =
       requestId: string
       error: { code: AppErrorCode; message: string; retryable: boolean }
     }
-export type CollieAPI = {
+export type CollieAPI = ProjectAPI & {
   getInfo: () => Promise<Result<AppInfo>>
   getStorageStatus: () => Promise<Result<StorageStatus>>
   onStorageStatus: (callback: (status: StorageStatus) => void) => () => void

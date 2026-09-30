@@ -51,6 +51,7 @@ export function openStorageDatabase(filename: string, nativeBinding?: string): D
     const journal = database.pragma('journal_mode = WAL', { simple: true })
     if (journal !== 'wal') throw new Error('SQLite WAL is unavailable')
     database.pragma('synchronous = FULL')
+    if (process.platform === 'darwin') database.pragma('fullfsync = ON')
     if (database.pragma('foreign_keys', { simple: true }) !== 1)
       throw new Error('SQLite foreign keys are unavailable')
     if (database.pragma('synchronous', { simple: true }) !== 2)

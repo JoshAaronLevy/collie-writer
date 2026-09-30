@@ -24,7 +24,7 @@ export function installMenu(testMode: boolean): void {
       type: 'info',
       title: 'About Collie Writer',
       message: 'Collie Writer',
-      detail: `Development build ${app.getVersion()}\n\nA workspace for research and writing.\nThis development shell does not yet create or save projects.`
+      detail: `Development build ${app.getVersion()}\n\nA workspace for research and writing.\nBlank projects and local draft recovery are available. Saving portable project files arrives in a later stage.`
     })
   }
   const template: MenuItemConstructorOptions[] = [
@@ -90,7 +90,7 @@ export function installMenu(testMode: boolean): void {
               title: 'Privacy and data',
               message: 'Your writing belongs to you.',
               detail:
-                'Collie Writer is ad-free. This shell has no project storage, analytics, purchase service or automatic update connection.'
+                'Collie Writer is ad-free. Working projects and recovery stay in the local folder shown in the project screen. Local recovery is not a saved project file or cloud upload. There is no analytics, purchase service or automatic update connection.'
             })
           }
         }

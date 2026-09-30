@@ -7,9 +7,26 @@ import {
 } from '../shared/commands'
 import { isInfoResult, isStorageResult } from '../shared/schemas'
 import { isStorageStatus } from '../shared/storage'
+import { DIRTY_CHANGED, PROJECT_CHANNELS, isLocation, isProjectResult, isProjectValue, projectFailure, type ProjectResult, type LocationStatus, type ProjectList, type OpenProject, type CommitReceipt } from '../shared/projects'
+
+async function projectCall<T>(channel: string, validate: (value: unknown) => boolean, input?: unknown): Promise<ProjectResult<T>> {
+  const requestId = crypto.randomUUID()
+  try {
+    const result: unknown = await ipcRenderer.invoke(channel, input === undefined ? { requestId } : { requestId, input })
+    if (isProjectResult<T>(result, requestId, validate)) return result
+  } catch { /* Preserve the operation ID at the caller; a transport error does not prove rollback. */ }
+  return projectFailure(requestId, 'UNAVAILABLE')
+}
 
 if (!process.contextIsolated || !process.sandboxed) throw new Error('Secure preload required')
 const api: CollieAPI = {
+  getWorkingLocation: () => projectCall<LocationStatus>(PROJECT_CHANNELS.location, isLocation),
+  chooseWorkingLocation: () => projectCall<LocationStatus>(PROJECT_CHANNELS.chooseLocation, isLocation),
+  listProjects: () => projectCall<ProjectList>(PROJECT_CHANNELS.list, value => isProjectValue('list', value)),
+  createProject: input => projectCall<OpenProject>(PROJECT_CHANNELS.create, value => isProjectValue('create', value), input),
+  openProject: input => projectCall<OpenProject>(PROJECT_CHANNELS.open, value => isProjectValue('open', value), input),
+  commitDocument: input => projectCall<CommitReceipt>(PROJECT_CHANNELS.commit, value => isProjectValue('commit', value), input),
+  setUnprotectedChanges: dirty => { if (typeof dirty === 'boolean') ipcRenderer.send(DIRTY_CHANGED, dirty) },
   getInfo: async () => {
     const requestId = crypto.randomUUID()
     try {
