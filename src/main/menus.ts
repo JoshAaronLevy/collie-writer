@@ -18,13 +18,13 @@ export async function confirmExternalLink(raw: unknown, testMode: boolean): Prom
   })
   if (choice.response === 1) await shell.openExternal(url)
 }
-export function installMenu(testMode: boolean): void {
+export function installMenu(testMode: boolean, fileAction: (kind: 'save' | 'save-as' | 'open') => void): void {
   const about = (): void => {
     void dialog.showMessageBox({
       type: 'info',
       title: 'About Collie Writer',
       message: 'Collie Writer',
-      detail: `Development build ${app.getVersion()}\n\nA workspace for research and writing.\nBlank projects and local draft recovery are available. Saving portable project files arrives in a later stage.`
+      detail: `Development build ${app.getVersion()}\n\nA workspace for research and writing.\nLocal draft recovery and portable project Save/Open are available. Cloud upload is managed by your chosen storage provider.`
     })
   }
   const template: MenuItemConstructorOptions[] = [
@@ -49,6 +49,10 @@ export function installMenu(testMode: boolean): void {
     {
       label: 'File',
       submenu: [
+        { label: 'Open project file…', accelerator: 'CmdOrCtrl+O', click: () => fileAction('open') },
+        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => fileAction('save') },
+        { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => fileAction('save-as') },
+        { type: 'separator' },
         { role: 'close' },
         ...(process.platform === 'darwin' ? [] : [{ role: 'quit' } as MenuItemConstructorOptions])
       ]

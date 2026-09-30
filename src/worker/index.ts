@@ -5,10 +5,13 @@ import { isProjectCommand, projectFailure, type ProjectValue, type ProjectResult
 import { isId } from '../domain/editor/schema'
 import { projectError } from '../domain/projects/errors'
 import { isAbsolute } from 'node:path'
+import { isFileCommand } from '../shared/file-worker'
+import { ProjectFiles } from './projects/project-files'
 
 const parent = process.parentPort
 let initialized = false
 let repository: ProjectRepository | undefined
+let files: ProjectFiles | undefined
 let queue = Promise.resolve()
 
 function send(message: StorageWorkerMessage): void {
@@ -18,14 +21,28 @@ function send(message: StorageWorkerMessage): void {
 async function receive(message: unknown): Promise<void> {
   if (typeof message !== 'object' || message === null || !('kind' in message)) return
   if (message.kind === 'shutdown' && Object.keys(message).length === 1) {
+    await files?.stop()
     await repository?.close()
     process.exit(0)
+  }
+  if (message.kind === 'file' && Object.keys(message).length === 3 && 'requestId' in message && isId(message.requestId) && 'command' in message && isFileCommand(message.command)) {
+    try {
+      if (!files) throw new Error('UNAVAILABLE')
+      const value = await files.command(message.command)
+      parent.postMessage({ kind: 'file-result', result: { ok: true, requestId: message.requestId, value } })
+      if (value.job?.state === 'awaiting-consent') {
+        const challenge = files.consentChallenge(value.job.id)
+        if (challenge) parent.postMessage({ kind: 'file-consent', id: value.job.id, challenge })
+      }
+    } catch (error) { parent.postMessage({ kind: 'file-result', result: projectFailure(message.requestId, projectError(error)) }) }
+    return
   }
   if (message.kind === 'project' && Object.keys(message).length === 3 && 'requestId' in message && isId(message.requestId) && 'command' in message && isProjectCommand(message.command)) {
     let result: ProjectResult<ProjectValue>
     try {
       if (!repository) { parent.postMessage({ kind: 'project-result', result: projectFailure(message.requestId, 'STORAGE_LOCATION_REQUIRED') }); return }
       const command = message.command
+      if (command.kind === 'open' || command.kind === 'create') files?.beforeProjectChange()
       const value = command.kind === 'list' ? await repository.list() : command.kind === 'create' ? await repository.create(command.input) : command.kind === 'open' ? await repository.open(command.input) : await repository.commit(command.input)
       result = { ok: true, requestId: message.requestId, value }
     } catch (error) { result = projectFailure(message.requestId, projectError(error)) }
@@ -49,6 +66,14 @@ async function receive(message: unknown): Promise<void> {
     if (typeof message.workingRoot === 'string') {
       repository = new ProjectRepository(message.workingRoot, message.resources, binding ?? undefined)
       await repository.initialize()
+      files = new ProjectFiles(message.workingRoot, repository, status => {
+        parent.postMessage({ kind: 'file-changed', status })
+        if (status.job?.state === 'awaiting-consent') {
+          const challenge = files?.consentChallenge(status.job.id)
+          if (challenge) parent.postMessage({ kind: 'file-consent', id: status.job.id, challenge })
+        }
+      }, binding ?? undefined)
+      await files.initialize()
     }
     send({
       kind: 'ready',
@@ -61,6 +86,7 @@ async function receive(message: unknown): Promise<void> {
       }
     })
   } catch {
+    await files?.stop()
     await repository?.close()
     repository = undefined
     send({ kind: 'unavailable' })

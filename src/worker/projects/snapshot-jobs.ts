@@ -28,6 +28,7 @@ export class SnapshotJobs {
   private task: Promise<void> | undefined
   private stopping = false
   private controls: Promise<unknown> = Promise.resolve()
+  private listeners = new Set<(job: SnapshotProgress) => void>()
   constructor(private readonly source: CaptureSource, private readonly resources: string, private readonly boundary: Boundary, private readonly changed: (job: SnapshotProgress) => void = () => {}) {}
   private control<T>(work: () => Promise<T>): Promise<T> {
     const task = this.controls.then(work); this.controls = task.catch(() => {}); return task
@@ -35,7 +36,22 @@ export class SnapshotJobs {
   private folder(id: string): string { return join(this.source.workspace, 'snapshots', id) }
   private async persist(job: SnapshotJob): Promise<void> { await writeJson(join(this.folder(job.id), 'job.json'), job) }
   private emit(job: SnapshotJob): void {
-    try { this.changed({ id: job.id, state: job.state, phase: job.phase, bytesProcessed: job.bytesProcessed, capturedHead: job.capturedHead }) } catch { /* A subscriber cannot alter durable job state. */ }
+    const progress = { id: job.id, state: job.state, phase: job.phase, bytesProcessed: job.bytesProcessed, capturedHead: job.capturedHead }
+    for (const listener of [this.changed, ...this.listeners]) try { listener(progress) } catch { /* Subscribers cannot alter durable job state. */ }
+  }
+  subscribe(listener: (job: SnapshotProgress) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  async finish(id: string, signal: AbortSignal): Promise<SnapshotJob> {
+    // The task must settle (including journal errors), not merely emit a completion event.
+    const abort = (): void => { void this.cancel(id).catch(() => {}) }
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      if (signal.aborted) abort()
+      while (this.busy() && this.task) await this.task
+      const job = this.jobs.get(id)
+      if (!job) throw new SnapshotError('UNAVAILABLE')
+      if (job.state !== 'completed') throw new SnapshotError(job.error ?? 'UNAVAILABLE')
+      return structuredClone(job)
+    } finally { signal.removeEventListener('abort', abort) }
   }
   busy(): boolean { return !!this.active || this.pending.length > 0 }
   statuses(): SnapshotJob[] { return [...this.jobs.values()].map(job => structuredClone(job)) }

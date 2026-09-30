@@ -8,6 +8,7 @@ import {
 import { isInfoResult, isStorageResult } from '../shared/schemas'
 import { isStorageStatus } from '../shared/storage'
 import { DIRTY_CHANGED, PROJECT_CHANNELS, isLocation, isProjectResult, isProjectValue, projectFailure, type ProjectResult, type LocationStatus, type ProjectList, type OpenProject, type CommitReceipt } from '../shared/projects'
+import { CLOSE_REPLY, FILE_ACTION, FILE_CHANGED, FILE_CHANNELS, isFileAction, isFileStatus, isSelection, type FileStatus, type FileSelection } from '../shared/project-files'
 
 async function projectCall<T>(channel: string, validate: (value: unknown) => boolean, input?: unknown): Promise<ProjectResult<T>> {
   const requestId = crypto.randomUUID()
@@ -20,6 +21,24 @@ async function projectCall<T>(channel: string, validate: (value: unknown) => boo
 
 if (!process.contextIsolated || !process.sandboxed) throw new Error('Secure preload required')
 const api: CollieAPI = {
+  pickProjectFile: input => projectCall<FileSelection | null>(FILE_CHANNELS.pick, isSelection, input),
+  saveProjectFile: input => projectCall<FileStatus>(FILE_CHANNELS.save, isFileStatus, input),
+  openProjectFile: input => projectCall<FileStatus>(FILE_CHANNELS.open, isFileStatus, input),
+  locateProjectFile: input => projectCall<FileStatus>(FILE_CHANNELS.locate, isFileStatus, input),
+  inspectProjectFile: input => projectCall<FileStatus>(FILE_CHANNELS.inspect, isFileStatus, input),
+  getProjectFileStatus: scope => projectCall<FileStatus>(FILE_CHANNELS.status, isFileStatus, scope),
+  cancelFileJob: id => projectCall<FileStatus>(FILE_CHANNELS.cancel, isFileStatus, id),
+  answerFileJob: input => projectCall<FileStatus>(FILE_CHANNELS.answer, isFileStatus, input),
+  confirmFileOverwrite: id => projectCall<FileStatus>(FILE_CHANNELS.consent, isFileStatus, id),
+  onFileStatus: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => { if (isFileStatus(value)) callback(value) }
+    ipcRenderer.on(FILE_CHANGED, listener); return () => ipcRenderer.removeListener(FILE_CHANGED, listener)
+  },
+  onFileAction: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => { if (isFileAction(value)) callback(value) }
+    ipcRenderer.on(FILE_ACTION, listener); return () => ipcRenderer.removeListener(FILE_ACTION, listener)
+  },
+  finishClose: (id, outcome) => ipcRenderer.send(CLOSE_REPLY, { id, outcome }),
   getWorkingLocation: () => projectCall<LocationStatus>(PROJECT_CHANNELS.location, isLocation),
   chooseWorkingLocation: () => projectCall<LocationStatus>(PROJECT_CHANNELS.chooseLocation, isLocation),
   listProjects: () => projectCall<ProjectList>(PROJECT_CHANNELS.list, value => isProjectValue('list', value)),

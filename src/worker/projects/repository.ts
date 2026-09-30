@@ -12,6 +12,7 @@ import { createProjectSchema, validateProjectSchema, inspectVersion } from '../s
 import { openProjectDatabase } from '../storage/migrations'
 import { SnapshotJobs, type SnapshotRequest, type SnapshotJob } from './snapshot-jobs'
 import { SnapshotError } from './manifest'
+import { destinationView, readDestination, writeDestination, type SavedLocation } from './file-state'
 
 const catalogSchema = [
   'CREATE TABLE creation_intents (operation_id TEXT PRIMARY KEY, digest TEXT NOT NULL, project_id TEXT NOT NULL UNIQUE, workspace_id TEXT NOT NULL UNIQUE) STRICT',
@@ -21,13 +22,14 @@ const operationsSchema = [
   'CREATE TABLE jobs (id TEXT PRIMARY KEY, operation_id TEXT NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL, result TEXT) STRICT',
   'CREATE TABLE delivery (operation_id TEXT PRIMARY KEY, state TEXT NOT NULL) STRICT'
 ]
-type Owned = { projectId: string; workspaceId: string; workspace: string; db: Database.Database; operations: Database.Database; lock: Database.Database; snapshots?: SnapshotJobs }
+type Owned = { projectId: string; workspaceId: string; workspace: string; db: Database.Database; operations: Database.Database; lock: Database.Database; destination: SavedLocation | null; snapshots?: SnapshotJobs }
 async function exists(path: string): Promise<boolean> { try { await lstat(path); return true } catch (e) { if (e && typeof e === 'object' && 'code' in e && e.code === 'ENOENT') return false; throw e } }
 
 export class ProjectRepository {
   private catalog!: Database.Database
   private active: Owned | undefined
   private boundary: Promise<unknown> = Promise.resolve()
+  private fileBusy = false
   constructor(private readonly root: string, private readonly resources: string, private readonly nativeBinding?: string) {}
   private serial<T>(work: () => Promise<T>): Promise<T> {
     const task = this.boundary.then(work)
@@ -38,12 +40,34 @@ export class ProjectRepository {
   create(input: CreateInput): Promise<OpenProject> { return this.serial(() => this.createUnlocked(input)) }
   list(): Promise<ProjectList> { return this.serial(() => this.listUnlocked()) }
   commit(input: CommitInput): Promise<CommitReceipt> { return this.serial(() => this.commitUnlocked(input)) }
-  /** Trusted worker services only. Stage 6 must provide grants/UI before exposing archive commands. */
+  holdFiles(value: boolean): void { this.fileBusy = value }
+  fileContext(input: OpenInput): { workspace: string; destination: SavedLocation | null; head: string } {
+    const owned = this.active
+    if (!owned || owned.projectId !== input.projectId || owned.workspaceId !== input.workspaceId) throw new ProjectError('DENIED')
+    return { workspace: owned.workspace, destination: owned.destination, head: this.read(owned).headCommitId }
+  }
+  acknowledgeFile(input: OpenInput, destination: SavedLocation): Promise<void> {
+    return this.serial(async () => {
+      const context = this.fileContext(input)
+      await writeDestination(context.workspace, destination)
+      this.active!.destination = destination
+    })
+  }
+  async knownProject(projectId: string): Promise<OpenInput | null> {
+    if (!isId(projectId)) throw new ProjectError('VALIDATION')
+    const folder = join(this.root, 'workspaces', projectId)
+    if (!await exists(folder)) return null
+    await contained(this.root, folder, true)
+    const workspaces = (await readdir(folder)).filter(isId)
+    if (workspaces.length !== 1) throw new ProjectError('CORRUPT_PROJECT')
+    return { projectId, workspaceId: workspaces[0] }
+  }
+  /** Trusted worker services only; the renderer cannot supply paths. */
   queueSnapshot(input: OpenInput, request: SnapshotRequest): Promise<SnapshotJob> {
     return this.serial(async () => {
       const jobs = this.snapshotJobs(input)
-      const destination = this.catalog.prepare('SELECT base_snapshot_id FROM destinations WHERE project_id=?').get(input.projectId) as { base_snapshot_id: string | null } | undefined
-      if (!destination || request.parentSnapshotId !== destination.base_snapshot_id) throw new SnapshotError('STALE_REVISION')
+      const destination = this.fileContext(input).destination
+      if (request.parentSnapshotId !== (destination?.snapshotId ?? null)) throw new SnapshotError('STALE_REVISION')
       return jobs.enqueue(request)
     })
   }
@@ -103,7 +127,7 @@ export class ProjectRepository {
     if (!project[0].title.length || project[0].title.length > 500 || !Number.isFinite(Date.parse(project[0].updated_at))) throw new ProjectError('CORRUPT_PROJECT')
     let payload: DocumentPayload
     try { payload = readDocument(JSON.parse(documents[0].payload)) } catch { throw new ProjectError('CORRUPT_PROJECT') }
-    return { projectId: owned.projectId, workspaceId: owned.workspaceId, title: project[0].title, headCommitId: project[0].head_commit_id, updatedAt: project[0].updated_at, destination: null, documentId: documents[0].id, revisionId: documents[0].revision_id, payload }
+    return { projectId: owned.projectId, workspaceId: owned.workspaceId, title: project[0].title, headCommitId: project[0].head_commit_id, updatedAt: project[0].updated_at, destination: destinationView(owned.destination), documentId: documents[0].id, revisionId: documents[0].revision_id, payload }
   }
   private async discovery(owned: Owned): Promise<void> {
     const p = this.read(owned)
@@ -123,7 +147,7 @@ export class ProjectRepository {
       operations = await this.localDatabase(join(workspace, 'operations.sqlite'), operationsSchema)
       // No job is silently replayed after interruption.
       operations.prepare("UPDATE jobs SET state='interrupted' WHERE state IN ('queued','running','cancelling')").run()
-      const owned: Owned = { ...input, workspace, db, operations, lock }
+      const owned: Owned = { ...input, workspace, db, operations, lock, destination: await readDestination(this.root, workspace) }
       this.read(owned)
       this.catalog.prepare('INSERT OR IGNORE INTO destinations VALUES (?,NULL,NULL,NULL)').run(input.projectId)
       await this.discovery(owned)
@@ -134,7 +158,7 @@ export class ProjectRepository {
   }
   private async openUnlocked(input: OpenInput): Promise<OpenProject> {
     if (this.active?.projectId === input.projectId && this.active.workspaceId === input.workspaceId) return this.read(this.active)
-    if (this.active?.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
+    if (this.fileBusy || this.active?.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
     const next = await this.acquire(input)
     if (this.active) this.release(this.active)
     this.active = next
@@ -156,7 +180,7 @@ export class ProjectRepository {
         else owned = await this.acquire({ projectId, workspaceId: workspaces[0] })
         try {
           const p = this.read(owned)
-          const summary: ProjectSummary = { projectId, workspaceId: p.workspaceId, title: p.title, headCommitId: p.headCommitId, updatedAt: p.updatedAt, destination: null }
+          const summary: ProjectSummary = { projectId, workspaceId: p.workspaceId, title: p.title, headCommitId: p.headCommitId, updatedAt: p.updatedAt, destination: p.destination }
           result.projects.push(summary)
         } finally { if (!active) this.release(owned) }
       } catch (error) { result.issues.push({ projectId, code: projectError(error) }) }
@@ -165,7 +189,7 @@ export class ProjectRepository {
     return result
   }
   private async createUnlocked(input: CreateInput): Promise<OpenProject> {
-    if (this.active?.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
+    if (this.fileBusy || this.active?.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
     const digest = requestDigest(input)
     // Commit a local intent before touching the workspace. Retrying the same request uses the same IDs.
     const intent = inWriteTransaction(this.catalog, () => {

@@ -4,7 +4,7 @@ export const PROJECT_CHANNELS = {
   location: 'projects.location', chooseLocation: 'projects.chooseLocation',
   list: 'projects.list', create: 'projects.create', open: 'projects.open', commit: 'document.commit'
 } as const
-export type ProjectCode = 'VALIDATION' | 'DENIED' | 'UNAVAILABLE' | 'STORAGE_LOCATION_REQUIRED' | 'PROJECT_LOCKED' | 'STALE_REVISION' | 'OPERATION_CONFLICT' | 'DISK_FULL' | 'FORMAT_TOO_NEW' | 'CORRUPT_PROJECT' | 'MIGRATION_FAILED' | 'NOT_FOUND'
+export type ProjectCode = 'VALIDATION' | 'DENIED' | 'UNAVAILABLE' | 'STORAGE_LOCATION_REQUIRED' | 'PROJECT_LOCKED' | 'STALE_REVISION' | 'OPERATION_CONFLICT' | 'DISK_FULL' | 'FORMAT_TOO_NEW' | 'CORRUPT_PROJECT' | 'MIGRATION_FAILED' | 'NOT_FOUND' | 'CANCELLED' | 'EXTERNAL_CHANGE' | 'DESTINATION_UNAVAILABLE' | 'UNSAFE_DESTINATION' | 'JOB_INTERRUPTED' | 'INVALID_ARCHIVE' | 'LIMIT_EXCEEDED'
 export const projectMessages: Record<ProjectCode, string> = {
   VALIDATION: 'This document or request is not supported. Your current text has been kept.',
   DENIED: 'Access to local storage was denied. Your current text has been kept.',
@@ -17,11 +17,19 @@ export const projectMessages: Record<ProjectCode, string> = {
   FORMAT_TOO_NEW: 'This project needs a newer Collie Writer. Its files have not been migrated.',
   CORRUPT_PROJECT: 'This local project could not be read safely. Its original files have been retained.',
   MIGRATION_FAILED: 'The migration could not finish. The original and any migration copies have been retained.',
-  NOT_FOUND: 'This local project could not be found. Its files have not been removed.'
+  NOT_FOUND: 'This local project could not be found. Its files have not been removed.',
+  CANCELLED: 'The file operation was cancelled. Local writing and existing destinations have been kept.',
+  EXTERNAL_CHANGE: 'The selected file changed outside Collie Writer. Inspect it or save your local work to another file.',
+  DESTINATION_UNAVAILABLE: 'The selected file cannot be reached. Retry, locate the moved file, or use Save As. Local recovery remains here.',
+  UNSAFE_DESTINATION: 'This location cannot support the selected-file save safely. Choose a local APFS/HFS+ or fixed NTFS/ReFS folder, including a local cloud-sync folder.',
+  JOB_INTERRUPTED: 'An interrupted file operation needs inspection. Retained candidates and previous files have not been removed. Use Save As to preserve another copy.',
+  INVALID_ARCHIVE: 'This file is not a supported, intact Collie Writer project. The original has been kept.',
+  LIMIT_EXCEEDED: 'This file exceeds the supported size or resource limits. The original and local work have been kept.'
 }
 export type ProjectResult<T> = { ok: true; requestId: string; value: T } | { ok: false; requestId: string; error: { code: ProjectCode; message: string; retryable: boolean } }
 export type LocationStatus = { state: 'ready' | 'required'; path: string | null; message: string }
-export type ProjectSummary = { projectId: string; workspaceId: string; title: string; headCommitId: string; updatedAt: string; destination: null }
+export type DestinationView = { path: string; snapshotId: string; headCommitId: string; generationId: string }
+export type ProjectSummary = { projectId: string; workspaceId: string; title: string; headCommitId: string; updatedAt: string; destination: DestinationView | null }
 export type ProjectList = { projects: ProjectSummary[]; issues: { projectId: string; code: ProjectCode }[] }
 export type OpenProject = ProjectSummary & { documentId: string; revisionId: string; payload: DocumentPayload }
 export type CreateInput = { operationId: string; template: 'blank' }
@@ -58,8 +66,11 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (!exact(v, ['kind', 'input'])) return false
   return v.kind === 'create' ? isCreateInput(v.input) : v.kind === 'open' ? isOpenInput(v.input) : v.kind === 'commit' && isCommitInput(v.input)
 }
+export function isDestination(v: unknown): v is DestinationView {
+  return record(v) && exact(v, ['path', 'snapshotId', 'headCommitId', 'generationId']) && typeof v.path === 'string' && v.path.length > 0 && v.path.length <= 4096 && [v.snapshotId, v.headCommitId, v.generationId].every(isId)
+}
 function summary(v: unknown): v is ProjectSummary {
-  return record(v) && [v.projectId, v.workspaceId, v.headCommitId].every(isId) && typeof v.title === 'string' && v.title.length <= 500 && typeof v.updatedAt === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v.updatedAt) && v.destination === null
+  return record(v) && [v.projectId, v.workspaceId, v.headCommitId].every(isId) && typeof v.title === 'string' && v.title.length <= 500 && typeof v.updatedAt === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v.updatedAt) && (v.destination === null || isDestination(v.destination))
 }
 export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is ProjectValue {
   if (!record(v)) return false
