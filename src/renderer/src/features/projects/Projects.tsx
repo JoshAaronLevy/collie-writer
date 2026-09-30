@@ -1,3 +1,6 @@
+import OutlinePanel from '../outline/OutlinePanel'
+import HistoryPanel from '../outline/HistoryPanel'
+import { effectiveState, type OutlineInput, type OutlineChange, type HistoryView } from '../../../../shared/outline'
 import type { DataLocations, RenameInput } from '../../../../shared/project-lifecycle'
 import { ProjectManagement, RecoveryPanel } from './LifecyclePanel'
 import { useEffect, useRef, useState } from 'react'
@@ -32,9 +35,14 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
   const [newTemplate, setNewTemplate] = useState<ProjectTemplate>('blank')
   const [sectionTitle, setSectionTitle] = useState(''), [sectionStatus, setSectionStatus] = useState<'draft' | 'review' | 'complete'>('draft'), [sectionSynopsis, setSectionSynopsis] = useState('')
   const sectionFields = useRef({ title: '', status: 'draft' as 'draft' | 'review' | 'complete', synopsis: '' })
-  const [busy, setBusy] = useState(false), [acting, setActing] = useState(false), [closing, setClosing] = useState(false)
+  const [busy, setBusy] = useState(false), [working, setActing] = useState(false), [closing, setClosing] = useState(false)
   const [committing, setCommitting] = useState(false), [retry, setRetry] = useState<CommitInput | null>(null)
   const [error, setError] = useState(''), [notice, setNotice] = useState('')
+  const [history, setHistory] = useState<HistoryView | null>(null)
+  const [outlineRetry, setOutlineRetry] = useState(false)
+  const outlinePending = useRef<OutlineInput | null>(null)
+  const anchorToFocus = useRef<string | null>(null)
+  const acting = working || outlineRetry
   const [conflict, setConflict] = useState<OpenProject | null>(null)
   const [files, setFiles] = useState<FileStatus>(emptyFiles)
   const [data, setData] = useState<DataLocations | null>(null), [showArchived, setShowArchived] = useState(false)
@@ -52,6 +60,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
   const finishedJobs = useRef(new Map<string, FileJobView>())
   const handlers = useRef<{ action: (action: FileAction) => Promise<void>; save: () => void }>({ action: async () => {}, save: () => {} })
   const selectedSection = project?.documents.find(doc => doc.id === project.documentId)
+  const sectionReadOnly = !!selectedSection && effectiveState(selectedSection,project!.documents) !== 'active'
   const sectionDirty = !!selectedSection && (sectionTitle !== selectedSection.title || sectionStatus !== selectedSection.status || sectionSynopsis !== selectedSection.synopsis)
   const dirty = editVersion !== protectedVersion || sectionDirty || retry !== null || committing
   const fileActive = fileBusy(files.job)
@@ -140,6 +149,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     }
     for (const url of imageUrls.current.values()) URL.revokeObjectURL(url)
     imageUrls.current = loaded
+    if (current.current?.projectId !== next.projectId) setHistory(null)
     updateProject(next); setConflict(null); setEditorEpoch(value => value + 1)
     const selected = next.documents.find(doc => doc.id === next.documentId)!
     setSectionTitle(selected.title); setSectionStatus(selected.status as 'draft' | 'review' | 'complete'); setSectionSynopsis(selected.synopsis); metaPending.current = null
@@ -179,6 +189,48 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     editorRef.current?.commands.insertContent({ type: 'image', attrs: { blockId: crypto.randomUUID(), assetId: imported.value.assetId, alt: input.alt, caption: input.caption, width: Math.max(1, Math.round(imported.value.width * scale)), height: Math.max(1, Math.round(imported.value.height * scale)) } })
     setNotice('Image copied into the project. Its placement is waiting for a local document commit.')
   }
+  async function navigateSection(documentId: string, anchor?: string): Promise<void> {
+    setBusy(true)
+    const p = await flush(); if (!p) return
+    const result = await window.collie.openSection({ ...scopeOf(p),documentId })
+    if (!result.ok) { setError(result.error.message); return }
+    anchorToFocus.current = anchor ?? null
+    await select(result.value)
+  }
+  async function loadHistory(checkpointId: string | null): Promise<void> {
+    setBusy(true)
+    const p = await flush(); if (!p) return
+    const result = await window.collie.readHistory({ ...scopeOf(p),checkpointId })
+    if (result.ok) setHistory(result.value); else setError(result.error.message)
+  }
+  async function performOutline(change?: OutlineChange): Promise<boolean> {
+    if (!await waitActive()) return false
+    setBusy(true)
+    if (!outlinePending.current) {
+      const p = await flush(); if (!p || !change) return false
+      // Refresh revisions after the editor/metadata flush; no buffered content is overwritten.
+      const latest = await window.collie.openSection({ ...scopeOf(p),documentId:p.documentId })
+      if (!latest.ok) { setError(latest.error.message); return false }
+      if (latest.value.headCommitId !== p.headCommitId) { setError('The project changed. Refresh its stored version before reorganizing; your current buffer is retained.'); return false }
+      if (change.type === 'restore' && history?.checkpointId !== change.checkpointId) { setError('Select and review that checkpoint before restoring it.'); return false }
+      if (['restore','prune','repair'].includes(change.type) && history?.headCommitId !== p.headCommitId) { setError('Refresh history after protecting your latest edits, then review this action again.'); return false }
+      outlinePending.current = { ...scopeOf(p),operationId:crypto.randomUUID(),expectedHead:p.headCommitId,expectedRevisions:Object.fromEntries(latest.value.documents.map(d => [d.id,d.revisionId])),selectedId:p.documentId,change }
+    }
+    setOutlineRetry(true)
+    const result = await window.collie.changeOutline(outlinePending.current)
+    if (!result.ok) {
+      if (result.error.code === 'UNAVAILABLE') setOutlineRetry(true)
+      else { outlinePending.current = null; setOutlineRetry(false) }
+      setError(result.error.code === 'VALIDATION' ? 'This outline change is not valid. Keep at least one active section, use a valid parent, and split between existing blocks. The whole change was left unapplied.' : result.error.message)
+      return false
+    }
+    outlinePending.current = null; setOutlineRetry(false)
+    await select(result.value)
+    setHistory(null)
+    setNotice('Outline/history change protected locally. The chosen file may still need Save.')
+    await refresh()
+    return true
+  }
   async function saveSectionMeta(): Promise<void> {
     if (await flush()) await refresh()
   }
@@ -190,7 +242,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     const result = await window.collie.commitDocument(input)
     if (!alive.current) return null
     if (result.ok) {
-      const next = { ...current.current!, payload: input.payload, revisionId: result.value.revisionId, headCommitId: result.value.headCommitId }
+      const next = { ...current.current!, documents: current.current!.documents.map(d => d.id === input.documentId ? { ...d, revisionId: result.value.revisionId } : d), payload: input.payload, revisionId: result.value.revisionId, headCommitId: result.value.headCommitId }
       updateHead(next); protectedVersionRef.current = version; setProtectedVersion(version)
       retryCommit.current = null; setRetry(null)
       setNotice(editVersionRef.current === protectedVersionRef.current ? 'Draft protected locally.' : 'The submitted draft is protected locally. Newer typing still needs protection.')
@@ -391,8 +443,9 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
   async function handleAction(action: FileAction): Promise<void> {
     if (action.kind === 'close-cancelled') { closingRef.current = false; setClosing(false); return }
     if (action.kind === 'resume') { await refreshFiles(); return }
-    if (action.kind === 'suspend') { if (!closingRef.current) await flush(); return }
+    if (action.kind === 'suspend') { if (!closingRef.current && !outlinePending.current) await flush(); return }
     if (action.kind !== 'close') {
+      if (outlinePending.current) { setError('Reconcile the pending outline/history operation before opening or saving.'); return }
       if (action.kind === 'save' && actionTask.current && fileState.current.job?.kind === 'save' && !closingRef.current) {
         const pending = actionTask.current
         const requested = await flush()
@@ -411,6 +464,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     try {
       await actionTask.current
       if (!await waitActive()) return
+      if (outlinePending.current && !await performOutline()) return
       if (!current.current) { outcome = 'saved'; return }
       if (!await flush()) return
       await refreshFiles(); if (!await waitActive()) return
@@ -459,24 +513,23 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     {list.issues.map(issue => <p role="alert" key={issue.projectId}>Project {issue.projectId.slice(0, 8)}: {projectMessages[issue.code]}</p>)}
     {project ? <div className="draft-panel">
       <h2>{project.title} · {project.projectId.slice(0, 8)}</h2>
-      <nav className="section-list" aria-label="Sections">{project.documents.map(doc => <button key={doc.id} type="button" aria-current={doc.id === project.documentId ? 'page' : undefined} disabled={busy || acting || closing || committing || doc.id === project.documentId} onClick={() => run(async () => {
-        setBusy(true); const p = await flush(); if (!p) return
-        const result = await window.collie.openSection({ ...scopeOf(p), documentId: doc.id })
-        if (result.ok) await select(result.value); else setError(result.error.message)
-      })}>{doc.title}</button>)}</nav>
+      <OutlinePanel key={project.projectId} project={project} disabled={busy || acting || closing || committing || fileActive} change={change => run(() => performOutline(change))} select={id => run(() => navigateSection(id))} />
+      {sectionReadOnly ? <p role="status">This section is archived or in trash. Restore its outline item and any removed parent to edit it.</p> : null}
       <form className="section-details" onSubmit={event => { event.preventDefault(); run(saveSectionMeta) }}>
-        <label>Section title <input value={sectionTitle} maxLength={500} required disabled={busy || closing} onChange={event => { sectionFields.current.title = event.target.value; setSectionTitle(event.target.value); metaPending.current = null }} /></label>
-        <label>Status <select value={sectionStatus} disabled={busy || closing} onChange={event => { sectionFields.current.status = event.target.value as 'draft' | 'review' | 'complete'; setSectionStatus(sectionFields.current.status); metaPending.current = null }}><option value="draft">Draft</option><option value="review">Review</option><option value="complete">Complete</option></select></label>
-        <label>Synopsis <textarea value={sectionSynopsis} maxLength={10000} disabled={busy || closing} onChange={event => { sectionFields.current.synopsis = event.target.value; setSectionSynopsis(event.target.value); metaPending.current = null }} /></label>
-        <button type="submit" disabled={busy || acting || closing}>{metaPending.current ? 'Retry section details' : 'Save section details'}</button>
+        <label>Section title <input value={sectionTitle} maxLength={500} required disabled={busy || closing || outlineRetry || sectionReadOnly} onChange={event => { sectionFields.current.title = event.target.value; setSectionTitle(event.target.value); metaPending.current = null }} /></label>
+        <label>Status <select value={sectionStatus} disabled={busy || closing || outlineRetry || sectionReadOnly} onChange={event => { sectionFields.current.status = event.target.value as 'draft' | 'review' | 'complete'; setSectionStatus(sectionFields.current.status); metaPending.current = null }}><option value="draft">Draft</option><option value="review">Review</option><option value="complete">Complete</option></select></label>
+        <label>Synopsis <textarea value={sectionSynopsis} maxLength={10000} disabled={busy || closing || outlineRetry || sectionReadOnly} onChange={event => { sectionFields.current.synopsis = event.target.value; setSectionSynopsis(event.target.value); metaPending.current = null }} /></label>
+        <button type="submit" disabled={busy || acting || closing || sectionReadOnly}>{metaPending.current ? 'Retry section details' : 'Save section details'}</button>
       </form>
-      <RichDraft key={`${project.projectId}-${project.documentId}-${editorEpoch}`} payload={project.payload} disabled={busy || closing || storage.state !== 'ready'} onReady={editor => { editorRef.current = editor }} onChange={changed} onIssue={setError} onBlur={() => { if (isDirty() && !actionTask.current) void flush() }} imageUrl={assetId => imageUrls.current.get(assetId)} importImage={() => run(importImage)} />
-        <div className="project-actions"><button disabled={busy || committing || closing || !dirty || storage.state !== 'ready'} onClick={() => { void flush().then(() => refresh()) }}>{committing ? 'Protecting…' : retry ? 'Retry local commit' : 'Protect locally'}</button>
+      <RichDraft key={`${project.projectId}-${project.documentId}-${editorEpoch}`} payload={project.payload} disabled={busy || closing || outlineRetry || sectionReadOnly || storage.state !== 'ready'} onReady={editor => { editorRef.current = editor; if (editor && anchorToFocus.current) { const id = anchorToFocus.current; anchorToFocus.current = null; let target: number | null = null; editor.state.doc.descendants((node,position) => { if (node.attrs.blockId === id || node.attrs.citationId === id || node.attrs.footnoteId === id) { target = position; return false }; return true }); if (target !== null) { editor.commands.setTextSelection(Math.min(target+1,editor.state.doc.content.size)); editor.commands.focus(); editor.view.dispatch(editor.state.tr.scrollIntoView()) } } }} onChange={changed} onIssue={setError} onBlur={() => { if (isDirty() && !actionTask.current) void flush() }} imageUrl={assetId => imageUrls.current.get(assetId)} importImage={() => run(importImage)} />
+        <div className="project-actions"><button disabled={busy || committing || closing || outlineRetry || sectionReadOnly || !dirty || storage.state !== 'ready'} onClick={() => { void flush().then(() => refresh()) }}>{committing ? 'Protecting…' : retry ? 'Retry local commit' : 'Protect locally'}</button>
         <button onClick={() => { editorRef.current?.commands.focus(); editorRef.current?.commands.selectAll() }}>Select all for copying</button></div>
         <p>For an emergency copy, select this section and use your system Copy command, then paste into another local document.</p>
       <p role="status">{notice}</p>
       {conflict ? <details className="conflict-panel" open><summary>Stored version differs from this visible draft</summary><p>Keep this draft open for copying. The stored section below is a separate read-only copy; Collie Writer has not overwritten either version.</p><textarea readOnly aria-label="Stored section text for copying" value={readableDocument(conflict.payload)} /></details> : null}
     </div> : <p>Select a local project, open a file or create a blank project to begin.</p>}
+    {outlineRetry ? <p role="alert">The outline/history operation has an unknown outcome. Editing is paused until the same operation is reconciled. <button disabled={working || closing} onClick={() => run(() => performOutline())}>Retry pending outline/history operation</button></p> : null}
+    {project ? <HistoryPanel key={project.projectId} project={project} history={history} disabled={busy || acting || closing || committing || fileActive} change={change => run(() => performOutline(change))} read={id => run(() => loadHistory(id))} navigate={(doc,anchor) => run(() => navigateSection(doc,anchor))} /> : null}
     {project || fileActive ? <FilePanel status={files} dirty={dirty} disabled={!project || !available || acting || closing} save={as => run(() => save(as))} locate={() => run(() => openFile(false, true))} inspect={() => run(() => openFile(true))} answer={(id, choice) => { void window.collie.answerFileJob({ id, choice }).then(result => { if (!result.ok) setError(result.error.message) }) }} cancel={id => { void window.collie.cancelFileJob(id).then(result => { if (!result.ok) setError(result.error.message) }) }} consent={id => { void window.collie.confirmFileOverwrite(id).then(result => { if (!result.ok) setError(result.error.message) }) }} /> : null}
     {project ? <ProjectManagement key={`${project.projectId}-${project.title}`} project={project} disabled={!available || acting || fileActive || closing} rename={title => run(() => manage(title))} archive={() => run(() => manage())} backup={() => run(() => lifecycleFile('backup'))} move={() => run(() => lifecycleFile('move'))} duplicate={() => run(() => lifecycleFile('duplicate'))} /> : null}
     <RecoveryPanel data={data} openProject={scope => run(async () => { setBusy(true); if (current.current && !await flush()) return; await openLocal(scope); await waitActive(); await refreshData() })} disabled={!available || acting || fileActive || closing} refresh={() => run(refreshData)} inspect={id => run(() => lifecycleFile('recover', id))} reset={review => run(() => resetLocal(review))} recoverReset={id => run(async () => {

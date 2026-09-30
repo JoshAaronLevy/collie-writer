@@ -3,9 +3,11 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { backupStorageDatabase, inWriteTransaction, openStorageDatabase } from './driver'
-import { PROJECT_SCHEMA_VERSION, assetTable, inspectVersion, validateProjectSchema } from './schema'
+import { PROJECT_SCHEMA_VERSION, assetTable, outlineTables, inspectVersion, validateProjectSchema } from './schema'
 import { contained, directory, syncFile, syncDirectory, writeJson } from './files'
 import { ProjectError } from '../../domain/projects/errors'
+
+import { seedOutline, manuscript } from '../projects/manuscript'
 
 type Migration = { from: number; to: number; validateSource: (db: Database.Database) => void; apply: (db: Database.Database) => void }
 // Stage 4 schema 1 is retained untouched; only its verified candidate receives the asset inventory.
@@ -13,6 +15,14 @@ const migrations: readonly Migration[] = [{
   from: 1, to: 2,
   validateSource: db => validateProjectSchema(db, 1),
   apply: db => { db.exec(assetTable); db.prepare('UPDATE format SET schema_version=2,minimum_reader=2').run() }
+}, {
+  from: 2, to: 3,
+  validateSource: db => validateProjectSchema(db, 2),
+  apply: db => {
+    for (const sql of outlineTables) db.exec(sql)
+    seedOutline(db)
+    db.prepare('UPDATE format SET schema_version=3,minimum_reader=3').run()
+  }
 }]
 
 export async function activeDatabase(root: string, workspace: string): Promise<string> {
@@ -67,6 +77,7 @@ export async function openProjectDatabase(root: string, workspace: string, nativ
           }
         })
         validateProjectSchema(candidate)
+        for (const row of candidate.prepare('SELECT id FROM projects').all() as { id: string }[]) manuscript(candidate, row.id)
         candidate.pragma('wal_checkpoint(TRUNCATE)')
       } finally { candidate.close() }
       // Backups and candidate remain on any failure. Publication follows verified copy completion.

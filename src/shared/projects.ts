@@ -1,8 +1,10 @@
+import { isOutlineInput, isOutlineDocument, isHistoryInput, isHistoryView, type OutlineDocument, type OutlineInput, type HistoryInput, type HistoryView } from './outline'
 import { isRenameInput, isArchiveInput, isDataLocations, isResetInput, type RenameInput, type ArchiveInput, type DataLocations, type ResetInput } from './project-lifecycle'
 import { isId, readDocument, type DocumentPayload } from '../domain/editor/schema'
 import { isProjectTemplate, type ProjectTemplate } from '../domain/projects/templates'
 
 export const PROJECT_CHANNELS = {
+  outline: 'outline.change', history: 'history.read',
   location: 'projects.location', chooseLocation: 'projects.chooseLocation',
   rename: 'projects.rename', archive: 'projects.archive', data: 'projects.data', reset: 'projects.reset', recoverReset: 'projects.recoverReset', cleanup: 'projects.cleanup',
   list: 'projects.list', create: 'projects.create', open: 'projects.open', section: 'projects.section', meta: 'projects.sectionMeta', commit: 'document.commit', plainClipboard: 'document.plainClipboard', pickImage: 'images.pick', importImage: 'images.import', readImage: 'images.read'
@@ -35,7 +37,7 @@ export type LocationStatus = { state: 'ready' | 'required'; path: string | null;
 export type DestinationView = { path: string; snapshotId: string; headCommitId: string; generationId: string }
 export type ProjectSummary = { projectId: string; workspaceId: string; title: string; headCommitId: string; updatedAt: string; archived: boolean; destination: DestinationView | null }
 export type ProjectList = { projects: ProjectSummary[]; issues: { projectId: string; code: ProjectCode }[] }
-export type DocumentSummary = { id: string; title: string; status: string; synopsis: string }
+export type DocumentSummary = OutlineDocument
 export type OpenProject = ProjectSummary & { template: ProjectTemplate; documents: DocumentSummary[]; documentId: string; revisionId: string; payload: DocumentPayload }
 export type CreateInput = { operationId: string; template: ProjectTemplate }
 export type OpenInput = { projectId: string; workspaceId: string }
@@ -49,9 +51,11 @@ export type WorkerImageImport = OpenInput & { operationId: string; sourcePath: s
 export type ImageReadInput = OpenInput & { assetId: string }
 export type ImageAsset = { assetId: string; mediaType: 'image/png' | 'image/jpeg'; width: number; height: number }
 export type ImageData = { mediaType: ImageAsset['mediaType']; base64: string }
-export type ProjectCommand = { kind: 'rename'; input: RenameInput } | { kind: 'archive'; input: ArchiveInput } | { kind: 'data' | 'cleanup' } | { kind: 'reset'; input: ResetInput } | { kind: 'recoverReset'; input: string } | { kind: 'list' } | { kind: 'create'; input: CreateInput } | { kind: 'open'; input: OpenInput } | { kind: 'section'; input: SectionInput } | { kind: 'meta'; input: SectionMetaInput } | { kind: 'commit'; input: CommitInput } | { kind: 'importImage'; input: WorkerImageImport } | { kind: 'readImage'; input: ImageReadInput }
-export type ProjectValue = ProjectList | OpenProject | CommitReceipt | DataLocations | ImageAsset | ImageData
+export type ProjectCommand = { kind: 'outline'; input: OutlineInput } | { kind: 'history'; input: HistoryInput } | { kind: 'rename'; input: RenameInput } | { kind: 'archive'; input: ArchiveInput } | { kind: 'data' | 'cleanup' } | { kind: 'reset'; input: ResetInput } | { kind: 'recoverReset'; input: string } | { kind: 'list' } | { kind: 'create'; input: CreateInput } | { kind: 'open'; input: OpenInput } | { kind: 'section'; input: SectionInput } | { kind: 'meta'; input: SectionMetaInput } | { kind: 'commit'; input: CommitInput } | { kind: 'importImage'; input: WorkerImageImport } | { kind: 'readImage'; input: ImageReadInput }
+export type ProjectValue = ProjectList | OpenProject | CommitReceipt | DataLocations | ImageAsset | ImageData | HistoryView
 export type ProjectAPI = {
+  changeOutline: (input: OutlineInput) => Promise<ProjectResult<OpenProject>>
+  readHistory: (input: HistoryInput) => Promise<ProjectResult<HistoryView>>
   getWorkingLocation: () => Promise<ProjectResult<LocationStatus>>
   chooseWorkingLocation: () => Promise<ProjectResult<LocationStatus>>
   listProjects: () => Promise<ProjectResult<ProjectList>>
@@ -88,6 +92,8 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (!record(v)) return false
   if (['list','data','cleanup'].includes(String(v.kind))) return exact(v, ['kind'])
   if (!exact(v, ['kind', 'input'])) return false
+  if (v.kind === 'outline') return isOutlineInput(v.input)
+  if (v.kind === 'history') return isHistoryInput(v.input)
   if (v.kind === 'rename') return isRenameInput(v.input)
   if (v.kind === 'archive') return isArchiveInput(v.input)
   if (v.kind === 'reset') return isResetInput(v.input)
@@ -102,12 +108,13 @@ function summary(v: unknown): v is ProjectSummary {
 }
 export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is ProjectValue {
   if (!record(v)) return false
+  if (kind === 'history') return isHistoryView(v)
   if (['data','cleanup','reset','recoverReset'].includes(kind)) return isDataLocations(v)
   if (kind === 'list') return exact(v, ['projects', 'issues']) && Array.isArray(v.projects) && v.projects.length <= 10000 && v.projects.every(p => summary(p) && exact(p, ['projectId', 'workspaceId', 'title', 'headCommitId', 'updatedAt', 'archived', 'destination'])) && Array.isArray(v.issues) && v.issues.length <= 10000 && v.issues.every(p => record(p) && exact(p, ['projectId', 'code']) && isId(p.projectId) && isProjectCode(p.code))
   if (kind === 'commit') return exact(v, ['projectId', 'documentId', 'revisionId', 'headCommitId']) && Object.values(v).every(isId)
   if (kind === 'importImage') return exact(v, ['assetId','mediaType','width','height']) && isId(v.assetId) && ['image/png','image/jpeg'].includes(String(v.mediaType)) && [v.width,v.height].every(n => Number.isSafeInteger(n) && Number(n) > 0 && Number(n) <= 12000)
   if (kind === 'readImage') return exact(v, ['mediaType','base64']) && ['image/png','image/jpeg'].includes(String(v.mediaType)) && typeof v.base64 === 'string' && v.base64.length <= 36_000_000 && /^[A-Za-z0-9+/]*={0,2}$/.test(v.base64)
-  if (!summary(v) || !exact(v, ['projectId', 'workspaceId', 'title', 'headCommitId', 'updatedAt', 'archived', 'destination', 'template', 'documents', 'documentId', 'revisionId', 'payload']) || !isProjectTemplate(v.template) || !Array.isArray(v.documents) || v.documents.length < 1 || v.documents.length > 10000 || !v.documents.every((d: unknown) => record(d) && exact(d, ['id','title','status','synopsis']) && isId(d.id) && typeof d.title === 'string' && d.title.length <= 500 && typeof d.status === 'string' && d.status.length <= 100 && typeof d.synopsis === 'string' && d.synopsis.length <= 100000) || !isId(v.documentId) || !isId(v.revisionId) || !v.documents.some(d => d.id === v.documentId)) return false
+  if (!summary(v) || !exact(v, ['projectId', 'workspaceId', 'title', 'headCommitId', 'updatedAt', 'archived', 'destination', 'template', 'documents', 'documentId', 'revisionId', 'payload']) || !isProjectTemplate(v.template) || !Array.isArray(v.documents) || v.documents.length < 1 || v.documents.length > 10000 || !v.documents.every(isOutlineDocument) || !isId(v.documentId) || !isId(v.revisionId) || !v.documents.some(d => d.id === v.documentId)) return false
   try { readDocument(v.payload); return true } catch { return false }
 }
 export function isProjectResult<T>(v: unknown, requestId: string, valid: (value: unknown) => boolean): v is ProjectResult<T> {

@@ -1,3 +1,6 @@
+import { changeOutline, readHistory } from './outline'
+import { seedOutline, automaticCheckpoint, updateDocumentAnchors, manuscript } from './manuscript'
+import { effectiveState, isOutlineDocument, type OutlineDocument, type OutlineInput, type HistoryInput, type HistoryView } from '../../shared/outline'
 import Database from 'better-sqlite3'
 import { randomUUID, createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -91,15 +94,30 @@ export class ProjectRepository {
         if (prior) { if (prior.digest !== digest) throw new ProjectError('OPERATION_CONFLICT'); return }
         const before = this.read(owned, input.documentId)
         if (before.headCommitId !== input.expectedHead) throw new ProjectError('STALE_REVISION')
-        const head = randomUUID(), time = new Date().toISOString()
-        owned.db.prepare('UPDATE documents SET title=?,status=?,synopsis=? WHERE project_id=? AND id=?').run(input.title, input.status, input.synopsis, input.projectId, input.documentId)
+        const selected = before.documents.find(d => d.id === input.documentId)!
+        if (effectiveState(selected,before.documents) !== 'active') throw new ProjectError('VALIDATION')
+        const head = randomUUID(), revision = randomUUID(), time = new Date().toISOString()
+        owned.db.prepare('UPDATE documents SET title=?,status=?,synopsis=?,revision_id=? WHERE project_id=? AND id=?').run(input.title, input.status, input.synopsis, revision, input.projectId, input.documentId)
         owned.db.prepare('INSERT INTO commits VALUES (?,?,?,?)').run(input.projectId, head, before.headCommitId, time)
         owned.db.prepare('UPDATE projects SET head_commit_id=?,updated_at=? WHERE id=?').run(head, time, input.projectId)
-        owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(input.projectId, input.operationId, digest, JSON.stringify({ projectId: input.projectId, documentId: input.documentId, revisionId: before.revisionId, headCommitId: head }))
+        automaticCheckpoint(owned.db,input.projectId)
+        owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(input.projectId, input.operationId, digest, JSON.stringify({ projectId: input.projectId, documentId: input.documentId, revisionId: revision, headCommitId: head }))
       })
       await this.discovery(owned)
       return this.read(owned, input.documentId)
     })
+  }
+  outline(input: OutlineInput): Promise<OpenProject> {
+    return this.serial(async () => {
+      if (this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
+      this.fileContext(input)
+      const selected = changeOutline(this.active!.db,input)
+      await this.discovery(this.active!)
+      return this.read(this.active!,selected)
+    })
+  }
+  history(input: HistoryInput): Promise<HistoryView> {
+    return this.serial(async () => { this.fileContext(input); return readHistory(this.active!.db,input) })
   }
   create(input: CreateInput): Promise<OpenProject> { return this.serial(() => this.createUnlocked(input)) }
   list(): Promise<ProjectList> { return this.serial(() => this.listUnlocked()) }
@@ -260,16 +278,24 @@ export class ProjectRepository {
   }
   private read(owned: Owned, selectedId?: string): OpenProject {
     const project = owned.db.prepare('SELECT * FROM projects').all() as { id: string; template: OpenProject['template']; title: string; head_commit_id: string; updated_at: string }[]
-    const documents = owned.db.prepare('SELECT id,revision_id,title,status,synopsis,position,parent_id,kind,editor_version FROM documents WHERE project_id=? ORDER BY position').all(owned.projectId) as { id: string; revision_id: string; title: string; status: string; synopsis: string; position: number; parent_id: string | null; kind: string; editor_version: number }[]
-    const selected = selectedId ? documents.find(doc => doc.id === selectedId) : documents[0]
-    if (project.length !== 1 || project[0].id !== owned.projectId || !Object.hasOwn(templateSections, project[0].template) || documents.length < 1 || documents.length > 10000 || !selected || !isId(project[0].head_commit_id) || !documents.every((doc, index) => isId(doc.id) && isId(doc.revision_id) && doc.position === index && doc.parent_id === null && doc.kind === 'text' && doc.editor_version === 1 && typeof doc.title === 'string' && doc.title.length <= 500 && typeof doc.status === 'string' && doc.status.length <= 100 && typeof doc.synopsis === 'string' && doc.synopsis.length <= 100000)) throw new ProjectError('CORRUPT_PROJECT')
+    const documents = owned.db.prepare(`SELECT d.id,d.revision_id AS revisionId,d.title,d.status,d.synopsis,d.position,d.parent_id AS parentId,d.kind,s.state,s.replacement_id AS replacementId FROM documents d JOIN outline_state s ON d.project_id=s.project_id AND d.id=s.document_id WHERE d.project_id=? ORDER BY d.parent_id,d.position`).all(owned.projectId) as OutlineDocument[]
+    let selected = selectedId ? documents.find(doc => doc.id === selectedId) : undefined
+    if (selectedId && !selected) throw new ProjectError('NOT_FOUND')
+    const visited = new Set<string>()
+    while (selected?.replacementId) {
+      if (visited.has(selected.id)) throw new ProjectError('CORRUPT_PROJECT')
+      visited.add(selected.id); const replacementId = selected.replacementId; selected = documents.find(doc => doc.id === replacementId)
+      if (!selected) throw new ProjectError('CORRUPT_PROJECT')
+    }
+    selected ??= documents.find(doc => doc.kind === 'text' && effectiveState(doc,documents) === 'active')
+    if (project.length !== 1 || project[0].id !== owned.projectId || !Object.hasOwn(templateSections, project[0].template) || documents.length < 1 || documents.length > 10000 || !selected || selected.kind !== 'text' || !isId(project[0].head_commit_id) || !documents.every(isOutlineDocument)) throw new ProjectError('CORRUPT_PROJECT')
     if (!project[0].title.length || project[0].title.length > 500 || !Number.isFinite(Date.parse(project[0].updated_at))) throw new ProjectError('CORRUPT_PROJECT')
     let payload: DocumentPayload
     try {
       const row = owned.db.prepare('SELECT payload FROM documents WHERE project_id=? AND id=?').get(owned.projectId, selected.id) as { payload: string }
       payload = readDocument(JSON.parse(row.payload))
     } catch { throw new ProjectError('CORRUPT_PROJECT') }
-    return { projectId: owned.projectId, workspaceId: owned.workspaceId, title: project[0].title, headCommitId: project[0].head_commit_id, updatedAt: project[0].updated_at, archived: owned.archived, destination: destinationView(owned.destination), template: project[0].template, documents: documents.map(doc => ({ id: doc.id, title: doc.title, status: doc.status, synopsis: doc.synopsis })), documentId: selected.id, revisionId: selected.revision_id, payload }
+    return { projectId: owned.projectId, workspaceId: owned.workspaceId, title: project[0].title, headCommitId: project[0].head_commit_id, updatedAt: project[0].updated_at, archived: owned.archived, destination: destinationView(owned.destination), template: project[0].template, documents, documentId: selected.id, revisionId: selected.revisionId, payload }
   }
   private async discovery(owned: Owned): Promise<void> {
     const p = this.read(owned)
@@ -290,6 +316,7 @@ export class ProjectRepository {
       // No job is silently replayed after interruption.
       operations.prepare("UPDATE jobs SET state='interrupted' WHERE state IN ('queued','running','cancelling')").run()
       const owned: Owned = { ...input, workspace, db, operations, lock, archived: await this.readArchived(workspace), destination: await readDestination(this.root, workspace) }
+      manuscript(db,input.projectId)
       this.read(owned)
       this.catalog.prepare('INSERT OR IGNORE INTO destinations VALUES (?,NULL,NULL,NULL)').run(input.projectId)
       await this.discovery(owned)
@@ -385,6 +412,7 @@ export class ProjectRepository {
               db.prepare('INSERT INTO documents VALUES (?,?,NULL,?,?,?,?,?,?,?,?)').run(projectId, section.documentId, section.position, 'text', section.title, 'draft', '', section.revision, 1, JSON.stringify(section.payload))
               this.indexIds(db, projectId, section.documentId, section.payload)
             }
+            seedOutline(db,'Initial manuscript')
             db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(projectId, input.operationId, digest, JSON.stringify({ projectId, documentId: sections[0].documentId, revisionId: sections[0].revision, headCommitId: head }))
           })
         }
@@ -429,13 +457,18 @@ export class ProjectRepository {
       const document = owned.db.prepare('SELECT revision_id FROM documents WHERE project_id=? AND id=?').get(input.projectId, input.documentId) as { revision_id: string } | undefined
       if (!document) throw new ProjectError('NOT_FOUND')
       if (document.revision_id !== input.expectedRevisionId) throw new ProjectError('STALE_REVISION')
+      const selected = this.read(owned,input.documentId)
+      const summary = selected.documents.find(d => d.id === input.documentId)!
+      if (!summary || summary.kind !== 'text' || effectiveState(summary,selected.documents) !== 'active') throw new ProjectError('VALIDATION')
       const project = owned.db.prepare('SELECT head_commit_id FROM projects WHERE id=?').get(input.projectId) as { head_commit_id: string }
       const revisionId = randomUUID(), headCommitId = randomUUID(), time = new Date().toISOString()
       owned.db.prepare('DELETE FROM editor_ids WHERE project_id=? AND document_id=?').run(input.projectId, input.documentId)
       this.indexIds(owned.db, input.projectId, input.documentId, payload)
+      updateDocumentAnchors(owned.db,input.projectId,input.documentId,payload)
       owned.db.prepare('UPDATE documents SET revision_id=?,payload=? WHERE project_id=? AND id=?').run(revisionId, JSON.stringify(payload), input.projectId, input.documentId)
       owned.db.prepare('INSERT INTO commits VALUES (?,?,?,?)').run(input.projectId, headCommitId, project.head_commit_id, time)
       owned.db.prepare('UPDATE projects SET head_commit_id=?,updated_at=? WHERE id=?').run(headCommitId, time, input.projectId)
+      automaticCheckpoint(owned.db,input.projectId)
       const receipt = { projectId: input.projectId, documentId: input.documentId, revisionId, headCommitId }
       owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(input.projectId, input.operationId, digest, JSON.stringify(receipt))
       return receipt

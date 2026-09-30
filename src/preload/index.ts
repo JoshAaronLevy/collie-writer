@@ -1,3 +1,4 @@
+import type { HistoryView } from '../shared/outline'
 import { isDataLocations, type DataLocations } from '../shared/project-lifecycle'
 import { contextBridge, ipcRenderer } from 'electron'
 import {
@@ -62,6 +63,8 @@ const api: CollieAPI = {
   listProjects: () => projectCall<ProjectList>(PROJECT_CHANNELS.list, value => isProjectValue('list', value)),
   createProject: input => projectCall<OpenProject>(PROJECT_CHANNELS.create, value => isProjectValue('create', value), input),
   openProject: input => projectCall<OpenProject>(PROJECT_CHANNELS.open, value => isProjectValue('open', value), input),
+  changeOutline: input => projectCall<OpenProject>(PROJECT_CHANNELS.outline, value => isProjectValue('outline', value), input),
+  readHistory: input => projectCall<HistoryView>(PROJECT_CHANNELS.history, value => isProjectValue('history', value), input),
   openSection: input => projectCall<OpenProject>(PROJECT_CHANNELS.section, value => isProjectValue('section', value), input),
   updateSectionMeta: input => projectCall<OpenProject>(PROJECT_CHANNELS.meta, value => isProjectValue('meta', value), input),
   commitDocument: input => projectCall<CommitReceipt>(PROJECT_CHANNELS.commit, value => isProjectValue('commit', value), input),

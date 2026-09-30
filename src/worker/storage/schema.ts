@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 
 export const PROJECT_APPLICATION_ID = 1129270359
-export const PROJECT_SCHEMA_VERSION = 2
+export const PROJECT_SCHEMA_VERSION = 3
 // Persisted schema is app-owned; never execute DDL or migrations supplied by a project.
 export const projectTablesV1 = [
   `CREATE TABLE format (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, minimum_reader INTEGER NOT NULL, editor_version INTEGER NOT NULL) STRICT`,
@@ -13,7 +13,14 @@ export const projectTablesV1 = [
   `CREATE TABLE editor_ids (project_id TEXT NOT NULL, id TEXT NOT NULL, document_id TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id,document_id) REFERENCES documents(project_id,id)) STRICT`
 ] as const
 export const assetTable = `CREATE TABLE managed_assets (project_id TEXT NOT NULL, id TEXT NOT NULL, original_name TEXT NOT NULL, media_type TEXT NOT NULL, byte_size INTEGER NOT NULL CHECK(byte_size>=0), sha256 TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id)) STRICT`
-export const projectTables = [...projectTablesV1, assetTable] as const
+export const outlineTables = [
+  `CREATE TABLE history_content (project_id TEXT NOT NULL, id TEXT NOT NULL, content TEXT NOT NULL, byte_size INTEGER NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id)) STRICT`,
+  `CREATE TABLE outline_state (project_id TEXT NOT NULL, document_id TEXT NOT NULL, state TEXT NOT NULL, replacement_id TEXT, PRIMARY KEY(project_id,document_id), FOREIGN KEY(project_id,document_id) REFERENCES documents(project_id,id), FOREIGN KEY(project_id,replacement_id) REFERENCES documents(project_id,id)) STRICT`,
+  `CREATE TABLE anchor_targets (project_id TEXT NOT NULL, id TEXT NOT NULL, document_id TEXT NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, replacement_id TEXT, label TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id,document_id) REFERENCES documents(project_id,id), FOREIGN KEY(project_id,replacement_id) REFERENCES anchor_targets(project_id,id) DEFERRABLE INITIALLY DEFERRED) STRICT`,
+  `CREATE TABLE history_checkpoints (project_id TEXT NOT NULL, id TEXT NOT NULL, parent_id TEXT, head_commit_id TEXT NOT NULL, created_at TEXT NOT NULL, actor TEXT NOT NULL, reason TEXT NOT NULL, title TEXT NOT NULL, snapshot TEXT NOT NULL, byte_size INTEGER NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id), FOREIGN KEY(project_id,head_commit_id) REFERENCES commits(project_id,id)) STRICT`
+] as const
+export const projectTablesV2 = [...projectTablesV1, assetTable] as const
+export const projectTables = [...projectTablesV2, ...outlineTables] as const
 const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export function createProjectSchema(db: Database.Database): void {
@@ -34,7 +41,7 @@ export function validateProjectSchema(db: Database.Database, expectedVersion = P
   const version = inspectVersion(db)
   if (version !== expectedVersion) throw new ProjectError('MIGRATION_FAILED')
   const objects = db.prepare("SELECT sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all() as { sql: string | null }[]
-  const expected = new Set((expectedVersion === 1 ? projectTablesV1 : projectTables).map(sqlKey))
+  const expected = new Set((expectedVersion === 1 ? projectTablesV1 : expectedVersion === 2 ? projectTablesV2 : projectTables).map(sqlKey))
   if (objects.length !== expected.size || objects.some(o => !o.sql || !expected.has(sqlKey(o.sql)))) throw new ProjectError('CORRUPT_PROJECT')
   const format = db.prepare('SELECT * FROM format').all() as { schema_version: number; minimum_reader: number; editor_version: number }[]
   if (format.length !== 1 || format[0].minimum_reader > PROJECT_SCHEMA_VERSION || format[0].editor_version > 1) throw new ProjectError('FORMAT_TOO_NEW')

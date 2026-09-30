@@ -110,7 +110,7 @@ export async function extractArchive(path: string, staging: string, nativeBindin
     cancelled(signal)
     const graph = inspectPortableDatabase(join(staging, 'project.sqlite'), nativeBinding)
     const manifestBlobs = new Map(manifest.blobs.map(ref => [ref.sha256,ref]))
-    if (graph.projectId !== manifest.projectId || graph.headCommitId !== manifest.headCommitId || graph.blobs.length !== manifest.blobs.length || graph.blobs.some(ref => !manifestBlobs.has(ref.sha256) || !same(manifestBlobs.get(ref.sha256)!, ref))) invalid()
+    if (graph.schemaVersion !== manifest.schemaVersion || graph.projectId !== manifest.projectId || graph.headCommitId !== manifest.headCommitId || graph.blobs.length !== manifest.blobs.length || graph.blobs.some(ref => !manifestBlobs.has(ref.sha256) || !same(manifestBlobs.get(ref.sha256)!, ref))) invalid()
     if (archiveError) throw archiveError
     await contained(staging, join(staging, 'project.sqlite'), false)
     await syncDirectory(join(staging, 'blobs')); await syncDirectory(join(staging, 'citation-assets')); await syncDirectory(staging)

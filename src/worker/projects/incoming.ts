@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { OpenInput } from '../../shared/projects'
 import { contained, syncDirectory, syncFile, writeJson } from '../storage/files'
 import { inWriteTransaction } from '../storage/driver'
+import { inspectVersion } from '../storage/schema'
 import { readPortableGraph } from './portable-db'
 import type { SnapshotManifest } from './manifest'
 import { writeDestination, type SavedLocation } from './file-state'
@@ -21,7 +22,7 @@ export async function promoteIncoming(root: string, staging: string, manifest: S
       db.pragma('trusted_schema=OFF'); db.pragma('foreign_keys=ON'); db.pragma('synchronous=FULL')
       inWriteTransaction(db, () => {
         db.pragma('defer_foreign_keys=ON')
-        for (const table of ['commits','documents','domain_operations','editor_ids','managed_assets']) db.prepare(`UPDATE ${table} SET project_id=? WHERE project_id=?`).run(projectId, manifest.projectId)
+        for (const table of ['commits','documents','domain_operations','editor_ids','managed_assets', ...(inspectVersion(db) >= 3 ? ['outline_state','anchor_targets','history_checkpoints','history_content'] : [])]) db.prepare(`UPDATE ${table} SET project_id=? WHERE project_id=?`).run(projectId, manifest.projectId)
         db.prepare('UPDATE projects SET id=? WHERE id=?').run(projectId, manifest.projectId)
         const receipts = db.prepare('SELECT operation_id,result FROM domain_operations WHERE project_id=?').all(projectId) as { operation_id: string; result: string }[]
         const update = db.prepare('UPDATE domain_operations SET result=? WHERE project_id=? AND operation_id=?')

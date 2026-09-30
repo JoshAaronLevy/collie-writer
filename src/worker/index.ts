@@ -48,6 +48,8 @@ async function receive(message: unknown): Promise<void> {
         case 'list': value = await repository.list(); break
         case 'create': value = await repository.create(command.input); break
         case 'open': value = await repository.open(command.input); break
+        case 'outline': value = await repository.outline(command.input); break
+        case 'history': value = await repository.history(command.input); break
         case 'section': value = await repository.section(command.input); break
         case 'meta': value = await repository.meta(command.input); break
         case 'commit': value = await repository.commit(command.input); break

@@ -192,3 +192,19 @@ button {
 .projects form input { flex: 1 1 14rem; }
 .recovery-panel label { display: block; margin-block: 0.75rem; }
 .recovery-panel li { overflow-wrap: anywhere; margin-block: 0.75rem; }
+
+.outline-panel, .history-panel { margin-block: 1.5rem; padding: 1rem; border: 1px solid #80909e; border-radius: .5rem; }
+.outline-tree { list-style: none; padding-inline-start: 1.2rem; }
+.outline-tree li { margin-block: .35rem; }
+.outline-tree button { text-align: left; max-width: 100%; overflow-wrap: anywhere; }
+.outline-tree small { display: block; }
+.outline-tree [aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 2px; }
+.outline-form, .outline-confirm { padding: 1rem; margin-block: 1rem; border: 1px solid #80909e; }
+.outline-form label, .history-panel label { display: block; margin-block: .75rem; }
+.outline-form input, .outline-form select, .outline-form textarea, .history-panel input, .history-panel select { max-width: 100%; }
+.outline-form textarea { display: block; width: 100%; min-height: 5rem; }
+.history-columns { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1rem; }
+.history-columns pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 28rem; overflow: auto; }
+.history-comparison details { margin-block: .75rem; border-block-end: 1px solid #80909e; padding-block: .5rem; }
+.history-panel li { margin-block: .75rem; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .history-columns { grid-template-columns: 1fr; } }

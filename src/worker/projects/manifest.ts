@@ -17,7 +17,7 @@ export class SnapshotError extends Error {
 export type BlobRef = { sha256: string; bytes: number }
 export type CitationRef = BlobRef & { id: string; kind: 'style' | 'locale' | 'notice' }
 export type SnapshotManifest = {
-  format: 'collie'; formatVersion: 1; minimumReader: 1; schemaVersion: 2; editorVersion: 1
+  format: 'collie'; formatVersion: 1; minimumReader: 1 | 3; schemaVersion: 2 | 3; editorVersion: 1
   projectId: string; snapshotId: string; parentSnapshotId: string | null; headCommitId: string
   createdAt: string; database: BlobRef; blobs: BlobRef[]; citationAssets: CitationRef[]
 }
@@ -30,10 +30,12 @@ export function readManifest(value: unknown): SnapshotManifest {
   const invalid = (): never => { throw new SnapshotError('INVALID_ARCHIVE') }
   if (!record(value) || !exact(value, ['format','formatVersion','minimumReader','schemaVersion','editorVersion','projectId','snapshotId','parentSnapshotId','headCommitId','createdAt','database','blobs','citationAssets'])) return invalid()
   if (value.format !== 'collie') return invalid()
-  for (const [key, supported] of [['formatVersion',1],['minimumReader',1],['schemaVersion',2],['editorVersion',1]] as const) {
+  for (const [key, supported] of [['formatVersion',1],['editorVersion',1]] as const) {
     if (typeof value[key] === 'number' && value[key] > supported) throw new SnapshotError('FORMAT_TOO_NEW')
     if (value[key] !== supported) return invalid()
   }
+  if (typeof value.schemaVersion === 'number' && value.schemaVersion > 3 || typeof value.minimumReader === 'number' && value.minimumReader > 3) throw new SnapshotError('FORMAT_TOO_NEW')
+  if (!(value.schemaVersion === 2 && value.minimumReader === 1 || value.schemaVersion === 3 && value.minimumReader === 3)) return invalid()
   if (![value.projectId,value.snapshotId,value.headCommitId].every(isId) || (value.parentSnapshotId !== null && !isId(value.parentSnapshotId)) || value.parentSnapshotId === value.snapshotId || !isUtc(value.createdAt)) return invalid()
   if (!blob(value.database, LIMITS.database) || !exact(value.database, ['sha256','bytes']) || value.database.bytes < 512) return invalid()
   if (!Array.isArray(value.blobs) || !Array.isArray(value.citationAssets) || value.blobs.length + value.citationAssets.length + 2 > LIMITS.entries) return invalid()

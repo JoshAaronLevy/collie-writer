@@ -1,5 +1,7 @@
 # Working project schema 2
 
+Historical Stage 5/8 contract. Stage 9 now copy-migrates this representation to [schema 3](working-project-v3.md); originals are retained.
+
 Stage 5 extends [schema 1](working-project-v1.md) with this STRICT table:
 
 `managed_assets(project_id, id, original_name, media_type, byte_size, sha256)`
