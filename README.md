@@ -2,11 +2,11 @@
 
 An offline-first desktop workspace for research and writing, built with Electron, React and TypeScript. Permanently ad-free.
 
-Stages 1–4 provide a development shell, native menus, a sandboxed narrow bridge, a SQLite utility process, untitled local projects with plain-text drafts, and internal editor/citation/export adapters with pinned local assets. **Protect locally** commits a draft for recovery on this computer; portable Save/Open, automatic commits and rich editing remain later stages. The [implementation plan](mvp-implementation-plan.md) is authoritative; see [Stage 4 evidence](docs/validation/stage-04.md), [storage decision](docs/decisions/stage-04-local-storage.md) and [D3–D5 decisions](docs/decisions/D3-editor-and-compilation.md). Implementation is complete through Stage 4; native behavior and user acceptance remain pending.
+Stages 1–5 provide a development shell, native menus, a sandboxed narrow bridge, a SQLite utility process, untitled local projects with plain-text drafts, and internal editor/citation/export/snapshot adapters. **Protect locally** commits a draft for recovery on this computer. Stage 5 adds the internal streaming archive engine and a copy migration for managed-asset inventory; native Save/Open controls arrive in Stage 6. Automatic commits and rich editing remain later stages. The [implementation plan](mvp-implementation-plan.md) is authoritative; see [Stage 5 evidence](docs/validation/stage-05.md) and [D6](docs/decisions/D6-portable-snapshots.md). Implementation is complete through Stage 5; native behavior, archive acceptance and performance remain pending.
 
 ## Current implementation workflow
 
-Josh owns all testing, effective September 29, 2026. The assistant must not write/maintain tests, add automated verification infrastructure or run any testing/check/build/launch/browser-verification activity. Each implemented stage ends with `Stage X complete. As a user:` and an ordered list of actions with expected outcomes, then waits for Josh's feedback. See the standing [instructions](AGENTS.md) and [Stage 4 manual guide](docs/manual-testing/stage-04.md).
+Josh owns all testing, effective September 29, 2026. The assistant must not write/maintain tests, add automated verification infrastructure or run any testing/check/build/launch/browser-verification activity. Each implemented stage ends with `Stage X complete. As a user:` and an ordered list of actions with expected outcomes, then waits for Josh's feedback. See the standing [instructions](AGENTS.md) and [Stage 5 manual guide](docs/manual-testing/stage-05.md).
 
 Existing Stage 1 tests, package scripts and results remain historical. The former automatic native CI is archived under `.github/disabled-workflows/` and no longer runs on push/pull request. Do not re-enable or extend it. Implementation completion is recorded separately from user-confirmed acceptance.
 
@@ -44,6 +44,8 @@ Tests generate a marked `collie-writer-test-*` directory directly in the OS temp
 Historical screenshots were generated in ignored `output/playwright/`. No tests, fixture preloads, source documents or development tools are intended for packaging. The target SQLite native binary is copied as a resource outside ASAR; native packaging still awaits Josh's manual results. The formerly proposed Stage 2 package/storage audit harness and later automated commands are cancelled under P7; do not add them.
 
 ## Editor and export implementation checkpoint
+
+The internal [snapshot format](docs/formats/collie-v1.md) uses yazl 3.3.1/yauzl 3.4.0 and saxes 6.0.0 with bundled notices. Working schema 1 copy-migrates to [schema 2](docs/formats/working-project-v2.md); prior database files and backups are retained. No archive controls, chosen destinations or background Save claims have been added. Large-library costs and clean-machine archive restoration await the actual product workflow and user observations.
 
 The Stage 3 adapters are not yet mounted in a writing screen or wired to export jobs. They define schema v1, immutable compilation, local APA 7/Chicago 18 processing, native DOCX structures and isolated Paged.js PDF printing. The [D3 subset](docs/decisions/D3-editor-and-compilation.md), [D4 license/citation decision](docs/decisions/D4-citations-and-licenses.md) and [D5 pagination decision](docs/decisions/D5-local-pdf-pagination.md) govern their later integration. No DOCX/PDF, IME or visual fidelity result is claimed.
 

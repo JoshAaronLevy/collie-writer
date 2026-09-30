@@ -18,7 +18,7 @@ function send(message: StorageWorkerMessage): void {
 async function receive(message: unknown): Promise<void> {
   if (typeof message !== 'object' || message === null || !('kind' in message)) return
   if (message.kind === 'shutdown' && Object.keys(message).length === 1) {
-    repository?.close()
+    await repository?.close()
     process.exit(0)
   }
   if (message.kind === 'project' && Object.keys(message).length === 3 && 'requestId' in message && isId(message.requestId) && 'command' in message && isProjectCommand(message.command)) {
@@ -35,18 +35,19 @@ async function receive(message: unknown): Promise<void> {
   if (
     initialized ||
     message.kind !== 'initialize' ||
-    Object.keys(message).length !== 3 ||
-    !('nativeBinding' in message) || !('workingRoot' in message)
+    Object.keys(message).length !== 4 ||
+    !('nativeBinding' in message) || !('workingRoot' in message) || !('resources' in message)
   )
     return
   const binding = message.nativeBinding
   if (binding !== null && typeof binding !== 'string') return
   if (message.workingRoot !== null && (typeof message.workingRoot !== 'string' || !isAbsolute(message.workingRoot))) return
+  if (typeof message.resources !== 'string' || !isAbsolute(message.resources)) return
   initialized = true
   try {
     const sqliteVersion = storageRuntime(binding ?? undefined)
     if (typeof message.workingRoot === 'string') {
-      repository = new ProjectRepository(message.workingRoot, binding ?? undefined)
+      repository = new ProjectRepository(message.workingRoot, message.resources, binding ?? undefined)
       await repository.initialize()
     }
     send({
@@ -60,7 +61,7 @@ async function receive(message: unknown): Promise<void> {
       }
     })
   } catch {
-    repository?.close()
+    await repository?.close()
     repository = undefined
     send({ kind: 'unavailable' })
   }

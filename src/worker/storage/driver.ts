@@ -84,11 +84,19 @@ export function inWriteTransaction<T>(database: Database.Database, change: () =>
 export async function backupStorageDatabase(
   database: Database.Database,
   destination: string,
-  nativeBinding?: string
+  nativeBinding?: string,
+  activity?: { signal?: AbortSignal; progress?: (bytes: number) => void }
 ): Promise<void> {
   if (!isAbsolute(destination) || extname(destination) !== '.sqlite' || existsSync(destination))
     throw new Error('A new absolute SQLite backup path is required')
-  await database.backup(destination)
+  let copied = 0
+  const pageSize = Number(database.pragma('page_size', { simple: true }))
+  await database.backup(destination, { progress: ({ totalPages, remainingPages }) => {
+    activity?.signal?.throwIfAborted()
+    const next = (totalPages - remainingPages) * pageSize
+    activity?.progress?.(Math.max(0, next - copied)); copied = next
+    return 256
+  } })
   const copy = new Database(destination, {
     ...options(nativeBinding),
     readonly: true,

@@ -144,6 +144,42 @@
       "source": "node_modules/parse5/LICENSE",
       "sha256": "8c535800331e1e4439835555b3f9edc7fe9dee2fab0d8bbbd5a982e8b8343d4d",
       "bytes": 1109
+    },
+    {
+      "path": "licenses/yazl-MIT.txt",
+      "source": "node_modules/yazl/LICENSE",
+      "sha256": "b303783d5eb7ca50b853ffa5f145e4e7998fab339831d848f507ca6cd970577a",
+      "bytes": 1077
+    },
+    {
+      "path": "licenses/yauzl-MIT.txt",
+      "source": "node_modules/yauzl/LICENSE",
+      "sha256": "b303783d5eb7ca50b853ffa5f145e4e7998fab339831d848f507ca6cd970577a",
+      "bytes": 1077
+    },
+    {
+      "path": "licenses/buffer-crc32-MIT.txt",
+      "source": "node_modules/buffer-crc32/LICENSE",
+      "sha256": "ddc9158fa20e427bc12fa8e1e6d07c642ed4d2c618607df768b30ae2986b3b7c",
+      "bytes": 1082
+    },
+    {
+      "path": "licenses/pend-MIT.txt",
+      "source": "node_modules/pend/LICENSE",
+      "sha256": "7e64acffcb0d20d33f5a86949ffd4a99ae045b10c7332a9c3a58635876c16880",
+      "bytes": 1082
+    },
+    {
+      "path": "licenses/xmlchars-MIT.txt",
+      "source": "node_modules/xmlchars/LICENSE",
+      "sha256": "45d196313c2647d313cc65ca9b093d2d6974b64d35ee7346f2c60c9d518dff2c",
+      "bytes": 1086
+    },
+    {
+      "path": "licenses/saxes-ISC.txt",
+      "url": "https://raw.githubusercontent.com/lddubeau/saxes/v6.0.0/LICENSE",
+      "sha256": "0fac2374380621b22e6b50451057721a9c52935b02d16d106a9f04897f061d0e",
+      "bytes": 3011
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { app, utilityProcess, type UtilityProcess } from 'electron'
 import { join } from 'node:path'
 import workerPath from '../worker/index?modulePath'
+import { bundledResources } from './resources'
 import { isProjectResult, isProjectValue, projectFailure, record, exact, type ProjectCommand, type ProjectResult, type ProjectValue } from '../shared/projects'
 import {
   isStorageWorkerMessage,
@@ -84,7 +85,8 @@ export class StorageWorker {
           nativeBinding: app.isPackaged
             ? join(process.resourcesPath, 'native', 'better_sqlite3.node')
             : null,
-          workingRoot
+          workingRoot,
+          resources: bundledResources()
         })
       } catch {
         this.unavailable(child)

@@ -3,13 +3,17 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { backupStorageDatabase, inWriteTransaction, openStorageDatabase } from './driver'
-import { PROJECT_SCHEMA_VERSION, inspectVersion, validateProjectSchema } from './schema'
+import { PROJECT_SCHEMA_VERSION, assetTable, inspectVersion, validateProjectSchema } from './schema'
 import { contained, directory, syncFile, syncDirectory, writeJson } from './files'
 import { ProjectError } from '../../domain/projects/errors'
 
 type Migration = { from: number; to: number; validateSource: (db: Database.Database) => void; apply: (db: Database.Database) => void }
-// Version 1 is the first persistent release. Register real forward steps here as formats evolve.
-const migrations: readonly Migration[] = []
+// Stage 4 schema 1 is retained untouched; only its verified candidate receives the asset inventory.
+const migrations: readonly Migration[] = [{
+  from: 1, to: 2,
+  validateSource: db => validateProjectSchema(db, 1),
+  apply: db => { db.exec(assetTable); db.prepare('UPDATE format SET schema_version=2,minimum_reader=2').run() }
+}]
 
 export async function activeDatabase(root: string, workspace: string): Promise<string> {
   let file = 'working.sqlite'

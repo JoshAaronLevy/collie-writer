@@ -8,8 +8,10 @@ import { ProjectError, projectError } from '../../domain/projects/errors'
 import type { CommitInput, CommitReceipt, CreateInput, OpenInput, OpenProject, ProjectList, ProjectSummary } from '../../shared/projects'
 import { inWriteTransaction, openStorageDatabase } from '../storage/driver'
 import { contained, directory, syncDirectory, writeJson } from '../storage/files'
-import { createProjectSchema, validateProjectSchema } from '../storage/schema'
+import { createProjectSchema, validateProjectSchema, inspectVersion } from '../storage/schema'
 import { openProjectDatabase } from '../storage/migrations'
+import { SnapshotJobs, type SnapshotRequest, type SnapshotJob } from './snapshot-jobs'
+import { SnapshotError } from './manifest'
 
 const catalogSchema = [
   'CREATE TABLE creation_intents (operation_id TEXT PRIMARY KEY, digest TEXT NOT NULL, project_id TEXT NOT NULL UNIQUE, workspace_id TEXT NOT NULL UNIQUE) STRICT',
@@ -19,13 +21,36 @@ const operationsSchema = [
   'CREATE TABLE jobs (id TEXT PRIMARY KEY, operation_id TEXT NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL, result TEXT) STRICT',
   'CREATE TABLE delivery (operation_id TEXT PRIMARY KEY, state TEXT NOT NULL) STRICT'
 ]
-type Owned = { projectId: string; workspaceId: string; workspace: string; db: Database.Database; operations: Database.Database; lock: Database.Database }
+type Owned = { projectId: string; workspaceId: string; workspace: string; db: Database.Database; operations: Database.Database; lock: Database.Database; snapshots?: SnapshotJobs }
 async function exists(path: string): Promise<boolean> { try { await lstat(path); return true } catch (e) { if (e && typeof e === 'object' && 'code' in e && e.code === 'ENOENT') return false; throw e } }
 
 export class ProjectRepository {
   private catalog!: Database.Database
   private active: Owned | undefined
-  constructor(private readonly root: string, private readonly nativeBinding?: string) {}
+  private boundary: Promise<unknown> = Promise.resolve()
+  constructor(private readonly root: string, private readonly resources: string, private readonly nativeBinding?: string) {}
+  private serial<T>(work: () => Promise<T>): Promise<T> {
+    const task = this.boundary.then(work)
+    this.boundary = task.catch(() => {})
+    return task
+  }
+  open(input: OpenInput): Promise<OpenProject> { return this.serial(() => this.openUnlocked(input)) }
+  create(input: CreateInput): Promise<OpenProject> { return this.serial(() => this.createUnlocked(input)) }
+  list(): Promise<ProjectList> { return this.serial(() => this.listUnlocked()) }
+  commit(input: CommitInput): Promise<CommitReceipt> { return this.serial(() => this.commitUnlocked(input)) }
+  /** Trusted worker services only. Stage 6 must provide grants/UI before exposing archive commands. */
+  queueSnapshot(input: OpenInput, request: SnapshotRequest): Promise<SnapshotJob> {
+    return this.serial(async () => {
+      const jobs = this.snapshotJobs(input)
+      const destination = this.catalog.prepare('SELECT base_snapshot_id FROM destinations WHERE project_id=?').get(input.projectId) as { base_snapshot_id: string | null } | undefined
+      if (!destination || request.parentSnapshotId !== destination.base_snapshot_id) throw new SnapshotError('STALE_REVISION')
+      return jobs.enqueue(request)
+    })
+  }
+  snapshotJobs(input: OpenInput): SnapshotJobs {
+    if (this.active?.projectId !== input.projectId || this.active.workspaceId !== input.workspaceId || !this.active.snapshots) throw new ProjectError('DENIED')
+    return this.active.snapshots
+  }
   private async safeDatabase(path: string): Promise<void> {
     for (const suffix of ['', '-wal', '-shm', '-journal']) if (await exists(path + suffix)) await contained(this.root, path + suffix, false)
   }
@@ -65,7 +90,9 @@ export class ProjectRepository {
       try { owned.operations.close() } finally { owned.lock.close() }
     } // OS/SQLite releases ownership on normal close or process death.
   }
-  close(): void {
+  async close(): Promise<void> {
+    await this.active?.snapshots?.stop()
+    await this.boundary
     if (this.active) { this.release(this.active); this.active = undefined }
     if (this.catalog?.open) this.catalog.close()
   }
@@ -96,21 +123,24 @@ export class ProjectRepository {
       operations = await this.localDatabase(join(workspace, 'operations.sqlite'), operationsSchema)
       // No job is silently replayed after interruption.
       operations.prepare("UPDATE jobs SET state='interrupted' WHERE state IN ('queued','running','cancelling')").run()
-      const owned = { ...input, workspace, db, operations, lock }
+      const owned: Owned = { ...input, workspace, db, operations, lock }
       this.read(owned)
       this.catalog.prepare('INSERT OR IGNORE INTO destinations VALUES (?,NULL,NULL,NULL)').run(input.projectId)
       await this.discovery(owned)
+      owned.snapshots = new SnapshotJobs({ ...owned, root: this.root, nativeBinding: this.nativeBinding }, this.resources, task => this.serial(task))
+      await owned.snapshots.initialize()
       return owned
     } catch (error) { db?.close(); operations?.close(); lock.close(); throw error }
   }
-  async open(input: OpenInput): Promise<OpenProject> {
+  private async openUnlocked(input: OpenInput): Promise<OpenProject> {
     if (this.active?.projectId === input.projectId && this.active.workspaceId === input.workspaceId) return this.read(this.active)
+    if (this.active?.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
     const next = await this.acquire(input)
     if (this.active) this.release(this.active)
     this.active = next
     return this.read(next)
   }
-  async list(): Promise<ProjectList> {
+  private async listUnlocked(): Promise<ProjectList> {
     const result: ProjectList = { projects: [], issues: [] }
     const folders = await readdir(join(this.root, 'workspaces'))
     if (folders.length > 10000) throw new ProjectError('UNAVAILABLE')
@@ -134,7 +164,8 @@ export class ProjectRepository {
     result.projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     return result
   }
-  async create(input: CreateInput): Promise<OpenProject> {
+  private async createUnlocked(input: CreateInput): Promise<OpenProject> {
+    if (this.active?.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
     const digest = requestDigest(input)
     // Commit a local intent before touching the workspace. Retrying the same request uses the same IDs.
     const intent = inWriteTransaction(this.catalog, () => {
@@ -162,16 +193,19 @@ export class ProjectRepository {
       await directory(this.root, join(workspace, 'blobs'))
       const path = join(workspace, 'working.sqlite')
       await this.safeDatabase(path)
+      let initialized = false
       // Existing formats must be inspected read-only before enabling WAL or opening a writer.
       if (await exists(path)) {
         const existing = new Database(path, { nativeBinding: this.nativeBinding, readonly: true, fileMustExist: true })
         try {
           existing.pragma('trusted_schema=OFF')
-          if (existing.prepare("SELECT name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").all().length) validateProjectSchema(existing)
+          if (existing.prepare("SELECT name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").all().length) {
+            validateProjectSchema(existing, inspectVersion(existing)); initialized = true
+          }
           else if (existing.pragma('user_version', { simple: true }) !== 0) throw new ProjectError('CORRUPT_PROJECT')
         } finally { existing.close() }
       }
-      const db = openStorageDatabase(path, this.nativeBinding)
+      const db = initialized ? await openProjectDatabase(this.root, workspace, this.nativeBinding) : openStorageDatabase(path, this.nativeBinding)
       try {
         const objects = db.prepare("SELECT name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").all()
         if (!objects.length && db.pragma('user_version', { simple: true }) === 0) {
@@ -194,7 +228,7 @@ export class ProjectRepository {
       await syncDirectory(project)
       await syncDirectory(join(this.root, 'workspaces'))
     } finally { lock.close() }
-    return this.open({ projectId: intent.project_id, workspaceId: intent.workspace_id })
+    return this.openUnlocked({ projectId: intent.project_id, workspaceId: intent.workspace_id })
   }
   private indexIds(db: Database.Database, projectId: string, documentId: string, payload: DocumentPayload): void {
     const insert = db.prepare('INSERT INTO editor_ids VALUES (?,?,?,?)')
@@ -210,12 +244,12 @@ export class ProjectRepository {
     }
     visit(payload)
   }
-  async commit(input: CommitInput): Promise<CommitReceipt> {
+  private async commitUnlocked(input: CommitInput): Promise<CommitReceipt> {
     const owned = this.active
     if (!owned || owned.projectId !== input.projectId || owned.workspaceId !== input.workspaceId) throw new ProjectError('DENIED')
     const payload = readDocument(input.payload)
-    // Source/blob ownership cannot be established until their owning stages add those repositories.
-    const references = (v: unknown): boolean => !!v && typeof v === 'object' && Object.entries(v).some(([key, child]) => key === 'sourceId' || key === 'assetId' || references(child))
+    // Source ownership arrives later. Image references must resolve in this project's asset inventory.
+    const references = (v: unknown): boolean => !!v && typeof v === 'object' && Object.entries(v).some(([key, child]) => key === 'sourceId' || (key === 'assetId' && !owned.db.prepare('SELECT id FROM managed_assets WHERE project_id=? AND id=?').get(input.projectId, child)) || references(child))
     if (references(payload)) throw new ProjectError('VALIDATION')
     const digest = requestDigest(input)
     const result = inWriteTransaction(owned.db, () => {

@@ -35,3 +35,8 @@ dependency notices are included here. No paid editor extension or hosted
 conversion service is used. Pinned asset origins and SHA-256 identifiers
 are recorded in ../asset-manifest.json; npm artifacts are pinned in the
 application package lockfile. Required legal attribution is not advertising.
+
+Portable snapshots use yazl 3.3.1 and yauzl 3.4.0 (MIT), with buffer-crc32
+1.0.0 and pend 1.2.0 (MIT). Local XML validation uses saxes 6.0.0 (ISC)
+and xmlchars 2.2.0 (MIT). Their complete upstream notices are bundled
+alongside this notice. No archive or XML service receives project data.

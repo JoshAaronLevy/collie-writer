@@ -1,5 +1,7 @@
 # Working project schema 1
 
+Historical Stage 4 format. Stage 5 introduces [working schema 2](working-project-v2.md) through a retained-copy 1→2 migration; preserve these original SQL and command contracts when reading older workspaces.
+
 Stage 4 implementation contract, September 29, 2026. Runtime/native acceptance is pending. SQL ownership is `src/worker/storage/schema.ts`; command ownership is `src/shared/projects.ts`. Editor payloads use `src/domain/editor/schema.ts` v1. This is not a `.collie` archive specification.
 
 ```text
