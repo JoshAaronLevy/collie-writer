@@ -1,0 +1,48 @@
+# Direct release candidate
+
+Prepared October 1, 2026. **NO-GO — candidate artifacts and required user evidence are absent.** This is a release-preparation record, not a signed candidate or approval. Stage 23 remains incomplete. The [manifest](../release/release-candidate-manifest.json) is a hand-maintained record; it is not an executable check or an updater feed.
+
+The checkout source version is `1.0.0`; the actual candidate version, source revision and release identifier are unassigned. Intended direct targets are macOS 15+ arm64/Intel x64 on supported OS/hardware and Windows 11 x64 on supported feature releases. Minimum/latest-OS native observations are pending. No Linux, Windows 10, native Windows arm64, mobile, AI or vendor content-sync support is promised. Portable format is archive v1, working SQL/minimum reader 9, editor AST 1 and compilation model 2. These are source contracts, not measured compatibility.
+
+## Required direct gates
+
+Every row remains open until the release owner records dated evidence for the exact candidate. A reported failure and a missing result are different states; neither is a pass. No known data-loss, security or high-severity accessibility defect may be waived. Fixes affecting an accepted journey reopen the relevant observations on the changed candidate.
+
+| Gate | Current state | Evidence required from the owner | Source/guide |
+| --- | --- | --- | --- |
+| Identity and release configuration | Blocked; legal seller, namespace/domain, signing identity and release support details absent | Verified seller/publisher, app ID/domain control, supported OS policy, final branding and exact release configuration | [Stage 21](stage-21.md), [owner runbook](../release/direct-installers-and-updates.md) |
+| Signed native distribution | Blocked; no artifact supplied | macOS arm64/x64 DMG and update ZIP with Developer ID/notary/stapling observations; Windows x64 full NSIS with Authenticode observations; filenames, versions, SHA-256 and native module architecture | [Stage 21 guide](../manual-testing/stage-21.md) |
+| Clean install and offline loop | Pending | Exact OS/hardware/build; independent note → source/excerpt → claim → writing → citation → export → backup/restore journey without network or AI setup | [Stage 23 guide](../manual-testing/stage-23.md), Stages 8–15/19 guides |
+| Save, conflicts and recovery | Pending | First Save/cancel, separate local/file/cloud states, previous-file preservation, independent restore across supported computers, retained-copy migration, OneDrive sequential handoff and observed conflicts; unsafe/unavailable interruptions explicitly pending | Stages [6](../manual-testing/stage-06.md), [7](../manual-testing/stage-07.md), [23](../manual-testing/stage-23.md) |
+| Outputs and research portability | Pending; D5 unresolved | DOCX in current Word/LibreOffice and PDF in independent readers; actual page-bottom notes, long-note/page boundaries, non-Latin text, images, citations/bibliography, Letter/A4; Markdown assets/text losses; CSL JSON/BibTeX/RIS and retained originals after restore | Stages [15](../manual-testing/stage-15.md), [16](../manual-testing/stage-16.md), [17](../manual-testing/stage-17.md) |
+| Free/paid/lifetime and commerce | Blocked; configuration and provider outcomes absent | Untimed free switching/essential access; authentic monthly/lifetime catalogs, purchase/restore, expiry/refund/offline transitions and lifetime edition updates on direct Mac/Windows; factual USD copy | [Stage 20 prerequisites](../commerce/stage-20-prerequisites.md), [guide](../manual-testing/stage-20.md) |
+| Writer comprehension and current value | Blocked; zero results supplied | Consented independent nonfiction-writer outcomes, paid distinction comprehension and explicit commercial-value decision; proposed minimum five sessions is qualitative guidance, not an automatic pass | [Value sessions](../research/stage-18-value-sessions.md) |
+| Accessibility | Pending | Keyboard journeys, native dialog/focus/status behavior, VoiceOver/NVDA, 200% zoom, contrast/reduced motion and source/PDF navigation; no unresolved severe obstacle | [Matrix](../accessibility/stage-19-matrix.md) |
+| Security, privacy and permanent ad-free behavior | Pending | Owner-supplied review of final dependency/artifact contents, relevant current advisories/policies/licenses, sandbox/IPC/parser/print boundaries, actual metadata-only requests and no ads/tracking in every controlled app/checkout/help surface | [Privacy inventory](../privacy/stage-19-file-and-network-inventory.md), [D7](../decisions/D7-direct-commerce.md), [D8](../decisions/D8-store-channels.md) |
+| Scale and responsiveness | Pending; no measurements | User-selected large projects and native observations against the plan's budgets: 200,000 words/80 sections, 100,000-word section, 10,000 sources, 20,000 notes/excerpts, 2,000 attachments and 5/10 GiB libraries | [Plan quality gates](../../mvp-implementation-plan.md#5-cross-stage-quality-and-release-gates) |
+| Updates, repair and uninstall | Pending | Same-channel signed upgrade with protected pending edits, cancellation/offline/interruption, retained recovery and selected files, reviewed binary repair; no assumed data downgrade | [Stage 21 guide](../manual-testing/stage-21.md) |
+| Operations and truthful launch materials | Prepared procedures; owner configuration/acceptance absent | Named operational owner and private support channel; backup/key/revision-ledger recovery; incident action; complete notices and release notes; facts match observed shipped behavior | [Support runbook](../release/support-and-incidents.md), [commerce operations](../../services/entitlements/README.md) |
+
+The plan's internal security/failure requirements remain release gates even where the current UI cannot safely expose an observation. Do not invent a test-only route, destructive experiment or substitute metric. Record the gap and arrange an appropriate explicitly authorized human review. Unknown reliability and unavailable large-scale evidence cannot silently become support claims.
+
+## Evidence and defect record
+
+No candidate observation has been reported. For each user-supplied result, record date, anonymous observer label, candidate version/source revision, OS/architecture, relevant reader or assistive tool version, guide step, expected/observed outcome and content-free defect reference. Use aggregate task completion and concise paraphrases for writer sessions. Do not store manuscript text, project names, filenames/paths, source quotes, purchase credentials, full request logs or participant identity. Installer artifact names/hashes and signing identities belong in the release manifest, not customer diagnostics.
+
+| Record | Current result |
+| --- | --- |
+| Consented beta participants / independent completed workflows | 0 reported / 0 reported |
+| Native clean-install or update results | None supplied |
+| Independently accepted exports / cross-computer restores | None supplied |
+| New candidate defect reports | None supplied; this does not mean defect-free |
+| Nonblocking defects accepted by owner | None recorded |
+| Direct go/no-go decision | NO-GO; no approving owner/date |
+| Store status | Separate [Stage 22 record](stage-22.md); excluded from direct dependency set |
+| AI status | Deferred; excluded from readiness and first-sale value |
+| Publication | Not authorized, not performed |
+
+## Reviewable publication action
+
+Publication is deliberately not executable yet. Once all direct gates have actual evidence, fill the manifest with the exact source revision, signed immutable artifact filenames/hashes/sizes, full HTTPS artifact URLs under the owned origin, channel-specific feed names/hashes and reviewed website/support/commerce URLs. Supply the approved public release notes and owner go decision. Rebuilding or modifying a binary after its recorded observations invalidates that artifact record.
+
+The subsequent authorization request must name the destination account/origin, production version, every immutable artifact and its SHA-256, the exact feed objects to change under `/direct/production/`, the approved download/release-note pages, whether any checkout policy or hosting changes are included, and the planned containment action. Upload complete signed artifacts first, then publish feed references to those exact objects; preserve the previous feed/artifacts privately for diagnosis. Never overwrite an existing versioned binary, redirect to an unrelated origin, mix beta and production, or treat publication permission as permission for store submission, account registration or live purchases. Until that concrete package exists, keep the action unapproved and all destinations null.

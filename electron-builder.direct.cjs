@@ -20,7 +20,7 @@ module.exports = {
   extends: './electron-builder.yml',
   appId,
   productName: name,
-  extraMetadata: { collieRelease: { channel, appId, updateOrigin: origin, publisherName } },
+  extraMetadata: { collieRelease: { channel, distribution: 'direct', appId, updateOrigin: origin, publisherName } },
   // Only production registers the default document association; beta can use Open.
   fileAssociations: channel === 'production' ? [{ ext: 'collie', name: 'Collie Writer project', role: 'Editor', rank: 'Owner' }] : [],
   publish: { provider: 'generic', url: feed },
@@ -43,7 +43,8 @@ module.exports = {
     forceCodeSigning: true,
     signAndEditExecutable: true,
     verifyUpdateCodeSignature: true,
-    signExts: ['.node'],
+    // EXEs are builder's default; Electron DLLs and the SQLite addon are also PE.
+    signExts: ['.dll', '.node'],
     publisherName: publisherName || undefined,
     target: [{ target: 'nsis', arch: ['x64'] }],
     extraResources: [{ from: 'node_modules/better-sqlite3/prebuilds/win32-${arch}.node', to: 'native/better_sqlite3.node' }]

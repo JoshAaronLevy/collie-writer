@@ -14,7 +14,7 @@ The signed envelope has exactly `grant` and `signature`. `signature` is canonica
 | --- | --- |
 | `schema` | Integer `1` |
 | `keyId`, `issuer`, `purchaseRef` | Opaque ASCII `[A-Za-z0-9_-]`, 1–128 characters; no email or content identifiers |
-| `channel` | `direct`, `mas` or `microsoft`; must match the bundled key's authority |
+| `channel` | Wire schema reserves `direct`, `mas` and `microsoft`; D8's implemented desktop verifier accepts only `direct`, matching the bundled key's authority |
 | `editionId` | `nonfiction` |
 | `accessKind` | `subscription` or `lifetime` |
 | `revision` | Positive JavaScript safe integer, increasing monotonically per purchase identity |
@@ -31,3 +31,5 @@ Trusted keys are build-owned entries in `src/main/entitlements/keys.ts`; they ma
 The renderer sees only a bounded `AccessView`: policy revision, state/capability flags, dates/warnings, local designation/sample scopes and an optional transition ID/scope. Signed documents, opaque purchase references and public-key configuration stay main-only. The native importer reads a selected, bounded access document and verifies it; user-facing errors do not log the document or filesystem path. There are no new network requests or secrets. Signed documents are not bearer restore tokens; Stage 20 must store those separately in OS-protected credential storage.
 
 Stage 20's [direct-service contract](direct-commerce-v1.md) now implements the separate OS-encrypted connection store and explicitly invoked main-only HTTPS transport. This does not change grant/cache version 1. Authentic keys and origin remain unconfigured, checkout remains gated, and all provider/native outcomes are pending. Disconnect clears bearer connection state and does not discard this signed anti-replay cache.
+
+Stage 22's [D8 channel decision](../decisions/D8-store-channels.md) limits this desktop verifier, including cache reads and manual imports, to `channel: direct`. The Microsoft Store EXE listing uses the same direct purchase and exact installer; it does not issue Microsoft grants. The v1 wire schema retains its reserved channel names, but adding a store public key cannot enable cross-store access implicitly. An unsupported grant is rejected and an unreadable cache is retained under the existing fail-closed recovery policy. No valid store grants have been configured or issued by this project. A future native MAS authority must feed the shared capability policy through its own reviewed adapter; a StoreKit event is not a signed Collie grant.

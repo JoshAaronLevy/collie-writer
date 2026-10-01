@@ -26,5 +26,6 @@ Keep credentials and private keys in the hosting secret manager, not chat, sourc
 | Approved refund/chargeback/reversal | Reconciled revisions; essential access retained | None |
 | Credential disconnect/replacement/support | Protected local vault and hashed service tokens; support operator path | None |
 | Key rotation/offline return | Monotonic grants and retained public-key requirement | None |
-| Mac App Store / Microsoft Store | Stage 22; not implemented by Stage 20 | None |
+| Microsoft Store EXE acquisition | Stage 22 reuses the exact direct-production installer and direct commerce/restore; no Microsoft purchase adapter | None; signing/hosting/native/review pending |
+| Mac App Store | Stage 22 remains blocked on native entitlement and sandbox file implementation, then Apple configuration | None; no MAS purchase/restore supplied |
 | Live sale/public checkout | Blocked | Not attempted |

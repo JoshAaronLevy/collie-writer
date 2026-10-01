@@ -1,0 +1,67 @@
+{
+  "recordVersion": 1,
+  "preparedOn": "2026-10-01",
+  "status": "blocked-no-go",
+  "stage23Complete": false,
+  "sourcePackageVersion": "1.0.0",
+  "candidate": {
+    "id": null,
+    "version": null,
+    "sourceRevision": null,
+    "channel": "production",
+    "distribution": "direct",
+    "appId": "com.colliewriter.app",
+    "legalSeller": null,
+    "namespaceVerifiedOn": null,
+    "updateOrigin": null,
+    "supportUrl": null,
+    "releaseNotesUrl": null
+  },
+  "formats": {
+    "archive": 1,
+    "workingSql": 9,
+    "minimumReader": 9,
+    "editorAst": 1,
+    "compilationModel": 2
+  },
+  "artifacts": [
+    { "platform": "macOS", "architecture": "arm64", "kind": "dmg", "filename": null, "url": null, "sha256": null, "sizeBytes": null, "signingIdentity": null, "teamId": null, "notarizationEvidence": null, "staplingEvidence": null, "nativeResult": null },
+    { "platform": "macOS", "architecture": "arm64", "kind": "zip", "filename": null, "url": null, "sha256": null, "sizeBytes": null, "signingIdentity": null, "teamId": null, "notarizationEvidence": null, "staplingEvidence": null, "nativeResult": null },
+    { "platform": "macOS", "architecture": "x64", "kind": "dmg", "filename": null, "url": null, "sha256": null, "sizeBytes": null, "signingIdentity": null, "teamId": null, "notarizationEvidence": null, "staplingEvidence": null, "nativeResult": null },
+    { "platform": "macOS", "architecture": "x64", "kind": "zip", "filename": null, "url": null, "sha256": null, "sizeBytes": null, "signingIdentity": null, "teamId": null, "notarizationEvidence": null, "staplingEvidence": null, "nativeResult": null },
+    { "platform": "Windows", "architecture": "x64", "kind": "nsis-exe", "filename": null, "url": null, "sha256": null, "sizeBytes": null, "signingIdentity": null, "authenticodeEvidence": null, "nativeResult": null }
+  ],
+  "feeds": [
+    { "platform": "macOS", "path": "/direct/production/latest-mac.yml", "url": null, "sha256": null },
+    { "platform": "Windows", "path": "/direct/production/latest.yml", "url": null, "sha256": null }
+  ],
+  "evidence": {
+    "identity": null,
+    "signedNativeDistribution": null,
+    "offlineWorkflow": null,
+    "saveConflictRecoveryMigration": null,
+    "oneDriveHandoff": null,
+    "exportReaderFidelity": null,
+    "crossComputerRestore": null,
+    "directCommerce": null,
+    "expiryRefundOfflineLifetime": null,
+    "nonAiValueDecision": null,
+    "accessibility": null,
+    "securityPrivacyNoAds": null,
+    "dependencyLicensesAndAdvisories": null,
+    "scaleAndResponsiveness": null,
+    "updateRepairUninstall": null,
+    "supportIncidentReadiness": null
+  },
+  "beta": { "reportedParticipants": 0, "reportedCompletedWorkflows": 0, "outcomes": [] },
+  "reportedDefects": [],
+  "defectReviewComplete": false,
+  "ownerAcceptedNonblockingDefects": [],
+  "independentChannels": {
+    "macAppStore": { "blocksDirectRelease": false, "statusRecord": "docs/validation/stage-22.md" },
+    "microsoftStore": { "blocksDirectRelease": false, "statusRecord": "docs/validation/stage-22.md" },
+    "ai": { "blocksDirectRelease": false, "status": "deferred" }
+  },
+  "approval": { "directDecision": "no-go", "owner": null, "decidedOn": null, "evidenceRecord": null },
+  "publication": { "authorized": false, "authorizedBy": null, "authorizationRecord": null, "destinationAccount": null, "exactActions": null, "performedOn": null }
+}

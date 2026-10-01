@@ -94,7 +94,7 @@ export class AccessService {
       if(rank>best||rank===best&&Date.parse(g.graceUntil??'')>Date.parse(graceUntil??'')){best=rank;state=candidate;paidThrough=g.paidThrough??null;graceUntil=g.graceUntil??null}
     }
     const paid=['subscription','grace','lifetime'].includes(state)
-    const base:AccessView={revision:this.settings.revision,state,paid,paidThrough,graceUntil,clockWarning:Date.now()+5*60000<now,storageWarning:this.storageWarning,issuerConfigured:ISSUER_KEYS.length>0,freeProject:this.settings.freeProject,sampleProject:this.settings.sampleProject,transition:this.transition}
+    const base:AccessView={revision:this.settings.revision,state,paid,paidThrough,graceUntil,clockWarning:Date.now()+5*60000<now,storageWarning:this.storageWarning,issuerConfigured:ISSUER_KEYS.some(key=>key.channel==='direct'),freeProject:this.settings.freeProject,sampleProject:this.settings.sampleProject,transition:this.transition}
     if(this.active&&canEditProject(base,this.active))this.activeWasEditable=true
     if(this.activeWasEditable&&this.active&&!canEditProject(base,this.active)&&!this.transition){this.transition={id:randomUUID(),scope:{...this.active}};this.drainOperations.clear()}
     if(paid&&this.transition){this.transition=null;this.drainOperations.clear()}
@@ -240,7 +240,7 @@ export class AccessService {
           return {ok:true,requestId,value:this.view()}
         }
         if(kind==='importGrant'&&isInfoRequest(payload)){
-          if(!ISSUER_KEYS.length)throw new ProjectError('ISSUER_UNCONFIGURED')
+          if(!ISSUER_KEYS.some(key=>key.channel==='direct'))throw new ProjectError('ISSUER_UNCONFIGURED')
           this.requireSettled()
           const window=BrowserWindow.fromWebContents(event.sender);if(!window)throw new ProjectError('DENIED')
           const answer=await dialog.showOpenDialog(window,{title:'Import signed Collie Writer access document',filters:[{name:'Signed access document',extensions:['json','collie-license']}],properties:['openFile','dontAddToRecent']})

@@ -22,6 +22,10 @@ export function verifyGrant(value: unknown): SignedGrant {
   const names=['schema','keyId','issuer','channel','purchaseRef','editionId','accessKind','revision','status','issuedAt']
   if(g.accessKind==='subscription')names.push('paidThrough','graceUntil')
   if(!exact(g,names)||g.schema!==1||!token(g.keyId)||!token(g.issuer)||!token(g.purchaseRef)||!['direct','mas','microsoft'].includes(String(g.channel))||g.editionId!=='nonfiction'||!['subscription','lifetime'].includes(String(g.accessKind))||!Number.isSafeInteger(g.revision)||Number(g.revision)<1||!['active','revoked'].includes(String(g.status))||!date(g.issuedAt))return bad()
+  // D8's Store EXE uses direct commerce. A store key in a future keyring must
+  // not silently enable cross-store imports or restore in this desktop channel.
+  // Keep the version-1 wire schema; a native MAS adapter needs its own authority.
+  if(g.channel!=='direct')return bad()
   if(g.accessKind==='subscription'&&(!date(g.paidThrough)||!date(g.graceUntil)||Date.parse(g.graceUntil)<Date.parse(g.paidThrough)||Date.parse(g.graceUntil)-Date.parse(g.paidThrough)>14*86400000))return bad()
   const trusted=ISSUER_KEYS.find(k=>k.keyId===g.keyId&&k.issuer===g.issuer&&k.channel===g.channel)
   if(!trusted)return bad()

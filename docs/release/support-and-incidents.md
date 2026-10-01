@@ -1,0 +1,41 @@
+# Support, incidents and direct release operations
+
+Prepared October 1, 2026. These are owner procedures, not completed operations. The legal seller, operating owner, private support destination, live service and release host are not yet supplied. Public support availability must not be claimed until those are configured and accepted. No messages, upload, service launch, account action or publication is authorized by this document.
+
+## Content-free support
+
+The user initiates contact through the eventual owner-approved channel. Request the exact app/channel version, OS/architecture, action taken, expected/observed result and allowlisted error code. The implemented Support preview may supply versions, storage state, elapsed time and known error codes; ask the user to review it before choosing to share it. There is no automatic support upload.
+
+Start with these facts and a description using invented labels or public material. Do not request a whole manuscript, project archive, SQLite/WAL, source originals/excerpts, filenames/paths, credentials, receipt tokens, recovery codes, unrestricted logs, screenshots of writing or network captures. Do not add content-bearing diagnostic telemetry to resolve a report. A code review or ordinary metadata-only error report is not proof of a successful fix. Return user-owned manual actions and expected outcomes for the actual change.
+
+Purchase support uses verified merchant ownership through the separately secured operator channel, not manuscript possession. Follow the [commerce runbook](../../services/entitlements/README.md) for recovery-code replacement, connection revocation, signing-key rotation and revision-ledger recovery. Customer/order metadata is private even though it contains no writing. No support process should invent paid rights, reset anti-replay state, request a private key, or claim an offline client immediately learned a revocation.
+
+## Incident decisions and preservation
+
+| Situation | Owner action | Required record |
+| --- | --- | --- |
+| Suspected lost writing, overwrite or broken migration | Stop rollout/affected operation, preserve current and prior material, keep direct release NO-GO; prioritize recovery and a bounded source fix | App/version/platform, content-free action/error, known last successful protection and whether independent backup exists |
+| Signature, updater-origin or dependency compromise; content disclosure; any ad/tracking | Stop serving the affected candidate/feed and disable the implicated service route where safe; retain private incident metadata and rotate compromised credentials through their issuer | Affected versions/channel, exposure category/time, containment decision and trusted transition plan; never secret contents |
+| Entitlement/service outage | Keep local read/export/backup/recovery available; investigate metadata service and provider state using authorized operator access | Generic error and affected operation/time, provider incident reference if supplied; no writing or complete payload |
+| Severe accessibility or required output loss | Block release, preserve a disposable example locally, fix the implicated implementation and request new user observations | Platform/reader/tool version, missing interaction or output element using non-content labels |
+| Nonblocking usability issue | Record a bounded issue and explicit owner acceptance if release may proceed | Severity, affected journey, workaround, owner/date and planned fix; missing evidence is not a nonblocking defect |
+
+Before repair, the user should preserve a chosen `.collie` snapshot and independent backup through the app if available. If that is not possible, do not reset, clear app data, delete WAL/SHM, delete file-operation candidates or replace the only working copy. A live SQLite main file alone is not a safe backup. Keep the full working directory and its sidecars together until the app can close cleanly or an explicitly arranged recovery specialist can preserve it safely. Avoid reopening the sole affected data with different versions. Do not promise recovery that has not been observed.
+
+Selected project files, backup files, `.collie-<operation ID>.previous.collie`, migration originals, local recovery, `reset-recovery/` and operation candidates are retained user content. They are never expendable updater cache. OneDrive's synchronization is outside the app's commit; retain conflict branches and confirm cloud availability through the provider before a sequential handoff. Never advise concurrent writing to the same selected file as a repair.
+
+## Forward fixes and binary rollback
+
+Preserve the last known good signed installer, exact previous feed metadata, recorded hashes and supported data-format contracts privately. Stop offering a bad release and publish a repaired **newer** signed version only after its relevant user observations and explicit publication authorization. The updater rejects downgrades. Removing an artifact from a feed does not recall installed software or restore user data.
+
+A reviewed reinstall of a prior signed installer may repair binaries, but it is not permission to downgrade a current workspace. If the prior app cannot read SQL/minimum reader 9 or a later format, use a separate retained pre-migration copy compatible with that app, preserving all newer work. Do not auto-downgrade data, alter format version fields, delete recovery or silently replace a customer project with an old backup. Prefer a forward fix that reads and preserves the current data. Record the owner's observed repair outcome before claiming rollback works.
+
+Changing the Windows publisher or Apple signing identity requires a reviewed trust-continuity plan; the existing updater pins channel identity and Windows publisher. Key compromise needs a separately arranged revocation/rotation and trusted transition. The entitlement service must not sign against an older revision ledger after recovery; preserve monotonic decisions or keep issuance disabled until the canonical state is restored.
+
+## Factual release copy and authorization
+
+The candidate may be described internally as **Collie Writer: an offline desktop workspace for nonfiction writing, local research, citations and document export**. Treat it as pre-release until the [candidate gate register](../validation/release-candidate.md) has actual acceptance. Planned direct launch is United States/USD, with untimed free editing of one explicitly designated personal project, individual exports/backup/recovery for all projects, and paid unrestricted editing plus reusable recipes and multiple output formats. The approved offers are $9.99/month or $199 lifetime for the nonfiction edition; lifetime includes all future updates to that edition. These are planned offers while authentic commerce and the value gate remain closed, not currently available purchases.
+
+Do not describe outputs as professionally verified, claim broad OS compatibility, seamless cloud synchronization, successful restore, certification, production availability, store approval or accepted accessibility without the corresponding evidence. Do not market AI or sell future capabilities. No ads, sponsored/affiliate placements, ad tracking or promotional upsells may appear in app-controlled release/support/checkout materials.
+
+The owner fills the [manifest](release-candidate-manifest.json) and approves truthful release notes, identity, support/privacy/refund terms and exact artifact/feed destinations. Follow the [candidate publication handoff](../validation/release-candidate.md#reviewable-publication-action). The authorization must identify the immutable signed artifacts and hashes, owned hosting account/origin, exact channel feed objects and website/commerce changes. Publishing, service deployment, enabling checkout, live transactions and store submission are distinct actions; permission for one does not imply the others. No publication request is ready while these concrete fields and required observations remain absent.
