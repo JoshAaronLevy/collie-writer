@@ -74,6 +74,7 @@ export async function printPdf(document: PrintDocument, signal?: AbortSignal): P
     const pages: unknown = await window.webContents.executeJavaScript(paginate)
     if (typeof pages !== 'number' || !Number.isInteger(pages) || pages < 1 || pages > 2000) throw new Error('PAGINATION_FAILED')
     const bytes = await window.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, pageSize: document.paper, margins: { top: 0, bottom: 0, left: 0, right: 0 } })
+    if (bytes.length > 512 * 1024 * 1024) throw new Error('PDF_LIMIT')
     if (signal?.aborted) throw new Error('CANCELLED')
     return { bytes, pages, capturedHead: document.capturedHead }
   } catch {

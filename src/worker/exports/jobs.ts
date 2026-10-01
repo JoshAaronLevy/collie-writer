@@ -4,12 +4,14 @@ import { link, mkdir, open, readFile, realpath, rename, unlink } from 'node:fs/p
 import { dirname, join, relative, isAbsolute } from 'node:path'
 import { crc32 } from 'node:zlib'
 import { openPromise } from 'yauzl'
-import { isExportJob, type DestinationFingerprint, type ExportJob, type WorkerExportStart } from '../../shared/exports'
+import { isExportJob, type DestinationFingerprint, type ExportJob, type WorkerExportStart, type WorkerExportBatchStart } from '../../shared/exports'
 import { ProjectError } from '../../domain/projects/errors'
 import { exportFingerprint as fingerprint } from '../../domain/projects/export-path'
 import { syncDirectory, writeJson } from '../storage/files'
 import { fileHash } from '../projects/streams'
 import { exportDocx } from './docx'
+import { exportPrintDocument, type PrintDocument } from './html'
+import { exportInterchange } from './interchange'
 import type { PreparedExport } from './prepare'
 
 function same(a:DestinationFingerprint|null,b:DestinationFingerprint|null):boolean{return JSON.stringify(a)===JSON.stringify(b)}
@@ -34,7 +36,7 @@ async function inspectDocx(path:string):Promise<void>{
 type Running={job:ExportJob;controller:AbortController;task:Promise<void>;folder:string}
 export class ExportJobs{
   private readonly jobs=new Map<string,Running>()
-  constructor(private readonly root:string,private readonly resources:string){}
+  constructor(private readonly root:string,private readonly resources:string,private readonly renderPdf?: (document:PrintDocument,signal:AbortSignal)=>Promise<{bytes:Buffer;pages:number;capturedHead:string}>){}
   private async persist(running:Running):Promise<void>{await writeJson(join(running.folder,'report.json'),{version:1,...running.job})}
   async start(workspace:string,input:WorkerExportStart,prepared:PreparedExport):Promise<ExportJob>{
     const {preview,model,images}=prepared
@@ -56,6 +58,95 @@ export class ExportJobs{
     this.jobs.set(id,running)
     running.task=new Promise<void>(resolve=>setImmediate(()=>{void this.render(running,input,model,images).finally(resolve)}))
     return {...job}
+  }
+  async startBatch(workspace:string,input:WorkerExportBatchStart,prepared:PreparedExport):Promise<ExportJob>{
+    const {preview,model,images}=prepared
+    if(preview.headCommitId!==input.expectedHead||preview.digest!==input.previewDigest)throw new ProjectError('STALE_REVISION')
+    if(!model||preview.issues.some(i=>i.kind!=='metadata')||preview.issues.some(i=>i.kind==='metadata')&&!input.acknowledgeMetadata||preview.losses.length)throw new ProjectError('VALIDATION')
+    if(input.formats.includes('pdf')&&!this.renderPdf)throw new ProjectError('UNAVAILABLE')
+    const resolvedRoot=await realpath(this.root)
+    for(const target of input.destinations){
+      const extension=target.format==='markdown'?'md':target.format==='text'?'txt':target.format
+      if(!isAbsolute(target.path)||!target.path.toLowerCase().endsWith(`.${extension}`)||target.path.length>4096)throw new ProjectError('VALIDATION')
+      const parent=await realpath(dirname(target.path)),rel=relative(resolvedRoot,parent)
+      if(!rel.startsWith('..')&&!isAbsolute(rel))throw new ProjectError('UNSAFE_DESTINATION')
+    }
+    const id=randomUUID(),folder=join(workspace,'exports',id)
+    await mkdir(join(workspace,'exports'),{recursive:true,mode:0o700});await mkdir(folder,{mode:0o700})
+    const job:ExportJob={id,state:'rendering',headCommitId:preview.headCommitId,destinationPath:dirname(input.destinations[0].path),phase:'Rendering captured revision',error:null,reportPath:join(folder,'report.json'),counts:preview.counts,losses:preview.losses,files:input.destinations.map(d=>({format:d.format,path:d.path,state:'pending',error:null,bytes:null,pages:null,losses:[]}))}
+    const running:Running={job,controller:new AbortController(),task:Promise.resolve(),folder}
+    await writeJson(join(folder,'manifest.json'),{version:2,capturedAt:new Date().toISOString(),preview,formats:input.formats,acknowledgedMetadata:input.acknowledgeMetadata,sourceMap:model.sourceMap,imageAssets:[...images].map(([assetId,image])=>({assetId,bytes:image.bytes.length,sha256:createHash('sha256').update(image.bytes).digest('hex')}))})
+    await this.persist(running);this.jobs.set(id,running)
+    running.task=new Promise<void>(resolve=>setImmediate(()=>{void this.renderBatch(running,input,model,images).finally(resolve)}))
+    return {...job}
+  }
+  private async publishNew(destination:string,bytes:Buffer,signal:AbortSignal):Promise<void>{
+    cancelled(signal)
+    if(await fingerprint(destination))throw new ProjectError('DESTINATION_EXISTS')
+    const parent=dirname(destination),temporary=join(parent,`.collie-export-${randomUUID()}.incoming`)
+    try{
+      const output=await open(temporary,constants.O_CREAT|constants.O_EXCL|constants.O_WRONLY,0o600)
+      try{await output.writeFile(bytes);await output.sync()}finally{await output.close()}
+      cancelled(signal)
+      if(await fingerprint(destination))throw new ProjectError('DESTINATION_EXISTS')
+      await link(temporary,destination)
+      await syncDirectory(parent)
+      const actual=await fileHash(destination,512*1024*1024)
+      if(actual.bytes!==bytes.length||actual.sha256!==createHash('sha256').update(bytes).digest('hex'))throw new ProjectError('UNAVAILABLE')
+    }finally{await unlink(temporary).catch(()=>{})}
+  }
+  private async renderBatch(running:Running,input:WorkerExportBatchStart,model:NonNullable<PreparedExport['model']>,images:PreparedExport['images']):Promise<void>{
+    const {job,controller,folder}=running,signal=controller.signal
+    for(let index=0;index<input.destinations.length;index++){
+      const target=input.destinations[index],file=job.files![index]
+      if(signal.aborted){file.state='cancelled';file.error='CANCELLED';continue}
+      try{
+        job.phase=`Rendering ${target.format}`;await this.persist(running)
+        if(!same(await fingerprint(target.path),target.fingerprint))throw new ProjectError('EXTERNAL_CHANGE')
+        if(target.fingerprint)throw new ProjectError('DESTINATION_EXISTS')
+        let bytes:Buffer,pages:number|null=null,assets:{name:string;bytes:Buffer}[]=[],losses:string[]=[]
+        if(target.format==='docx'){
+          bytes=await exportDocx(model,this.resources,async assetId=>{cancelled(signal);const image=images.get(assetId);if(!image)throw new ProjectError('NOT_FOUND');return image})
+          if(bytes.length>512*1024*1024)throw new ProjectError('LIMIT_EXCEEDED')
+          const candidate=join(folder,`candidate-${index}.docx`),output=await open(candidate,'wx',0o600)
+          try{await output.writeFile(bytes);await output.sync()}finally{await output.close()}
+          await inspectDocx(candidate)
+        }
+        else if(target.format==='pdf'){
+          const document=await exportPrintDocument(model,async assetId=>{cancelled(signal);const image=images.get(assetId);if(!image)throw new ProjectError('NOT_FOUND');return image})
+          cancelled(signal)
+          const printed=await this.renderPdf!(document,signal)
+          if(printed.capturedHead!==job.headCommitId)throw new ProjectError('STALE_REVISION')
+          bytes=printed.bytes;pages=printed.pages
+          if(bytes.length<100||bytes.subarray(0,5).toString('ascii')!=='%PDF-'||!bytes.subarray(-2048).toString('ascii').includes('%%EOF'))throw new ProjectError('VALIDATION')
+        }else{
+          const sidecar=`${input.baseName}-assets-${job.id}`
+          const result=exportInterchange(model,images,target.format,sidecar)
+          bytes=result.bytes;assets=result.assets;losses=result.losses
+          if(assets.length){
+            const sidecarPath=join(dirname(target.path),sidecar)
+            await mkdir(sidecarPath,{mode:0o700})
+            await syncDirectory(dirname(sidecarPath))
+            for(const asset of assets)await this.publishNew(join(sidecarPath,asset.name),asset.bytes,signal)
+          }
+        }
+        if(bytes.length>512*1024*1024)throw new ProjectError('LIMIT_EXCEEDED')
+        cancelled(signal)
+        job.state='publishing';job.phase=`Publishing ${target.format}`;await this.persist(running)
+        await this.publishNew(target.path,bytes,signal)
+        if(target.format==='docx')await inspectDocx(target.path)
+        file.state='complete';file.bytes=bytes.length;file.pages=pages;file.losses=losses
+        job.losses.push(...losses.map(l=>`${target.format}: ${l}`))
+      }catch(error){
+        const code=signal.aborted?'CANCELLED':error instanceof ProjectError?error.code:error instanceof Error&&error.message==='PDF_EXPORT_FAILED'?'UNAVAILABLE':'UNAVAILABLE'
+        file.state=code==='CANCELLED'?'cancelled':'failed';file.error=code
+      }
+      job.state='rendering';await this.persist(running).catch(()=>{})
+    }
+    job.state=signal.aborted?'cancelled':job.files!.every(f=>f.state==='complete')?'complete':'failed'
+    job.error=job.state==='complete'?null:signal.aborted?'CANCELLED':'UNAVAILABLE'
+    job.phase=job.state==='complete'?'All selected files ready':job.state==='cancelled'?'Export cancelled; completed files retained':'Some files failed; completed files retained'
+    await this.persist(running).catch(()=>{});this.jobs.delete(job.id)
   }
   async status(workspace:string,id:string):Promise<ExportJob>{
     const live=this.jobs.get(id)

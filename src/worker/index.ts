@@ -7,12 +7,27 @@ import { projectError } from '../domain/projects/errors'
 import { isAbsolute } from 'node:path'
 import { isFileCommand } from '../shared/file-worker'
 import { ProjectFiles } from './projects/project-files'
+import type { PrintDocument } from './exports/html'
+import { randomUUID } from 'node:crypto'
 
 const parent = process.parentPort
 let initialized = false
 let repository: ProjectRepository | undefined
 let files: ProjectFiles | undefined
 let queue = Promise.resolve()
+const pdfPending = new Map<string,{resolve:(value:{bytes:Buffer;pages:number;capturedHead:string})=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>()
+function renderPdf(document:PrintDocument,signal:AbortSignal):Promise<{bytes:Buffer;pages:number;capturedHead:string}>{
+  if(signal.aborted)return Promise.reject(new Error('CANCELLED'))
+  const id=randomUUID()
+  return new Promise((resolve,reject)=>{
+    const finish=(error:Error):void=>{clearTimeout(timer);pdfPending.delete(id);signal.removeEventListener('abort',abort);reject(error)}
+    const abort=():void=>{parent.postMessage({kind:'pdf-cancel',id});finish(new Error('CANCELLED'))}
+    const timer=setTimeout(()=>{parent.postMessage({kind:'pdf-cancel',id});finish(new Error('PDF_EXPORT_FAILED'))},130_000)
+    pdfPending.set(id,{resolve:value=>{clearTimeout(timer);signal.removeEventListener('abort',abort);resolve(value)},reject:finish,timer})
+    signal.addEventListener('abort',abort,{once:true})
+    parent.postMessage({kind:'pdf-request',id,document})
+  })
+}
 
 function send(message: StorageWorkerMessage): void {
   parent.postMessage(message)
@@ -47,8 +62,13 @@ async function receive(message: unknown): Promise<void> {
       switch (command.kind) {
         case 'exportPreview': value = await repository.exportPreview(command.input); break
         case 'exportStart': value = await repository.exportStart(command.input); break
+        case 'exportBatchStart': value = await repository.exportBatchStart(command.input); break
         case 'exportStatus': value = await repository.exportStatus(command.input); break
         case 'exportCancel': value = await repository.exportCancel(command.input); break
+        case 'recipes': value = await repository.recipes(command.input); break
+        case 'recipeChange': value = await repository.recipeChange(command.input); break
+        case 'interchangePreview': value = await repository.interchangePreview(command.input); break
+        case 'interchangeCommit': value = await repository.interchangeCommit(command.input); break
         case 'list': value = await repository.list(); break
         case 'create': value = await repository.create(command.input); break
         case 'open': value = await repository.open(command.input); break
@@ -106,7 +126,7 @@ async function receive(message: unknown): Promise<void> {
   try {
     const sqliteVersion = storageRuntime(binding ?? undefined)
     if (typeof message.workingRoot === 'string') {
-      repository = new ProjectRepository(message.workingRoot, message.resources, binding ?? undefined)
+      repository = new ProjectRepository(message.workingRoot, message.resources, binding ?? undefined, renderPdf)
       await repository.initialize()
       files = new ProjectFiles(message.workingRoot, repository, status => {
         parent.postMessage({ kind: 'file-changed', status })
@@ -135,6 +155,15 @@ async function receive(message: unknown): Promise<void> {
   }
 }
 parent.on('message', event => {
+  const message:unknown=event.data
+  if(message && typeof message==='object' && 'kind' in message && message.kind==='pdf-result' && 'id' in message && isId(message.id)){
+    const pending=pdfPending.get(message.id)
+    if(!pending)return
+    pdfPending.delete(message.id)
+    if('ok' in message && message.ok===true && 'bytes' in message && (message.bytes instanceof Uint8Array||Buffer.isBuffer(message.bytes)) && 'pages' in message && Number.isSafeInteger(message.pages) && 'capturedHead' in message && isId(message.capturedHead))pending.resolve({bytes:Buffer.from(message.bytes),pages:message.pages as number,capturedHead:message.capturedHead})
+    else pending.reject(new Error('PDF_EXPORT_FAILED'))
+    return
+  }
   // One command at a time, including reads/capture/migration and shutdown.
   queue = queue.then(() => receive(event.data)).catch(() => { send({ kind: 'unavailable' }) })
 })

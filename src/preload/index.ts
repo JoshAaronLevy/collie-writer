@@ -19,6 +19,7 @@ import { isStorageStatus } from '../shared/storage'
 import { isId } from '../domain/editor/schema'
 import { DIRTY_CHANGED, PROJECT_CHANNELS, isLocation, isProjectResult, isProjectValue, projectFailure, record, exact, type ProjectResult, type LocationStatus, type ProjectList, type OpenProject, type CommitReceipt, type ImageAsset, type ImageData, type ImagePick } from '../shared/projects'
 import { isExportPreview, isExportJob, type ExportPreview, type ExportJob } from '../shared/exports'
+import { isRecipesView, isImportPick, isImportPreview, type RecipesView, type ImportPick, type ImportPreview } from '../shared/interchange'
 import { CLOSE_REPLY, FILE_ACTION, FILE_CHANGED, FILE_CHANNELS, isFileAction, isFileStatus, isSelection, type FileStatus, type FileSelection } from '../shared/project-files'
 
 async function projectCall<T>(channel: string, validate: (value: unknown) => boolean, input?: unknown): Promise<ProjectResult<T>> {
@@ -36,6 +37,12 @@ const api: CollieAPI = {
   startDocx: input => projectCall<ExportJob>(PROJECT_CHANNELS.exportStart,isExportJob,input),
   docxStatus: input => projectCall<ExportJob>(PROJECT_CHANNELS.exportStatus,isExportJob,input),
   cancelDocx: input => projectCall<ExportJob>(PROJECT_CHANNELS.exportCancel,isExportJob,input),
+  startCompilation: input => projectCall<ExportJob>(PROJECT_CHANNELS.exportBatchStart,isExportJob,input),
+  readRecipes: input => projectCall<RecipesView>(PROJECT_CHANNELS.recipes,isRecipesView,input),
+  changeRecipe: input => projectCall<RecipesView>(PROJECT_CHANNELS.recipeChange,isRecipesView,input),
+  pickInterchange: input => projectCall<ImportPick|null>(PROJECT_CHANNELS.interchangePick,value=>value===null||isImportPick(value),input),
+  previewInterchange: input => projectCall<ImportPreview>(PROJECT_CHANNELS.interchangePreview,isImportPreview,input),
+  importInterchange: input => projectCall<OpenProject>(PROJECT_CHANNELS.interchangeCommit,value=>isProjectValue('open',value),input),
   readCitations: input => projectCall<CitationsView>(PROJECT_CHANNELS.citations,isCitationsView,input),
   changeCitationStyle: input => projectCall<CitationsView>(PROJECT_CHANNELS.citationStyle,isCitationsView,input),
   search: input => projectCall<SearchView>(PROJECT_CHANNELS.search,isSearchView,input),

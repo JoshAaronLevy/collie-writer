@@ -7,6 +7,8 @@ import { isFileStatus, type FileStatus } from '../shared/project-files'
 import type { FileCommand } from '../shared/file-worker'
 import { isSourceProgress, type SourceProgress } from '../shared/sources'
 import { isProjectResult, isProjectValue, projectFailure, record, exact, type ProjectCommand, type ProjectResult, type ProjectValue } from '../shared/projects'
+import { printPdf } from './printing/pdf'
+import type { PrintDocument } from '../worker/exports/html'
 import {
   isStorageWorkerMessage,
   type StorageStatus,
@@ -23,6 +25,7 @@ export class StorageWorker {
   private filePending = new Map<string, { resolve: (result: ProjectResult<FileStatus>) => void; timer: ReturnType<typeof setTimeout> }>()
   private fileChanged: (status: FileStatus) => void = () => {}
   private sourceChanged: (progress: SourceProgress) => void = () => {}
+  private readonly prints = new Map<string, AbortController>()
   onSourceProgress(changed:(progress:SourceProgress)=>void):void {this.sourceChanged=changed}
   private fileConsent: (id: string, challenge: string) => void = () => {}
   onFiles(changed: (status: FileStatus) => void, consent: (id: string, challenge: string) => void): void { this.fileChanged = changed; this.fileConsent = consent }
@@ -74,6 +77,8 @@ export class StorageWorker {
     if (this.child !== child || this.stopping) return
     this.clearStartupTimer()
     this.rejectPending()
+    for (const controller of this.prints.values()) controller.abort()
+    this.prints.clear()
     if (this.status.state !== 'unavailable') this.update({ state: 'unavailable' })
     try { child.postMessage({ kind: 'shutdown' }) } catch { /* Keep ownership until the process exits; never kill an unresolved writer. */ }
   }
@@ -110,6 +115,20 @@ export class StorageWorker {
     })
     child.on('message', (message: unknown) => {
       if (this.child !== child || this.stopping) return
+      if (record(message) && message.kind === 'pdf-request' && exact(message,['kind','id','document']) && isId(message.id) && record(message.document)) {
+        const doc=message.document
+        if(!exact(doc,['body','css','paper','capturedHead'])||typeof doc.body!=='string'||doc.body.length>400_000_000||typeof doc.css!=='string'||doc.css.length>100_000||!['Letter','A4'].includes(String(doc.paper))||!isId(doc.capturedHead)){this.unavailable(child);return}
+        if(this.prints.has(message.id)||this.prints.size>=1){child.postMessage({kind:'pdf-result',id:message.id,ok:false,error:'UNAVAILABLE'});return}
+        const controller=new AbortController();this.prints.set(message.id,controller)
+        const document:PrintDocument={body:doc.body as string,css:doc.css as string,paper:doc.paper as 'Letter'|'A4',capturedHead:doc.capturedHead as string}
+        void printPdf(document,controller.signal).then(value=>{
+          if(this.child===child&&!this.stopping)child.postMessage({kind:'pdf-result',id:message.id,ok:true,bytes:value.bytes,pages:value.pages,capturedHead:value.capturedHead})
+        }).catch(error=>{
+          if(this.child===child&&!this.stopping)child.postMessage({kind:'pdf-result',id:message.id,ok:false,error:controller.signal.aborted?'CANCELLED':error instanceof Error&&error.message==='PDF_EXPORT_FAILED'?'PDF_EXPORT_FAILED':'UNAVAILABLE'})
+        }).finally(()=>this.prints.delete(message.id))
+        return
+      }
+      if(record(message)&&message.kind==='pdf-cancel'&&exact(message,['kind','id'])&&isId(message.id)){this.prints.get(message.id)?.abort();return}
       if (record(message) && message.kind === 'file-changed' && exact(message, ['kind','status']) && isFileStatus(message.status)) { this.fileChanged(message.status); return }
       if (record(message) && message.kind === 'source-progress' && exact(message,['kind','progress']) && isSourceProgress(message.progress)) {this.sourceChanged(message.progress);return}
       if (record(message) && message.kind === 'file-consent' && exact(message, ['kind','id','challenge']) && isId(message.id) && isId(message.challenge)) { this.fileConsent(message.id, message.challenge); return }
@@ -137,6 +156,8 @@ export class StorageWorker {
     child.on('exit', () => {
       this.clearStartupTimer()
       this.rejectPending()
+      for(const controller of this.prints.values())controller.abort()
+      this.prints.clear()
       if (this.child !== child) return
       this.child = undefined
       if (!this.stopping && this.status.state !== 'unavailable')
@@ -161,6 +182,7 @@ export class StorageWorker {
 
   async stop(onSlow: () => void = () => {}): Promise<void> {
     this.stopping = true
+    for(const controller of this.prints.values())controller.abort()
     this.clearStartupTimer()
     this.rejectPending()
     const child = this.child

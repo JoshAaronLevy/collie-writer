@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { backupStorageDatabase, inWriteTransaction, openStorageDatabase } from './driver'
-import { PROJECT_SCHEMA_VERSION, assetTable, outlineTables, noteTables, sourceTables, inspectionTables, evidenceTables, citationTables, inspectVersion, validateProjectSchema } from './schema'
+import { PROJECT_SCHEMA_VERSION, assetTable, outlineTables, noteTables, sourceTables, inspectionTables, evidenceTables, citationTables, interchangeTables, inspectVersion, validateProjectSchema } from './schema'
 import { contained, directory, syncFile, syncDirectory, writeJson } from './files'
 import { ProjectError } from '../../domain/projects/errors'
 
@@ -59,6 +59,13 @@ const migrations: readonly Migration[] = [{
     for (const sql of citationTables) db.exec(sql)
     for (const p of db.prepare('SELECT id FROM projects').all() as { id: string }[]) rebuildCitations(db,p.id)
     db.prepare('UPDATE format SET schema_version=8,minimum_reader=8').run()
+  }
+}, {
+  from: 8, to: 9,
+  validateSource: db => validateProjectSchema(db, 8),
+  apply: db => {
+    for (const sql of interchangeTables) db.exec(sql)
+    db.prepare('UPDATE format SET schema_version=9,minimum_reader=9').run()
   }
 }]
 

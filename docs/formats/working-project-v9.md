@@ -1,0 +1,9 @@
+# Working project schema 9
+
+Schema and minimum reader 9 extend [schema 8](working-project-v8.md). Editor AST 1 and archive container 1 are unchanged. Existing databases migrate on a retained copy through the same verified backup/candidate/pointer flow. Older supported archives remain readable and migrate locally; an older Collie Writer cannot write a schema-9 project.
+
+`compilation_recipes` stores a named, editable selection of stable text-document IDs in order, a Letter/A4 page preset, and a unique list of DOCX/PDF/Markdown/text formats. It stores no manuscript body or destination path. `compilation_recipe_revisions` retains each saved recipe revision as a project-local checkpoint. The reader flags IDs for sections that are no longer active; moving a section preserves its ID. Recipe mutations check the project head and recipe revision, record an idempotent operation receipt, and advance the project head so Save and backups include the change.
+
+`interchange_imports` records a source filename, SHA-256 digest, format, explicit loss list and the fresh destination document ID. Exact original bytes are stored in the project only if the user selects that option. Import rechecks the selected file digest, creates a new draft section with fresh editor IDs and a pre-import manuscript checkpoint, and never matches an existing draft by filename. The optional original BLOB has an 8 MiB per-file limit. Import is additive and reversible through outline/history actions.
+
+All three tables are project scoped, validated in portable snapshots and rekeyed on independent copies. No export job, temporary candidate, chosen output path, filesystem grant or Markdown asset folder enters the portable project schema. Export reports remain device-local working data. A selected project file is changed only by the separate Save/backup lifecycle.

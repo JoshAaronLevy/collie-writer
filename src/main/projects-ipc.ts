@@ -4,7 +4,7 @@ import { isNoteChangeInput } from '../shared/notes'
 import { isRenameInput, isArchiveInput, isResetInput } from '../shared/project-lifecycle'
 import { BrowserWindow, clipboard, dialog, ipcMain, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { exportFingerprint } from '../domain/projects/export-path'
 import { projectError } from '../domain/projects/errors'
 import { isTrustedSender } from './ipc'
@@ -16,7 +16,9 @@ import { isInspectionScope, isInspectionPageInput, isInspectionAssetInput, isIns
 import { isEvidenceChangeInput } from '../shared/evidence'
 import { isSearchInput, isSearchActionInput } from '../shared/search'
 import { isProjectValue } from '../shared/projects'
-import { isExportOptions, isExportStart, isExportJobInput } from '../shared/exports'
+import { isExportOptions, isExportStart, isExportBatchStart, isExportJobInput } from '../shared/exports'
+import { isRecipeChange, isImportPreviewInput, isImportCommitInput } from '../shared/interchange'
+import type { ImportPreviewInput, ImportCommitInput } from '../shared/interchange'
 import type { SourceAssets } from './source-assets'
 import type { WorkingLocation } from './paths/working-root'
 import type { StorageWorker } from './storage-worker'
@@ -26,6 +28,7 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
   let resetting = false
   const imageGrants = new Map<string, { path: string; name: string; scope: OpenInput; owner: number; frame: number; process: number; expires: number; operationId: string | null }>()
   const sourceGrants = new Map<string, { path: string; name: string; scope: OpenInput; owner: number; frame: number; process: number; expires: number; kind: 'import' | 'attachment' }>()
+  const interchangeGrants = new Map<string,{path:string;name:string;format:'markdown'|'text';scope:OpenInput;owner:number;frame:number;process:number;expires:number;operationId:string|null}>()
   storage.onSourceProgress(progress=>{const target=owner();if(target&&!target.isDestroyed())target.send(SOURCE_PROGRESS,progress)})
   const access = (event: Electron.IpcMainInvokeEvent, payload: unknown): boolean => isTrustedSender(event, owner(), devOrigin) && record(payload) && isId(payload.requestId)
   ipcMain.on(DIRTY_CHANGED, (event, payload: unknown) => {
@@ -72,6 +75,60 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
           if(JSON.stringify(before)!==JSON.stringify(after))return projectFailure(requestId,'EXTERNAL_CHANGE')
           return storage.request(requestId,{kind:'exportStart',input:{...input,destinationPath,destinationFingerprint:after}})
         }catch(error){return projectFailure(requestId,projectError(error))}
+      }
+      if(kind==='exportBatchStart'){
+        if(!exact(value,['requestId','input'])||!isExportBatchStart(value.input))return projectFailure(requestId,'VALIDATION')
+        const window=BrowserWindow.fromWebContents(event.sender);if(!window)return projectFailure(requestId,'DENIED')
+        const input=value.input,extensions:{[key:string]:string}={docx:'docx',pdf:'pdf',markdown:'md',text:'txt'}
+        try{
+          let destinations:{format:typeof input.formats[number];path:string;fingerprint:Awaited<ReturnType<typeof exportFingerprint>>}[]=[]
+          if(input.formats.length===1){
+            const format=input.formats[0],extension=extensions[format]
+            const answer=await dialog.showSaveDialog(window,{title:`Export ${format.toUpperCase()}`,defaultPath:`${input.baseName}.${extension}`,filters:[{name:`${format.toUpperCase()} output`,extensions:[extension]}],properties:['createDirectory','dontAddToRecent']})
+            if(answer.canceled||!answer.filePath)return projectFailure(requestId,'CANCELLED')
+            if(!answer.filePath.toLowerCase().endsWith(`.${extension}`))return projectFailure(requestId,'VALIDATION')
+            destinations=[{format,path:answer.filePath,fingerprint:await exportFingerprint(answer.filePath)}]
+          }else{
+            const answer=await dialog.showOpenDialog(window,{title:'Choose a folder for this compilation batch',properties:['openDirectory','createDirectory','dontAddToRecent']})
+            if(answer.canceled||answer.filePaths.length!==1)return projectFailure(requestId,'CANCELLED')
+            destinations=await Promise.all(input.formats.map(async format=>{const path=join(answer.filePaths[0],`${input.baseName}.${extensions[format]}`);return {format,path,fingerprint:await exportFingerprint(path)}}))
+          }
+          if(window.isDestroyed()||!isTrustedSender(event,owner(),devOrigin)||destinations.some(d=>d.path.length>4096))return projectFailure(requestId,'DENIED')
+          const collisions=destinations.filter(d=>d.fingerprint)
+          if(collisions.length){
+            const answer=await dialog.showMessageBox(window,{type:'warning',title:'Existing export files',message:'Some selected names already exist.',detail:`${collisions.map(d=>basename(d.path)).join(', ')}\n\nThese files will be skipped and kept. Choose a different name or folder to export those formats.`,buttons:['Cancel','Continue and skip existing files'],defaultId:0,cancelId:0,noLink:true})
+            if(answer.response!==1)return projectFailure(requestId,'CANCELLED')
+          }
+          if(window.isDestroyed()||!isTrustedSender(event,owner(),devOrigin))return projectFailure(requestId,'DENIED')
+          for(const item of destinations)if(JSON.stringify(item.fingerprint)!==JSON.stringify(await exportFingerprint(item.path)))return projectFailure(requestId,'EXTERNAL_CHANGE')
+          return storage.request(requestId,{kind:'exportBatchStart',input:{...input,destinations}})
+        }catch(error){return projectFailure(requestId,projectError(error))}
+      }
+      if(kind==='interchangePick'){
+        if(!exact(value,['requestId','input'])||!isOpenInput(value.input)||!event.senderFrame)return projectFailure(requestId,'VALIDATION')
+        const window=BrowserWindow.fromWebContents(event.sender);if(!window)return projectFailure(requestId,'DENIED')
+        const answer=await dialog.showOpenDialog(window,{title:'Import text or Markdown as a new section',filters:[{name:'Text and Markdown',extensions:['txt','md','markdown']}],properties:['openFile','dontAddToRecent']})
+        if(answer.canceled||answer.filePaths.length!==1)return {ok:true,requestId,value:null}
+        if(window.isDestroyed()||!isTrustedSender(event,owner(),devOrigin)||!event.senderFrame)return projectFailure(requestId,'DENIED')
+        const path=answer.filePaths[0],name=basename(path)
+        if(path.length>4096||name.length>255||/[\\/:\u0000-\u001f]/.test(name)||!/\.(txt|md|markdown)$/i.test(name))return projectFailure(requestId,'VALIDATION')
+        for(const [id,grant] of interchangeGrants)if(grant.expires<Date.now())interchangeGrants.delete(id)
+        if(interchangeGrants.size>=32)return projectFailure(requestId,'UNAVAILABLE')
+        const token=randomUUID(),kindFormat=name.toLowerCase().endsWith('.txt')?'text':'markdown'
+        interchangeGrants.set(token,{path,name,format:kindFormat,scope:value.input,owner:event.sender.id,frame:event.senderFrame.routingId,process:event.senderFrame.processId,expires:Date.now()+30*60_000,operationId:null})
+        return {ok:true,requestId,value:{token,name,format:kindFormat}}
+      }
+      if(kind==='interchangePreview'||kind==='interchangeCommit'){
+        if(!exact(value,['requestId','input'])||!(kind==='interchangePreview'?isImportPreviewInput(value.input):isImportCommitInput(value.input))||!event.senderFrame)return projectFailure(requestId,'VALIDATION')
+        const input=value.input as ImportPreviewInput|ImportCommitInput,grant=interchangeGrants.get(input.token)
+        if(!grant||grant.expires<Date.now()||grant.owner!==event.sender.id||grant.frame!==event.senderFrame.routingId||grant.process!==event.senderFrame.processId||grant.scope.projectId!==input.projectId||grant.scope.workspaceId!==input.workspaceId)return projectFailure(requestId,'DENIED')
+        if(kind==='interchangeCommit'&&isImportCommitInput(input)){
+          if(grant.operationId!==null&&grant.operationId!==input.operationId)return projectFailure(requestId,'DENIED')
+          grant.operationId=input.operationId
+          const result=await storage.request(requestId,{kind,input:{...input,sourcePath:grant.path,originalName:grant.name,format:grant.format}})
+          return result
+        }
+        return storage.request(requestId,{kind:'interchangePreview',input:{projectId:input.projectId,workspaceId:input.workspaceId,token:input.token,sourcePath:grant.path,originalName:grant.name,format:grant.format}})
       }
       if (kind === 'pickImage') {
         if (!exact(value, ['requestId','input']) || !isOpenInput(value.input) || !event.senderFrame) return projectFailure(requestId, 'VALIDATION')
@@ -122,6 +179,8 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
       if ((kind === 'list' || kind === 'data' || kind === 'cleanup') && isInfoRequest(value)) command = { kind }
       else if(exact(value,['requestId','input']) && kind==='exportPreview' && isExportOptions(value.input))command={kind,input:value.input}
       else if(exact(value,['requestId','input']) && (kind==='exportStatus'||kind==='exportCancel') && isExportJobInput(value.input))command={kind,input:value.input}
+      else if(exact(value,['requestId','input']) && kind==='recipes' && isOpenInput(value.input))command={kind,input:value.input}
+      else if(exact(value,['requestId','input']) && kind==='recipeChange' && isRecipeChange(value.input))command={kind,input:value.input}
       else if (exact(value,['requestId','input']) && kind==='citations' && isOpenInput(value.input)) command={kind,input:value.input}
       else if (exact(value,['requestId','input']) && kind==='citationStyle' && isCitationStyleInput(value.input)) command={kind,input:value.input}
       else if (exact(value, ['requestId', 'input']) && kind === 'outline' && isOutlineInput(value.input)) command = { kind, input: value.input }

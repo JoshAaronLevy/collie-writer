@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 
 export const PROJECT_APPLICATION_ID = 1129270359
-export const PROJECT_SCHEMA_VERSION = 8
+export const PROJECT_SCHEMA_VERSION = 9
 // Persisted schema is app-owned; never execute DDL or migrations supplied by a project.
 export const projectTablesV1 = [
   `CREATE TABLE format (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, minimum_reader INTEGER NOT NULL, editor_version INTEGER NOT NULL) STRICT`,
@@ -60,7 +60,13 @@ export const citationTables = [
   `CREATE TABLE citation_settings (project_id TEXT PRIMARY KEY, style TEXT NOT NULL CHECK(style IN ('apa','chicago')), profile TEXT NOT NULL CHECK(profile='csl-v1'), FOREIGN KEY(project_id) REFERENCES projects(id)) STRICT`,
   `CREATE TABLE citation_occurrences (project_id TEXT NOT NULL, document_id TEXT NOT NULL, citation_id TEXT NOT NULL, item_index INTEGER NOT NULL CHECK(item_index>=0), source_id TEXT NOT NULL, footnote_id TEXT, item TEXT NOT NULL, PRIMARY KEY(project_id,citation_id,item_index), FOREIGN KEY(project_id,document_id) REFERENCES documents(project_id,id)) STRICT`
 ] as const
-export const projectTables = [...projectTablesV7, ...citationTables] as const
+export const projectTablesV8 = [...projectTablesV7, ...citationTables] as const
+export const interchangeTables = [
+  `CREATE TABLE compilation_recipes (project_id TEXT NOT NULL, id TEXT NOT NULL, revision_id TEXT NOT NULL, name TEXT NOT NULL, document_ids TEXT NOT NULL, paper TEXT NOT NULL CHECK(paper IN ('Letter','A4')), formats TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id)) STRICT`,
+  `CREATE TABLE compilation_recipe_revisions (project_id TEXT NOT NULL, recipe_id TEXT NOT NULL, revision_id TEXT NOT NULL, snapshot TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(project_id,recipe_id,revision_id), FOREIGN KEY(project_id) REFERENCES projects(id)) STRICT`,
+  `CREATE TABLE interchange_imports (project_id TEXT NOT NULL, id TEXT NOT NULL, document_id TEXT NOT NULL, original_name TEXT NOT NULL, format TEXT NOT NULL CHECK(format IN ('markdown','text')), sha256 TEXT NOT NULL, original_bytes BLOB, losses TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id,document_id) REFERENCES documents(project_id,id)) STRICT`
+] as const
+export const projectTables = [...projectTablesV8, ...interchangeTables] as const
 const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export function createProjectSchema(db: Database.Database): void {
@@ -81,7 +87,7 @@ export function validateProjectSchema(db: Database.Database, expectedVersion = P
   const version = inspectVersion(db)
   if (version !== expectedVersion) throw new ProjectError('MIGRATION_FAILED')
   const objects = db.prepare("SELECT sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all() as { sql: string | null }[]
-  const expected = new Set((expectedVersion === 1 ? projectTablesV1 : expectedVersion === 2 ? projectTablesV2 : expectedVersion === 3 ? projectTablesV3 : expectedVersion === 4 ? projectTablesV4 : expectedVersion === 5 ? projectTablesV5 : expectedVersion === 6 ? projectTablesV6 : expectedVersion === 7 ? projectTablesV7 : projectTables).map(sqlKey))
+  const expected = new Set((expectedVersion === 1 ? projectTablesV1 : expectedVersion === 2 ? projectTablesV2 : expectedVersion === 3 ? projectTablesV3 : expectedVersion === 4 ? projectTablesV4 : expectedVersion === 5 ? projectTablesV5 : expectedVersion === 6 ? projectTablesV6 : expectedVersion === 7 ? projectTablesV7 : expectedVersion === 8 ? projectTablesV8 : projectTables).map(sqlKey))
   if (objects.length !== expected.size || objects.some(o => !o.sql || !expected.has(sqlKey(o.sql)))) throw new ProjectError('CORRUPT_PROJECT')
   const format = db.prepare('SELECT * FROM format').all() as { schema_version: number; minimum_reader: number; editor_version: number }[]
   if (format.length !== 1 || format[0].minimum_reader > PROJECT_SCHEMA_VERSION || format[0].editor_version > 1) throw new ProjectError('FORMAT_TOO_NEW')
