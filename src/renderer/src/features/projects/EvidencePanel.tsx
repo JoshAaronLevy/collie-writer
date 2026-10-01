@@ -8,7 +8,7 @@ const title = (view: EvidenceView | null, id: string): string => view?.sources.f
 const section = (view: EvidenceView | null, id: string): string => view?.sections.find(s => s.id === id)?.title ?? id.slice(0,8)
 const oldValue = (snapshot: string): string => { try { const value = JSON.parse(snapshot) as Record<string,unknown>; return String(value.text ?? [value.state,value.role,value.reason].filter(Boolean).join(' · ')).slice(0,400) } catch { return 'Prior revision retained' } }
 
-export default function EvidencePanel({ project, disabled, onCommitted, navigate, inspect }: { project: OpenProject; disabled: boolean; onCommitted: () => Promise<void>; navigate: (id: string, anchor?: string) => Promise<void>; inspect: (sourceId: string, excerptId: string) => void }): React.JSX.Element {
+export default function EvidencePanel({ project, focusItem, disabled, onCommitted, navigate, inspect }: { project: OpenProject; focusItem: {kind:'question'|'claim';id:string}|null; disabled: boolean; onCommitted: () => Promise<void>; navigate: (id: string, anchor?: string) => Promise<void>; inspect: (sourceId: string, excerptId: string) => void }): React.JSX.Element {
   const [view,setView] = useState<EvidenceView|null>(null)
   const [busy,setBusy] = useState(false),[error,setError] = useState(''),[message,setMessage] = useState('')
   const [questionId,setQuestionId] = useState<string|null>(null),[claimId,setClaimId] = useState<string|null>(null)
@@ -37,6 +37,7 @@ export default function EvidencePanel({ project, disabled, onCommitted, navigate
     if (kind === 'question') { setQuestionId(item?.id ?? null); setQuestionText(item?.text ?? ''); setQuestionSection(item?.documentId ?? ''); setQuestionNote(item?.noteId ?? ''); setDecisionSource(''); setDecisionReason('') }
     else { setClaimId(item?.id ?? null); setClaimText(item?.text ?? ''); setClaimSection(item?.documentId ?? ''); setClaimNote(item?.noteId ?? '') }
   }
+  useEffect(()=>{if(!focusItem||!view)return;const target=(focusItem.kind==='question'?view.questions:view.claims).find(x=>x.id===focusItem.id);if(target){chooseItem(focusItem.kind,target);document.querySelector('.evidence-panel')?.scrollIntoView({block:'start'})}},[focusItem?.id,focusItem?.kind,view?.questions,view?.claims])
   function saveItem(kind: 'question'|'claim'): void {
     const selected = kind === 'question' ? question : claim
     const text = kind === 'question' ? questionText : claimText

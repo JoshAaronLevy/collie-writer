@@ -11,8 +11,8 @@ export type AnnotationCapture = { documentId: string; expectedRevisionId: string
 const scope = (p: OpenProject): { projectId: string; workspaceId: string } => ({ projectId:p.projectId,workspaceId:p.workspaceId })
 const blank = (): DocumentPayload => emptyDocument(() => crypto.randomUUID())
 
-export default function NotesPanel({ project, capture, onCommitted, navigate, registerFlush, dirtyChanged, disabled }: {
-  project: OpenProject; capture: AnnotationCapture | null; onCommitted: () => Promise<void>; navigate: (documentId: string, blockId?: string) => Promise<void>;
+export default function NotesPanel({ project, capture, focusNoteId, onCommitted, navigate, registerFlush, dirtyChanged, disabled }: {
+  project: OpenProject; capture: AnnotationCapture | null; focusNoteId: string | null; onCommitted: () => Promise<void>; navigate: (documentId: string, blockId?: string) => Promise<void>;
   registerFlush: (flush: (() => Promise<boolean>) | null) => void; dirtyChanged: (dirty: boolean) => void; disabled: boolean
 }): React.JSX.Element {
   const [view, setView] = useState<NotesView | null>(null), [selected, setSelected] = useState<string | null>(null)
@@ -34,6 +34,7 @@ export default function NotesPanel({ project, capture, onCommitted, navigate, re
   }
   useEffect(() => { void load() }, [project.projectId])
   function choose(n: Note): void { setSelected(n.id); setTitle(n.title); setLinks(n.documentIds); setLabels(n.labelIds); setDirty(false); pending.current = null; setMessage('') }
+  useEffect(()=>{if(!focusNoteId||!view||dirty.current)return;const target=view.notes.find(n=>n.id===focusNoteId);if(target){setFilter('all');choose(target);document.querySelector('.notes-panel')?.scrollIntoView({block:'start'})}},[focusNoteId,view?.notes])
   async function change(changeValue: NoteChange, operationId = crypto.randomUUID()): Promise<boolean> {
     if (unresolved.current && unresolved.current.operationId !== operationId) { setMessage('Retry the pending local change before making another change.'); return false }
     setBusy(true)

@@ -8,7 +8,7 @@ const scope = (project:OpenProject) => ({projectId:project.projectId,workspaceId
 const creators = (metadata:SourceMetadata):string => metadata.author.map(a=>a.literal || `${a.family}${a.given?`, ${a.given}`:''}`).join('; ')
 const parseCreators = (text:string):SourceMetadata['author'] => text.split(';').map(s=>s.trim()).filter(Boolean).map(s=>{if(!s.includes(','))return {family:'',given:'',literal:s};const [family,...given]=s.split(',');return {family:family.trim(),given:given.join(',').trim(),literal:''}})
 
-export default function SourcesPanel({project,disabled,registerFlush,dirtyChanged,onCommitted,onInspect}:{project:OpenProject;disabled:boolean;registerFlush:(fn:(()=>Promise<boolean>)|null)=>void;dirtyChanged:(dirty:boolean)=>void;onCommitted:()=>Promise<void>;onInspect:(sourceId:string)=>void}):React.JSX.Element {
+export default function SourcesPanel({project,focusSourceId,disabled,registerFlush,dirtyChanged,onCommitted,onInspect}:{project:OpenProject;focusSourceId:string|null;disabled:boolean;registerFlush:(fn:(()=>Promise<boolean>)|null)=>void;dirtyChanged:(dirty:boolean)=>void;onCommitted:()=>Promise<void>;onInspect:(sourceId:string)=>void}):React.JSX.Element {
   const [view,setView]=useState<SourcesView|null>(null),[selected,setSelected]=useState<string|null>(null)
   const [draft,setDraft]=useState<SourceMetadata>(blank),[creatorText,setCreatorText]=useState(''),[verified,setVerified]=useState(false),[linked,setLinked]=useState<string[]>([])
   const [dirty,setDirty]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('')
@@ -20,6 +20,7 @@ export default function SourcesPanel({project,disabled,registerFlush,dirtyChange
   useEffect(()=>window.collie.onSourceProgress(progress=>{if(progress.operationId===attachmentOperation.current)setAttachmentProgress({transferred:progress.transferred,total:progress.total})}),[])
   function change(next:SourceMetadata,authors=creatorText):void {setDraft(next);setCreatorText(authors);setDirty(true);dirtyChanged(true);pending.current=null}
   function choose(row:SourceRecord|null):void {if(dirty)return;setSelected(row?.id??null);setDraft(row?.metadata??blank());setCreatorText(row?creators(row.metadata):'');setVerified(row?.verified??false);setLinked(row?.documentIds??[]);setMergeTarget('');setError('');setMessage('')}
+  useEffect(()=>{if(!focusSourceId||!view||dirty)return;const target=view.sources.find(s=>s.id===focusSourceId);if(target){choose(target);document.querySelector('.sources-panel')?.scrollIntoView({block:'start'})}},[focusSourceId,view?.sources])
   async function save():Promise<boolean>{
     const state=latest.current;if(!state.dirty)return true
     const current=state.view?.sources.find(s=>s.id===state.selected)

@@ -30,6 +30,8 @@ import { readInspection, readInspectionPage, inspectionAsset, changeInspection }
 import type { InspectionScope, InspectionPageInput, InspectionAssetInput, InspectionChangeInput, InspectionView, InspectionPageText, WorkerInspectionAsset } from '../../shared/inspection'
 import { readEvidence, changeEvidence } from './evidence'
 import type { EvidenceChangeInput, EvidenceView } from '../../shared/evidence'
+import { LocalSearch } from './search'
+import type { SearchInput, SearchActionInput, SearchView, SearchActivity } from '../../shared/search'
 
 const catalogSchema = [
   'CREATE TABLE creation_intents (operation_id TEXT PRIMARY KEY, digest TEXT NOT NULL, project_id TEXT NOT NULL UNIQUE, workspace_id TEXT NOT NULL UNIQUE) STRICT',
@@ -39,7 +41,7 @@ const operationsSchema = [
   'CREATE TABLE jobs (id TEXT PRIMARY KEY, operation_id TEXT NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL, result TEXT) STRICT',
   'CREATE TABLE delivery (operation_id TEXT PRIMARY KEY, state TEXT NOT NULL) STRICT'
 ]
-type Owned = { projectId: string; workspaceId: string; workspace: string; db: Database.Database; operations: Database.Database; lock: Database.Database; destination: SavedLocation | null; archived: boolean; snapshots?: SnapshotJobs }
+type Owned = { projectId: string; workspaceId: string; workspace: string; db: Database.Database; operations: Database.Database; lock: Database.Database; search: LocalSearch | null; destination: SavedLocation | null; archived: boolean; snapshots?: SnapshotJobs }
 async function exists(path: string): Promise<boolean> { try { await lstat(path); return true } catch (e) { if (e && typeof e === 'object' && 'code' in e && e.code === 'ENOENT') return false; throw e } }
 const IMAGE_LIMIT = 25 * 1024 * 1024
 function imageInfo(bytes: Buffer): Omit<ImageAsset, 'assetId'> {
@@ -80,6 +82,28 @@ async function selectedImage(path: string): Promise<Buffer> {
 }
 
 export class ProjectRepository {
+  private searchScheduled = new WeakSet<Owned>()
+  private searchOwner(input:OpenInput):Owned {const owned=this.active;if(!owned||owned.projectId!==input.projectId||owned.workspaceId!==input.workspaceId)throw new ProjectError('DENIED');return owned}
+  private availableSearch(owned:Owned):LocalSearch {if(!owned.search)throw new ProjectError('UNAVAILABLE');return owned.search}
+  private scheduleSearch(owned:Owned):void {
+    if(this.searchScheduled.has(owned)||!owned.search?.needsWork())return
+    this.searchScheduled.add(owned)
+    setImmediate(()=>{this.searchScheduled.delete(owned);void this.serial(async()=>{
+      if(this.active!==owned)return
+      const more=owned.search?.batch(owned.db,owned.operations)
+      if(more)this.scheduleSearch(owned)
+    }).catch(()=>{})})
+  }
+  searchQuery(input:SearchInput):Promise<SearchView>{return this.serial(async()=>{const owned=this.searchOwner(input),search=this.availableSearch(owned);search.ensure(owned.db,owned.operations);this.scheduleSearch(owned);return search.search(owned.db,input)})}
+  searchActivity(input:OpenInput):Promise<SearchActivity>{return this.serial(async()=>{const owned=this.searchOwner(input),search=this.availableSearch(owned);search.ensure(owned.db,owned.operations);this.scheduleSearch(owned);return search.activity(owned.db)})}
+  searchAction(input:SearchActionInput):Promise<SearchActivity>{return this.serial(async()=>{const owned=this.searchOwner(input);if(!owned.search&&input.action==='rebuild'){
+    const old=join(owned.workspace,'search.sqlite'),suffix=`.retained-${randomUUID()}`
+    for(const extension of ['', '-wal', '-shm', '-journal'])if(await exists(old+extension)){await contained(this.root,old+extension,false);await rename(old+extension,old+suffix+extension)}
+    owned.search=new LocalSearch(old,this.nativeBinding)
+  }
+    const search=this.availableSearch(owned)
+    if(input.action==='cancel')search.cancel(owned.operations);else {if(search.needsWork())throw new ProjectError('PROJECT_LOCKED');search.start(owned.db,owned.operations,input.action==='rebuild')}
+    this.scheduleSearch(owned);return search.activity(owned.db)})}
   evidence(input:OpenInput):Promise<EvidenceView>{return this.serial(async()=>{this.fileContext(input);return readEvidence(this.active!.db,input)})}
   evidenceChange(input:EvidenceChangeInput):Promise<EvidenceView>{return this.serial(async()=>{this.fileContext(input);if(this.fileBusy)throw new ProjectError('PROJECT_LOCKED');const owned=this.active!,view=changeEvidence(owned.db,input);await this.discovery(owned);return view})}
   inspection(input:InspectionScope):Promise<InspectionView>{return this.serial(async()=>{this.fileContext(input);return readInspection(this.active!.db,input)})}
@@ -296,7 +320,7 @@ export class ProjectRepository {
   }
   private release(owned: Owned): void {
     try { owned.db.close() } finally {
-      try { owned.operations.close() } finally { owned.lock.close() }
+      try { owned.search?.close() } finally { try { owned.operations.close() } finally { owned.lock.close() } }
     } // OS/SQLite releases ownership on normal close or process death.
   }
   async close(): Promise<void> {
@@ -339,12 +363,15 @@ export class ProjectRepository {
     const lock = await this.lock(project)
     let db: Database.Database | undefined
     let operations: Database.Database | undefined
+    let search: LocalSearch | undefined
     try {
       db = await openProjectDatabase(this.root, workspace, this.nativeBinding)
       operations = await this.localDatabase(join(workspace, 'operations.sqlite'), operationsSchema)
+      await this.safeDatabase(join(workspace,'search.sqlite'))
+      try {search = new LocalSearch(join(workspace,'search.sqlite'),this.nativeBinding)} catch {search=undefined}
       // No job is silently replayed after interruption.
       operations.prepare("UPDATE jobs SET state='interrupted' WHERE state IN ('queued','running','cancelling')").run()
-      const owned: Owned = { ...input, workspace, db, operations, lock, archived: await this.readArchived(workspace), destination: await readDestination(this.root, workspace) }
+      const owned: Owned = { ...input, workspace, db, operations, search:search??null, lock, archived: await this.readArchived(workspace), destination: await readDestination(this.root, workspace) }
       manuscript(db,input.projectId)
       this.read(owned)
       this.catalog.prepare('INSERT OR IGNORE INTO destinations VALUES (?,NULL,NULL,NULL)').run(input.projectId)
@@ -352,7 +379,7 @@ export class ProjectRepository {
       owned.snapshots = new SnapshotJobs({ ...owned, root: this.root, nativeBinding: this.nativeBinding }, this.resources, task => this.serial(task))
       await owned.snapshots.initialize()
       return owned
-    } catch (error) { db?.close(); operations?.close(); lock.close(); throw error }
+    } catch (error) { db?.close(); search?.close(); operations?.close(); lock.close(); throw error }
   }
   private async openUnlocked(input: OpenInput): Promise<OpenProject> {
     if (this.active?.projectId === input.projectId && this.active.workspaceId === input.workspaceId) return this.read(this.active)

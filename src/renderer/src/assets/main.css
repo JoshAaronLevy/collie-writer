@@ -243,3 +243,8 @@ button {
 .evidence-link-form { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit,minmax(min(100%,14rem),1fr)); align-items: end; }
 .evidence-link { border: 1px solid #b7c2b6; border-radius: .4rem; padding: .75rem; }
 .evidence-link blockquote { border-left: 3px solid #80909e; padding-left: .7rem; white-space: pre-wrap; }
+.search-panel { border-top: 2px solid #80909e; margin-top: 1.5rem; padding-top: 1rem; }
+.search-filters { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit,minmax(min(100%,12rem),1fr)); }
+.search-filters label, .search-filters input, .search-filters select { display: block; box-sizing: border-box; width: 100%; }
+.search-panel li { margin-block: .7rem; overflow-wrap: anywhere; }
+.search-panel mark { background: #ffdf81; color: #1d2631; }

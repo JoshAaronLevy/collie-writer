@@ -11,6 +11,7 @@ import { DIRTY_CHANGED, PROJECT_CHANNELS, exact, record, isCreateInput, isOpenIn
 import { isSourceChangeInput, isSourcePreviewInput, isSourceImportInput, isSourceAttachmentInput, isSourceExportInput, isSourceAttachmentExportInput, SOURCE_PROGRESS, type BibliographyFormat } from '../shared/sources'
 import { isInspectionScope, isInspectionPageInput, isInspectionAssetInput, isInspectionChangeInput, type WorkerInspectionAsset } from '../shared/inspection'
 import { isEvidenceChangeInput } from '../shared/evidence'
+import { isSearchInput, isSearchActionInput } from '../shared/search'
 import { isProjectValue } from '../shared/projects'
 import type { SourceAssets } from './source-assets'
 import type { WorkingLocation } from './paths/working-root'
@@ -103,6 +104,9 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
       else if (exact(value,['requestId','input']) && kind==='inspectionChange' && isInspectionChangeInput(value.input)) command={kind,input:value.input}
       else if (exact(value,['requestId','input']) && kind==='evidence' && isOpenInput(value.input)) command={kind,input:value.input}
       else if (exact(value,['requestId','input']) && kind==='evidenceChange' && isEvidenceChangeInput(value.input)) command={kind,input:value.input}
+      else if (exact(value,['requestId','input']) && kind==='search' && isSearchInput(value.input)) command={kind,input:value.input}
+      else if (exact(value,['requestId','input']) && kind==='searchActivity' && isOpenInput(value.input)) command={kind,input:value.input}
+      else if (exact(value,['requestId','input']) && kind==='searchAction' && isSearchActionInput(value.input)) command={kind,input:value.input}
       else if (exact(value,['requestId','input']) && kind==='sourceChange' && isSourceChangeInput(value.input)) command={kind,input:value.input}
       else if (exact(value,['requestId','input']) && kind==='sourcePreview' && isSourcePreviewInput(value.input)) {
         const input=value.input,g=sourceGrants.get(input.token)
