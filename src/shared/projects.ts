@@ -4,13 +4,15 @@ import { isId, readDocument, type DocumentPayload } from '../domain/editor/schem
 import { isNoteChangeInput, isNotesView, type NoteChangeInput, type NotesView } from './notes'
 import { isProjectTemplate, type ProjectTemplate } from '../domain/projects/templates'
 import { isSourceChangeInput, isSourcePreviewInput, isSourceImportInput, isSourceAttachmentInput, isSourceExportInput, isSourceAttachmentExportInput, isSourcesView, isSourcePreview, type SourceChangeInput, type SourcesView, type SourcePick, type SourcePreviewInput, type SourceImportInput, type SourceImportPreview, type SourceAttachmentInput, type SourceExportInput, type SourceExportReceipt, type SourceAttachmentExportInput, type SourceProgress, type WorkerSourcePreview, type WorkerSourceImport, type WorkerSourceAttachment, type WorkerSourceExport, type WorkerSourceAttachmentExport } from './sources'
+import { isInspectionScope, isInspectionPageInput, isInspectionAssetInput, isInspectionChangeInput, isInspectionView, isInspectionPageText, type InspectionScope, type InspectionPageInput, type InspectionAssetInput, type InspectionChangeInput, type InspectionView, type InspectionPageText, type InspectionAsset, type WorkerInspectionAsset } from './inspection'
 
 export const PROJECT_CHANNELS = {
   outline: 'outline.change', history: 'history.read', notes: 'notes.read', noteChange: 'notes.change',
   location: 'projects.location', chooseLocation: 'projects.chooseLocation',
   rename: 'projects.rename', archive: 'projects.archive', data: 'projects.data', reset: 'projects.reset', recoverReset: 'projects.recoverReset', cleanup: 'projects.cleanup',
   list: 'projects.list', create: 'projects.create', open: 'projects.open', section: 'projects.section', meta: 'projects.sectionMeta', commit: 'document.commit', plainClipboard: 'document.plainClipboard', pickImage: 'images.pick', importImage: 'images.import', readImage: 'images.read',
-  sources: 'sources.read', sourceChange: 'sources.change', sourcePickImport: 'sources.pickImport', sourcePreview: 'sources.preview', sourceImport: 'sources.import', sourcePickAttachment: 'sources.pickAttachment', sourceAttach: 'sources.attach', sourceExport: 'sources.export', sourceExportAttachment: 'sources.exportAttachment'
+  sources: 'sources.read', sourceChange: 'sources.change', sourcePickImport: 'sources.pickImport', sourcePreview: 'sources.preview', sourceImport: 'sources.import', sourcePickAttachment: 'sources.pickAttachment', sourcePickVersion: 'sources.pickVersion', sourceAttach: 'sources.attach', sourceExport: 'sources.export', sourceExportAttachment: 'sources.exportAttachment',
+  inspection: 'inspection.read', inspectionPage: 'inspection.page', inspectionAsset: 'inspection.asset', inspectionChange: 'inspection.change'
 } as const
 export type ProjectCode = 'VALIDATION' | 'DENIED' | 'UNAVAILABLE' | 'STORAGE_LOCATION_REQUIRED' | 'PROJECT_LOCKED' | 'STALE_REVISION' | 'OPERATION_CONFLICT' | 'DISK_FULL' | 'FORMAT_TOO_NEW' | 'CORRUPT_PROJECT' | 'MIGRATION_FAILED' | 'NOT_FOUND' | 'CANCELLED' | 'EXTERNAL_CHANGE' | 'DESTINATION_UNAVAILABLE' | 'UNSAFE_DESTINATION' | 'JOB_INTERRUPTED' | 'INVALID_ARCHIVE' | 'LIMIT_EXCEEDED' | 'DESTINATION_EXISTS'
 export const projectMessages: Record<ProjectCode, string> = {
@@ -54,16 +56,21 @@ export type WorkerImageImport = OpenInput & { operationId: string; sourcePath: s
 export type ImageReadInput = OpenInput & { assetId: string }
 export type ImageAsset = { assetId: string; mediaType: 'image/png' | 'image/jpeg'; width: number; height: number }
 export type ImageData = { mediaType: ImageAsset['mediaType']; base64: string }
-export type ProjectCommand = { kind: 'notes' | 'sources'; input: OpenInput } | { kind: 'noteChange'; input: NoteChangeInput } | { kind: 'sourceChange'; input: SourceChangeInput } | { kind: 'sourcePreview'; input: WorkerSourcePreview } | { kind: 'sourceImport'; input: WorkerSourceImport } | { kind: 'sourceAttach'; input: WorkerSourceAttachment } | { kind: 'sourceExport'; input: WorkerSourceExport } | { kind: 'sourceExportAttachment'; input: WorkerSourceAttachmentExport } | { kind: 'outline'; input: OutlineInput } | { kind: 'history'; input: HistoryInput } | { kind: 'rename'; input: RenameInput } | { kind: 'archive'; input: ArchiveInput } | { kind: 'data' | 'cleanup' } | { kind: 'reset'; input: ResetInput } | { kind: 'recoverReset'; input: string } | { kind: 'list' } | { kind: 'create'; input: CreateInput } | { kind: 'open'; input: OpenInput } | { kind: 'section'; input: SectionInput } | { kind: 'meta'; input: SectionMetaInput } | { kind: 'commit'; input: CommitInput } | { kind: 'importImage'; input: WorkerImageImport } | { kind: 'readImage'; input: ImageReadInput }
+export type ProjectCommand = { kind: 'notes' | 'sources'; input: OpenInput } | { kind: 'inspection'; input: InspectionScope } | { kind: 'inspectionPage'; input: InspectionPageInput } | { kind: 'inspectionAsset'; input: InspectionAssetInput } | { kind: 'inspectionChange'; input: InspectionChangeInput } | { kind: 'noteChange'; input: NoteChangeInput } | { kind: 'sourceChange'; input: SourceChangeInput } | { kind: 'sourcePreview'; input: WorkerSourcePreview } | { kind: 'sourceImport'; input: WorkerSourceImport } | { kind: 'sourceAttach'; input: WorkerSourceAttachment } | { kind: 'sourceExport'; input: WorkerSourceExport } | { kind: 'sourceExportAttachment'; input: WorkerSourceAttachmentExport } | { kind: 'outline'; input: OutlineInput } | { kind: 'history'; input: HistoryInput } | { kind: 'rename'; input: RenameInput } | { kind: 'archive'; input: ArchiveInput } | { kind: 'data' | 'cleanup' } | { kind: 'reset'; input: ResetInput } | { kind: 'recoverReset'; input: string } | { kind: 'list' } | { kind: 'create'; input: CreateInput } | { kind: 'open'; input: OpenInput } | { kind: 'section'; input: SectionInput } | { kind: 'meta'; input: SectionMetaInput } | { kind: 'commit'; input: CommitInput } | { kind: 'importImage'; input: WorkerImageImport } | { kind: 'readImage'; input: ImageReadInput }
 export type ProjectValue = ProjectList | OpenProject | CommitReceipt | DataLocations | ImageAsset | ImageData | HistoryView | NotesView
-  | SourcesView | SourceImportPreview | SourceExportReceipt
+  | SourcesView | SourceImportPreview | SourceExportReceipt | InspectionView | InspectionPageText | WorkerInspectionAsset
 export type ProjectAPI = {
+  readInspection: (input: InspectionScope) => Promise<ProjectResult<InspectionView>>
+  readInspectedPage: (input: InspectionPageInput) => Promise<ProjectResult<InspectionPageText>>
+  openInspectedAsset: (input: InspectionAssetInput) => Promise<ProjectResult<InspectionAsset>>
+  changeInspection: (input: InspectionChangeInput) => Promise<ProjectResult<InspectionView>>
   readSources: (input: OpenInput) => Promise<ProjectResult<SourcesView>>
   changeSource: (input: SourceChangeInput) => Promise<ProjectResult<SourcesView>>
   pickSourceImport: (input: OpenInput) => Promise<ProjectResult<SourcePick | null>>
   previewSourceImport: (input: SourcePreviewInput) => Promise<ProjectResult<SourceImportPreview>>
   commitSourceImport: (input: SourceImportInput) => Promise<ProjectResult<SourcesView>>
   pickSourceAttachment: (input: OpenInput) => Promise<ProjectResult<SourcePick | null>>
+  pickSourceVersion: (input: OpenInput) => Promise<ProjectResult<SourcePick | null>>
   attachSourceFile: (input: SourceAttachmentInput) => Promise<ProjectResult<SourcesView>>
   exportSources: (input: SourceExportInput) => Promise<ProjectResult<SourceExportReceipt>>
   exportSourceAttachment: (input: SourceAttachmentExportInput) => Promise<ProjectResult<SourceExportReceipt>>
@@ -112,6 +119,10 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (v.kind === 'history') return isHistoryInput(v.input)
   if (v.kind === 'notes') return isOpenInput(v.input)
   if (v.kind === 'sources') return isOpenInput(v.input)
+  if (v.kind === 'inspection') return isInspectionScope(v.input)
+  if (v.kind === 'inspectionPage') return isInspectionPageInput(v.input)
+  if (v.kind === 'inspectionAsset') return isInspectionAssetInput(v.input)
+  if (v.kind === 'inspectionChange') return isInspectionChangeInput(v.input)
   if (v.kind === 'sourceChange') return isSourceChangeInput(v.input)
   if (v.kind === 'sourcePreview') return record(v.input) && isSourcePreviewInput({projectId:v.input.projectId,workspaceId:v.input.workspaceId,token:v.input.token}) && ['csl-json','bibtex','ris'].includes(String(v.input.format)) && typeof v.input.sourcePath === 'string' && v.input.sourcePath.length <= 4096
   if (v.kind === 'sourceImport') return record(v.input) && isSourceImportInput({projectId:v.input.projectId,workspaceId:v.input.workspaceId,operationId:v.input.operationId,token:v.input.token,digest:v.input.digest,choices:v.input.choices}) && ['csl-json','bibtex','ris'].includes(String(v.input.format)) && typeof v.input.sourcePath === 'string' && v.input.sourcePath.length <= 4096
@@ -136,6 +147,9 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
   if (kind === 'history') return isHistoryView(v)
   if (kind === 'notes' || kind === 'noteChange') return isNotesView(v)
   if (kind === 'sources' || kind === 'sourceChange' || kind === 'sourceImport' || kind === 'sourceAttach') return isSourcesView(v)
+  if (kind === 'inspection' || kind === 'inspectionChange') return isInspectionView(v)
+  if (kind === 'inspectionPage') return isInspectionPageText(v)
+  if (kind === 'inspectionAsset') return exact(v,['path','bytes','mediaType','sha256']) && typeof v.path==='string' && v.path.length<=4096 && Number.isSafeInteger(v.bytes) && Number(v.bytes)>0 && Number(v.bytes)<=32*1024*1024 && ['application/pdf','text/plain'].includes(String(v.mediaType)) && typeof v.sha256==='string' && /^[a-f0-9]{64}$/.test(v.sha256)
   if (kind === 'sourcePreview') return isSourcePreview(v)
   if (kind === 'sourceExport' || kind === 'sourceExportAttachment') return exact(v,['path','count','losses']) && typeof v.path === 'string' && v.path.length <= 4096 && Number.isSafeInteger(v.count) && Number(v.count) >= 0 && Array.isArray(v.losses) && v.losses.length <= 100000 && v.losses.every((x: unknown)=>typeof x==='string' && x.length<=2000)
   if (['data','cleanup','reset','recoverReset'].includes(kind)) return isDataLocations(v)

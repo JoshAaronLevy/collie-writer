@@ -1,0 +1,13 @@
+# Stage 12 manual acceptance guide
+
+Stage 12 complete. As a user:
+
+1. Open the app and a disposable local project while offline. Add a source with a small public or disposable PDF that has selectable text, then choose **Inspect**. The original should open beside the draft as a page image, with page navigation and no interactive PDF links or forms.
+2. Choose **Extract text page by page**. The inspector should show progress, processed pages, pages with text, page labels when the PDF supplies them, and saved text that may differ in order from the visible page. A scanned or image-only page should show no extracted text rather than claim full coverage; I can add a labeled manual transcription.
+3. Select a phrase in the saved text and choose **Save selected exact excerpt**. Its quote, version checksum, page/label, text range and context should persist. Choose **Go to inspected version and page** and confirm it opens the retained original at that page. Save a labeled correction; both the original and correction should remain listed.
+4. For a disposable multipage PDF, start extraction and choose **Cancel extraction** while it runs. After the current page completes, progress should stop, status should be partial and already saved pages should remain. Choose **Resume extraction** to continue without replacing those pages. Typing in the draft should remain responsive; report the document and page if it does not.
+5. Reimport an edited copy of that PDF into the same source. A new version with its own checksum and captured metadata should appear while the old version remains active. Open and extract the new one, compare the two versions, then choose **Use as active**. Earlier excerpts should remain on the old version and be marked stale relative to the active version; existing source-to-section links and manuscript annotations should remain.
+6. Attach a small UTF-8 `.txt` file as another source, inspect it, extract its single unnumbered part and save an exact excerpt. It should not acquire a fabricated PDF page number. If you have a normal password-protected PDF, its status should say password required without deleting the original; do not create or use a malicious PDF.
+7. Save or back up the disposable project, then restore or duplicate it and reopen inspection. Both PDF versions, their managed originals, page coverage, excerpts, labels and corrections should remain available. Use the managed attachment's **Save copy** action to confirm it does not depend on the old external file path.
+
+Please report your platform, document type/size and any mismatch. The assistant has not performed these actions or any automated verification.

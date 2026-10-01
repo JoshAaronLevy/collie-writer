@@ -7,6 +7,7 @@ files:
   - out/main/**
   - out/preload/**
   - out/renderer/**
+  # The renderer output includes the pinned PDF.js worker, CMaps, fonts and WASM.
   - package.json
   - '!node_modules/better-sqlite3/prebuilds/**'
   - '!node_modules/better-sqlite3/src/**'

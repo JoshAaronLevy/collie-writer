@@ -291,6 +291,24 @@
     ]
   },
   {
+    "package": "pdfjs-dist",
+    "version": "6.3.289",
+    "license": "Apache-2.0 (bundled resources carry their own notices)",
+    "notices": [
+      "pdfjs-dist-6.3.289-LICENSE",
+      "pdfjs-dist-cmaps-LICENSE",
+      "pdfjs-dist-iccs-LICENSE",
+      "pdfjs-dist-standard-fonts-LICENSE_FOXIT",
+      "pdfjs-dist-standard-fonts-LICENSE_LIBERATION",
+      "pdfjs-dist-wasm-LICENSE_JBIG2",
+      "pdfjs-dist-wasm-LICENSE_OPENJPEG",
+      "pdfjs-dist-wasm-LICENSE_PDFJS_JBIG2",
+      "pdfjs-dist-wasm-LICENSE_PDFJS_OPENJPEG",
+      "pdfjs-dist-wasm-LICENSE_PDFJS_QCMS",
+      "pdfjs-dist-wasm-LICENSE_QCMS"
+    ]
+  },
+  {
     "package": "process-nextick-args",
     "version": "2.0.1",
     "license": "MIT",

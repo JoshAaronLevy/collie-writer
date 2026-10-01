@@ -29,7 +29,7 @@ export function protectWindow(window: BrowserWindow): void {
 export function createWindow(devOrigin?: string): BrowserWindow {
   const window = new BrowserWindow({
     title: 'Collie Writer',
-    width: 1000,
+    width: 1280,
     height: 720,
     minWidth: 420,
     minHeight: 400,

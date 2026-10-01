@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 
 export const PROJECT_APPLICATION_ID = 1129270359
-export const PROJECT_SCHEMA_VERSION = 5
+export const PROJECT_SCHEMA_VERSION = 6
 // Persisted schema is app-owned; never execute DDL or migrations supplied by a project.
 export const projectTablesV1 = [
   `CREATE TABLE format (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, minimum_reader INTEGER NOT NULL, editor_version INTEGER NOT NULL) STRICT`,
@@ -40,7 +40,14 @@ export const sourceTables = [
   `CREATE TABLE source_import_reports (project_id TEXT NOT NULL, id TEXT NOT NULL, format TEXT NOT NULL, report TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id)) STRICT`,
   `CREATE TABLE source_import_records (project_id TEXT NOT NULL, report_id TEXT NOT NULL, record_index INTEGER NOT NULL, raw_record TEXT NOT NULL, unknown_fields TEXT NOT NULL, action TEXT NOT NULL, source_id TEXT, error TEXT, PRIMARY KEY(project_id,report_id,record_index), FOREIGN KEY(project_id,report_id) REFERENCES source_import_reports(project_id,id) DEFERRABLE INITIALLY DEFERRED, FOREIGN KEY(project_id,source_id) REFERENCES sources(project_id,id) DEFERRABLE INITIALLY DEFERRED) STRICT`
 ] as const
-export const projectTables = [...projectTablesV4, ...sourceTables] as const
+export const projectTablesV5 = [...projectTablesV4, ...sourceTables] as const
+export const inspectionTables = [
+  `CREATE TABLE source_versions (project_id TEXT NOT NULL, id TEXT NOT NULL, source_id TEXT NOT NULL, attachment_id TEXT NOT NULL, sha256 TEXT NOT NULL, media_type TEXT NOT NULL CHECK(media_type IN ('application/pdf','text/plain')), metadata_snapshot TEXT NOT NULL, extractor_version TEXT, status TEXT NOT NULL CHECK(status IN ('pending','extracting','indexed','partial','no_text','failed','password_required','unsupported')), document_title TEXT NOT NULL, document_author TEXT NOT NULL, total_pages INTEGER, revision_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(project_id,id), UNIQUE(project_id,attachment_id), FOREIGN KEY(project_id,source_id) REFERENCES sources(project_id,id), FOREIGN KEY(project_id,attachment_id) REFERENCES source_attachments(project_id,id)) STRICT`,
+  `CREATE TABLE source_version_selections (project_id TEXT NOT NULL, source_id TEXT NOT NULL, version_id TEXT NOT NULL, PRIMARY KEY(project_id,source_id), FOREIGN KEY(project_id,source_id) REFERENCES sources(project_id,id), FOREIGN KEY(project_id,version_id) REFERENCES source_versions(project_id,id)) STRICT`,
+  `CREATE TABLE source_pages (project_id TEXT NOT NULL, version_id TEXT NOT NULL, page_index INTEGER NOT NULL CHECK(page_index>=0), label TEXT, state TEXT NOT NULL CHECK(state IN ('text','no_text','failed')), text TEXT NOT NULL, text_hash TEXT NOT NULL, error TEXT, PRIMARY KEY(project_id,version_id,page_index), FOREIGN KEY(project_id,version_id) REFERENCES source_versions(project_id,id)) STRICT`,
+  `CREATE TABLE source_excerpts (project_id TEXT NOT NULL, id TEXT NOT NULL, version_id TEXT NOT NULL, page_index INTEGER, representation_hash TEXT, start_offset INTEGER, end_offset INTEGER, quote TEXT NOT NULL, context_before TEXT NOT NULL, context_after TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('extracted','transcription','correction')), label TEXT NOT NULL, supersedes_id TEXT, created_at TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id,version_id) REFERENCES source_versions(project_id,id), FOREIGN KEY(project_id,supersedes_id) REFERENCES source_excerpts(project_id,id)) STRICT`
+] as const
+export const projectTables = [...projectTablesV5, ...inspectionTables] as const
 const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export function createProjectSchema(db: Database.Database): void {
@@ -61,7 +68,7 @@ export function validateProjectSchema(db: Database.Database, expectedVersion = P
   const version = inspectVersion(db)
   if (version !== expectedVersion) throw new ProjectError('MIGRATION_FAILED')
   const objects = db.prepare("SELECT sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all() as { sql: string | null }[]
-  const expected = new Set((expectedVersion === 1 ? projectTablesV1 : expectedVersion === 2 ? projectTablesV2 : expectedVersion === 3 ? projectTablesV3 : expectedVersion === 4 ? projectTablesV4 : projectTables).map(sqlKey))
+  const expected = new Set((expectedVersion === 1 ? projectTablesV1 : expectedVersion === 2 ? projectTablesV2 : expectedVersion === 3 ? projectTablesV3 : expectedVersion === 4 ? projectTablesV4 : expectedVersion === 5 ? projectTablesV5 : projectTables).map(sqlKey))
   if (objects.length !== expected.size || objects.some(o => !o.sql || !expected.has(sqlKey(o.sql)))) throw new ProjectError('CORRUPT_PROJECT')
   const format = db.prepare('SELECT * FROM format').all() as { schema_version: number; minimum_reader: number; editor_version: number }[]
   if (format.length !== 1 || format[0].minimum_reader > PROJECT_SCHEMA_VERSION || format[0].editor_version > 1) throw new ProjectError('FORMAT_TOO_NEW')

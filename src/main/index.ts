@@ -13,6 +13,7 @@ import { WorkingLocation } from './paths/working-root'
 import { registerProjectIpc } from './projects-ipc'
 import { ProjectFileIpc } from './project-files-ipc'
 import { ProjectLifecycle } from './lifecycle'
+import { SourceAssets } from './source-assets'
 
 app.setName('Collie Writer')
 app.setAppUserModelId(APP_ID)
@@ -32,9 +33,14 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'collie-print',
     privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }
+  },
+  {
+    scheme: 'collie-source',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }
   }
 ])
 let window: BrowserWindow | undefined
+const sourceAssets=new SourceAssets(()=>location.path(),()=>window?.webContents,devOrigin)
 let shellReady = false
 const storage = new StorageWorker((status) => {
   if (status.state === 'unavailable') files.unavailable()
@@ -56,6 +62,7 @@ function openWindow(): void {
   window.on('closed', () => {
     window = undefined
     files.revoke()
+    sourceAssets.revoke()
   })
   opened.on('focus', () => { void files.recheck() })
 }
@@ -65,6 +72,7 @@ app
     if (!primaryInstance) return
     await location.initialize()
     protectSession(session.defaultSession, devOrigin)
+    protocol.handle('collie-source',sourceAssets.handle)
     if (!devOrigin)
       protocol.handle('collie', await createAssetHandler(join(__dirname, '../renderer')))
     registerAppIpc(
@@ -78,7 +86,7 @@ app
       devOrigin
     )
     registerStorageIpc(() => window?.webContents, () => storage.current(), devOrigin)
-    registerProjectIpc(() => window?.webContents, location, storage, value => { unprotected = value }, devOrigin)
+    registerProjectIpc(() => window?.webContents, location, storage, value => { unprotected = value }, devOrigin, sourceAssets)
     files.register()
     lifecycle.register()
     installMenu(testMode, kind => { files.action(kind) }, kind => { if (window && !window.isDestroyed()) window.webContents.send(EDITOR_ACTION, kind) })

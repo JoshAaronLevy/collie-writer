@@ -1,5 +1,6 @@
 import type { HistoryView } from '../shared/outline'
 import { isSourcesView, isSourcePreview, isSourceProgress, SOURCE_PROGRESS, type SourcesView, type SourceImportPreview, type SourcePick, type SourceExportReceipt } from '../shared/sources'
+import { isInspectionView, isInspectionPageText, isInspectionAsset, type InspectionView, type InspectionPageText, type InspectionAsset } from '../shared/inspection'
 import { isNotesView, type NotesView } from '../shared/notes'
 import { isDataLocations, type DataLocations } from '../shared/project-lifecycle'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -27,12 +28,17 @@ async function projectCall<T>(channel: string, validate: (value: unknown) => boo
 
 if (!process.contextIsolated || !process.sandboxed) throw new Error('Secure preload required')
 const api: CollieAPI = {
+  readInspection: input => projectCall<InspectionView>(PROJECT_CHANNELS.inspection,isInspectionView,input),
+  readInspectedPage: input => projectCall<InspectionPageText>(PROJECT_CHANNELS.inspectionPage,isInspectionPageText,input),
+  openInspectedAsset: input => projectCall<InspectionAsset>(PROJECT_CHANNELS.inspectionAsset,isInspectionAsset,input),
+  changeInspection: input => projectCall<InspectionView>(PROJECT_CHANNELS.inspectionChange,isInspectionView,input),
   readSources: input => projectCall<SourcesView>(PROJECT_CHANNELS.sources,isSourcesView,input),
   changeSource: input => projectCall<SourcesView>(PROJECT_CHANNELS.sourceChange,isSourcesView,input),
   pickSourceImport: input => projectCall<SourcePick|null>(PROJECT_CHANNELS.sourcePickImport,value=>value===null || record(value)&&exact(value,['token','name'])&&isId(value.token)&&typeof value.name==='string'&&value.name.length<=255,input),
   previewSourceImport: input => projectCall<SourceImportPreview>(PROJECT_CHANNELS.sourcePreview,isSourcePreview,input),
   commitSourceImport: input => projectCall<SourcesView>(PROJECT_CHANNELS.sourceImport,isSourcesView,input),
   pickSourceAttachment: input => projectCall<SourcePick|null>(PROJECT_CHANNELS.sourcePickAttachment,value=>value===null || record(value)&&exact(value,['token','name'])&&isId(value.token)&&typeof value.name==='string'&&value.name.length<=255,input),
+  pickSourceVersion: input => projectCall<SourcePick|null>(PROJECT_CHANNELS.sourcePickVersion,value=>value===null || record(value)&&exact(value,['token','name'])&&isId(value.token)&&typeof value.name==='string'&&value.name.length<=255,input),
   attachSourceFile: input => projectCall<SourcesView>(PROJECT_CHANNELS.sourceAttach,isSourcesView,input),
   exportSources: input => projectCall<SourceExportReceipt>(PROJECT_CHANNELS.sourceExport,value=>isProjectValue('sourceExport',value),input),
   exportSourceAttachment: input => projectCall<SourceExportReceipt>(PROJECT_CHANNELS.sourceExportAttachment,value=>isProjectValue('sourceExportAttachment',value),input),

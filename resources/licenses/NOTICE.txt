@@ -49,3 +49,9 @@ sync-fetch-undici 0.7.1 and whatwg-mimetype 5.0.0 are MIT. Complete
 available license texts and package notices are in dependencies/. The
 application only invokes local bibliography parsers; DOI and URL strings
 are never passed to a resolver.
+
+Local PDF inspection uses PDF.js (pdfjs-dist 6.3.289), licensed Apache-2.0.
+Its bundled worker, CMaps, ICC profile, standard fonts and WASM resources
+ship with the upstream and third-party notices listed in dependencies/.
+These assets are used locally for inert page rendering and text extraction;
+they do not authorize PDF content uploads or online font loading.

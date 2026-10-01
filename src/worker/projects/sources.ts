@@ -128,14 +128,16 @@ export function readSources(db: Database.Database, projectId: string): SourcesVi
   return { sources,reports,headCommitId }
 }
 function oldRevision(db:Database.Database, projectId:string, row:Row, now:string): void { const snapshot={metadata:row.metadata,state:row.state,replacementId:row.replacement_id,verified:row.verified,provenance:row.provenance,rawImport:row.raw_import,unknownFields:row.unknown_fields,createdAt:row.created_at,updatedAt:row.updated_at};db.prepare('INSERT OR IGNORE INTO source_revisions VALUES (?,?,?,?,?)').run(projectId,row.id,row.revision_id,JSON.stringify(snapshot),now) }
-function commit(db:Database.Database, projectId:string, operationId:string, digest:string, now:string): void {
+export function commitSourceOperation(db:Database.Database, projectId:string, operationId:string, digest:string, now:string): void {
   const before = db.prepare('SELECT head_commit_id FROM projects WHERE id=?').get(projectId) as {head_commit_id:string}
   const head = randomUUID(); db.prepare('INSERT INTO commits VALUES (?,?,?,?)').run(projectId,head,before.head_commit_id,now)
   db.prepare('UPDATE projects SET head_commit_id=?,updated_at=? WHERE id=?').run(head,now,projectId)
   const doc = db.prepare('SELECT id,revision_id FROM documents WHERE project_id=? ORDER BY rowid LIMIT 1').get(projectId) as {id:string;revision_id:string}
   db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(projectId,operationId,digest,JSON.stringify({projectId,documentId:doc.id,revisionId:doc.revision_id,headCommitId:head}))
 }
-function priorOperation(db:Database.Database, projectId:string, operationId:string, digest:string): boolean { const row=db.prepare('SELECT digest FROM domain_operations WHERE project_id=? AND operation_id=?').get(projectId,operationId) as {digest:string}|undefined; if (row && row.digest!==digest) throw new ProjectError('OPERATION_CONFLICT'); return !!row }
+export function priorSourceOperation(db:Database.Database, projectId:string, operationId:string, digest:string): boolean { const row=db.prepare('SELECT digest FROM domain_operations WHERE project_id=? AND operation_id=?').get(projectId,operationId) as {digest:string}|undefined; if (row && row.digest!==digest) throw new ProjectError('OPERATION_CONFLICT'); return !!row }
+const commit = commitSourceOperation
+const priorOperation = priorSourceOperation
 function linkDocuments(db:Database.Database,projectId:string,sourceId:string,ids:string[]): void { db.prepare('DELETE FROM source_links WHERE project_id=? AND source_id=?').run(projectId,sourceId); for (const id of ids) { if (!db.prepare('SELECT 1 FROM documents WHERE project_id=? AND id=?').get(projectId,id)) throw new ProjectError('VALIDATION'); db.prepare('INSERT INTO source_links VALUES (?,?,?)').run(projectId,sourceId,id) } }
 export function changeSource(context:SourceContext,input:SourceChangeInput): SourcesView {
   const { db,projectId }=context, c=input.change, digest=requestDigest(input)
@@ -160,6 +162,10 @@ export function changeSource(context:SourceContext,input:SourceChangeInput): Sou
         db.prepare('INSERT OR IGNORE INTO source_links SELECT project_id,?,document_id FROM source_links WHERE project_id=? AND source_id=?').run(c.targetId,projectId,c.id)
         db.prepare('DELETE FROM source_links WHERE project_id=? AND source_id=?').run(projectId,c.id)
         db.prepare('UPDATE source_attachments SET source_id=? WHERE project_id=? AND source_id=?').run(c.targetId,projectId,c.id)
+        const oldSelection=db.prepare('SELECT version_id FROM source_version_selections WHERE project_id=? AND source_id=?').get(projectId,c.id) as {version_id:string}|undefined
+        db.prepare('UPDATE source_versions SET source_id=? WHERE project_id=? AND source_id=?').run(c.targetId,projectId,c.id)
+        if(oldSelection)db.prepare('INSERT OR IGNORE INTO source_version_selections VALUES (?,?,?)').run(projectId,c.targetId,oldSelection.version_id)
+        db.prepare('DELETE FROM source_version_selections WHERE project_id=? AND source_id=?').run(projectId,c.id)
         const existingAlias=db.prepare('SELECT source_id FROM source_aliases WHERE project_id=? AND alias=?').get(projectId,c.id) as {source_id:string}|undefined
         if (existingAlias && existingAlias.source_id!==c.id) throw new ProjectError('OPERATION_CONFLICT')
         db.prepare('UPDATE source_aliases SET source_id=? WHERE project_id=? AND source_id=?').run(c.targetId,projectId,c.id)
@@ -244,6 +250,11 @@ export async function attachSourceFile(context:SourceContext,input:WorkerSourceA
     oldRevision(db,projectId,current,now)
     db.prepare('INSERT INTO managed_assets VALUES (?,?,?,?,?,?)').run(projectId,input.operationId,input.originalName,mediaType,blob.bytes,blob.sha256)
     db.prepare('INSERT INTO source_attachments VALUES (?,?,?,?,?,?)').run(projectId,input.operationId,input.sourceId,input.operationId,'active',now)
+    if(mediaType==='application/pdf'||mediaType==='text/plain'){
+      const versionId=randomUUID()
+      db.prepare('INSERT INTO source_versions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(projectId,versionId,input.sourceId,input.operationId,blob.sha256,mediaType,current.metadata,null,'pending','','',null,randomUUID(),now,now)
+      db.prepare('INSERT OR IGNORE INTO source_version_selections VALUES (?,?,?)').run(projectId,input.sourceId,versionId)
+    }
     db.prepare('UPDATE sources SET revision_id=?,updated_at=? WHERE project_id=? AND id=?').run(randomUUID(),now,projectId,input.sourceId)
     commit(db,projectId,input.operationId,digest,now)
   })

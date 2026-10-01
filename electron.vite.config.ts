@@ -13,6 +13,7 @@ export default defineConfig({
     }
   },
   renderer: {
+    publicDir: resolve('src/renderer/public'),
     resolve: { alias: { '@renderer': resolve('src/renderer/src') } },
     server: { host: '127.0.0.1', port: 5173, strictPort: true },
     plugins: [react()]
