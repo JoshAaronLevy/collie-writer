@@ -4,7 +4,7 @@ import { promisify } from 'node:util'
 import { homedir } from 'node:os'
 import { dirname, join, parse, resolve, isAbsolute } from 'node:path'
 import { lstat, realpath, mkdir, readFile, open, rename } from 'node:fs/promises'
-import { APP_ID } from '../../shared/commands'
+import { RELEASE } from '../release'
 import type { LocationStatus } from '../../shared/projects'
 
 const execute = promisify(execFile)
@@ -66,9 +66,9 @@ export class WorkingLocation {
   private preference(): string { return join(app.getPath('userData'), 'working-location.json') }
   private async establish(parent?: string): Promise<void> {
     const verified = await nativeLocalDirectory(parent)
-    const root = join(verified, APP_ID, 'working')
+    const root = join(verified, RELEASE.appId, 'working')
     // Recheck each new/existing component before creating its child; do not follow a symlink.
-    for (const directory of [join(verified, APP_ID), root]) {
+    for (const directory of [join(verified, RELEASE.appId), root]) {
       await mkdir(directory, { recursive: false, mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error })
       const info = await lstat(directory)
       if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('REDIRECTED_ROOT')

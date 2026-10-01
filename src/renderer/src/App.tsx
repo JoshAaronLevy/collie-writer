@@ -53,7 +53,7 @@ export default function App(): React.JSX.Element {
           <a href="#data-locations" onClick={event=>{event.preventDefault();const target=document.getElementById('data-locations') as HTMLDetailsElement|null;if(target){target.open=true;target.focus();target.scrollIntoView({block:'start'})}}}>Data Locations</a>
           <a href="#settings" onClick={event=>{event.preventDefault();const target=document.getElementById('settings-title');target?.focus();target?.scrollIntoView({block:'start'})}}>Settings and privacy</a>
         </nav>
-        <span className="build-label">Development</span>
+        <span className="build-label">{info?.channel === 'production' ? 'Direct' : info?.channel === 'beta' ? 'Beta' : 'Development'}</span>
       </header>
       <main id="workspace" tabIndex={-1}>
         <aside className="citation-attribution" aria-label="Citation software attribution">
@@ -79,7 +79,7 @@ export default function App(): React.JSX.Element {
           {failed
             ? 'Application information could not be loaded. Reopen this window to try again.'
             : info
-              ? `Collie Writer ${info.version} · Development build`
+              ? `Collie Writer ${info.version} · ${info.channel === 'production' ? 'Direct' : info.channel === 'beta' ? 'Beta' : 'Development'} build`
               : 'Starting Collie Writer…'}
         </p>
         <span>Ad-free, always.</span>

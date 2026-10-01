@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { lstat, readFile } from 'node:fs/promises'
 import { isId } from '../domain/editor/schema'
 import { ProjectError, projectError } from '../domain/projects/errors'
@@ -19,6 +19,7 @@ export class ProjectFileIpc {
   private status: FileStatus = { scope: null, destination: null, state: 'unsaved', job: null }
   private choosing = false
   private consenting = false
+  private shellPath: string | null = null
   constructor(private readonly owner: () => WebContents | undefined, private readonly location: WorkingLocation, private readonly storage: StorageWorker, private readonly devOrigin?: string) {}
   current(): FileStatus { return this.status }
   unavailable(): void {
@@ -32,6 +33,12 @@ export class ProjectFileIpc {
     return id
   }
   revoke(): void { this.grants.clear(); this.challenges.clear() }
+  offerShellPath(path: string): void {
+    if (!isAbsolute(path) || path.length > 4000 || !/\.collie$/i.test(path) || this.shellPath) return
+    this.shellPath = path
+    this.nudgeShellOpen()
+  }
+  nudgeShellOpen(): void { if (this.shellPath && this.storage.current().state === 'ready') this.action('open-shell') }
   register(): void {
     this.storage.onFiles(status => {
       this.status = status
@@ -56,6 +63,20 @@ export class ProjectFileIpc {
           const path=this.location.path()!,info=await lstat(path)
           if(!info.isDirectory()||info.isSymbolicLink()||await shell.openPath(path))throw new ProjectError('UNAVAILABLE')
           return {ok:true,requestId,value:true}
+        }
+        if (kind === 'claimShell') {
+          if (input !== null) throw new ProjectError('VALIDATION')
+          const path = this.shellPath
+          if (!path || !event.senderFrame) return { ok: true, requestId, value: null }
+          let info
+          try { info = await lstat(path) } catch { this.shellPath = null; throw new ProjectError('VALIDATION') }
+          if (!info.isFile() || info.isSymbolicLink()) { this.shellPath = null; throw new ProjectError('VALIDATION') }
+          for (const [id, grant] of this.grants) if (grant.expires < Date.now()) this.grants.delete(id)
+          if (this.grants.size >= 32) throw new ProjectError('UNAVAILABLE')
+          const token = randomUUID()
+          this.grants.set(token, { value: { id: token, path, purpose: 'open', scope: null }, owner: event.sender.id, frame: event.senderFrame.routingId, process: event.senderFrame.processId, expires: Date.now() + 10 * 60 * 1000, usedBy: null })
+          this.shellPath = null
+          return { ok: true, requestId, value: { token, path } }
         }
         if (kind === 'pick') {
           if (!isPickInput(input)) throw new ProjectError('VALIDATION')

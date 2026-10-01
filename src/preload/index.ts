@@ -23,7 +23,7 @@ import { isRecipesView, isImportPick, isImportPreview, type RecipesView, type Im
 import { ACCESS_CHANNELS, ACCESS_CHANGED, isAccessView, type AccessView } from '../shared/access'
 import { SUPPORT_CHANNELS, isSupportPreview, isZoomLevel, type SupportPreview, type ZoomLevel } from '../shared/support'
 import { DIRECT_CHANNELS, isDirectView, type DirectView } from '../shared/direct-access'
-import { CLOSE_REPLY, FILE_ACTION, FILE_CHANGED, FILE_CHANNELS, isFileAction, isFileStatus, isSelection, type FileStatus, type FileSelection } from '../shared/project-files'
+import { CLOSE_REPLY, FILE_ACTION, FILE_CHANGED, FILE_CHANNELS, isFileAction, isFileStatus, isSelection, type FileStatus, type FileSelection, type FileAction } from '../shared/project-files'
 
 async function projectCall<T>(channel: string, validate: (value: unknown) => boolean, input?: unknown): Promise<ProjectResult<T>> {
   const requestId = crypto.randomUUID()
@@ -35,6 +35,13 @@ async function projectCall<T>(channel: string, validate: (value: unknown) => boo
 }
 
 if (!process.contextIsolated || !process.sandboxed) throw new Error('Secure preload required')
+const fileActionListeners = new Set<(action: FileAction) => void>()
+const pendingFileActions: FileAction[] = []
+ipcRenderer.on(FILE_ACTION, (_event, value: unknown) => {
+  if (!isFileAction(value)) return
+  if (fileActionListeners.size) for (const listener of fileActionListeners) listener(value)
+  else if (pendingFileActions.length < 16) pendingFileActions.push(value)
+})
 const api: CollieAPI = {
   readDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.read, isDirectView),
   beginDirectAccess: input => projectCall<DirectView>(DIRECT_CHANNELS.begin, isDirectView, input),
@@ -106,6 +113,7 @@ const api: CollieAPI = {
   duplicateProject: input => projectCall<FileStatus>(FILE_CHANNELS.duplicate, isFileStatus, input),
   recoverProjectVersion: input => projectCall<FileStatus>(FILE_CHANNELS.recover, isFileStatus, input),
   pickProjectFile: input => projectCall<FileSelection | null>(FILE_CHANNELS.pick, isSelection, input),
+  claimShellProjectFile: () => projectCall<FileSelection | null>(FILE_CHANNELS.claimShell, isSelection, null),
   saveProjectFile: input => projectCall<FileStatus>(FILE_CHANNELS.save, isFileStatus, input),
   openProjectFile: input => projectCall<FileStatus>(FILE_CHANNELS.open, isFileStatus, input),
   locateProjectFile: input => projectCall<FileStatus>(FILE_CHANNELS.locate, isFileStatus, input),
@@ -119,8 +127,9 @@ const api: CollieAPI = {
     ipcRenderer.on(FILE_CHANGED, listener); return () => ipcRenderer.removeListener(FILE_CHANGED, listener)
   },
   onFileAction: callback => {
-    const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => { if (isFileAction(value)) callback(value) }
-    ipcRenderer.on(FILE_ACTION, listener); return () => ipcRenderer.removeListener(FILE_ACTION, listener)
+    fileActionListeners.add(callback)
+    for (const action of pendingFileActions.splice(0)) callback(action)
+    return () => { fileActionListeners.delete(callback) }
   },
   finishClose: (id, outcome) => ipcRenderer.send(CLOSE_REPLY, { id, outcome }),
   getWorkingLocation: () => projectCall<LocationStatus>(PROJECT_CHANNELS.location, isLocation),

@@ -23,7 +23,7 @@ export function isAppInfo(value: unknown): value is AppInfo {
     record(value) &&
     keys(value, ['name', 'version', 'channel', 'platform']) &&
     value.name === 'Collie Writer' &&
-    value.channel === 'development' &&
+    ['development', 'beta', 'production'].includes(String(value.channel)) &&
     typeof value.version === 'string' &&
     /^\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?$/i.test(value.version) &&
     value.version.length <= 64 &&

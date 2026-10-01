@@ -5,12 +5,12 @@ export const FILE_CHANNELS = {
   backup: 'files.backup', move: 'files.move', restore: 'files.restore', duplicate: 'files.duplicate', recover: 'files.recover',
   pick: 'files.pick', save: 'files.save', open: 'files.open', locate: 'files.locate', inspect: 'files.inspect',
   status: 'files.status', cancel: 'files.cancel', answer: 'files.answer', consent: 'files.consent',
-  revealProject: 'files.revealProject', revealWorking: 'files.revealWorking'
+  revealProject: 'files.revealProject', revealWorking: 'files.revealWorking', claimShell: 'files.claimShell'
 } as const
 export const FILE_CHANGED = 'files.changed'
 export const FILE_ACTION = 'files.action'
 export const CLOSE_REPLY = 'files.closeReply'
-export type FileAction = { id: string; kind: 'save' | 'save-as' | 'open' | 'close' | 'close-cancelled' | 'suspend' | 'resume' }
+export type FileAction = { id: string; kind: 'save' | 'save-as' | 'open' | 'open-shell' | 'close' | 'close-cancelled' | 'suspend' | 'resume' }
 export type FileChoice = 'cancel' | 'open-copy' | 'use-local' | 'import'
 export type PickInput = { purpose: 'save' | 'open' | 'locate' | 'backup' | 'move' | 'restore'; scope: OpenInput | null }
 export type FileSelection = { token: string; path: string }
@@ -38,6 +38,7 @@ export type FileAPI = {
   duplicateProject: (input: { scope: OpenInput; operationId: string; expectedHead: string }) => Promise<ProjectResult<FileStatus>>
   recoverProjectVersion: (input: { operationId: string; artifactId: string }) => Promise<ProjectResult<FileStatus>>
   pickProjectFile: (input: PickInput) => Promise<ProjectResult<FileSelection | null>>
+  claimShellProjectFile: () => Promise<ProjectResult<FileSelection | null>>
   saveProjectFile: (input: SaveInput) => Promise<ProjectResult<FileStatus>>
   openProjectFile: (input: SelectedInput) => Promise<ProjectResult<FileStatus>>
   locateProjectFile: (input: LocateInput) => Promise<ProjectResult<FileStatus>>
@@ -75,4 +76,4 @@ export function isFileStatus(v: unknown): v is FileStatus {
   const i = j.inspection
   return i === null || record(i) && exact(i, ['projectId','snapshotId','headCommitId','title','local']) && [i.projectId,i.snapshotId,i.headCommitId].every(isId) && typeof i.title === 'string' && i.title.length <= 500 && (i.local === null || isOpenInput(i.local))
 }
-export function isFileAction(v: unknown): v is FileAction { return record(v) && exact(v, ['id','kind']) && isId(v.id) && ['save','save-as','open','close','close-cancelled','suspend','resume'].includes(String(v.kind)) }
+export function isFileAction(v: unknown): v is FileAction { return record(v) && exact(v, ['id','kind']) && isId(v.id) && ['save','save-as','open','open-shell','close','close-cancelled','suspend','resume'].includes(String(v.kind)) }

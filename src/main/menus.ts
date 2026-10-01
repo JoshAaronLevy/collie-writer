@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, Menu, shell, type MenuItemConstructorOption
 import { externalHttpUrl } from './security'
 import { bundledResources } from './resources'
 import { join } from 'node:path'
+import type { ReleaseChannel } from './release'
 
 export async function confirmExternalLink(raw: unknown, testMode: boolean): Promise<void> {
   const url = externalHttpUrl(raw)
@@ -18,13 +19,13 @@ export async function confirmExternalLink(raw: unknown, testMode: boolean): Prom
   })
   if (choice.response === 1) await shell.openExternal(url)
 }
-export function installMenu(testMode: boolean, fileAction: (kind: 'save' | 'save-as' | 'open') => void, editorAction: (kind: 'undo' | 'redo' | 'find' | 'paste-plain') => void): void {
+export function installMenu(testMode: boolean, channel: ReleaseChannel, fileAction: (kind: 'save' | 'save-as' | 'open') => void, editorAction: (kind: 'undo' | 'redo' | 'find' | 'paste-plain') => void, checkUpdates: () => void, installUpdate: () => void): void {
   const about = (): void => {
     void dialog.showMessageBox({
       type: 'info',
       title: 'About Collie Writer',
       message: 'Collie Writer',
-      detail: `Development build ${app.getVersion()}\n\nA workspace for research and writing.\nLocal draft recovery and portable project Save/Open are available. Cloud upload is managed by your chosen storage provider.`
+      detail: `${channel === 'production' ? 'Direct' : channel === 'beta' ? 'Beta' : 'Development'} build ${app.getVersion()}\n\nA workspace for research and writing.\nLocal draft recovery and portable project Save/Open are available. Cloud upload is managed by your chosen storage provider.`
     })
   }
   const template: MenuItemConstructorOptions[] = [
@@ -81,6 +82,9 @@ export function installMenu(testMode: boolean, fileAction: (kind: 'save' | 'save
       role: 'help',
       submenu: [
         { label: 'About Collie Writer', click: about },
+        { label: 'Check for updates…', click: checkUpdates },
+        { label: 'Install downloaded update…', click: installUpdate },
+        { type: 'separator' },
         {
           label: 'Third-party licenses',
           click: () => {
@@ -103,7 +107,7 @@ export function installMenu(testMode: boolean, fileAction: (kind: 'save' | 'save
               title: 'Privacy and data',
               message: 'Your writing belongs to you.',
               detail:
-                'Collie Writer is ad-free. Working projects and recovery stay in the local folder shown in the project screen. Local recovery is not a saved project file or cloud upload. There is no analytics, purchase service or automatic update connection.'
+                'Collie Writer is ad-free. Working projects and recovery stay in the local folder shown in the project screen. Local recovery is not a saved project file or cloud upload. There is no analytics or automatic update connection. Configured purchase connections and update checks occur only after your explicit action and do not send writing.'
             })
           }
         }

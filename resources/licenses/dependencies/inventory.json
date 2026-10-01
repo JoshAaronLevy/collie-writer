@@ -543,5 +543,17 @@
     "notices": [
       "xml-js-1.6.11-LICENSE"
     ]
+  },
+  {
+    "package": "electron-updater",
+    "version": "6.6.2",
+    "license": "MIT",
+    "notices": ["electron-updater-6.6.2-LICENSE"]
+  },
+  {
+    "package": "js-yaml",
+    "version": "4.3.2",
+    "license": "MIT",
+    "notices": ["js-yaml-4.3.2-LICENSE"]
   }
 ]

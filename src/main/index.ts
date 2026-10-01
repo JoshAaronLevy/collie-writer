@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, protocol, session } from 'electron'
 import { join } from 'node:path'
-import { APP_ID, EDITOR_ACTION, STORAGE_STATUS_CHANGED, type AppInfo } from '../shared/commands'
+import { EDITOR_ACTION, STORAGE_STATUS_CHANGED, type AppInfo } from '../shared/commands'
 import { registerAppIpc, registerStorageIpc } from './ipc'
 import { denyTestNetwork } from './test-network'
 import { installMenu } from './menus'
@@ -17,14 +17,19 @@ import { SourceAssets } from './source-assets'
 import { AccessService } from './entitlements/service'
 import { SupportService } from './support'
 import { DirectAccessService } from './entitlements/direct/service'
+import { RELEASE } from './release'
+import { DirectUpdater } from './updates/direct'
 
 app.setName('Collie Writer')
-app.setAppUserModelId(APP_ID)
+app.setAppUserModelId(RELEASE.appId)
 app.enableSandbox()
 const testMode = configureProfile()
 if (testMode) denyTestNetwork()
 const primaryInstance = app.requestSingleInstanceLock()
 if (!primaryInstance) app.exit(0)
+let shellReady = false
+const shellOpenQueue: string[] = app.isPackaged ? process.argv.slice(1).filter(value => value.toLowerCase().endsWith('.collie')) : []
+app.on('open-file', (event, path) => { event.preventDefault(); if (shellReady) files.offerShellPath(path); else if (shellOpenQueue.length < 8) shellOpenQueue.push(path) })
 const location = new WorkingLocation(testMode)
 let unprotected = false
 const devOrigin = developmentOrigin(process.env.ELECTRON_RENDERER_URL, app.isPackaged)
@@ -44,10 +49,9 @@ protocol.registerSchemesAsPrivileged([
 ])
 let window: BrowserWindow | undefined
 const sourceAssets=new SourceAssets(()=>location.path(),()=>window?.webContents,devOrigin)
-let shellReady = false
 const storage = new StorageWorker((status) => {
   if (status.state === 'unavailable') files.unavailable()
-  if (status.state === 'ready') void access.initialize()
+  if (status.state === 'ready') { void access.initialize(); files.nudgeShellOpen() }
   if (window && !window.isDestroyed() && !window.webContents.isDestroyed())
     window.webContents.send(STORAGE_STATUS_CHANGED, status)
 })
@@ -60,11 +64,29 @@ storage.setAccessPolicy(command=>access.authorize(command),command=>{
 },(command,value)=>access.observe(command,value))
 const files = new ProjectFileIpc(() => window?.webContents, location, storage, devOrigin)
 const lifecycle = new ProjectLifecycle(() => window?.webContents, files, () => unprotected, devOrigin)
+const prepareUpdateRestart = async (): Promise<boolean> => {
+  if (shutdownStarted || shutdownFinished) return false
+  shutdownStarted = true
+  try {
+    if (!await lifecycle.close()) { shutdownStarted = false; return false }
+    await storage.stop(() => {
+      void dialog.showMessageBox({ type: 'warning', title: 'Finishing local work', message: 'Collie Writer is waiting for local storage before restarting.', buttons: ['Keep waiting'], noLink: true })
+    })
+    closeApproved = true
+    shutdownFinished = true
+    return true
+  } catch { shutdownStarted = false; files.action('close-cancelled'); return false }
+}
+let updater: DirectUpdater
 let closeApproved = false
 function openWindow(): void {
   closeApproved = false
   window = createWindow(devOrigin)
   const opened = window
+  opened.webContents.once('did-finish-load', () => {
+    if (shellOpenQueue.length) files.offerShellPath(shellOpenQueue.shift()!)
+    else files.nudgeShellOpen()
+  })
   opened.on('close', event => {
     if (closeApproved || shutdownFinished) return
     event.preventDefault()
@@ -85,6 +107,7 @@ app
     await location.initialize()
     await access.initialize()
     protectSession(session.defaultSession, devOrigin)
+    updater = new DirectUpdater(() => window, prepareUpdateRestart)
     protocol.handle('collie-source',sourceAssets.handle)
     if (!devOrigin)
       protocol.handle('collie', await createAssetHandler(join(__dirname, '../renderer')))
@@ -93,7 +116,7 @@ app
       () => ({
         name: 'Collie Writer',
         version: app.getVersion(),
-        channel: 'development',
+        channel: RELEASE.channel,
         platform: process.platform as AppInfo['platform']
       }),
       devOrigin
@@ -105,7 +128,7 @@ app
     registerProjectIpc(() => window?.webContents, location, storage, value => { unprotected = value }, devOrigin, sourceAssets)
     files.register()
     lifecycle.register()
-    installMenu(testMode, kind => { files.action(kind) }, kind => { if (window && !window.isDestroyed()) window.webContents.send(EDITOR_ACTION, kind) })
+    installMenu(testMode, RELEASE.channel, kind => { files.action(kind) }, kind => { if (window && !window.isDestroyed()) window.webContents.send(EDITOR_ACTION, kind) }, () => { void updater.check() }, () => { void updater.install() })
     shellReady = true
     openWindow()
     if (location.path()) storage.start(location.path()!)
@@ -117,9 +140,11 @@ app
     console.error('SHELL_START_FAILED')
     app.exit(1)
   })
-app.on('second-instance', () => {
+app.on('second-instance', (_event, commandLine) => {
   if (!shellReady) return
   if (!window) openWindow()
+  const path = commandLine.find(value => value.toLowerCase().endsWith('.collie'))
+  if (path) files.offerShellPath(path)
   if (window?.isMinimized()) window.restore()
   window?.focus()
 })

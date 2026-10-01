@@ -10,11 +10,10 @@ export const GET_INFO = 'app.getInfo'
 export const GET_STORAGE_STATUS = 'storage.getStatus'
 export const STORAGE_STATUS_CHANGED = 'storage.statusChanged'
 export const EDITOR_ACTION = 'editor.action'
-export const APP_ID = 'com.colliewriter.app.dev'
 export type AppInfo = {
   name: 'Collie Writer'
   version: string
-  channel: 'development'
+  channel: 'development' | 'beta' | 'production'
   platform: 'darwin' | 'win32' | 'linux'
 }
 export type InfoRequest = { requestId: string }

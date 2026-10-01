@@ -55,3 +55,8 @@ Its bundled worker, CMaps, ICC profile, standard fonts and WASM resources
 ship with the upstream and third-party notices listed in dependencies/.
 These assets are used locally for inert page rendering and text extraction;
 they do not authorize PDF content uploads or online font loading.
+
+Direct installer updates use electron-updater 6.6.2 and parse locally bundled
+update configuration with js-yaml 4.3.2 (both MIT). Their license texts are in
+dependencies/. Update checks use a configured release feed only after the
+user chooses Check for updates; no manuscript or project metadata is sent.

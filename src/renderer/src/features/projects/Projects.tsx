@@ -402,7 +402,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     const result = await window.collie.openProject(scope)
     if (result.ok) await select(result.value); else setError(result.error.message)
   }
-  async function openFile(inspect = false, locate = false): Promise<void> {
+  async function openFile(inspect = false, locate = false, shell = false): Promise<void> {
     if (!await waitActive()) return
     setBusy(true)
     if (current.current && !await flush()) return
@@ -410,7 +410,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     let result: ProjectResult<FileStatus>
     if (inspect && p) result = await window.collie.inspectProjectFile({ scope: scopeOf(p), operationId })
     else {
-      const choice = await window.collie.pickProjectFile({ purpose: locate ? 'locate' : 'open', scope: locate && p ? scopeOf(p) : null })
+      const choice = shell ? await window.collie.claimShellProjectFile() : await window.collie.pickProjectFile({ purpose: locate ? 'locate' : 'open', scope: locate && p ? scopeOf(p) : null })
       if (!choice.ok || !choice.value) { if (!choice.ok) setError(choice.error.message); return }
       result = locate && p ? await window.collie.locateProjectFile({ scope: scopeOf(p), operationId, token: choice.value.token }) : await window.collie.openProjectFile({ operationId, token: choice.value.token })
     }
@@ -505,6 +505,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
         return
       }
       if (action.kind === 'open') run(() => openFile())
+      else if (action.kind === 'open-shell') run(() => openFile(false, false, true))
       else run(() => save(action.kind === 'save-as'))
       return
     }
