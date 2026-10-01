@@ -1,0 +1,6 @@
+@citation-js/date 0.5.1
+Author: Lars Willighagen
+License declared by the package: MIT
+The npm archive has no separate LICENSE file. The MIT license text from the
+same author's Citation.js core package is bundled as
+@citation-js-core-0.9.0-LICENSE.md.

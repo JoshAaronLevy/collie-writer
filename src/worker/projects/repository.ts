@@ -24,6 +24,8 @@ import { SnapshotError, isHash } from './manifest'
 import { destinationView, readDestination, writeDestination, type SavedLocation } from './file-state'
 import { stageBlob } from './blobs'
 import { fileHash } from './streams'
+import { readSources, changeSource, previewImport, commitImport, attachSourceFile, exportSources, exportSourceAttachment } from './sources'
+import type { SourceChangeInput, SourcesView, SourceImportPreview, SourceExportReceipt, WorkerSourcePreview, WorkerSourceImport, WorkerSourceAttachment, WorkerSourceExport, WorkerSourceAttachmentExport } from '../../shared/sources'
 
 const catalogSchema = [
   'CREATE TABLE creation_intents (operation_id TEXT PRIMARY KEY, digest TEXT NOT NULL, project_id TEXT NOT NULL UNIQUE, workspace_id TEXT NOT NULL UNIQUE) STRICT',
@@ -78,6 +80,13 @@ export class ProjectRepository {
   private active: Owned | undefined
   private boundary: Promise<unknown> = Promise.resolve()
   private fileBusy = false
+  sources(input: OpenInput): Promise<SourcesView> { return this.serial(async()=>{this.fileContext(input);return readSources(this.active!.db,input.projectId)}) }
+  sourceChange(input: SourceChangeInput): Promise<SourcesView> { return this.serial(async()=>{this.fileContext(input);if(this.fileBusy)throw new ProjectError('PROJECT_LOCKED');const owned=this.active!,view=changeSource({root:this.root,workspace:owned.workspace,projectId:input.projectId,db:owned.db},input);await this.discovery(owned);return view}) }
+  sourcePreview(input: WorkerSourcePreview): Promise<SourceImportPreview> { return this.serial(async()=>{this.fileContext(input);const owned=this.active!;return previewImport({root:this.root,workspace:owned.workspace,projectId:input.projectId,db:owned.db},input)}) }
+  sourceImport(input: WorkerSourceImport): Promise<SourcesView> { return this.serial(async()=>{this.fileContext(input);if(this.fileBusy)throw new ProjectError('PROJECT_LOCKED');const owned=this.active!,view=await commitImport({root:this.root,workspace:owned.workspace,projectId:input.projectId,db:owned.db},input);await this.discovery(owned);return view}) }
+  sourceAttach(input: WorkerSourceAttachment,progress?:(transferred:number,total:number)=>void): Promise<SourcesView> { return this.serial(async()=>{this.fileContext(input);if(this.fileBusy)throw new ProjectError('PROJECT_LOCKED');const owned=this.active!,view=await attachSourceFile({root:this.root,workspace:owned.workspace,projectId:input.projectId,db:owned.db},input,progress);await this.discovery(owned);return view}) }
+  sourceExport(input: WorkerSourceExport): Promise<SourceExportReceipt> { return this.serial(async()=>{this.fileContext(input);const owned=this.active!;return exportSources({root:this.root,workspace:owned.workspace,projectId:input.projectId,db:owned.db},input)}) }
+  sourceExportAttachment(input: WorkerSourceAttachmentExport): Promise<SourceExportReceipt> { return this.serial(async()=>{this.fileContext(input);const owned=this.active!;return exportSourceAttachment({root:this.root,workspace:owned.workspace,projectId:input.projectId,db:owned.db},input.attachmentId,input.destinationPath)}) }
   constructor(private readonly root: string, private readonly resources: string, private readonly nativeBinding?: string) {}
   private serial<T>(work: () => Promise<T>): Promise<T> {
     const task = this.boundary.then(work)
@@ -454,8 +463,8 @@ export class ProjectRepository {
     const owned = this.active
     if (!owned || owned.projectId !== input.projectId || owned.workspaceId !== input.workspaceId) throw new ProjectError('DENIED')
     const payload = readDocument(input.payload)
-    // Source ownership arrives later. Image references must resolve in this project's asset inventory.
-    const references = (v: unknown): boolean => !!v && typeof v === 'object' && Object.entries(v).some(([key, child]) => key === 'sourceId' || (key === 'assetId' && !owned.db.prepare('SELECT id FROM managed_assets WHERE project_id=? AND id=?').get(input.projectId, child)) || references(child))
+    // References must resolve within this project, including retained source aliases after a merge.
+    const references = (v: unknown): boolean => !!v && typeof v === 'object' && Object.entries(v).some(([key, child]) => key === 'sourceId' && (!isId(child) || !owned.db.prepare('SELECT 1 FROM sources WHERE project_id=? AND id=? UNION SELECT 1 FROM source_aliases WHERE project_id=? AND alias=?').get(input.projectId,child,input.projectId,child)) || (key === 'assetId' && !owned.db.prepare('SELECT id FROM managed_assets WHERE project_id=? AND id=?').get(input.projectId, child)) || references(child))
     if (references(payload)) throw new ProjectError('VALIDATION')
     const digest = requestDigest(input)
     const result = inWriteTransaction(owned.db, () => {

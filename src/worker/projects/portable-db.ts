@@ -4,6 +4,7 @@ import { isProjectTemplate } from '../../domain/projects/templates'
 import { exact, record } from '../../shared/projects'
 import { manuscript, readCheckpoint, historyStorage } from './manuscript'
 import { validatePortableNotes } from './notes'
+import { validatePortableSources } from './sources'
 import { inspectVersion, validateProjectSchema } from '../storage/schema'
 import { isHash, isUtc, LIMITS, SnapshotError, type BlobRef } from './manifest'
 
@@ -38,7 +39,9 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
   function references(payload: unknown, documentId?: unknown): void {
     if (!payload || typeof payload !== 'object') return
     for (const [key,value] of Object.entries(payload)) {
-      if (key === 'sourceId') invalid() // Source ownership arrives with Stage 11.
+      if (key === 'sourceId') {
+        if (version < 5 || !isId(value) || !db.prepare('SELECT 1 FROM sources WHERE project_id=? AND id=? UNION SELECT 1 FROM source_aliases WHERE project_id=? AND alias=?').get(projectId,value,projectId,value)) invalid()
+      }
       else if (key === 'assetId') { if (!assetIds.has(String(value))) invalid() }
       else if (['blockId','footnoteId','citationId'].includes(key)) {
         if (documentId !== undefined) {
@@ -75,6 +78,7 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
   }
   if (snapshot && historyStorage(db,projectId).unreferenced.length) return invalid()
   if (version >= 4) try { validatePortableNotes(db,projectId) } catch { return invalid() }
+  if (version >= 5) try { validatePortableSources(db,projectId,assetIds) } catch { return invalid() }
   let commits = 0
   for (const raw of db.prepare('SELECT * FROM commits').iterate()) {
     const commit = raw as Record<string, unknown>

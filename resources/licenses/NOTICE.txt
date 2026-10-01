@@ -40,3 +40,12 @@ Portable snapshots use yazl 3.3.1 and yauzl 3.4.0 (MIT), with buffer-crc32
 1.0.0 and pend 1.2.0 (MIT). Local XML validation uses saxes 6.0.0 (ISC)
 and xmlchars 2.2.0 (MIT). Their complete upstream notices are bundled
 alongside this notice. No archive or XML service receives project data.
+
+Offline bibliography interchange uses @citation-js/core 0.9.0,
+@citation-js/plugin-bibtex 0.9.0 and @citation-js/plugin-ris 0.9.0 (MIT).
+Their local parser dependencies @citation-js/date 0.5.1 and
+@citation-js/name 0.4.2 are MIT; moo 0.5.3 is BSD-3-Clause;
+sync-fetch-undici 0.7.1 and whatwg-mimetype 5.0.0 are MIT. Complete
+available license texts and package notices are in dependencies/. The
+application only invokes local bibliography parsers; DOI and URL strings
+are never passed to a resolver.

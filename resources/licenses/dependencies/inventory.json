@@ -16,6 +16,36 @@
     ]
   },
   {
+    "package": "@citation-js/core",
+    "version": "0.9.0",
+    "license": "MIT",
+    "notices": ["@citation-js-core-0.9.0-LICENSE.md"]
+  },
+  {
+    "package": "@citation-js/date",
+    "version": "0.5.1",
+    "license": "MIT",
+    "notices": ["@citation-js-date-0.5.1-NOTICE.txt", "@citation-js-core-0.9.0-LICENSE.md"]
+  },
+  {
+    "package": "@citation-js/name",
+    "version": "0.4.2",
+    "license": "MIT",
+    "notices": ["@citation-js-name-0.4.2-NOTICE.txt", "@citation-js-core-0.9.0-LICENSE.md"]
+  },
+  {
+    "package": "@citation-js/plugin-bibtex",
+    "version": "0.9.0",
+    "license": "MIT",
+    "notices": ["@citation-js-plugin-bibtex-0.9.0-LICENSE.md"]
+  },
+  {
+    "package": "@citation-js/plugin-ris",
+    "version": "0.9.0",
+    "license": "MIT",
+    "notices": ["@citation-js-plugin-ris-0.9.0-LICENSE.md"]
+  },
+  {
     "package": "@tiptap/core",
     "version": "3.31.3",
     "license": "MIT",
@@ -205,6 +235,12 @@
     "notices": [
       "minimalistic-assert-1.0.1-LICENSE"
     ]
+  },
+  {
+    "package": "moo",
+    "version": "0.5.3",
+    "license": "BSD-3-Clause",
+    "notices": ["moo-0.5.3-LICENSE"]
   },
   {
     "package": "nanoid",
@@ -431,6 +467,12 @@
     ]
   },
   {
+    "package": "sync-fetch-undici",
+    "version": "0.7.1",
+    "license": "MIT",
+    "notices": ["sync-fetch-undici-0.7.1-LICENSE"]
+  },
+  {
     "package": "type",
     "version": "2.7.3",
     "license": "ISC",
@@ -461,6 +503,12 @@
     "notices": [
       "w3c-keyname-2.2.8-LICENSE"
     ]
+  },
+  {
+    "package": "whatwg-mimetype",
+    "version": "5.0.0",
+    "license": "MIT",
+    "notices": ["whatwg-mimetype-5.0.0-LICENSE.txt"]
   },
   {
     "package": "xml",

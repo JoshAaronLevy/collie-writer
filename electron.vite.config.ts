@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   main: {
-    build: { externalizeDeps: { include: ['better-sqlite3'] } }
+    build: { externalizeDeps: { include: ['better-sqlite3', '@citation-js/core', '@citation-js/plugin-bibtex', '@citation-js/plugin-ris'] } }
   },
   preload: {
     build: {

@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 
 export const PROJECT_APPLICATION_ID = 1129270359
-export const PROJECT_SCHEMA_VERSION = 4
+export const PROJECT_SCHEMA_VERSION = 5
 // Persisted schema is app-owned; never execute DDL or migrations supplied by a project.
 export const projectTablesV1 = [
   `CREATE TABLE format (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, minimum_reader INTEGER NOT NULL, editor_version INTEGER NOT NULL) STRICT`,
@@ -30,7 +30,17 @@ export const noteTables = [
   `CREATE TABLE annotations (project_id TEXT NOT NULL, id TEXT NOT NULL, revision_id TEXT NOT NULL, document_id TEXT NOT NULL, block_id TEXT NOT NULL, start_offset INTEGER NOT NULL, end_offset INTEGER NOT NULL, quote TEXT NOT NULL, interpretation TEXT NOT NULL, state TEXT NOT NULL, anchor_state TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id), FOREIGN KEY(project_id,document_id) REFERENCES documents(project_id,id)) STRICT`,
   `CREATE TABLE annotation_revisions (project_id TEXT NOT NULL, annotation_id TEXT NOT NULL, revision_id TEXT NOT NULL, snapshot TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(project_id,annotation_id,revision_id), FOREIGN KEY(project_id,annotation_id) REFERENCES annotations(project_id,id)) STRICT`
 ] as const
-export const projectTables = [...projectTablesV3, ...noteTables] as const
+export const projectTablesV4 = [...projectTablesV3, ...noteTables] as const
+export const sourceTables = [
+  `CREATE TABLE sources (project_id TEXT NOT NULL, id TEXT NOT NULL, revision_id TEXT NOT NULL, metadata TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('active','trashed','merged')), replacement_id TEXT, verified INTEGER NOT NULL CHECK(verified IN (0,1)), provenance TEXT NOT NULL, raw_import TEXT, unknown_fields TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id), FOREIGN KEY(project_id,replacement_id) REFERENCES sources(project_id,id) DEFERRABLE INITIALLY DEFERRED) STRICT`,
+  `CREATE TABLE source_revisions (project_id TEXT NOT NULL, source_id TEXT NOT NULL, revision_id TEXT NOT NULL, snapshot TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(project_id,source_id,revision_id), FOREIGN KEY(project_id,source_id) REFERENCES sources(project_id,id)) STRICT`,
+  `CREATE TABLE source_aliases (project_id TEXT NOT NULL, alias TEXT NOT NULL, source_id TEXT NOT NULL, PRIMARY KEY(project_id,alias), FOREIGN KEY(project_id,source_id) REFERENCES sources(project_id,id)) STRICT`,
+  `CREATE TABLE source_links (project_id TEXT NOT NULL, source_id TEXT NOT NULL, document_id TEXT NOT NULL, PRIMARY KEY(project_id,source_id,document_id), FOREIGN KEY(project_id,source_id) REFERENCES sources(project_id,id), FOREIGN KEY(project_id,document_id) REFERENCES documents(project_id,id)) STRICT`,
+  `CREATE TABLE source_attachments (project_id TEXT NOT NULL, id TEXT NOT NULL, source_id TEXT NOT NULL, asset_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('active','removed')), created_at TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id,source_id) REFERENCES sources(project_id,id), FOREIGN KEY(project_id,asset_id) REFERENCES managed_assets(project_id,id)) STRICT`,
+  `CREATE TABLE source_import_reports (project_id TEXT NOT NULL, id TEXT NOT NULL, format TEXT NOT NULL, report TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id)) STRICT`,
+  `CREATE TABLE source_import_records (project_id TEXT NOT NULL, report_id TEXT NOT NULL, record_index INTEGER NOT NULL, raw_record TEXT NOT NULL, unknown_fields TEXT NOT NULL, action TEXT NOT NULL, source_id TEXT, error TEXT, PRIMARY KEY(project_id,report_id,record_index), FOREIGN KEY(project_id,report_id) REFERENCES source_import_reports(project_id,id) DEFERRABLE INITIALLY DEFERRED, FOREIGN KEY(project_id,source_id) REFERENCES sources(project_id,id) DEFERRABLE INITIALLY DEFERRED) STRICT`
+] as const
+export const projectTables = [...projectTablesV4, ...sourceTables] as const
 const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export function createProjectSchema(db: Database.Database): void {
@@ -51,7 +61,7 @@ export function validateProjectSchema(db: Database.Database, expectedVersion = P
   const version = inspectVersion(db)
   if (version !== expectedVersion) throw new ProjectError('MIGRATION_FAILED')
   const objects = db.prepare("SELECT sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all() as { sql: string | null }[]
-  const expected = new Set((expectedVersion === 1 ? projectTablesV1 : expectedVersion === 2 ? projectTablesV2 : expectedVersion === 3 ? projectTablesV3 : projectTables).map(sqlKey))
+  const expected = new Set((expectedVersion === 1 ? projectTablesV1 : expectedVersion === 2 ? projectTablesV2 : expectedVersion === 3 ? projectTablesV3 : expectedVersion === 4 ? projectTablesV4 : projectTables).map(sqlKey))
   if (objects.length !== expected.size || objects.some(o => !o.sql || !expected.has(sqlKey(o.sql)))) throw new ProjectError('CORRUPT_PROJECT')
   const format = db.prepare('SELECT * FROM format').all() as { schema_version: number; minimum_reader: number; editor_version: number }[]
   if (format.length !== 1 || format[0].minimum_reader > PROJECT_SCHEMA_VERSION || format[0].editor_version > 1) throw new ProjectError('FORMAT_TOO_NEW')

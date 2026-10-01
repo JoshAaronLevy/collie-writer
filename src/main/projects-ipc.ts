@@ -8,6 +8,7 @@ import { isTrustedSender } from './ipc'
 import { isInfoRequest } from '../shared/schemas'
 import { isId } from '../domain/editor/schema'
 import { DIRTY_CHANGED, PROJECT_CHANNELS, exact, record, isCreateInput, isOpenInput, isSectionInput, isSectionMetaInput, isCommitInput, isImageImportInput, isImageReadInput, projectFailure, type OpenInput, type ProjectCommand } from '../shared/projects'
+import { isSourceChangeInput, isSourcePreviewInput, isSourceImportInput, isSourceAttachmentInput, isSourceExportInput, isSourceAttachmentExportInput, SOURCE_PROGRESS, type BibliographyFormat } from '../shared/sources'
 import type { WorkingLocation } from './paths/working-root'
 import type { StorageWorker } from './storage-worker'
 
@@ -15,6 +16,8 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
   let hasUnprotectedChanges = false
   let resetting = false
   const imageGrants = new Map<string, { path: string; name: string; scope: OpenInput; owner: number; frame: number; process: number; expires: number; operationId: string | null }>()
+  const sourceGrants = new Map<string, { path: string; name: string; scope: OpenInput; owner: number; frame: number; process: number; expires: number; kind: 'import' | 'attachment' }>()
+  storage.onSourceProgress(progress=>{const target=owner();if(target&&!target.isDestroyed())target.send(SOURCE_PROGRESS,progress)})
   const access = (event: Electron.IpcMainInvokeEvent, payload: unknown): boolean => isTrustedSender(event, owner(), devOrigin) && record(payload) && isId(payload.requestId)
   ipcMain.on(DIRTY_CHANGED, (event, payload: unknown) => {
     if (isTrustedSender(event, owner(), devOrigin) && typeof payload === 'boolean') { hasUnprotectedChanges = payload; dirty(payload) }
@@ -54,11 +57,60 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
         imageGrants.set(token, { path, name, scope: value.input, owner: event.sender.id, frame: event.senderFrame.routingId, process: event.senderFrame.processId, expires: Date.now() + 10 * 60_000, operationId: null })
         return { ok: true, requestId, value: { token, name } }
       }
+      if (kind === 'sourcePickImport' || kind === 'sourcePickAttachment') {
+        if (!exact(value,['requestId','input']) || !isOpenInput(value.input) || !event.senderFrame) return projectFailure(requestId,'VALIDATION')
+        const window=BrowserWindow.fromWebContents(event.sender); if (!window) return projectFailure(requestId,'DENIED')
+        const attachment=kind==='sourcePickAttachment'
+        const answer=await dialog.showOpenDialog(window,{title:attachment?'Attach a managed copy':'Import bibliography',filters:attachment?[{name:'Local originals',extensions:['pdf','png','jpg','jpeg','txt']}]:[{name:'Bibliography',extensions:['json','bib','bibtex','ris']}],properties:['openFile','dontAddToRecent']})
+        if (answer.canceled || answer.filePaths.length!==1) return {ok:true,requestId,value:null}
+        if (window.isDestroyed() || !isTrustedSender(event,owner(),devOrigin) || !event.senderFrame) return projectFailure(requestId,'DENIED')
+        const path=answer.filePaths[0],name=basename(path)
+        if (path.length>4096 || name.length>255 || /[\\/:\u0000-\u001f]/.test(name) || !(attachment?/\.(pdf|png|jpe?g|txt)$/i:/\.(json|bib|bibtex|ris)$/i).test(name)) return projectFailure(requestId,'VALIDATION')
+        for (const [id,g] of sourceGrants) if (g.expires<Date.now()) sourceGrants.delete(id)
+        if (sourceGrants.size>=32) return projectFailure(requestId,'UNAVAILABLE')
+        const token=randomUUID();sourceGrants.set(token,{path,name,scope:value.input,owner:event.sender.id,frame:event.senderFrame.routingId,process:event.senderFrame.processId,expires:Date.now()+(attachment?10:60)*60_000,kind:attachment?'attachment':'import'})
+        return {ok:true,requestId,value:{token,name}}
+      }
+      if (kind==='sourceExport' || kind==='sourceExportAttachment') {
+        if (!exact(value,['requestId','input'])) return projectFailure(requestId,'VALIDATION')
+        const input=value.input
+        if (kind==='sourceExport'?!isSourceExportInput(input):!isSourceAttachmentExportInput(input)) return projectFailure(requestId,'VALIDATION')
+        const window=BrowserWindow.fromWebContents(event.sender);if(!window)return projectFailure(requestId,'DENIED')
+        const format=isSourceExportInput(input)?input.format:'attachment',suggested=isSourceAttachmentExportInput(input)?input.suggestedName:null
+        const extension=format==='csl-json'?'json':format==='bibtex'?'bib':format==='ris'?'ris':suggested?.split('.').pop()||'bin'
+        const answer=await dialog.showSaveDialog(window,{title:kind==='sourceExport'?'Export bibliography':'Save managed attachment copy',defaultPath:kind==='sourceExport'?`sources.${extension}`:suggested||`attachment.${extension}`,filters:[{name:kind==='sourceExport'?'Bibliography':'Original file',extensions:[extension]}],properties:['dontAddToRecent']})
+        if (answer.canceled || !answer.filePath) return projectFailure(requestId,'CANCELLED')
+        if (window.isDestroyed() || !isTrustedSender(event,owner(),devOrigin)) return projectFailure(requestId,'DENIED')
+        const path=answer.filePath
+        if (path.length>4096 || !path.toLowerCase().endsWith(`.${extension.toLowerCase()}`)) return projectFailure(requestId,'VALIDATION')
+        if (kind==='sourceExport' && isSourceExportInput(input)) return storage.request(requestId,{kind,input:{...input,destinationPath:path}})
+        if (kind==='sourceExportAttachment' && isSourceAttachmentExportInput(input)) return storage.request(requestId,{kind,input:{...input,destinationPath:path}})
+        return projectFailure(requestId,'VALIDATION')
+      }
       let command: ProjectCommand
       if ((kind === 'list' || kind === 'data' || kind === 'cleanup') && isInfoRequest(value)) command = { kind }
       else if (exact(value, ['requestId', 'input']) && kind === 'outline' && isOutlineInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'history' && isHistoryInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'notes' && isOpenInput(value.input)) command = { kind, input: value.input }
+      else if (exact(value,['requestId','input']) && kind==='sources' && isOpenInput(value.input)) command={kind,input:value.input}
+      else if (exact(value,['requestId','input']) && kind==='sourceChange' && isSourceChangeInput(value.input)) command={kind,input:value.input}
+      else if (exact(value,['requestId','input']) && kind==='sourcePreview' && isSourcePreviewInput(value.input)) {
+        const input=value.input,g=sourceGrants.get(input.token)
+        if (!g || g.kind!=='import' || !event.senderFrame || g.owner!==event.sender.id || g.frame!==event.senderFrame.routingId || g.process!==event.senderFrame.processId || g.expires<Date.now() || g.scope.projectId!==input.projectId || g.scope.workspaceId!==input.workspaceId) return projectFailure(requestId,'DENIED')
+        const format:BibliographyFormat=/\.json$/i.test(g.name)?'csl-json':/\.ris$/i.test(g.name)?'ris':'bibtex'
+        command={kind,input:{...input,sourcePath:g.path,format}}
+      }
+      else if (exact(value,['requestId','input']) && kind==='sourceImport' && isSourceImportInput(value.input)) {
+        const input=value.input,g=sourceGrants.get(input.token)
+        if (!g || g.kind!=='import' || !event.senderFrame || g.owner!==event.sender.id || g.frame!==event.senderFrame.routingId || g.process!==event.senderFrame.processId || g.expires<Date.now() || g.scope.projectId!==input.projectId || g.scope.workspaceId!==input.workspaceId) return projectFailure(requestId,'DENIED')
+        const format:BibliographyFormat=/\.json$/i.test(g.name)?'csl-json':/\.ris$/i.test(g.name)?'ris':'bibtex'
+        command={kind,input:{...input,sourcePath:g.path,format}}
+      }
+      else if (exact(value,['requestId','input']) && kind==='sourceAttach' && isSourceAttachmentInput(value.input)) {
+        const input=value.input,g=sourceGrants.get(input.token)
+        if (!g || g.kind!=='attachment' || !event.senderFrame || g.owner!==event.sender.id || g.frame!==event.senderFrame.routingId || g.process!==event.senderFrame.processId || g.expires<Date.now() || g.scope.projectId!==input.projectId || g.scope.workspaceId!==input.workspaceId) return projectFailure(requestId,'DENIED')
+        command={kind,input:{...input,sourcePath:g.path,originalName:g.name}}
+      }
       else if (exact(value, ['requestId', 'input']) && kind === 'noteChange' && isNoteChangeInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'create' && isCreateInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'open' && isOpenInput(value.input)) command = { kind, input: value.input }
@@ -89,6 +141,7 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
       else return projectFailure(requestId, 'VALIDATION')
       const result = await storage.request(requestId, command)
       if (kind === 'importImage' && result.ok && isImageImportInput(value.input)) imageGrants.delete(value.input.token)
+      if ((kind==='sourceImport' || kind==='sourceAttach') && result.ok && record(value.input) && typeof value.input.token==='string') sourceGrants.delete(value.input.token)
       return result
     })
   }

@@ -51,6 +51,13 @@ async function receive(message: unknown): Promise<void> {
         case 'outline': value = await repository.outline(command.input); break
         case 'history': value = await repository.history(command.input); break
         case 'notes': value = await repository.notes(command.input); break
+        case 'sources': value = await repository.sources(command.input); break
+        case 'sourceChange': value = await repository.sourceChange(command.input); break
+        case 'sourcePreview': value = await repository.sourcePreview(command.input); break
+        case 'sourceImport': value = await repository.sourceImport(command.input); break
+        case 'sourceAttach': value = await repository.sourceAttach(command.input,(transferred,total)=>parent.postMessage({kind:'source-progress',progress:{operationId:command.input.operationId,transferred,total}})); break
+        case 'sourceExport': value = await repository.sourceExport(command.input); break
+        case 'sourceExportAttachment': value = await repository.sourceExportAttachment(command.input); break
         case 'noteChange': value = await repository.noteChange(command.input); break
         case 'section': value = await repository.section(command.input); break
         case 'meta': value = await repository.meta(command.input); break

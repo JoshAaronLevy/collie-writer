@@ -216,3 +216,12 @@ button {
 .notes-panel blockquote { margin-inline: 0; padding: .5rem .8rem; border-inline-start: 3px solid #80909e; white-space: pre-wrap; }
 .notes-panel textarea { width: 100%; max-width: 100%; min-height: 5rem; }
 .notes-panel button { margin: .2rem; }
+.sources-panel { margin-block: 1.5rem; padding: 1rem; border: 1px solid #80909e; border-radius: .5rem; }
+.sources-panel label { display: block; margin-block: .55rem; }
+.sources-panel form { display: grid; gap: .3rem; max-width: 58rem; }
+.sources-panel form label:not(:has(input[type='checkbox'])) input, .sources-panel form select { display: block; box-sizing: border-box; width: 100%; max-width: 44rem; padding: .35rem; }
+.sources-panel fieldset { border: 1px solid #b7c2b6; }
+.sources-panel fieldset label { display: inline-block; margin-inline-end: 1rem; }
+.sources-panel li { margin-block: .55rem; overflow-wrap: anywhere; }
+.sources-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 20rem; overflow: auto; }
+.sources-panel button { margin: .2rem; }

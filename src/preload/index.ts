@@ -1,4 +1,5 @@
 import type { HistoryView } from '../shared/outline'
+import { isSourcesView, isSourcePreview, isSourceProgress, SOURCE_PROGRESS, type SourcesView, type SourceImportPreview, type SourcePick, type SourceExportReceipt } from '../shared/sources'
 import { isNotesView, type NotesView } from '../shared/notes'
 import { isDataLocations, type DataLocations } from '../shared/project-lifecycle'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -26,6 +27,16 @@ async function projectCall<T>(channel: string, validate: (value: unknown) => boo
 
 if (!process.contextIsolated || !process.sandboxed) throw new Error('Secure preload required')
 const api: CollieAPI = {
+  readSources: input => projectCall<SourcesView>(PROJECT_CHANNELS.sources,isSourcesView,input),
+  changeSource: input => projectCall<SourcesView>(PROJECT_CHANNELS.sourceChange,isSourcesView,input),
+  pickSourceImport: input => projectCall<SourcePick|null>(PROJECT_CHANNELS.sourcePickImport,value=>value===null || record(value)&&exact(value,['token','name'])&&isId(value.token)&&typeof value.name==='string'&&value.name.length<=255,input),
+  previewSourceImport: input => projectCall<SourceImportPreview>(PROJECT_CHANNELS.sourcePreview,isSourcePreview,input),
+  commitSourceImport: input => projectCall<SourcesView>(PROJECT_CHANNELS.sourceImport,isSourcesView,input),
+  pickSourceAttachment: input => projectCall<SourcePick|null>(PROJECT_CHANNELS.sourcePickAttachment,value=>value===null || record(value)&&exact(value,['token','name'])&&isId(value.token)&&typeof value.name==='string'&&value.name.length<=255,input),
+  attachSourceFile: input => projectCall<SourcesView>(PROJECT_CHANNELS.sourceAttach,isSourcesView,input),
+  exportSources: input => projectCall<SourceExportReceipt>(PROJECT_CHANNELS.sourceExport,value=>isProjectValue('sourceExport',value),input),
+  exportSourceAttachment: input => projectCall<SourceExportReceipt>(PROJECT_CHANNELS.sourceExportAttachment,value=>isProjectValue('sourceExportAttachment',value),input),
+  onSourceProgress: callback => {const listener=(_event:Electron.IpcRendererEvent,value:unknown):void=>{if(isSourceProgress(value))callback(value)};ipcRenderer.on(SOURCE_PROGRESS,listener);return()=>ipcRenderer.removeListener(SOURCE_PROGRESS,listener)},
   readNotes: input => projectCall<NotesView>(PROJECT_CHANNELS.notes, isNotesView, input),
   changeNote: input => projectCall<NotesView>(PROJECT_CHANNELS.noteChange, isNotesView, input),
   onEditorAction: callback => {

@@ -5,6 +5,7 @@ import { bundledResources } from './resources'
 import { isId } from '../domain/editor/schema'
 import { isFileStatus, type FileStatus } from '../shared/project-files'
 import type { FileCommand } from '../shared/file-worker'
+import { isSourceProgress, type SourceProgress } from '../shared/sources'
 import { isProjectResult, isProjectValue, projectFailure, record, exact, type ProjectCommand, type ProjectResult, type ProjectValue } from '../shared/projects'
 import {
   isStorageWorkerMessage,
@@ -21,6 +22,8 @@ export class StorageWorker {
   private pending = new Map<string, { command: ProjectCommand; resolve: (result: ProjectResult<ProjectValue>) => void; timer: ReturnType<typeof setTimeout> }>()
   private filePending = new Map<string, { resolve: (result: ProjectResult<FileStatus>) => void; timer: ReturnType<typeof setTimeout> }>()
   private fileChanged: (status: FileStatus) => void = () => {}
+  private sourceChanged: (progress: SourceProgress) => void = () => {}
+  onSourceProgress(changed:(progress:SourceProgress)=>void):void {this.sourceChanged=changed}
   private fileConsent: (id: string, challenge: string) => void = () => {}
   onFiles(changed: (status: FileStatus) => void, consent: (id: string, challenge: string) => void): void { this.fileChanged = changed; this.fileConsent = consent }
   requestFile(requestId: string, command: FileCommand): Promise<ProjectResult<FileStatus>> {
@@ -108,6 +111,7 @@ export class StorageWorker {
     child.on('message', (message: unknown) => {
       if (this.child !== child || this.stopping) return
       if (record(message) && message.kind === 'file-changed' && exact(message, ['kind','status']) && isFileStatus(message.status)) { this.fileChanged(message.status); return }
+      if (record(message) && message.kind === 'source-progress' && exact(message,['kind','progress']) && isSourceProgress(message.progress)) {this.sourceChanged(message.progress);return}
       if (record(message) && message.kind === 'file-consent' && exact(message, ['kind','id','challenge']) && isId(message.id) && isId(message.challenge)) { this.fileConsent(message.id, message.challenge); return }
       if (record(message) && message.kind === 'file-result' && exact(message, ['kind','result']) && record(message.result) && typeof message.result.requestId === 'string') {
         const id = message.result.requestId, pending = this.filePending.get(id)
