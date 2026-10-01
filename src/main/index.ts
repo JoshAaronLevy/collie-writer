@@ -14,6 +14,7 @@ import { registerProjectIpc } from './projects-ipc'
 import { ProjectFileIpc } from './project-files-ipc'
 import { ProjectLifecycle } from './lifecycle'
 import { SourceAssets } from './source-assets'
+import { AccessService } from './entitlements/service'
 
 app.setName('Collie Writer')
 app.setAppUserModelId(APP_ID)
@@ -44,9 +45,14 @@ const sourceAssets=new SourceAssets(()=>location.path(),()=>window?.webContents,
 let shellReady = false
 const storage = new StorageWorker((status) => {
   if (status.state === 'unavailable') files.unavailable()
+  if (status.state === 'ready') void access.initialize()
   if (window && !window.isDestroyed() && !window.webContents.isDestroyed())
     window.webContents.send(STORAGE_STATUS_CHANGED, status)
 })
+const access = new AccessService(() => window?.webContents,storage,() => unprotected,() => location.path(),devOrigin)
+storage.setAccessPolicy(command=>access.authorize(command),command=>{
+  if(['open','restore','recover','duplicate','locate','inspect'].includes(command.kind)||command.kind==='answer'&&command.choice!=='cancel')access.authorizeFileChange()
+},(command,value)=>access.observe(command,value))
 const files = new ProjectFileIpc(() => window?.webContents, location, storage, devOrigin)
 const lifecycle = new ProjectLifecycle(() => window?.webContents, files, () => unprotected, devOrigin)
 let closeApproved = false
@@ -63,6 +69,7 @@ function openWindow(): void {
     window = undefined
     files.revoke()
     sourceAssets.revoke()
+    access.releaseWindow()
   })
   opened.on('focus', () => { void files.recheck() })
 }
@@ -71,6 +78,7 @@ app
   .then(async () => {
     if (!primaryInstance) return
     await location.initialize()
+    await access.initialize()
     protectSession(session.defaultSession, devOrigin)
     protocol.handle('collie-source',sourceAssets.handle)
     if (!devOrigin)
@@ -86,6 +94,7 @@ app
       devOrigin
     )
     registerStorageIpc(() => window?.webContents, () => storage.current(), devOrigin)
+    access.register()
     registerProjectIpc(() => window?.webContents, location, storage, value => { unprotected = value }, devOrigin, sourceAssets)
     files.register()
     lifecycle.register()

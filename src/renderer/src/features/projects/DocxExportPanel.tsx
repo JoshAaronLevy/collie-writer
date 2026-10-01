@@ -6,7 +6,7 @@ import type { ExportFormat } from '../../../../shared/exports'
 import type { CompilationRecipe, RecipesView, RecipeChangeInput } from '../../../../shared/interchange'
 import { effectiveState, type OutlineDocument } from '../../../../shared/outline'
 
-type Props={project:OpenProject;disabled:boolean;flush:()=>Promise<OpenProject|null>;onProject:(project:OpenProject)=>void}
+type Props={project:OpenProject;disabled:boolean;paid:boolean;flush:()=>Promise<OpenProject|null>;onProject:(project:OpenProject)=>void}
 function outline(documents:OutlineDocument[]):{id:string;title:string;depth:number;kind:OutlineDocument['kind']}[]{
   const result:{id:string;title:string;depth:number;kind:OutlineDocument['kind']}[]=[]
   function walk(parent:string|null,depth:number):void{
@@ -29,6 +29,7 @@ export default function DocxExportPanel(props:Props):React.JSX.Element{
   const [recipes,setRecipes]=useState<RecipesView|null>(null),[recipeId,setRecipeId]=useState<string|null>(null),[recipeName,setRecipeName]=useState('')
   const pendingRecipe=useRef<{signature:string;input:RecipeChangeInput}|null>(null)
   const scope={projectId:props.project.projectId,workspaceId:props.project.workspaceId}
+  useEffect(()=>{if(!props.paid)setFormats(old=>old.length>1?[old[0]]:old)},[props.paid])
   useEffect(()=>{setSelected(orderedOutline.filter(d=>d.kind==='text').map(d=>d.id));setPreview(null);setAck(false)},[signature])
   const selectionKey=selected.join('|')
   useEffect(()=>{setPreview(null);setAck(false)},[paper,selectionKey])
@@ -92,7 +93,7 @@ export default function DocxExportPanel(props:Props):React.JSX.Element{
     }catch{setError('The compilation did not start. Existing files were kept.')}finally{setBusy(false)}
   }
   function useRecipe(recipe:CompilationRecipe):void{
-    setRecipeId(recipe.id);setRecipeName(recipe.name);setSelected(recipe.documentIds);setPaper(recipe.paper);setFormats(recipe.formats);setPreview(null);setAck(false)
+    setRecipeId(recipe.id);setRecipeName(recipe.name);setSelected(recipe.documentIds);setPaper(recipe.paper);setFormats(props.paid?recipe.formats:[recipe.formats[0]]);setPreview(null);setAck(false)
   }
   async function saveRecipe():Promise<void>{
     setBusy(true);setError('')
@@ -112,7 +113,7 @@ export default function DocxExportPanel(props:Props):React.JSX.Element{
       else setError('The recipe was saved. Reopen this project to refresh its revision before exporting.')
     }catch{setError('The recipe result is unknown. Retry the same save; a completed change will not be repeated.')}finally{setBusy(false)}
   }
-  function toggleFormat(format:ExportFormat):void{setFormats(old=>old.includes(format)?old.filter(f=>f!==format):[...old,format])}
+  function toggleFormat(format:ExportFormat):void{setFormats(old=>!props.paid?[format]:old.includes(format)?old.filter(f=>f!==format):[...old,format])}
   function fileMessage(code:string):string{
     if(code==='DESTINATION_EXISTS')return 'Existing output kept; choose another name or folder for this format.'
     if(code==='UNAVAILABLE')return 'This format could not be produced; inspect the local report and retry.'
@@ -127,14 +128,14 @@ export default function DocxExportPanel(props:Props):React.JSX.Element{
     <div className="export-selection"><h3>Include sections</h3>{orderedOutline.map(d=><label key={d.id} style={{display:'block',marginLeft:`${d.depth*1.25}rem`}}><input type="checkbox" checked={d.kind==='text'?selected.includes(d.id):texts.some(x=>belongsTo(x.id,d.id))&&texts.filter(x=>belongsTo(x.id,d.id)).every(x=>selected.includes(x.id))} onChange={()=>toggle(d.id)} disabled={props.disabled||busy}/>{d.kind==='text'?'Section':d.kind==='chapter'?'Chapter':'Part'}: {d.title}</label>)}</div>
     <h3>Selected order</h3><ol>{selected.map((id,index)=><li key={id}>{props.project.documents.find(d=>d.id===id)?.title??id} <button type="button" disabled={props.disabled||busy||index===0} onClick={()=>move(id,-1)}>Move up</button> <button type="button" disabled={props.disabled||busy||index===selected.length-1} onClick={()=>move(id,1)}>Move down</button></li>)}</ol>
     <label>Page preset <select value={paper} disabled={props.disabled||busy} onChange={e=>setPaper(e.target.value as 'Letter'|'A4')}><option value="Letter">US Letter</option><option value="A4">A4</option></select></label>
-    <fieldset disabled={props.disabled||busy}><legend>Output formats</legend>{(['docx','pdf','markdown','text'] as ExportFormat[]).map(format=><label key={format}><input type="checkbox" checked={formats.includes(format)} onChange={()=>toggleFormat(format)}/>{format==='text'?'Plain text':format.toUpperCase()} </label>)}</fieldset>
+    <fieldset disabled={props.disabled||busy}><legend>Output formats</legend>{(['docx','pdf','markdown','text'] as ExportFormat[]).map(format=><label key={format}><input type={props.paid?"checkbox":"radio"} name="output-format" checked={formats.includes(format)} onChange={()=>toggleFormat(format)}/>{format==='text'?'Plain text':format.toUpperCase()} </label>)}</fieldset>
     <label>Output name <input value={baseName} maxLength={100} onChange={e=>setBaseName(e.target.value)}/></label>
     <p>A single selected format asks for a file. Multiple formats ask for a folder. Existing names in this selected-format flow are skipped and kept; choose another name to retry them. Markdown images are copied into a relative asset folder. Plain text omits image pixels and layout; per-file reports list format losses.</p>
-    <div><h3>Compilation recipes</h3><p>Recipes remember section IDs, order, page preset and formats. Missing sections are flagged; a recipe never stores a second manuscript.</p>
+    <div><h3>Compilation recipes</h3>{!props.paid?<p>Load any existing recipe and export one format at a time. Creating or editing recipes and multi-format batches require paid access.</p>:null}<p>Recipes remember section IDs, order, page preset and formats. Missing sections are flagged; a recipe never stores a second manuscript.</p>
       <label>Saved recipes <select value={recipeId??''} onChange={e=>{const found=recipes?.recipes.find(r=>r.id===e.target.value);if(found)useRecipe(found);else{setRecipeId(null);setRecipeName('')}}}><option value="">New recipe</option>{recipes?.recipes.map(r=><option value={r.id} key={r.id}>{r.name}{r.missingIds.length?' — missing sections':''}</option>)}</select></label>
       {recipeId&&recipes?.recipes.find(r=>r.id===recipeId)?.missingIds.length?<p role="alert">This recipe references missing or inactive sections. Choose active sections and save it before exporting.</p>:null}
-      <label>Recipe name <input value={recipeName} maxLength={120} onChange={e=>setRecipeName(e.target.value)}/></label>
-      <button type="button" disabled={props.disabled||busy||!recipeName.trim()||!selected.length||!formats.length||selected.some(id=>!texts.some(t=>t.id===id))} onClick={()=>{void saveRecipe()}}>{recipeId?'Update recipe':'Save new recipe'}</button>
+      <label>Recipe name <input disabled={!props.paid||props.disabled||busy} value={recipeName} maxLength={120} onChange={e=>setRecipeName(e.target.value)}/></label>
+      <button type="button" disabled={!props.paid||props.disabled||busy||!recipeName.trim()||!selected.length||!formats.length||selected.some(id=>!texts.some(t=>t.id===id))} onClick={()=>{void saveRecipe()}}>{recipeId?'Update recipe':'Save new recipe'}</button>
     </div>
     <button type="button" disabled={props.disabled||busy||selected.length===0} onClick={()=>{void refresh()}}>Protect drafts and preview</button>
     {preview?<div role="status"><p>Captured revision {preview.headCommitId.slice(0,8)} · {preview.style.toUpperCase()} · {preview.paper} · {preview.sections.length} sections · {preview.counts.paragraphs} paragraphs · {preview.counts.tables} tables · {preview.counts.images} images · {preview.counts.footnotes} footnotes · {preview.counts.citations} citation clusters · {preview.counts.bibliography} bibliography entries.</p>

@@ -7,7 +7,7 @@ import type { Run } from '../../../../domain/compilation/model'
 export function CitationRuns({runs}:{runs:Run[]}):React.JSX.Element {
   return <>{runs.map((run,index)=>run.kind==='break'?<br key={index}/>:run.kind==='note'?<sup key={index}>{run.number}</sup>:<span key={index} style={{fontWeight:run.marks.some(m=>m.type==='bold')?'bold':undefined,fontStyle:run.marks.some(m=>m.type==='italic')?'italic':undefined,textDecoration:[run.marks.some(m=>m.type==='underline')?'underline':'',run.marks.some(m=>m.type==='strike')?'line-through':''].filter(Boolean).join(' ')||undefined,fontVariant:run.smallCaps?'small-caps':undefined,verticalAlign:run.superscript?'super':run.subscript?'sub':undefined}}>{run.text}</span>)}</>
 }
-type Props={project:OpenProject;dirty:boolean;disabled:boolean;flush:()=>Promise<OpenProject|null>;onCommitted:()=>Promise<void>;onContext:(sources:SourceRecord[],view:CitationsView|null)=>void;navigate:(documentId:string,anchorId:string)=>Promise<void>;source:(id:string)=>void}
+type Props={readOnly:boolean;project:OpenProject;dirty:boolean;disabled:boolean;flush:()=>Promise<OpenProject|null>;onCommitted:()=>Promise<void>;onContext:(sources:SourceRecord[],view:CitationsView|null)=>void;navigate:(documentId:string,anchorId:string)=>Promise<void>;source:(id:string)=>void}
 export default function CitationsPanel(props:Props):React.JSX.Element {
   const {project,dirty,disabled}=props,scope={projectId:project.projectId,workspaceId:project.workspaceId}
   const [view,setView]=useState<CitationsView|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false),[acknowledged,setAcknowledged]=useState(false),[selectedStyle,setSelectedStyle]=useState<CitationStyle>('apa')
@@ -50,8 +50,8 @@ export default function CitationsPanel(props:Props):React.JSX.Element {
   return <section className="citations-panel" aria-labelledby="citations-heading">
     <h2 id="citations-heading">Citations and bibliography</h2>
     <p>APA 7 or Chicago 18 notes and bibliography · English (US) · pinned offline style profile. Preview includes active manuscript sections in outline order.</p>
-    <label>Style <select value={selectedStyle} disabled={disabled||loading||!!pending.current} onChange={event=>setSelectedStyle(event.target.value as CitationStyle)}><option value="apa">APA 7</option><option value="chicago">Chicago 18 — notes and bibliography</option></select></label>
-    <button type="button" disabled={disabled||loading||(!pending.current&&selectedStyle===view?.style)} onClick={()=>{void changeStyle()}}>{pending.current?'Retry style change':'Apply style to project'}</button>
+    <label>Style <select value={selectedStyle} disabled={props.readOnly||disabled||loading||!!pending.current} onChange={event=>setSelectedStyle(event.target.value as CitationStyle)}><option value="apa">APA 7</option><option value="chicago">Chicago 18 — notes and bibliography</option></select></label>
+    <button type="button" disabled={props.readOnly||disabled||loading||(!pending.current&&selectedStyle===view?.style)} onClick={()=>{void changeStyle()}}>{pending.current?'Retry style change':'Apply style to project'}</button>
     <button type="button" disabled={disabled||loading} onClick={()=>{void current.current.flush().then(saved=>{if(saved)void load()})}}>Protect writing and refresh preview</button>
     {loading?<p role="status">Preparing offline citation preview…</p>:null}
     {dirty?<p role="status">Writing or source edits are pending. Preview and reference numbers refresh after local protection.</p>:null}

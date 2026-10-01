@@ -2,8 +2,8 @@ import { useState } from 'react'
 import type { DataLocations } from '../../../../shared/project-lifecycle'
 import type { OpenInput, OpenProject } from '../../../../shared/projects'
 
-export function ProjectManagement({ project, disabled, rename, archive, backup, move, duplicate }: {
-  project: OpenProject; disabled: boolean; rename: (title: string) => void; archive: () => void
+export function ProjectManagement({ project, disabled, readOnly, rename, archive, backup, move, duplicate }: {
+  project: OpenProject; disabled: boolean; readOnly: boolean; rename: (title: string) => void; archive: () => void
   backup: () => void; move: () => void; duplicate: () => void
 }): React.JSX.Element {
   const [title, setTitle] = useState(project.title)
@@ -11,8 +11,8 @@ export function ProjectManagement({ project, disabled, rename, archive, backup, 
     <h2 id="manage-heading">Manage project</h2>
     <form onSubmit={event => { event.preventDefault(); if (title.trim()) rename(title.trim()) }}>
       <label htmlFor="project-title">Project title</label>
-      <input id="project-title" value={title} maxLength={500} disabled={disabled} onChange={event => setTitle(event.target.value)} />
-      <button disabled={disabled || !title.trim()}>Rename title</button>
+      <input id="project-title" value={title} maxLength={500} disabled={disabled||readOnly} onChange={event => setTitle(event.target.value)} />
+      <button disabled={disabled || readOnly || !title.trim()}>Rename title</button>
     </form>
     <p>The title is independent of the filename. Renaming creates a local revision; Save updates the chosen file.</p>
     <div className="project-actions">

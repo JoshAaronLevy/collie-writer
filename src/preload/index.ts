@@ -20,6 +20,7 @@ import { isId } from '../domain/editor/schema'
 import { DIRTY_CHANGED, PROJECT_CHANNELS, isLocation, isProjectResult, isProjectValue, projectFailure, record, exact, type ProjectResult, type LocationStatus, type ProjectList, type OpenProject, type CommitReceipt, type ImageAsset, type ImageData, type ImagePick } from '../shared/projects'
 import { isExportPreview, isExportJob, type ExportPreview, type ExportJob } from '../shared/exports'
 import { isRecipesView, isImportPick, isImportPreview, type RecipesView, type ImportPick, type ImportPreview } from '../shared/interchange'
+import { ACCESS_CHANNELS, ACCESS_CHANGED, isAccessView, type AccessView } from '../shared/access'
 import { CLOSE_REPLY, FILE_ACTION, FILE_CHANGED, FILE_CHANNELS, isFileAction, isFileStatus, isSelection, type FileStatus, type FileSelection } from '../shared/project-files'
 
 async function projectCall<T>(channel: string, validate: (value: unknown) => boolean, input?: unknown): Promise<ProjectResult<T>> {
@@ -33,6 +34,14 @@ async function projectCall<T>(channel: string, validate: (value: unknown) => boo
 
 if (!process.contextIsolated || !process.sandboxed) throw new Error('Secure preload required')
 const api: CollieAPI = {
+  readAccess: () => projectCall<AccessView>(ACCESS_CHANNELS.read,isAccessView),
+  designateFreeProject: input => projectCall<AccessView>(ACCESS_CHANNELS.designate,isAccessView,input),
+  finishAccessTransition: input => projectCall<AccessView>(ACCESS_CHANNELS.finish,isAccessView,input),
+  importAccessGrant: () => projectCall<AccessView>(ACCESS_CHANNELS.importGrant,isAccessView),
+  onAccessChanged: callback => {
+    const listener=(_event:Electron.IpcRendererEvent,value:unknown):void=>{if(isAccessView(value))callback(value)}
+    ipcRenderer.on(ACCESS_CHANGED,listener);return()=>ipcRenderer.removeListener(ACCESS_CHANGED,listener)
+  },
   previewDocx: input => projectCall<ExportPreview>(PROJECT_CHANNELS.exportPreview,isExportPreview,input),
   startDocx: input => projectCall<ExportJob>(PROJECT_CHANNELS.exportStart,isExportJob,input),
   docxStatus: input => projectCall<ExportJob>(PROJECT_CHANNELS.exportStatus,isExportJob,input),

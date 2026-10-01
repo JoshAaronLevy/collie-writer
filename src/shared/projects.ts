@@ -22,8 +22,16 @@ export const PROJECT_CHANNELS = {
   sources: 'sources.read', sourceChange: 'sources.change', sourcePickImport: 'sources.pickImport', sourcePreview: 'sources.preview', sourceImport: 'sources.import', sourcePickAttachment: 'sources.pickAttachment', sourcePickVersion: 'sources.pickVersion', sourceAttach: 'sources.attach', sourceExport: 'sources.export', sourceExportAttachment: 'sources.exportAttachment',
   inspection: 'inspection.read', inspectionPage: 'inspection.page', inspectionAsset: 'inspection.asset', inspectionChange: 'inspection.change', evidence: 'evidence.read', evidenceChange: 'evidence.change', search: 'search.query', searchActivity: 'search.activity', searchAction: 'search.action'
 } as const
-export type ProjectCode = 'VALIDATION' | 'DENIED' | 'UNAVAILABLE' | 'STORAGE_LOCATION_REQUIRED' | 'PROJECT_LOCKED' | 'STALE_REVISION' | 'OPERATION_CONFLICT' | 'DISK_FULL' | 'FORMAT_TOO_NEW' | 'CORRUPT_PROJECT' | 'MIGRATION_FAILED' | 'NOT_FOUND' | 'CANCELLED' | 'EXTERNAL_CHANGE' | 'DESTINATION_UNAVAILABLE' | 'UNSAFE_DESTINATION' | 'JOB_INTERRUPTED' | 'INVALID_ARCHIVE' | 'LIMIT_EXCEEDED' | 'DESTINATION_EXISTS'
+export type ProjectCode = 'VALIDATION' | 'DENIED' | 'UNAVAILABLE' | 'STORAGE_LOCATION_REQUIRED' | 'PROJECT_LOCKED' | 'STALE_REVISION' | 'OPERATION_CONFLICT' | 'DISK_FULL' | 'FORMAT_TOO_NEW' | 'CORRUPT_PROJECT' | 'MIGRATION_FAILED' | 'NOT_FOUND' | 'CANCELLED' | 'EXTERNAL_CHANGE' | 'DESTINATION_UNAVAILABLE' | 'UNSAFE_DESTINATION' | 'JOB_INTERRUPTED' | 'INVALID_ARCHIVE' | 'LIMIT_EXCEEDED' | 'DESTINATION_EXISTS' | 'READ_ONLY_PROJECT' | 'PAID_CAPABILITY' | 'ACCESS_TRANSITION' | 'ACCESS_BUSY' | 'ACCESS_SETTINGS' | 'INVALID_GRANT' | 'STALE_GRANT' | 'ISSUER_UNCONFIGURED'
 export const projectMessages: Record<ProjectCode, string> = {
+  READ_ONLY_PROJECT: 'This project is available for reading, export and backup. Choose it as your free editable project to make changes.',
+  PAID_CAPABILITY: 'Creating or editing named recipes and exporting several formats together require paid access. Individual formats and existing recipes remain available.',
+  ACCESS_TRANSITION: 'Protect pending input and finish the access change before switching projects. All stored work remains available.',
+  ACCESS_BUSY: 'Finish protecting pending input and wait for current work before changing access.',
+  ACCESS_SETTINGS: 'Access settings could not be read safely. Their original files were kept. Reading, export and recovery remain available; contact support to restore access settings.',
+  INVALID_GRANT: 'This access document could not be authenticated for this edition. Existing access and projects were kept.',
+  STALE_GRANT: 'A newer signed access decision is already stored. This older document cannot replace it.',
+  ISSUER_UNCONFIGURED: 'Signed access is not configured in this build. Free access has no time limit.',
   VALIDATION: 'This document or request is not supported. Your current text has been kept.',
   DENIED: 'Access to local storage was denied. Your current text has been kept.',
   UNAVAILABLE: 'Local storage is unavailable. Keep this window open and copy any unprotected text.',

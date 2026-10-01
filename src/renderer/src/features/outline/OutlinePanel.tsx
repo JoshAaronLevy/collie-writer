@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
 import { canParent, effectiveState, type OutlineChange, type OutlineDocument, type OutlineKind } from '../../../../shared/outline'
 
-export default function OutlinePanel({ project, disabled, change, select }: { project: OpenProject; disabled: boolean; change: (value: OutlineChange) => void; select: (id: string) => void }): React.JSX.Element {
+export default function OutlinePanel({ project, disabled, readOnly, change, select }: { project: OpenProject; disabled: boolean; readOnly:boolean; change: (value: OutlineChange) => void; select: (id: string) => void }): React.JSX.Element {
   const [focusId, setFocusId] = useState(project.documentId), [showRemoved, setShowRemoved] = useState(false)
   const [mode, setMode] = useState<'create' | 'move' | 'split' | 'merge' | 'details' | null>(null)
   const [kind, setKind] = useState<OutlineKind>('text'), [title, setTitle] = useState(''), [parentId, setParentId] = useState(''), [position, setPosition] = useState(0)
@@ -21,7 +21,7 @@ export default function OutlinePanel({ project, disabled, change, select }: { pr
   }
   function branch(parent: string | null): React.JSX.Element {
     return <ol className="outline-tree">{docs.filter(d => d.parentId === parent).sort((a,b) => a.position-b.position).filter(d => showRemoved || effectiveState(d,docs) === 'active').map(d => <li key={d.id}>
-      <button type="button" draggable={!disabled && d.state !== 'merged'} onDragStart={event => { event.dataTransfer.setData('application/x-collie-outline',d.id); event.dataTransfer.effectAllowed = 'move' }} onDragOver={event => { if (!disabled && event.dataTransfer.types.includes('application/x-collie-outline')) event.preventDefault() }} onDrop={event => { event.preventDefault(); if (disabled) return; const source = docs.find(x => x.id === event.dataTransfer.getData('application/x-collie-outline')); if (source) move(source,d) }} aria-pressed={focused.id === d.id} disabled={disabled} onClick={() => { setFocusId(d.id); setMode(null); if (d.kind === 'text') select(d.id) }}>
+      <button type="button" draggable={!disabled && !readOnly && d.state !== 'merged'} onDragStart={event => { event.dataTransfer.setData('application/x-collie-outline',d.id); event.dataTransfer.effectAllowed = 'move' }} onDragOver={event => { if (!disabled && !readOnly && event.dataTransfer.types.includes('application/x-collie-outline')) event.preventDefault() }} onDrop={event => { event.preventDefault(); if (disabled||readOnly) return; const source = docs.find(x => x.id === event.dataTransfer.getData('application/x-collie-outline')); if (source) move(source,d) }} aria-pressed={focused.id === d.id} disabled={disabled} onClick={() => { setFocusId(d.id); setMode(null); if (d.kind === 'text') select(d.id) }}>
         {d.title} <small>{d.kind === 'text' ? 'Section' : d.kind} · {d.status}{effectiveState(d,docs) !== 'active' ? ` · ${effectiveState(d,docs)}` : ''}</small>
       </button>
       {docs.some(child => child.parentId === d.id) ? branch(d.id) : null}
@@ -34,7 +34,7 @@ export default function OutlinePanel({ project, disabled, change, select }: { pr
     <label><input type="checkbox" checked={showRemoved} onChange={e => setShowRemoved(e.target.checked)} /> Show archived, trashed and merged items</label>
     {branch(null)}
     <p aria-live="polite">Selected outline item: {focused.title} · {state}</p>
-    {focused.state === 'merged' ? <p>This section was merged. <button disabled={disabled} onClick={() => select(focused.replacementId!)}>Open replacement section</button> Its earlier content remains in history.</p> : <div className="project-actions">
+    {focused.state === 'merged' ? <p>This section was merged. <button disabled={disabled} onClick={() => select(focused.replacementId!)}>Open replacement section</button> Its earlier content remains in history.</p> : <fieldset disabled={readOnly} className="project-actions">
       <button disabled={disabled || focused.position === 0} onClick={() => change({ type:'move',documentId:focused.id,parentId:focused.parentId,position:focused.position-1 })}>Up</button>
       <button disabled={disabled || focused.position === siblings.length-1} onClick={() => change({ type:'move',documentId:focused.id,parentId:focused.parentId,position:focused.position+1 })}>Down</button>
       <button disabled={disabled} onClick={() => open('move')}>Move…</button>
@@ -44,10 +44,11 @@ export default function OutlinePanel({ project, disabled, change, select }: { pr
       <button disabled={disabled || focused.state === 'archived'} onClick={() => change({ type:'state',documentId:focused.id,state:'archived' })}>Archive</button>
       <button disabled={disabled || focused.state === 'trashed'} onClick={() => change({ type:'state',documentId:focused.id,state:'trashed' })}>Move to trash</button>
       {focused.state !== 'active' ? <button disabled={disabled} onClick={() => change({ type:'state',documentId:focused.id,state:'active' })}>Restore item</button> : null}
-    </div>}
-    <button disabled={disabled} onClick={() => { open('create'); setParentId('') }}>Add outline item…</button>
+    </fieldset>}
+    <button disabled={disabled||readOnly} onClick={() => { open('create'); setParentId('') }}>Add outline item…</button>
     {mode ? <form className="outline-form" onSubmit={e => {
       e.preventDefault()
+      if(readOnly)return
       if (mode === 'create') change({ type:'create',kind,title,parentId:parentId || null })
       if (mode === 'move') change({ type:'move',documentId:focused.id,parentId:parentId || null,position })
       if (mode === 'split') change({ type:'split',documentId:focused.id,afterBlockId:boundary,title })
@@ -63,7 +64,7 @@ export default function OutlinePanel({ project, disabled, change, select }: { pr
       {mode === 'split' ? <><p>Split only between complete top-level blocks. A table or list stays together. Pending edits are protected before the change; a changed boundary is rejected.</p><label>Split after <select required value={boundary} onChange={e => setBoundary(e.target.value)}><option value="">Choose a boundary</option>{project.payload.ast.content.slice(0,-1).map((b,i) => <option key={b.attrs.blockId} value={b.attrs.blockId}>Block {i+1} · {b.type}</option>)}</select></label>{project.payload.ast.content.length < 2 ? <p>Add and protect at least two paragraphs/blocks before splitting.</p> : null}</> : null}
       {mode === 'merge' ? <><p>The target’s writing comes first, followed by this section. The source becomes a tombstone linking to the target; a checkpoint preserves its title and synopsis.</p><label>Append to <select required value={targetId} onChange={e => setTargetId(e.target.value)}><option value="">Choose a section</option>{docs.filter(d => d.kind === 'text' && d.id !== focused.id && effectiveState(d,docs) === 'active').map(d => <option key={d.id} value={d.id}>{d.title}</option>)}</select></label></> : null}
       {mode === 'details' ? <><label>Status <select value={status} onChange={e => setStatus(e.target.value as typeof status)}><option value="draft">Draft</option><option value="review">Review</option><option value="complete">Complete</option></select></label><label>Synopsis <textarea maxLength={10000} value={synopsis} onChange={e => setSynopsis(e.target.value)} /></label></> : null}
-      <button type="submit" disabled={disabled}>Apply {mode}</button> <button type="button" onClick={() => setMode(null)}>Cancel</button>
+      <button type="submit" disabled={disabled||readOnly}>Apply {mode}</button> <button type="button" onClick={() => setMode(null)}>Cancel</button>
     </form> : null}
     <p>Archive and trash keep content. At least one active section must remain. Restore a containing part/chapter to make its children active again.</p>
   </section>

@@ -11,9 +11,10 @@ export type AnnotationCapture = { documentId: string; expectedRevisionId: string
 const scope = (p: OpenProject): { projectId: string; workspaceId: string } => ({ projectId:p.projectId,workspaceId:p.workspaceId })
 const blank = (): DocumentPayload => emptyDocument(() => crypto.randomUUID())
 
-export default function NotesPanel({ project, capture, focusNoteId, onCommitted, navigate, registerFlush, dirtyChanged, disabled }: {
+export default function NotesPanel({ project, capture, focusNoteId, onCommitted, navigate, registerFlush, registerAccessFlush, dirtyChanged, disabled }: {
   project: OpenProject; capture: AnnotationCapture | null; focusNoteId: string | null; onCommitted: () => Promise<void>; navigate: (documentId: string, blockId?: string) => Promise<void>;
   registerFlush: (flush: (() => Promise<boolean>) | null) => void; dirtyChanged: (dirty: boolean) => void; disabled: boolean
+  registerAccessFlush: (flush: (() => Promise<boolean>) | null) => void
 }): React.JSX.Element {
   const [view, setView] = useState<NotesView | null>(null), [selected, setSelected] = useState<string | null>(null)
   const [title, setTitle] = useState(''), [links, setLinks] = useState<string[]>([]), [labels, setLabels] = useState<string[]>([])
@@ -22,6 +23,8 @@ export default function NotesPanel({ project, capture, focusNoteId, onCommitted,
   const [annotationText, setAnnotationText] = useState(''), [editingAnnotation, setEditingAnnotation] = useState<string | null>(null), [editText, setEditText] = useState('')
   const editor = useRef<Editor | null>(null), dirty = useRef(false), pending = useRef<{ operationId: string; change: NoteChange } | null>(null), task = useRef<Promise<boolean> | null>(null)
   const unresolved = useRef<{ operationId: string; change: NoteChange } | null>(null)
+  const accessAnnotation=useRef<{operationId:string;change:NoteChange}|null>(null)
+  const accessInterpretation=useRef<{operationId:string;change:NoteChange}|null>(null)
   const latest = useRef({ title,links,labels,selected,view })
   latest.current = { title,links,labels,selected,view }
   const note = view?.notes.find(n => n.id === selected)
@@ -67,6 +70,24 @@ export default function NotesPanel({ project, capture, focusNoteId, onCommitted,
     try { return await result } finally { task.current = null }
   }
   useEffect(() => { registerFlush(flush); return () => registerFlush(null) })
+  async function protectAccessDrafts():Promise<boolean>{
+    if(!await flush(true))return false
+    if(capture&&annotationText.trim()){
+      accessAnnotation.current??={operationId:crypto.randomUUID(),change:{type:'createAnnotation',id:crypto.randomUUID(),...capture,interpretation:annotationText}}
+      if(!await change(accessAnnotation.current.change,accessAnnotation.current.operationId))return false
+      accessAnnotation.current=null;setAnnotationText('')
+    }
+    if(editingAnnotation){
+      const annotation=view?.annotations.find(a=>a.id===editingAnnotation)
+      if(annotation&&editText!==annotation.interpretation){
+        accessInterpretation.current??={operationId:crypto.randomUUID(),change:{type:'updateAnnotation',id:annotation.id,expectedRevisionId:annotation.revisionId,interpretation:editText,state:annotation.state}}
+        if(!await change(accessInterpretation.current.change,accessInterpretation.current.operationId))return false
+        accessInterpretation.current=null;setEditingAnnotation(null);setEditText('')
+      }
+    }
+    dirtyChanged(dirty.current);return true
+  }
+  useEffect(()=>{registerAccessFlush(protectAccessDrafts);return()=>registerAccessFlush(null)})
   useEffect(() => {
     if (!dirty.current || !note || disabled) return
     const timer = setTimeout(() => { void flush(true) },900)
@@ -142,9 +163,9 @@ export default function NotesPanel({ project, capture, focusNoteId, onCommitted,
     </div> : null}
     <h3>Manage tags and categories</h3><button type="button" disabled={disabled} onClick={() => { void alterLabel('tag') }}>New tag</button><button type="button" disabled={disabled} onClick={() => { void alterLabel('category') }}>New category</button>
     <ul>{view?.labels.filter(l => l.state === 'active').map(l => <li key={l.id}>{l.kind}: {l.name} <small>{l.id}</small> <button type="button" disabled={disabled} onClick={() => { void renameLabel(l.id) }}>Rename</button><button type="button" disabled={disabled} onClick={() => { void mergeLabel(l.id) }}>Merge into…</button><button type="button" disabled={disabled} onClick={() => { void flush().then(ok => { if (ok) void change({ type:'archiveLabel',id:l.id }) }) }}>Remove label</button></li>)}</ul>
-    <h2>Passage annotations</h2>{capture ? <div><blockquote>{capture.quote}</blockquote><label>Interpretation <textarea value={annotationText} maxLength={100000} onChange={event => setAnnotationText(event.target.value)} /></label><button type="button" disabled={disabled || !annotationText.trim()} onClick={() => { void saveAnnotation() }}>Annotate selection</button></div> : <p>Select manuscript text and choose Annotate selection.</p>}
+    <h2>Passage annotations</h2>{capture ? <div><blockquote>{capture.quote}</blockquote><label>Interpretation <textarea disabled={disabled} value={annotationText} maxLength={100000} onChange={event => setAnnotationText(event.target.value)} /></label><button type="button" disabled={disabled || !annotationText.trim()} onClick={() => { void saveAnnotation() }}>Annotate selection</button></div> : <p>Select manuscript text and choose Annotate selection.</p>}
     <label><input type="checkbox" checked={showArchivedAnnotations} onChange={event => setShowArchivedAnnotations(event.target.checked)} />Show archived comments</label>
-    <ul>{view?.annotations.filter(a => a.state === 'active' || showArchivedAnnotations).map(a => <li key={a.id}><blockquote>{a.quote}</blockquote><p>{a.interpretation}</p><p>{a.anchorState === 'orphaned' ? 'Original passage removed or changed · quote retained' : 'Linked passage'}</p><button type="button" onClick={() => { void navigate(a.documentId,a.anchorState === 'active' ? a.blockId : undefined) }}>Open section</button><button type="button" onClick={() => { setEditingAnnotation(a.id); setEditText(a.interpretation) }}>Edit interpretation</button><button type="button" onClick={() => { void change({ type:'updateAnnotation',id:a.id,expectedRevisionId:a.revisionId,interpretation:a.interpretation,state:a.state === 'active' ? 'archived' : 'active' }) }}>{a.state === 'active' ? 'Archive comment' : 'Restore comment'}</button>{editingAnnotation === a.id ? <><textarea value={editText} onChange={event => setEditText(event.target.value)} /><button type="button" onClick={() => { void editAnnotation(a) }}>Save interpretation</button></> : null}</li>)}</ul>
+    <ul>{view?.annotations.filter(a => a.state === 'active' || showArchivedAnnotations).map(a => <li key={a.id}><blockquote>{a.quote}</blockquote><p>{a.interpretation}</p><p>{a.anchorState === 'orphaned' ? 'Original passage removed or changed · quote retained' : 'Linked passage'}</p><button type="button" onClick={() => { void navigate(a.documentId,a.anchorState === 'active' ? a.blockId : undefined) }}>Open section</button><button type="button" disabled={disabled} onClick={() => { setEditingAnnotation(a.id); setEditText(a.interpretation) }}>Edit interpretation</button><button type="button" disabled={disabled} onClick={() => { void change({ type:'updateAnnotation',id:a.id,expectedRevisionId:a.revisionId,interpretation:a.interpretation,state:a.state === 'active' ? 'archived' : 'active' }) }}>{a.state === 'active' ? 'Archive comment' : 'Restore comment'}</button>{editingAnnotation === a.id ? <><textarea disabled={disabled} value={editText} onChange={event => setEditText(event.target.value)} /><button type="button" disabled={disabled} onClick={() => { void editAnnotation(a) }}>Save interpretation</button></> : null}</li>)}</ul>
     {message ? <p role="status">{message}</p> : null}
   </section>
 }
