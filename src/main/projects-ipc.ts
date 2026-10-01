@@ -1,3 +1,4 @@
+import { isCitationStyleInput } from '../shared/citations'
 import { isOutlineInput, isHistoryInput } from '../shared/outline'
 import { isNoteChangeInput } from '../shared/notes'
 import { isRenameInput, isArchiveInput, isResetInput } from '../shared/project-lifecycle'
@@ -94,6 +95,8 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
       }
       let command: ProjectCommand
       if ((kind === 'list' || kind === 'data' || kind === 'cleanup') && isInfoRequest(value)) command = { kind }
+      else if (exact(value,['requestId','input']) && kind==='citations' && isOpenInput(value.input)) command={kind,input:value.input}
+      else if (exact(value,['requestId','input']) && kind==='citationStyle' && isCitationStyleInput(value.input)) command={kind,input:value.input}
       else if (exact(value, ['requestId', 'input']) && kind === 'outline' && isOutlineInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'history' && isHistoryInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'notes' && isOpenInput(value.input)) command = { kind, input: value.input }

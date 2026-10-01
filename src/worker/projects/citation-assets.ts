@@ -1,7 +1,8 @@
-import { readFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { readFile, lstat, mkdir, copyFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { SaxesParser } from 'saxes'
-import { contained } from '../storage/files'
+import { contained, syncFile, syncDirectory } from '../storage/files'
 import { fileHash } from './streams'
 import { SnapshotError, LIMITS, type CitationRef } from './manifest'
 
@@ -47,4 +48,31 @@ export async function bundledCitationFiles(resources: string, signal?: AbortSign
     result.push({ ref, path })
   }
   return result
+}
+
+/** Restored projects use their retained exact profile. Missing/corrupt retained files never fall back. */
+export async function projectCitationFiles(workspace: string, resources: string, signal?: AbortSignal): Promise<{ ref: CitationRef; path: string }[]> {
+  const folder = join(workspace,'citation-assets')
+  try { await lstat(folder) } catch (error) {
+    if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error
+    const bundled = await bundledCitationFiles(resources,signal)
+    const staging = join(workspace,`citation-profile-${randomUUID()}`)
+    await mkdir(staging,{mode:0o700})
+    for (const asset of bundled) { const destination = join(staging,asset.ref.sha256); await copyFile(asset.path,destination); await syncFile(destination) }
+    await syncDirectory(staging)
+    try { await rename(staging,folder) } catch (error) {
+      // Preview and an initial snapshot may publish the same immutable profile concurrently.
+      if (!error || typeof error !== 'object' || !('code' in error) || !['EEXIST','ENOTEMPTY'].includes(String(error.code))) throw error
+    }
+    await syncDirectory(workspace)
+  }
+  await contained(workspace,folder,true)
+  const files: { ref: CitationRef; path: string }[] = []
+  for (const { resource: _resource, ...ref } of CITATION_ASSETS) {
+    const path = join(folder,ref.sha256)
+    await contained(workspace,path,false)
+    await validateCitationFile(path,ref,signal)
+    files.push({ref,path})
+  }
+  return files
 }

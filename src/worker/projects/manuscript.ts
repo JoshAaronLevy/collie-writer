@@ -1,3 +1,4 @@
+import { rebuildCitations } from './citation-occurrences'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { isId, readDocument, type DocumentPayload } from '../../domain/editor/schema'
@@ -103,6 +104,7 @@ export function writeManuscript(db: Database.Database, projectId: string, snapsh
     anchor.run(projectId,a.id,a.documentId,a.kind,a.state,a.replacementId,a.label)
     if (a.state !== 'deleted') insert.run(projectId,a.id,a.documentId,a.kind)
   }
+  rebuildCitations(db,projectId)
 }
 export function seedOutline(db: Database.Database, title = 'Before outline/history adoption'): void {
   db.prepare("INSERT INTO outline_state SELECT project_id,id,'active',NULL FROM documents").run()
@@ -158,8 +160,8 @@ export function updateDocumentAnchors(db: Database.Database, projectId: string, 
   db.prepare("UPDATE anchor_targets SET state='deleted' WHERE project_id=? AND document_id=?").run(projectId,documentId)
   const upsert = db.prepare(`INSERT INTO anchor_targets VALUES (?,?,?,?,?,?,?) ON CONFLICT(project_id,id) DO UPDATE SET document_id=excluded.document_id,kind=excluded.kind,state='active',replacement_id=NULL,label=excluded.label`)
   for (const a of payloadAnchors(payload)) {
-    const prior = db.prepare('SELECT document_id,kind FROM anchor_targets WHERE project_id=? AND id=?').get(projectId,a.id) as { document_id: string; kind: string } | undefined
-    if (prior && (prior.document_id !== documentId || prior.kind !== a.kind)) throw new ProjectError('VALIDATION')
+    const prior = db.prepare('SELECT document_id,kind,state FROM anchor_targets WHERE project_id=? AND id=?').get(projectId,a.id) as { document_id: string; kind: string; state: string } | undefined
+    if (prior && (prior.document_id !== documentId && prior.state !== 'deleted' || prior.kind !== a.kind)) throw new ProjectError('VALIDATION')
     upsert.run(projectId,a.id,documentId,a.kind,'active',null,a.label)
   }
 }

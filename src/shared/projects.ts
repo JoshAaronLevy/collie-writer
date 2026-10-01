@@ -1,3 +1,4 @@
+import { isCitationStyleInput, isCitationsView, type CitationStyleInput, type CitationsView } from './citations'
 import { isOutlineInput, isOutlineDocument, isHistoryInput, isHistoryView, type OutlineDocument, type OutlineInput, type HistoryInput, type HistoryView } from './outline'
 import { isRenameInput, isArchiveInput, isDataLocations, isResetInput, type RenameInput, type ArchiveInput, type DataLocations, type ResetInput } from './project-lifecycle'
 import { isId, readDocument, type DocumentPayload } from '../domain/editor/schema'
@@ -9,6 +10,7 @@ import { isEvidenceChangeInput, isEvidenceView, type EvidenceChangeInput, type E
 import { isSearchActionInput, isSearchInput, isSearchView, isSearchActivity, type SearchInput, type SearchActionInput, type SearchView, type SearchActivity } from './search'
 
 export const PROJECT_CHANNELS = {
+  citations: 'citations.read', citationStyle: 'citations.style',
   outline: 'outline.change', history: 'history.read', notes: 'notes.read', noteChange: 'notes.change',
   location: 'projects.location', chooseLocation: 'projects.chooseLocation',
   rename: 'projects.rename', archive: 'projects.archive', data: 'projects.data', reset: 'projects.reset', recoverReset: 'projects.recoverReset', cleanup: 'projects.cleanup',
@@ -58,10 +60,12 @@ export type WorkerImageImport = OpenInput & { operationId: string; sourcePath: s
 export type ImageReadInput = OpenInput & { assetId: string }
 export type ImageAsset = { assetId: string; mediaType: 'image/png' | 'image/jpeg'; width: number; height: number }
 export type ImageData = { mediaType: ImageAsset['mediaType']; base64: string }
-export type ProjectCommand = { kind: 'notes' | 'sources' | 'evidence' | 'searchActivity'; input: OpenInput } | { kind: 'search'; input: SearchInput } | { kind: 'searchAction'; input: SearchActionInput } | { kind: 'evidenceChange'; input: EvidenceChangeInput } | { kind: 'inspection'; input: InspectionScope } | { kind: 'inspectionPage'; input: InspectionPageInput } | { kind: 'inspectionAsset'; input: InspectionAssetInput } | { kind: 'inspectionChange'; input: InspectionChangeInput } | { kind: 'noteChange'; input: NoteChangeInput } | { kind: 'sourceChange'; input: SourceChangeInput } | { kind: 'sourcePreview'; input: WorkerSourcePreview } | { kind: 'sourceImport'; input: WorkerSourceImport } | { kind: 'sourceAttach'; input: WorkerSourceAttachment } | { kind: 'sourceExport'; input: WorkerSourceExport } | { kind: 'sourceExportAttachment'; input: WorkerSourceAttachmentExport } | { kind: 'outline'; input: OutlineInput } | { kind: 'history'; input: HistoryInput } | { kind: 'rename'; input: RenameInput } | { kind: 'archive'; input: ArchiveInput } | { kind: 'data' | 'cleanup' } | { kind: 'reset'; input: ResetInput } | { kind: 'recoverReset'; input: string } | { kind: 'list' } | { kind: 'create'; input: CreateInput } | { kind: 'open'; input: OpenInput } | { kind: 'section'; input: SectionInput } | { kind: 'meta'; input: SectionMetaInput } | { kind: 'commit'; input: CommitInput } | { kind: 'importImage'; input: WorkerImageImport } | { kind: 'readImage'; input: ImageReadInput }
-export type ProjectValue = ProjectList | OpenProject | CommitReceipt | DataLocations | ImageAsset | ImageData | HistoryView | NotesView
+export type ProjectCommand = { kind: 'citationStyle'; input: CitationStyleInput } | { kind: 'notes' | 'sources' | 'evidence' | 'searchActivity' | 'citations'; input: OpenInput } | { kind: 'search'; input: SearchInput } | { kind: 'searchAction'; input: SearchActionInput } | { kind: 'evidenceChange'; input: EvidenceChangeInput } | { kind: 'inspection'; input: InspectionScope } | { kind: 'inspectionPage'; input: InspectionPageInput } | { kind: 'inspectionAsset'; input: InspectionAssetInput } | { kind: 'inspectionChange'; input: InspectionChangeInput } | { kind: 'noteChange'; input: NoteChangeInput } | { kind: 'sourceChange'; input: SourceChangeInput } | { kind: 'sourcePreview'; input: WorkerSourcePreview } | { kind: 'sourceImport'; input: WorkerSourceImport } | { kind: 'sourceAttach'; input: WorkerSourceAttachment } | { kind: 'sourceExport'; input: WorkerSourceExport } | { kind: 'sourceExportAttachment'; input: WorkerSourceAttachmentExport } | { kind: 'outline'; input: OutlineInput } | { kind: 'history'; input: HistoryInput } | { kind: 'rename'; input: RenameInput } | { kind: 'archive'; input: ArchiveInput } | { kind: 'data' | 'cleanup' } | { kind: 'reset'; input: ResetInput } | { kind: 'recoverReset'; input: string } | { kind: 'list' } | { kind: 'create'; input: CreateInput } | { kind: 'open'; input: OpenInput } | { kind: 'section'; input: SectionInput } | { kind: 'meta'; input: SectionMetaInput } | { kind: 'commit'; input: CommitInput } | { kind: 'importImage'; input: WorkerImageImport } | { kind: 'readImage'; input: ImageReadInput }
+export type ProjectValue = CitationsView | ProjectList | OpenProject | CommitReceipt | DataLocations | ImageAsset | ImageData | HistoryView | NotesView
   | SourcesView | SourceImportPreview | SourceExportReceipt | InspectionView | InspectionPageText | WorkerInspectionAsset | EvidenceView | SearchView | SearchActivity
 export type ProjectAPI = {
+  readCitations: (input: OpenInput) => Promise<ProjectResult<CitationsView>>
+  changeCitationStyle: (input: CitationStyleInput) => Promise<ProjectResult<CitationsView>>
   search: (input: SearchInput) => Promise<ProjectResult<SearchView>>
   readSearchActivity: (input: OpenInput) => Promise<ProjectResult<SearchActivity>>
   changeSearch: (input: SearchActionInput) => Promise<ProjectResult<SearchActivity>>
@@ -122,6 +126,8 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (!record(v)) return false
   if (['list','data','cleanup'].includes(String(v.kind))) return exact(v, ['kind'])
   if (!exact(v, ['kind', 'input'])) return false
+  if (v.kind === 'citations') return isOpenInput(v.input)
+  if (v.kind === 'citationStyle') return isCitationStyleInput(v.input)
   if (v.kind === 'outline') return isOutlineInput(v.input)
   if (v.kind === 'history') return isHistoryInput(v.input)
   if (v.kind === 'notes') return isOpenInput(v.input)
@@ -153,6 +159,7 @@ function summary(v: unknown): v is ProjectSummary {
   return record(v) && [v.projectId, v.workspaceId, v.headCommitId].every(isId) && typeof v.archived === 'boolean' && typeof v.title === 'string' && v.title.length <= 500 && typeof v.updatedAt === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v.updatedAt) && (v.destination === null || isDestination(v.destination))
 }
 export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is ProjectValue {
+  if (kind === 'citations' || kind === 'citationStyle') return isCitationsView(v)
   if (!record(v)) return false
   if (kind === 'history') return isHistoryView(v)
   if (kind === 'notes' || kind === 'noteChange') return isNotesView(v)

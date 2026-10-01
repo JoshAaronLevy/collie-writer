@@ -16,8 +16,11 @@ import SourcesPanel from './SourcesPanel'
 import SourceInspector from './SourceInspector'
 import EvidencePanel from './EvidencePanel'
 import SearchPanel from './SearchPanel'
+import CitationsPanel from './CitationsPanel'
+import type { CitationsView } from '../../../../shared/citations'
+import type { SourceRecord } from '../../../../shared/sources'
 import type { SearchHit } from '../../../../shared/search'
-import { serializeEditor } from '../../editor/adapter'
+import { editorIsComposing, serializeEditor } from '../../editor/adapter'
 import FilePanel from './FilePanel'
 function scopeOf(project: OpenInput): OpenInput { return { projectId: project.projectId, workspaceId: project.workspaceId } }
 const emptyFiles: FileStatus = { scope: null, destination: null, state: 'unsaved', job: null }
@@ -51,6 +54,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
   const [sourceDirty,setSourceDirty]=useState(false)
   const [inspectionTarget,setInspectionTarget]=useState<{sourceId:string;excerptId:string|null;versionId:string|null;pageIndex:number|null}|null>(null)
   const [focusNoteId,setFocusNoteId]=useState<string|null>(null),[focusSourceId,setFocusSourceId]=useState<string|null>(null),[focusEvidence,setFocusEvidence]=useState<{kind:'question'|'claim';id:string}|null>(null)
+  const [citationContext,setCitationContext]=useState<{projectId:string;sources:SourceRecord[];view:CitationsView|null}|null>(null)
   const sourceDirtyRef=useRef(false),sourceFlush=useRef<(() => Promise<boolean>)|null>(null)
   const [outlineRetry, setOutlineRetry] = useState(false)
   const outlinePending = useRef<OutlineInput | null>(null)
@@ -205,11 +209,13 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
   }
   async function navigateSection(documentId: string, anchor?: string): Promise<void> {
     setBusy(true)
-    const p = await flush(); if (!p) return
-    const result = await window.collie.openSection({ ...scopeOf(p),documentId })
-    if (!result.ok) { setError(result.error.message); return }
-    anchorToFocus.current = anchor ?? null
-    await select(result.value)
+    try {
+      const p = await flush(); if (!p) return
+      const result = await window.collie.openSection({ ...scopeOf(p),documentId })
+      if (!result.ok) { setError(result.error.message); return }
+      anchorToFocus.current = anchor ?? null
+      await select(result.value)
+    } finally { setBusy(false) }
   }
   function navigateSearch(hit:SearchHit):void {
     if(hit.kind==='draft'&&hit.documentId)void navigateSection(hit.documentId,hit.anchorId??undefined).then(()=>{document.querySelector('.draft-panel')?.scrollIntoView({block:'start'})})
@@ -286,9 +292,9 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     if (!current.current) return null
     const editor = editorRef.current
     if (!editor) { setError('This document could not be opened safely for editing. Its stored copy is retained.'); return null }
-    if (editor.view.composing) { setError('Finish composing the current text before saving or closing.'); return null }
+    if (editorIsComposing(editor)) { setError('Finish composing the current text before saving or closing.'); return null }
     let requested: DocumentPayload
-    try { requested = serializeEditor(editor, current.current.payload.footnotesById) }
+    try { requested = serializeEditor(editor) }
     catch { setError('This edit cannot be protected yet. Keep the window open and copy the visible writing; unsupported content was not discarded.'); return null }
     const version = editVersionRef.current
     const previous = committingTask.current
@@ -568,7 +574,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
         <label>Synopsis <textarea value={sectionSynopsis} maxLength={10000} disabled={busy || closing || outlineRetry || sectionReadOnly} onChange={event => { sectionFields.current.synopsis = event.target.value; setSectionSynopsis(event.target.value); metaPending.current = null }} /></label>
         <button type="submit" disabled={busy || acting || closing || sectionReadOnly}>{metaPending.current ? 'Retry section details' : 'Save section details'}</button>
       </form>
-      <RichDraft key={`${project.projectId}-${project.documentId}-${editorEpoch}`} payload={project.payload} disabled={busy || closing || outlineRetry || sectionReadOnly || storage.state !== 'ready'} onReady={editor => { editorRef.current = editor; if (editor && anchorToFocus.current) { const id = anchorToFocus.current; anchorToFocus.current = null; let target: number | null = null; editor.state.doc.descendants((node,position) => { if (node.attrs.blockId === id || node.attrs.citationId === id || node.attrs.footnoteId === id) { target = position; return false }; return true }); if (target !== null) { editor.commands.setTextSelection(Math.min(target+1,editor.state.doc.content.size)); editor.commands.focus(); editor.view.dispatch(editor.state.tr.scrollIntoView()) } } }} onChange={changed} onIssue={setError} onBlur={() => { if (isDirty() && !actionTask.current) void flushManuscript() }} imageUrl={assetId => imageUrls.current.get(assetId)} importImage={() => run(importImage)} />
+      <RichDraft key={`${project.projectId}-${project.documentId}-${editorEpoch}`} payload={project.payload} references={{focusAnchor:anchorToFocus.current,projectId:project.projectId,sources:citationContext?.projectId===project.projectId?citationContext.sources:[],labels:new Map(!dirty&&citationContext?.projectId===project.projectId&&citationContext.view?.headCommitId===project.headCommitId?citationContext.view.labels.map(label=>[label.id,label.text]):[])}} disabled={busy || closing || outlineRetry || sectionReadOnly || storage.state !== 'ready'} onReady={editor => { editorRef.current = editor; if (editor && anchorToFocus.current) { const id = anchorToFocus.current; anchorToFocus.current = null; let target: number | null = null; editor.state.doc.descendants((node,position) => { if (node.attrs.blockId === id || node.attrs.citationId === id || node.attrs.footnoteId === id) { target = position; return false }; return true }); if (target !== null) { editor.commands.setTextSelection(Math.min(target+1,editor.state.doc.content.size)); editor.commands.focus(); editor.view.dispatch(editor.state.tr.scrollIntoView()) } } }} onChange={changed} onIssue={setError} onBlur={() => { if (isDirty() && !actionTask.current) void flushManuscript() }} imageUrl={assetId => imageUrls.current.get(assetId)} importImage={() => run(importImage)} />
         <button type="button" disabled={busy || closing || sectionReadOnly} onMouseDown={event => event.preventDefault()} onClick={() => { void captureAnnotation() }}>Annotate selection</button>
         <div className="project-actions"><button disabled={busy || committing || closing || outlineRetry || sectionReadOnly || !dirty || storage.state !== 'ready'} onClick={() => { void flush().then(() => refresh()) }}>{committing ? 'Protecting…' : retry ? 'Retry local commit' : 'Protect locally'}</button>
         <button onClick={() => { editorRef.current?.commands.focus(); editorRef.current?.commands.selectAll() }}>Select all for copying</button></div>
@@ -576,6 +582,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
       <p role="status">{notice}</p>
       {conflict ? <details className="conflict-panel" open><summary>Stored version differs from this visible draft</summary><p>Keep this draft open for copying. The stored section below is a separate read-only copy; Collie Writer has not overwritten either version.</p><textarea readOnly aria-label="Stored section text for copying" value={readableDocument(conflict.payload)} /></details> : null}
     </div>{inspectionTarget?<SourceInspector key={`${project.projectId}-${inspectionTarget.sourceId}`} project={project} sourceId={inspectionTarget.sourceId} focusExcerptId={inspectionTarget.excerptId} focusVersionId={inspectionTarget.versionId} focusPageIndex={inspectionTarget.pageIndex} disabled={busy||closing||outlineRetry||sourceDirty||storage.state!=='ready'} onCommitted={afterNoteCommit} close={()=>setInspectionTarget(null)} />:null}</div> : <p>Select a local project, open a file or create a blank project to begin.</p>}
+    {project ? <CitationsPanel key={project.projectId} project={project} dirty={dirty} disabled={busy||closing||acting||fileActive||storage.state!=='ready'} flush={flush} onCommitted={afterNoteCommit} onContext={(sources,view)=>setCitationContext({projectId:project.projectId,sources,view})} navigate={navigateSection} source={id=>setFocusSourceId(id)} /> : null}
     {project ? <NotesPanel key={project.projectId} project={project} capture={annotationCapture} focusNoteId={focusNoteId} disabled={busy || closing || outlineRetry || storage.state !== 'ready'} registerFlush={fn => { noteFlush.current = fn }} dirtyChanged={value => { noteDirtyRef.current = value; setNoteDirty(value); window.collie.setUnprotectedChanges(isDirty()) }} onCommitted={afterNoteCommit} navigate={(id,anchor) => navigateSection(id,anchor)} /> : null}
     {project ? <SourcesPanel key={project.projectId} project={project} focusSourceId={focusSourceId} disabled={busy || closing || outlineRetry || storage.state !== 'ready'} registerFlush={fn=>{sourceFlush.current=fn}} dirtyChanged={value=>{sourceDirtyRef.current=value;setSourceDirty(value);window.collie.setUnprotectedChanges(isDirty())}} onCommitted={afterNoteCommit} onInspect={sourceId=>setInspectionTarget({sourceId,excerptId:null,versionId:null,pageIndex:null})} /> : null}
     {project ? <EvidencePanel key={project.projectId} project={project} focusItem={focusEvidence} disabled={busy || closing || outlineRetry || noteDirty || sourceDirty || storage.state !== 'ready'} onCommitted={afterNoteCommit} navigate={(id,anchor)=>navigateSection(id,anchor)} inspect={(sourceId,excerptId)=>setInspectionTarget({sourceId,excerptId,versionId:null,pageIndex:null})} /> : null}

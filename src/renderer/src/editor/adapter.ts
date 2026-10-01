@@ -1,11 +1,16 @@
 import { Editor, Extension, Mark, Node as TiptapNode, type Extensions } from '@tiptap/core'
 import { Plugin } from '@tiptap/pm/state'
-import { history, undo, redo } from '@tiptap/pm/history'
+import { closeHistory, history, undo, redo } from '@tiptap/pm/history'
 import { keymap } from '@tiptap/pm/keymap'
 import { baseKeymap, toggleMark } from '@tiptap/pm/commands'
-import { Fragment, Slice, type DOMOutputSpec } from '@tiptap/pm/model'
+import { Fragment, Slice, type Node as PMNode, type DOMOutputSpec } from '@tiptap/pm/model'
 import { readDocument, safeLink, type DocumentPayload } from '../../../domain/editor/schema'
 
+let lastCut: { editor: Editor; projectId: string; encoded: string } | null = null
+const footnoteEditors = new WeakMap<Editor, Editor>()
+export function bindFootnoteEditor(owner: Editor, child: Editor | null): void { if (child) footnoteEditors.set(owner,child); else footnoteEditors.delete(owner) }
+export function focusedManuscriptEditor(owner: Editor): Editor { const child=footnoteEditors.get(owner); return child?.view.hasFocus() ? child : owner }
+export function editorIsComposing(editor: Editor): boolean { return editor.view.composing || !!footnoteEditors.get(editor)?.view.composing }
 const blockId = { default: null, rendered: false }
 const inTableCell = (selection: { $from: { depth: number; node: (depth: number) => { type: { name: string } } }; $to: { depth: number; node: (depth: number) => { type: { name: string } } } }): boolean => {
   for (const edge of [selection.$from, selection.$to]) for (let depth = edge.depth; depth > 0; depth--) if (['tableCell','tableHeader'].includes(edge.node(depth).type.name)) return true
@@ -45,7 +50,7 @@ export function manuscriptExtensions(
     TiptapNode.create({ name: 'tableRow', content: '(tableCell | tableHeader)+', addAttributes: () => ({ blockId }), renderHTML: () => ['tr', 0] }),
     ...(['tableCell', 'tableHeader'] as const).map(name => TiptapNode.create({ name, content: 'paragraph+', isolating: true, addAttributes: () => ({ blockId }), renderHTML: () => [name === 'tableCell' ? 'td' : 'th', 0] })),
     TiptapNode.create({ name: 'citation', group: 'inline', inline: true, atom: true, addAttributes: () => ({ citationId: { default: null }, items: { default: [] } }), renderHTML: ({ node }) => ['span', { 'data-citation': node.attrs.citationId, contenteditable: 'false' }, citationLabel(node.attrs.citationId)] }),
-    TiptapNode.create({ name: 'footnote', group: 'inline', inline: true, atom: true, addAttributes: () => ({ footnoteId: { default: null } }), renderHTML: () => ['sup', { contenteditable: 'false', 'aria-label': 'Author footnote' }, '†'] })
+    TiptapNode.create({ name: 'footnote', group: 'inline', inline: true, atom: true, addAttributes: () => ({ footnoteId: { default: null }, body: { default: null, rendered: false } }), renderHTML: ({ node }) => ['sup', { 'data-footnote': node.attrs.footnoteId, contenteditable: 'false', 'aria-label': 'Author footnote' }, citationLabel(node.attrs.footnoteId)] })
   ]
   return [
     ...blocks,
@@ -80,6 +85,8 @@ export function manuscriptExtensions(
 /** Unmounted production adapter; Stage 8 owns the toolbar, persistence and selection-aware clipboard. */
 export function createManuscriptEditor(options: {
   element: HTMLElement
+  projectId?: string
+  footnoteMode?: boolean
   payload: DocumentPayload
   imageUrl: (assetId: string) => string | undefined
   citationLabel: (citationId: string) => string
@@ -87,28 +94,46 @@ export function createManuscriptEditor(options: {
   onIssue: (message: string) => void
 }): Editor {
   const payload = readDocument(options.payload)
+  const clipboardScope = options.projectId ?? crypto.randomUUID()
+  const writeClipboard = (view: Editor['view'], event: ClipboardEvent, cut: boolean): boolean => {
+    const clipboard = event.clipboardData
+    if (!clipboard || view.state.selection.empty) return false
+    if (cut && (!editor.isEditable || view.composing || footnoteEditors.get(editor)?.view.composing)) { event.preventDefault(); options.onIssue('Finish composing text before cutting a reference.'); return true }
+    const { from,to } = view.state.selection
+    const slice = view.state.selection.content(), encoded = JSON.stringify({projectId:clipboardScope,slice:slice.toJSON()})
+    clipboard.setData('application/x-collie-editor-slice+json',encoded)
+    const leaf = (node: PMNode): string => node.type.name === 'citation' ? options.citationLabel(node.attrs.citationId) : node.type.name === 'footnote' ? `[${options.citationLabel(node.attrs.footnoteId)}]` : ''
+    const notes: string[] = []
+    slice.content.descendants(node => {
+      if (node.type.name !== 'footnote') return
+      const body = view.state.schema.nodeFromJSON(node.attrs.body)
+      notes.push(`[${options.citationLabel(node.attrs.footnoteId)}] ${body.textBetween(0,body.content.size,'\n',leaf)}`)
+    })
+    clipboard.setData('text/plain',[view.state.doc.textBetween(from,to,'\n',leaf),...notes].join('\n'))
+    event.preventDefault()
+    if (cut) { lastCut={editor,projectId:clipboardScope,encoded}; view.dispatch(closeHistory(view.state.tr.deleteSelection())) }
+    return true
+  }
   const editor = new Editor({
     element: options.element,
-    extensions: manuscriptExtensions(options.imageUrl, options.citationLabel),
-    content: payload.ast,
+    extensions: [...manuscriptExtensions(options.imageUrl, options.citationLabel), Extension.create({
+      name: 'footnoteBoundary',
+      addProseMirrorPlugins: () => [new Plugin({ filterTransaction: transaction => {
+        if (!options.footnoteMode || !transaction.docChanged) return true
+        let allowed = true
+        transaction.doc.descendants(node => { if (!['paragraph','text','hardBreak','citation'].includes(node.type.name)) allowed = false })
+        if (!allowed) options.onIssue('Footnotes contain paragraphs and citations only; nested footnotes are not supported.')
+        return allowed
+      } })]
+    })],
+    content: hydrateDocument(payload),
     enableContentCheck: true,
     injectCSS: false,
     editorProps: {
       attributes: { role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Manuscript', spellcheck: 'true' },
       handleDOMEvents: {
-        copy(view, event) {
-          const clipboard = (event as ClipboardEvent).clipboardData
-          if (!clipboard || view.state.selection.empty) return false
-          const { from, to } = view.state.selection
-          const slice = view.state.selection.content()
-          let unsupported = false
-          slice.content.descendants(node => { if (node.type.name === 'citation' || node.type.name === 'footnote') unsupported = true })
-          if (unsupported) { options.onIssue('Copying citation or footnote anchors is available after their managed editor is added. Select plain writing instead.'); return false }
-          clipboard.setData('application/x-collie-editor-slice+json', JSON.stringify(slice.toJSON()))
-          clipboard.setData('text/plain', view.state.doc.textBetween(from, to, '\n'))
-          event.preventDefault()
-          return true
-        }
+        copy: (view,event) => writeClipboard(view,event as ClipboardEvent,false),
+        cut: (view,event) => writeClipboard(view,event as ClipboardEvent,true)
       },
       handleClick: (_view, _pos, event) => {
         if (!(event.target as HTMLElement).closest('a')) return false
@@ -119,23 +144,44 @@ export function createManuscriptEditor(options: {
         const own = event.clipboardData?.getData('application/x-collie-editor-slice+json')
         if (own) {
           try {
-            const source: unknown = JSON.parse(own)
+            const envelope = JSON.parse(own) as { projectId?: string; slice?: unknown }
+            const source: unknown = envelope.slice
             if (!source || typeof source !== 'object' || JSON.stringify(source).length > 4_000_000) throw new Error('Invalid clipboard')
+            const moving = lastCut?.projectId === clipboardScope && lastCut.encoded === own
+            const retained = new Set<string>()
+            const collect = (value: unknown): void => {
+              if (!value || typeof value !== 'object') return
+              for (const [key,child] of Object.entries(value)) {
+                if (['blockId','citationId','footnoteId'].includes(key) && typeof child === 'string') retained.add(child)
+                else collect(child)
+              }
+            }
+            if (moving) {
+              collect(view.state.doc.toJSON())
+              if (lastCut && !lastCut.editor.isDestroyed && lastCut.editor !== editor) collect(lastCut.editor.getJSON())
+            }
             const visit = (value: unknown): void => {
               if (!value || typeof value !== 'object') return
               for (const [key, child] of Object.entries(value)) {
-                if (key === 'blockId' && typeof child === 'string') (value as Record<string, unknown>)[key] = crypto.randomUUID()
+                if (['blockId','citationId','footnoteId'].includes(key) && typeof child === 'string') { if (!moving || retained.has(child)) (value as Record<string, unknown>)[key] = crypto.randomUUID() }
                 else visit(child)
               }
             }
             visit(source)
             const slice = Slice.fromJSON(view.state.schema, source)
+            let managed = false, nested = false
+            slice.content.descendants(node => { if (['citation','footnote','image'].includes(node.type.name)) managed = true; if (node.type.name === 'footnote') nested = true })
+            if (managed && envelope.projectId !== clipboardScope) throw new Error('Cross-project managed references')
+            if (options.footnoteMode && nested) throw new Error('Nested note')
             if (inTableCell(view.state.selection)) {
               let marked = false
-              slice.content.descendants(node => { if (node.marks.length > 0) marked = true })
+              slice.content.descendants(node => { if (node.marks.length > 0 || ['citation','footnote','image'].includes(node.type.name)) marked = true })
               if (marked) { options.onIssue('Table cells accept plain text only. Use Paste as Plain Text here.'); return true }
             }
-            view.dispatch(view.state.tr.replaceSelection(slice))
+            const transaction = view.state.tr.replaceSelection(slice)
+            documentFromEditorJson(transaction.doc.toJSON())
+            view.dispatch(closeHistory(transaction))
+            if (moving) lastCut = null
           } catch { options.onIssue('This Collie Writer clipboard content could not be pasted safely. The original content is still on the clipboard.') }
           return true
         }
@@ -167,15 +213,52 @@ export function createManuscriptEditor(options: {
     if (!value || typeof value !== 'object') return value
     return Object.fromEntries(Object.entries(value).filter(([key, child]) => key !== 'content' || !Array.isArray(child) || child.length > 0).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, normalized(child)]))
   }
-  if (JSON.stringify(normalized(editor.getJSON())) !== JSON.stringify(normalized(payload.ast))) {
+  if (JSON.stringify(normalized(serializeEditor(editor))) !== JSON.stringify(normalized(payload))) {
     editor.destroy()
     throw new Error('EDITOR_CONTENT_CHANGED_ON_LOAD')
   }
   return editor
 }
 
-export function serializeEditor(editor: Editor, footnotesById: DocumentPayload['footnotesById']): DocumentPayload {
-  // Never flush intermediate IME composition as a durable document revision.
-  if (editor.view.composing) throw new Error('EDITOR_COMPOSING')
-  return readDocument({ schemaVersion: 1, ast: editor.getJSON(), footnotesById })
+/** Body attributes live only inside the editor so history/copy includes the entire note atom. */
+export function hydrateDocument(payload: DocumentPayload): Record<string, unknown> {
+  const ast = structuredClone(payload.ast) as unknown as Record<string, unknown>
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return
+    const node = value as { type?: string; attrs?: Record<string, unknown>; content?: unknown[] }
+    if (node.type === 'footnote' && node.attrs) node.attrs.body = structuredClone(payload.footnotesById[String(node.attrs.footnoteId)])
+    node.content?.forEach(visit)
+  }
+  visit(ast)
+  return ast
+}
+export function documentFromEditorJson(value: unknown): DocumentPayload {
+  const ast = structuredClone(value), footnotesById: DocumentPayload['footnotesById'] = {}
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return
+    const node = value as { type?: string; attrs?: Record<string, unknown>; content?: unknown[] }
+    if (node.type === 'footnote' && node.attrs) {
+      const id = String(node.attrs.footnoteId)
+      if (Object.hasOwn(footnotesById,id)) throw new Error('Duplicate footnote')
+      footnotesById[id] = node.attrs.body as DocumentPayload['footnotesById'][string]
+      delete node.attrs.body
+    }
+    node.content?.forEach(visit)
+  }
+  visit(ast)
+  return readDocument({schemaVersion:1,ast,footnotesById})
+}
+export function serializeEditor(editor: Editor, _legacyBodies?: DocumentPayload['footnotesById']): DocumentPayload {
+  if (editorIsComposing(editor)) throw new Error('EDITOR_COMPOSING')
+  return documentFromEditorJson(editor.getJSON())
+}
+export function refreshCitationLabels(editor: Editor, labels: ReadonlyMap<string,string>): void {
+  for (const element of editor.view.dom.querySelectorAll<HTMLElement>('[data-citation], [data-footnote]')) {
+    const id = element.dataset.citation ?? element.dataset.footnote!
+    const label = labels.get(id) ?? (element.dataset.footnote ? '†' : '[citation]')
+    element.textContent = label
+    const numbered = /^\d+$/.test(label)
+    element.toggleAttribute('data-numbered-note',numbered)
+    element.setAttribute('aria-label',element.dataset.footnote ? `Author footnote ${label}` : numbered ? `Citation note ${label}` : `Citation ${label}`)
+  }
 }

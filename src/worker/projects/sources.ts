@@ -50,7 +50,7 @@ function fromCsl(value: unknown): { metadata: SourceMetadata; externalId: string
   const losses = unknownFields.map(k => `Field ${k} is retained in raw import but not in canonical metadata or export.`)
   return { metadata, externalId:clean(c.id,500), unknownFields, losses }
 }
-function toCsl(id: string, m: SourceMetadata): CSL {
+export function toCsl(id: string, m: SourceMetadata): CSL {
   const entry: Record<string,unknown> = { id, type:m.type, title:m.title }
   if (m.author.length) entry.author = m.author.map(a => a.literal ? { literal:a.literal } : { family:a.family, given:a.given })
   if (m.issued) entry.issued = { 'date-parts':[m.issued.split('-').map(Number)] }

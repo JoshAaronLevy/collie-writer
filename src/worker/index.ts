@@ -56,6 +56,8 @@ async function receive(message: unknown): Promise<void> {
         case 'inspectionPage': value = await repository.inspectionPage(command.input); break
         case 'inspectionAsset': value = await repository.inspectionAsset(command.input); break
         case 'inspectionChange': value = await repository.inspectionChange(command.input); break
+        case 'citations': value = await repository.citations(command.input); break
+        case 'citationStyle': value = await repository.citationStyle(command.input); break
         case 'evidence': value = await repository.evidence(command.input); break
         case 'evidenceChange': value = await repository.evidenceChange(command.input); break
         case 'search': value = await repository.searchQuery(command.input); break

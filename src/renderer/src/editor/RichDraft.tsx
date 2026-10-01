@@ -4,7 +4,8 @@ import { setBlockType } from '@tiptap/pm/commands'
 import { wrapInList } from '@tiptap/pm/schema-list'
 import { undo, redo } from '@tiptap/pm/history'
 import { safeLink, type DocumentPayload } from '../../../domain/editor/schema'
-import { createManuscriptEditor } from './adapter'
+import ReferenceTools, { type ReferenceContext } from './ReferenceTools'
+import { createManuscriptEditor, editorIsComposing, focusedManuscriptEditor, refreshCitationLabels } from './adapter'
 
 type TableCellJson = { type: 'tableCell' | 'tableHeader'; attrs: { blockId: string }; content: { type: 'paragraph'; attrs: { blockId: string } }[] }
 type TableRowJson = { type: 'tableRow'; attrs: { blockId: string }; content: TableCellJson[] }
@@ -12,6 +13,7 @@ const newCell = (type: TableCellJson['type']): TableCellJson => ({ type, attrs: 
 
 type Props = {
   noteMode?: boolean
+  references?: ReferenceContext
   payload: DocumentPayload
   disabled: boolean
   onReady: (editor: Editor | null) => void
@@ -22,7 +24,9 @@ type Props = {
   importImage: () => void
 }
 
-export default function RichDraft({ payload, disabled, onReady, onChange, onIssue, onBlur, imageUrl, importImage, noteMode = false }: Props): React.JSX.Element {
+export default function RichDraft({ payload, disabled, onReady, onChange, onIssue, onBlur, imageUrl, importImage, noteMode = false, references }: Props): React.JSX.Element {
+  const referenceRef = useRef(references)
+  referenceRef.current = references
   const host = useRef<HTMLDivElement>(null)
   const findField = useRef<HTMLInputElement>(null)
   const editor = useRef<Editor | null>(null)
@@ -36,8 +40,9 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
   useEffect(() => {
     if (!host.current) return
     try {
-      const next = createManuscriptEditor({ element: host.current, payload, imageUrl, citationLabel: () => '[citation]', onChange: () => {
+      const next = createManuscriptEditor({ element: host.current, payload, imageUrl, projectId: references?.projectId, citationLabel: id => referenceRef.current?.labels.get(id) ?? '[citation]', onChange: () => {
         setRevision(value => value + 1); onChange()
+        if (editor.current) refreshCitationLabels(editor.current, new Map())
         if (countTimer.current) clearTimeout(countTimer.current)
         countTimer.current = setTimeout(() => { if (editor.current) setWords((editor.current.state.doc.textContent.match(/\S+/gu) ?? []).length) }, 450)
       }, onIssue })
@@ -48,14 +53,15 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
   useEffect(() => { editor.current?.setEditable(!disabled, false) }, [disabled])
   useEffect(() => window.collie.onEditorAction(action => {
     if (noteMode) return
-    const instance = editor.current
+    const instance = editor.current ? focusedManuscriptEditor(editor.current) : null
     if (!instance) return
     if (action === 'find') { findField.current?.focus(); return }
-    if (disabledRef.current) return
+    if (disabledRef.current || editorIsComposing(instance)) return
     if (action === 'undo') undo(instance.state, tr => instance.view.dispatch(tr))
     else if (action === 'redo') redo(instance.state, tr => instance.view.dispatch(tr))
-    else void pastePlain()
+    else void pastePlain(instance)
   }), [])
+  useEffect(() => { if (editor.current) refreshCitationLabels(editor.current, references?.labels ?? new Map()) }, [references?.labels])
   const current = editor.current
   function command(run: (editor: Editor) => void): void { if (editor.current && !disabled) { run(editor.current); editor.current.commands.focus(); setRevision(value => value + 1) } }
   function inCell(instance: Editor): boolean {
@@ -145,12 +151,12 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
     if (alt.length > 2000 || caption.length > 10000) { onIssue('Image description or caption is too long.'); return }
     command(e => { e.commands.updateAttributes('image', { alt, caption }) })
   }
-  async function pastePlain(): Promise<void> {
+  async function pastePlain(target?: Editor): Promise<void> {
     if (disabledRef.current) return
     const result = await window.collie.readPlainClipboard()
     if (!result.ok) { onIssue(result.error.message); return }
-    const instance = editor.current
-    if (!instance || !result.value) return
+    const instance = target ?? editor.current
+    if (!instance || instance.isDestroyed || !result.value) return
     instance.view.dispatch(instance.state.tr.insertText(result.value.replace(/\r\n?/g, '\n')))
     instance.commands.focus()
   }
@@ -176,6 +182,7 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
       <button type="button" disabled={disabled} onClick={() => command(e => { undo(e.state, tr => e.view.dispatch(tr)) })}>Undo</button>
       <button type="button" disabled={disabled} onClick={() => command(e => { redo(e.state, tr => e.view.dispatch(tr)) })}>Redo</button>
     </div>
+    {current && references ? <ReferenceTools editor={current} context={references} disabled={disabled} issue={onIssue} /> : null}
     <div ref={host} className="editor-host" onCompositionEnd={() => { setTimeout(onBlur, 0) }} onKeyDown={event => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); findField.current?.focus() }
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'v') {

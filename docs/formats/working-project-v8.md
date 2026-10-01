@@ -1,0 +1,11 @@
+# Working project schema 8
+
+Schema/minimum reader 8 extends [schema 7](working-project-v7.md). The editor AST and archive container remain version 1. Existing working copies migrate 7→8 through the existing retained backup/candidate/pointer flow. The original database and migration copies remain on failure. Earlier archives follow the registered local migration chain; selected archives are never migrated in place.
+
+`citation_settings` has at most one project-scoped row: `style` is `apa` or `chicago`, and `profile` is `csl-v1`. An absent row means APA with the same pinned profile. An intentional style change checks the expected project head, retains a manuscript checkpoint, advances the head and stores an idempotent domain receipt. The style setting travels with the project. Manuscript history restores manuscript content, not citation settings; switching the style selector reverses a style choice.
+
+`citation_occurrences` is a portable, derived projection with project/document/citation IDs, item index, source ID, optional author-footnote ID and the canonical citation-item JSON. One row represents one cluster item. It includes non-merged active, archived and trashed text sections; effective outline state controls inclusion in a preview. This is actual citation use, separate from source-section links or evidence associations. There is deliberately no source foreign key that would cascade away a broken citation. Source tombstones/aliases remain available for explicit repair.
+
+Document commits replace the document's occurrence rows inside the same SQLite transaction. Outline transforms and manuscript restores rebuild all occurrence rows inside their transaction. Migration derives them from existing ASTs. Snapshot validation compares every row with canonical documents; independent copies rekey both new tables. Current and historical AST/source referential validation remains in force, including refusal to silently discard unknown structures.
+
+AST 1 continues to store citation IDs/items in prose or author-note paragraphs, and author-note bodies in `footnotesById`. Numbers and formatted strings never enter canonical ASTs. The renderer temporarily embeds a note body in its reference atom for undo/copy and extracts it into the dictionary before commit. No new persisted editor version is introduced.

@@ -47,10 +47,10 @@ function runsFromHtml(html: string): Run[] {
 }
 
 /** Trusted, pinned resources only. User-imported CSL is deliberately not an input to this adapter. */
-export async function createCitationFormatter(resourceRoot: string, style: 'apa' | 'chicago', sources: readonly Record<string, unknown>[]): Promise<CitationFormatter> {
+export async function createCitationFormatter(resourceRoot: string, style: 'apa' | 'chicago', sources: readonly Record<string, unknown>[], retained?: { xml: string; locale: string }): Promise<CitationFormatter> {
   const styleFile = style === 'apa' ? 'apa.csl' : style === 'chicago' ? 'chicago-notes-bibliography.csl' : null
   if (!styleFile) throw new ContentError('UNSUPPORTED_STYLE', 'style')
-  const [xml, locale] = await Promise.all([readFile(join(resourceRoot, 'styles', styleFile), 'utf8'), readFile(join(resourceRoot, 'locales/locales-en-US.xml'), 'utf8')])
+  const [xml, locale] = retained ? [retained.xml, retained.locale] : await Promise.all([readFile(join(resourceRoot, 'styles', styleFile), 'utf8'), readFile(join(resourceRoot, 'locales/locales-en-US.xml'), 'utf8')])
   if ([xml, locale].some(s => s.length > 2_000_000 || /<!DOCTYPE|<!ENTITY/i.test(s))) throw new ContentError('INVALID_CSL_ASSET', 'style')
   const records = new Map<string, Record<string, unknown>>()
   if (sources.length > 100_000) throw new ContentError('TOO_MANY_SOURCES', 'sources')

@@ -1,3 +1,4 @@
+import { isCitationsView, type CitationsView } from '../shared/citations'
 import type { HistoryView } from '../shared/outline'
 import { isSourcesView, isSourcePreview, isSourceProgress, SOURCE_PROGRESS, type SourcesView, type SourceImportPreview, type SourcePick, type SourceExportReceipt } from '../shared/sources'
 import { isInspectionView, isInspectionPageText, isInspectionAsset, type InspectionView, type InspectionPageText, type InspectionAsset } from '../shared/inspection'
@@ -30,6 +31,8 @@ async function projectCall<T>(channel: string, validate: (value: unknown) => boo
 
 if (!process.contextIsolated || !process.sandboxed) throw new Error('Secure preload required')
 const api: CollieAPI = {
+  readCitations: input => projectCall<CitationsView>(PROJECT_CHANNELS.citations,isCitationsView,input),
+  changeCitationStyle: input => projectCall<CitationsView>(PROJECT_CHANNELS.citationStyle,isCitationsView,input),
   search: input => projectCall<SearchView>(PROJECT_CHANNELS.search,isSearchView,input),
   readSearchActivity: input => projectCall<SearchActivity>(PROJECT_CHANNELS.searchActivity,isSearchActivity,input),
   changeSearch: input => projectCall<SearchActivity>(PROJECT_CHANNELS.searchAction,isSearchActivity,input),

@@ -8,7 +8,7 @@ import { contained, syncDirectory, syncFile, writeJson } from '../storage/files'
 import { readPortableGraph, includesHeads, type PortableGraph } from './portable-db'
 import { requireSpace, fileHash, type Progress } from './streams'
 import { LIMITS, SnapshotError, cancelled, type SnapshotManifest } from './manifest'
-import { bundledCitationFiles } from './citation-assets'
+import { projectCitationFiles } from './citation-assets'
 import { leasedBlobFiles } from './blobs'
 import { writeArchive, extractArchive, type ArchiveFile } from './archive'
 
@@ -40,14 +40,14 @@ export async function captureDatabase(source: CaptureSource, target: string, min
 
 /** Streaming phase runs outside capture boundary; exact blob leases survive until completion. */
 export async function buildSnapshot(source: CaptureSource, capture: Capture, jobFolder: string, resources: string, parentSnapshotId: string | null, signal?: AbortSignal, progress?: Progress): Promise<SnapshotManifest> {
-  const citations = await bundledCitationFiles(resources, signal)
+  const citations = await projectCitationFiles(source.workspace, resources, signal)
   const files: ArchiveFile[] = [
     { name: 'project.sqlite', path: capture.database, ref: await fileHash(capture.database, LIMITS.database, signal) },
     ...await leasedBlobFiles(source.root, source.workspace, capture.graph.blobs, signal),
     ...citations.map(asset => ({ name: `citation-assets/${asset.ref.sha256}`, ...asset }))
   ]
   const manifest: SnapshotManifest = {
-    format: 'collie', formatVersion: 1, minimumReader: 7, schemaVersion: 7, editorVersion: 1,
+    format: 'collie', formatVersion: 1, minimumReader: 8, schemaVersion: 8, editorVersion: 1,
     projectId: capture.graph.projectId, snapshotId: randomUUID(), parentSnapshotId,
     headCommitId: capture.graph.headCommitId, createdAt: new Date().toISOString(),
     database: files[0].ref, blobs: capture.graph.blobs,

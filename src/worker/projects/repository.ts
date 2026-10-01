@@ -1,3 +1,6 @@
+import { readCitations, changeCitationStyle } from './citations'
+import type { CitationStyleInput, CitationsView } from '../../shared/citations'
+import { projectCitations } from './citation-occurrences'
 import { changeOutline, readHistory } from './outline'
 import { changeNote, mapDocumentAnnotations, readNotes, reconcileAnnotationAnchors } from './notes'
 import type { NoteChangeInput, NotesView } from '../../shared/notes'
@@ -82,6 +85,8 @@ async function selectedImage(path: string): Promise<Buffer> {
 }
 
 export class ProjectRepository {
+  citations(input:OpenInput):Promise<CitationsView>{return this.serial(async()=>{this.fileContext(input);return readCitations(this.active!.db,input,this.active!.workspace,this.resources)})}
+  citationStyle(input:CitationStyleInput):Promise<CitationsView>{return this.serial(async()=>{this.fileContext(input);if(this.fileBusy)throw new ProjectError('PROJECT_LOCKED');const owned=this.active!;changeCitationStyle(owned.db,input);await this.discovery(owned);return readCitations(owned.db,input,owned.workspace,this.resources)})}
   private searchScheduled = new WeakSet<Owned>()
   private searchOwner(input:OpenInput):Owned {const owned=this.active;if(!owned||owned.projectId!==input.projectId||owned.workspaceId!==input.workspaceId)throw new ProjectError('DENIED');return owned}
   private availableSearch(owned:Owned):LocalSearch {if(!owned.search)throw new ProjectError('UNAVAILABLE');return owned.search}
@@ -523,6 +528,7 @@ export class ProjectRepository {
       const previousPayload = readDocument(JSON.parse((owned.db.prepare('SELECT payload FROM documents WHERE project_id=? AND id=?').get(input.projectId,input.documentId) as { payload: string }).payload))
       mapDocumentAnnotations(owned.db,input.projectId,input.documentId,previousPayload,payload)
       updateDocumentAnchors(owned.db,input.projectId,input.documentId,payload)
+      projectCitations(owned.db,input.projectId,input.documentId,payload)
       reconcileAnnotationAnchors(owned.db,input.projectId)
       owned.db.prepare('UPDATE documents SET revision_id=?,payload=? WHERE project_id=? AND id=?').run(revisionId, JSON.stringify(payload), input.projectId, input.documentId)
       owned.db.prepare('INSERT INTO commits VALUES (?,?,?,?)').run(input.projectId, headCommitId, project.head_commit_id, time)

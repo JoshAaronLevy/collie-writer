@@ -1,3 +1,4 @@
+import { validatePortableCitations } from './citation-occurrences'
 import Database from 'better-sqlite3'
 import { isId, readDocument } from '../../domain/editor/schema'
 import { isProjectTemplate } from '../../domain/projects/templates'
@@ -83,6 +84,7 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
   if (version >= 5) try { validatePortableSources(db,projectId,assetIds) } catch { return invalid() }
   if (version >= 6) try { validatePortableInspection(db,projectId,assetIds) } catch { return invalid() }
   if (version >= 7) try { validatePortableEvidence(db,projectId) } catch { return invalid() }
+  if (version >= 8) try { validatePortableCitations(db,projectId) } catch { return invalid() }
   let commits = 0
   for (const raw of db.prepare('SELECT * FROM commits').iterate()) {
     const commit = raw as Record<string, unknown>

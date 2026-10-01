@@ -248,3 +248,16 @@ button {
 .search-filters label, .search-filters input, .search-filters select { display: block; box-sizing: border-box; width: 100%; }
 .search-panel li { margin-block: .7rem; overflow-wrap: anywhere; }
 .search-panel mark { background: #ffdf81; color: #1d2631; }
+
+.reference-tools, .citations-panel { margin-block: 1rem; padding: 1rem; border: 1px solid var(--color-border, #aaa); border-radius: .4rem; }
+.reference-tools button, .citations-panel button { margin: .25rem; }
+.citation-form label { display: block; margin-block: .5rem; }
+.citation-form input, .citation-form select { max-width: 100%; margin-inline-start: .4rem; }
+.citation-form li { margin-block: 1rem; padding: .5rem; border-bottom: 1px solid #aaa; }
+.footnote-editor { margin-block: 1rem; padding: 1rem; border-inline-start: 3px solid #62738c; }
+.footnote-editor .editor-host { min-height: 7rem; }
+.citation-note-preview p, .bibliography-preview p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.bibliography-preview.hanging p { padding-inline-start: 2rem; text-indent: -2rem; }
+[data-citation], [data-footnote] { background: #8297b222; cursor: pointer; }
+
+[data-citation][data-numbered-note] { vertical-align: super; font-size: .8em; }

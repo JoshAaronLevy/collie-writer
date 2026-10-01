@@ -68,3 +68,7 @@ The container remains version 1; current archives carry [working schema 6](worki
 ## Stage 13 compatibility extension
 
 The container remains version 1; new archives carry [working schema 7](working-project-v7.md), `minimumReader: 7` and editor schema 1. Older schema/minimum-reader combinations through 6 remain accepted for local copy migration. Schema 7 adds questions, claims, human evidence links, per-question source decisions and prior revisions. Independent copies re-scope these SQL tables; revision snapshots contain no project ID. The Stage 12 paragraph above describes the prior archive revision. No native archive or restore result is claimed.
+
+## Stage 15 citation integrity addendum
+
+The container remains version 1; new archives carry [working schema 8](working-project-v8.md), `minimumReader: 8` and editor schema 1. Older supported combinations through schema 7 remain accepted for local retained-copy migration. Citation settings and actual cluster-item projections are portable and re-scoped on independent copy. Snapshot validation compares projections against canonical prose and authored-note bodies. Existing exact citation asset hashes/notices remain the supported profile; preview and Save reuse the workspace's retained style/locale bytes. A corrupt retained profile is an explicit error, never a silent update or network fetch. All native migration/archive/restore and style-fidelity acceptance remains pending.

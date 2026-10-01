@@ -3,10 +3,11 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { backupStorageDatabase, inWriteTransaction, openStorageDatabase } from './driver'
-import { PROJECT_SCHEMA_VERSION, assetTable, outlineTables, noteTables, sourceTables, inspectionTables, evidenceTables, inspectVersion, validateProjectSchema } from './schema'
+import { PROJECT_SCHEMA_VERSION, assetTable, outlineTables, noteTables, sourceTables, inspectionTables, evidenceTables, citationTables, inspectVersion, validateProjectSchema } from './schema'
 import { contained, directory, syncFile, syncDirectory, writeJson } from './files'
 import { ProjectError } from '../../domain/projects/errors'
 
+import { rebuildCitations } from '../projects/citation-occurrences'
 import { seedOutline, manuscript } from '../projects/manuscript'
 
 type Migration = { from: number; to: number; validateSource: (db: Database.Database) => void; apply: (db: Database.Database) => void }
@@ -50,6 +51,14 @@ const migrations: readonly Migration[] = [{
   apply: db => {
     for (const sql of evidenceTables) db.exec(sql)
     db.prepare('UPDATE format SET schema_version=7,minimum_reader=7').run()
+  }
+}, {
+  from: 7, to: 8,
+  validateSource: db => validateProjectSchema(db, 7),
+  apply: db => {
+    for (const sql of citationTables) db.exec(sql)
+    for (const p of db.prepare('SELECT id FROM projects').all() as { id: string }[]) rebuildCitations(db,p.id)
+    db.prepare('UPDATE format SET schema_version=8,minimum_reader=8').run()
   }
 }]
 
