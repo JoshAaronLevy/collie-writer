@@ -13,13 +13,14 @@ export type CompileInput = {
   capturedHead: string
   style: 'apa' | 'chicago'
   paper: 'Letter' | 'A4'
-  sections: { documentId: string; title: string; includeTitle: boolean; pageBreakBefore: boolean; payload: DocumentPayload }[]
+  sections: { documentId: string; title: string; includeTitle: boolean; pageBreakBefore: boolean; payload: DocumentPayload; headings?: { id: string; title: string; level: 1 | 2 }[]; titleLevel?: 1 | 2 | 3 }[]
 }
 export type Compilation = {
-  version: 1; capturedHead: string; style: 'apa' | 'chicago'; paper: 'Letter' | 'A4'
+  version: 2; capturedHead: string; style: 'apa' | 'chicago'; paper: 'Letter' | 'A4'
   sections: { documentId: string; blocks: CompileBlock[] }[]
   footnotes: { number: number; originId: string; paragraphs: Paragraph[] }[]
   bibliography: CitationOutput
+  sourceMap: { documentId: string; blockId: string; kind: CompileBlock['kind'] | 'footnote' }[]
 }
 export type Frozen<T> = T extends readonly (infer U)[] ? readonly Frozen<U>[] : T extends object ? { readonly [K in keyof T]: Frozen<T[K]> } : T
 function freeze<T>(value: T): Frozen<T> {
@@ -37,6 +38,7 @@ export function compileManuscript(input: CompileInput, format: CitationFormatter
   const pendingCitations = new WeakMap<Run, string>()
   const footnotes: Compilation['footnotes'] = []
   const identities = new Set<string>()
+  const originDocuments = new Map<string,string>()
   const claim = (id: string): void => {
     if (identities.has(id)) throw new ContentError('DUPLICATE_ID', id)
     identities.add(id)
@@ -49,7 +51,7 @@ export function compileManuscript(input: CompileInput, format: CitationFormatter
     const visitIds = (value: unknown): void => {
       if (!value || typeof value !== 'object') return
       for (const [key, child] of Object.entries(value)) {
-        if (['blockId', 'citationId', 'footnoteId'].includes(key)) claim(child as string)
+        if (['blockId', 'citationId', 'footnoteId'].includes(key)) { claim(child as string); originDocuments.set(child as string,section.documentId) }
         else visitIds(child)
       }
     }
@@ -94,7 +96,11 @@ export function compileManuscript(input: CompileInput, format: CitationFormatter
     }
     const blocks: CompileBlock[] = []
     if (section.pageBreakBefore) blocks.push({ kind: 'pageBreak', blockId: section.documentId })
-    if (section.includeTitle) blocks.push({ kind: 'paragraph', blockId: section.documentId, style: 'heading1', runs: [{ kind: 'text', text: section.title, marks: [] }] })
+    for (const heading of section.headings ?? []) {
+      if (!isId(heading.id) || typeof heading.title !== 'string' || heading.title.length > 500 || ![1,2].includes(heading.level)) throw new ContentError('INVALID_SECTION', 'heading')
+      blocks.push({ kind: 'paragraph', blockId: heading.id, style: heading.level === 1 ? 'heading1' : 'heading2', runs: [{ kind: 'text', text: heading.title, marks: [] }] })
+    }
+    if (section.includeTitle) blocks.push({ kind: 'paragraph', blockId: section.documentId, style: section.titleLevel === 3 ? 'heading3' : section.titleLevel === 2 ? 'heading2' : 'heading1', runs: [{ kind: 'text', text: section.title, marks: [] }] })
     blocks.push(...payload.ast.content.flatMap(block))
     return { documentId: section.documentId, blocks }
   })
@@ -115,5 +121,11 @@ export function compileManuscript(input: CompileInput, format: CitationFormatter
   }
   footnotes.forEach(note => note.paragraphs.forEach(resolveParagraph))
   footnotes.sort((a, b) => a.number - b.number)
-  return freeze({ version: 1, capturedHead: input.capturedHead, style: input.style, paper: input.paper, sections, footnotes, bibliography })
+  const sourceMap: Compilation['sourceMap'] = []
+  for (const section of sections) for (const block of section.blocks) {
+    sourceMap.push({ documentId: section.documentId, blockId: block.blockId, kind: block.kind })
+    if (block.kind === 'table') for (const paragraph of block.rows.flat(2)) sourceMap.push({ documentId: section.documentId, blockId: paragraph.blockId, kind: 'paragraph' })
+  }
+  for (const note of footnotes) { const documentId=originDocuments.get(note.originId); if(documentId) sourceMap.push({ documentId, blockId: note.originId, kind: 'footnote' }) }
+  return freeze({ version: 2, capturedHead: input.capturedHead, style: input.style, paper: input.paper, sections, footnotes, bibliography, sourceMap })
 }

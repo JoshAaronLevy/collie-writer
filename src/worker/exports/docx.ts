@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   AlignmentType, BorderStyle, Document, ExternalHyperlink, Footer, FootnoteReferenceRun,
-  ImageRun, LevelFormat, Packer, PageBreak, PageNumber, Paragraph, Table, TableCell,
+  ImageRun, LevelFormat, Packer, PageBreak, PageNumber, Paragraph, SectionType, Table, TableCell,
   TableRow, TextRun, WidthType, type ParagraphChild, type INumberingOptions
 } from 'docx'
 import type { Compilation, CompileBlock, Frozen, Paragraph as CompileParagraph, Run } from '../../domain/compilation/model'
@@ -63,7 +63,12 @@ export async function exportDocx(model: Frozen<Compilation>, resourceRoot: strin
       }
     }
   }
-  const children = model.sections.flatMap(section => section.blocks.flatMap(block))
+  const sections = model.sections.map((section, index) => ({
+    properties: { type: index ? SectionType.NEXT_PAGE : undefined, page: { size: model.paper === 'Letter' ? { width: 12240, height: 15840 } : { width: 11906, height: 16838 }, margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } } },
+    footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ children: [PageNumber.CURRENT] })] })] }) },
+    children: section.blocks.filter((item, position) => !(index && position === 0 && item.kind === 'pageBreak' && item.blockId === section.documentId)).flatMap(block)
+  }))
+  const children = sections.at(-1)!.children
   if (model.bibliography.bibliography.length) {
     children.push(new Paragraph({ style: 'heading1', text: model.style === 'apa' ? 'References' : 'Bibliography', pageBreakBefore: true }))
     model.bibliography.bibliography.forEach((entry, index) => children.push(paragraph({ kind: 'paragraph', blockId: `bibliography-${index}`, runs: entry, style: 'bibliography' })))
@@ -84,11 +89,7 @@ export async function exportDocx(model: Frozen<Compilation>, resourceRoot: strin
     },
     numbering: { config: [...numbering.values()] },
     footnotes: Object.fromEntries(model.footnotes.map(note => [note.number, { children: note.paragraphs.map((p, index) => paragraph(p, true, index === 0)) }])),
-    sections: [{
-      properties: { page: { size: model.paper === 'Letter' ? { width: 12240, height: 15840 } : { width: 11906, height: 16838 }, margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } } },
-      footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ children: [PageNumber.CURRENT] })] })] }) },
-      children
-    }]
+    sections
   })
   return Packer.toBuffer(doc)
 }

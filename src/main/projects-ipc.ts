@@ -5,6 +5,8 @@ import { isRenameInput, isArchiveInput, isResetInput } from '../shared/project-l
 import { BrowserWindow, clipboard, dialog, ipcMain, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
+import { exportFingerprint } from '../domain/projects/export-path'
+import { projectError } from '../domain/projects/errors'
 import { isTrustedSender } from './ipc'
 import { isInfoRequest } from '../shared/schemas'
 import { isId } from '../domain/editor/schema'
@@ -14,6 +16,7 @@ import { isInspectionScope, isInspectionPageInput, isInspectionAssetInput, isIns
 import { isEvidenceChangeInput } from '../shared/evidence'
 import { isSearchInput, isSearchActionInput } from '../shared/search'
 import { isProjectValue } from '../shared/projects'
+import { isExportOptions, isExportStart, isExportJobInput } from '../shared/exports'
 import type { SourceAssets } from './source-assets'
 import type { WorkingLocation } from './paths/working-root'
 import type { StorageWorker } from './storage-worker'
@@ -48,6 +51,28 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
         return { ok: true, requestId, value: text }
       }
       if (!location.path()) return projectFailure(requestId, 'STORAGE_LOCATION_REQUIRED')
+      if(kind==='exportStart'){
+        if(!exact(value,['requestId','input'])||!isExportStart(value.input))return projectFailure(requestId,'VALIDATION')
+        const window=BrowserWindow.fromWebContents(event.sender)
+        if(!window)return projectFailure(requestId,'DENIED')
+        const input=value.input
+        try{
+          const answer=await dialog.showSaveDialog(window,{title:'Export manuscript as DOCX',defaultPath:'Collie Writer manuscript.docx',filters:[{name:'Word document',extensions:['docx']}],properties:['createDirectory','showOverwriteConfirmation','dontAddToRecent']})
+          if(answer.canceled||!answer.filePath)return projectFailure(requestId,'CANCELLED')
+          if(window.isDestroyed()||!isTrustedSender(event,owner(),devOrigin))return projectFailure(requestId,'DENIED')
+          const destinationPath=answer.filePath
+          if(destinationPath.length>4096||!/\.docx$/i.test(destinationPath))return projectFailure(requestId,'VALIDATION')
+          const before=await exportFingerprint(destinationPath)
+          if(before){
+            const decision=await dialog.showMessageBox(window,{type:'warning',title:'Replace DOCX?',message:'Replace the selected DOCX?',detail:`${destinationPath}\n\nCollie Writer will retain the previous file beside it.`,buttons:['Cancel','Replace inspected DOCX'],defaultId:0,cancelId:0,noLink:true})
+            if(decision.response!==1)return projectFailure(requestId,'CANCELLED')
+          }
+          if(window.isDestroyed()||!isTrustedSender(event,owner(),devOrigin))return projectFailure(requestId,'DENIED')
+          const after=await exportFingerprint(destinationPath)
+          if(JSON.stringify(before)!==JSON.stringify(after))return projectFailure(requestId,'EXTERNAL_CHANGE')
+          return storage.request(requestId,{kind:'exportStart',input:{...input,destinationPath,destinationFingerprint:after}})
+        }catch(error){return projectFailure(requestId,projectError(error))}
+      }
       if (kind === 'pickImage') {
         if (!exact(value, ['requestId','input']) || !isOpenInput(value.input) || !event.senderFrame) return projectFailure(requestId, 'VALIDATION')
         const window = BrowserWindow.fromWebContents(event.sender)
@@ -95,6 +120,8 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
       }
       let command: ProjectCommand
       if ((kind === 'list' || kind === 'data' || kind === 'cleanup') && isInfoRequest(value)) command = { kind }
+      else if(exact(value,['requestId','input']) && kind==='exportPreview' && isExportOptions(value.input))command={kind,input:value.input}
+      else if(exact(value,['requestId','input']) && (kind==='exportStatus'||kind==='exportCancel') && isExportJobInput(value.input))command={kind,input:value.input}
       else if (exact(value,['requestId','input']) && kind==='citations' && isOpenInput(value.input)) command={kind,input:value.input}
       else if (exact(value,['requestId','input']) && kind==='citationStyle' && isCitationStyleInput(value.input)) command={kind,input:value.input}
       else if (exact(value, ['requestId', 'input']) && kind === 'outline' && isOutlineInput(value.input)) command = { kind, input: value.input }

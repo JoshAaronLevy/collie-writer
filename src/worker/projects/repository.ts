@@ -35,6 +35,9 @@ import { readEvidence, changeEvidence } from './evidence'
 import type { EvidenceChangeInput, EvidenceView } from '../../shared/evidence'
 import { LocalSearch } from './search'
 import type { SearchInput, SearchActionInput, SearchView, SearchActivity } from '../../shared/search'
+import { prepareExport } from '../exports/prepare'
+import { ExportJobs } from '../exports/jobs'
+import type { ExportOptions, ExportPreview, ExportJob, ExportJobInput, WorkerExportStart } from '../../shared/exports'
 
 const catalogSchema = [
   'CREATE TABLE creation_intents (operation_id TEXT PRIMARY KEY, digest TEXT NOT NULL, project_id TEXT NOT NULL UNIQUE, workspace_id TEXT NOT NULL UNIQUE) STRICT',
@@ -85,6 +88,11 @@ async function selectedImage(path: string): Promise<Buffer> {
 }
 
 export class ProjectRepository {
+  private readonly exports: ExportJobs
+  exportPreview(input:ExportOptions):Promise<ExportPreview>{return this.serial(async()=>{this.fileContext(input);return (await prepareExport(this.active!.db,this.active!.workspace,this.resources,input)).preview})}
+  exportStart(input:WorkerExportStart):Promise<ExportJob>{return this.serial(async()=>{this.fileContext(input);const owned=this.active!,prepared=await prepareExport(owned.db,owned.workspace,this.resources,input);return this.exports.start(owned.workspace,input,prepared)})}
+  exportStatus(input:ExportJobInput):Promise<ExportJob>{return this.serial(async()=>{this.fileContext(input);return this.exports.status(this.active!.workspace,input.jobId)})}
+  exportCancel(input:ExportJobInput):Promise<ExportJob>{return this.serial(async()=>{this.fileContext(input);return this.exports.cancel(this.active!.workspace,input.jobId)})}
   citations(input:OpenInput):Promise<CitationsView>{return this.serial(async()=>{this.fileContext(input);return readCitations(this.active!.db,input,this.active!.workspace,this.resources)})}
   citationStyle(input:CitationStyleInput):Promise<CitationsView>{return this.serial(async()=>{this.fileContext(input);if(this.fileBusy)throw new ProjectError('PROJECT_LOCKED');const owned=this.active!;changeCitationStyle(owned.db,input);await this.discovery(owned);return readCitations(owned.db,input,owned.workspace,this.resources)})}
   private searchScheduled = new WeakSet<Owned>()
@@ -126,7 +134,7 @@ export class ProjectRepository {
   sourceAttach(input: WorkerSourceAttachment,progress?:(transferred:number,total:number)=>void): Promise<SourcesView> { return this.serial(async()=>{this.fileContext(input);if(this.fileBusy)throw new ProjectError('PROJECT_LOCKED');const owned=this.active!,view=await attachSourceFile({root:this.root,workspace:owned.workspace,projectId:input.projectId,db:owned.db},input,progress);await this.discovery(owned);return view}) }
   sourceExport(input: WorkerSourceExport): Promise<SourceExportReceipt> { return this.serial(async()=>{this.fileContext(input);const owned=this.active!;return exportSources({root:this.root,workspace:owned.workspace,projectId:input.projectId,db:owned.db},input)}) }
   sourceExportAttachment(input: WorkerSourceAttachmentExport): Promise<SourceExportReceipt> { return this.serial(async()=>{this.fileContext(input);const owned=this.active!;return exportSourceAttachment({root:this.root,workspace:owned.workspace,projectId:input.projectId,db:owned.db},input.attachmentId,input.destinationPath)}) }
-  constructor(private readonly root: string, private readonly resources: string, private readonly nativeBinding?: string) {}
+  constructor(private readonly root: string, private readonly resources: string, private readonly nativeBinding?: string) { this.exports=new ExportJobs(root,resources) }
   private serial<T>(work: () => Promise<T>): Promise<T> {
     const task = this.boundary.then(work)
     this.boundary = task.catch(() => {})
@@ -331,6 +339,7 @@ export class ProjectRepository {
   async close(): Promise<void> {
     await this.active?.snapshots?.stop()
     await this.boundary
+    await this.exports.stop()
     if (this.active) { this.release(this.active); this.active = undefined }
     if (this.catalog?.open) this.catalog.close()
   }

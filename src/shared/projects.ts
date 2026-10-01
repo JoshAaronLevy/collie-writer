@@ -8,8 +8,10 @@ import { isSourceChangeInput, isSourcePreviewInput, isSourceImportInput, isSourc
 import { isInspectionScope, isInspectionPageInput, isInspectionAssetInput, isInspectionChangeInput, isInspectionView, isInspectionPageText, type InspectionScope, type InspectionPageInput, type InspectionAssetInput, type InspectionChangeInput, type InspectionView, type InspectionPageText, type InspectionAsset, type WorkerInspectionAsset } from './inspection'
 import { isEvidenceChangeInput, isEvidenceView, type EvidenceChangeInput, type EvidenceView } from './evidence'
 import { isSearchActionInput, isSearchInput, isSearchView, isSearchActivity, type SearchInput, type SearchActionInput, type SearchView, type SearchActivity } from './search'
+import { isExportOptions, isWorkerExportStart, isExportJobInput, isExportPreview, isExportJob, type ExportOptions, type ExportStartInput, type WorkerExportStart, type ExportJobInput, type ExportPreview, type ExportJob } from './exports'
 
 export const PROJECT_CHANNELS = {
+  exportPreview: 'export.docx.preview', exportStart: 'export.docx.start', exportStatus: 'export.docx.status', exportCancel: 'export.docx.cancel',
   citations: 'citations.read', citationStyle: 'citations.style',
   outline: 'outline.change', history: 'history.read', notes: 'notes.read', noteChange: 'notes.change',
   location: 'projects.location', chooseLocation: 'projects.chooseLocation',
@@ -60,10 +62,14 @@ export type WorkerImageImport = OpenInput & { operationId: string; sourcePath: s
 export type ImageReadInput = OpenInput & { assetId: string }
 export type ImageAsset = { assetId: string; mediaType: 'image/png' | 'image/jpeg'; width: number; height: number }
 export type ImageData = { mediaType: ImageAsset['mediaType']; base64: string }
-export type ProjectCommand = { kind: 'citationStyle'; input: CitationStyleInput } | { kind: 'notes' | 'sources' | 'evidence' | 'searchActivity' | 'citations'; input: OpenInput } | { kind: 'search'; input: SearchInput } | { kind: 'searchAction'; input: SearchActionInput } | { kind: 'evidenceChange'; input: EvidenceChangeInput } | { kind: 'inspection'; input: InspectionScope } | { kind: 'inspectionPage'; input: InspectionPageInput } | { kind: 'inspectionAsset'; input: InspectionAssetInput } | { kind: 'inspectionChange'; input: InspectionChangeInput } | { kind: 'noteChange'; input: NoteChangeInput } | { kind: 'sourceChange'; input: SourceChangeInput } | { kind: 'sourcePreview'; input: WorkerSourcePreview } | { kind: 'sourceImport'; input: WorkerSourceImport } | { kind: 'sourceAttach'; input: WorkerSourceAttachment } | { kind: 'sourceExport'; input: WorkerSourceExport } | { kind: 'sourceExportAttachment'; input: WorkerSourceAttachmentExport } | { kind: 'outline'; input: OutlineInput } | { kind: 'history'; input: HistoryInput } | { kind: 'rename'; input: RenameInput } | { kind: 'archive'; input: ArchiveInput } | { kind: 'data' | 'cleanup' } | { kind: 'reset'; input: ResetInput } | { kind: 'recoverReset'; input: string } | { kind: 'list' } | { kind: 'create'; input: CreateInput } | { kind: 'open'; input: OpenInput } | { kind: 'section'; input: SectionInput } | { kind: 'meta'; input: SectionMetaInput } | { kind: 'commit'; input: CommitInput } | { kind: 'importImage'; input: WorkerImageImport } | { kind: 'readImage'; input: ImageReadInput }
+export type ProjectCommand = { kind: 'exportPreview'; input: ExportOptions } | { kind: 'exportStart'; input: WorkerExportStart } | { kind: 'exportStatus' | 'exportCancel'; input: ExportJobInput } | { kind: 'citationStyle'; input: CitationStyleInput } | { kind: 'notes' | 'sources' | 'evidence' | 'searchActivity' | 'citations'; input: OpenInput } | { kind: 'search'; input: SearchInput } | { kind: 'searchAction'; input: SearchActionInput } | { kind: 'evidenceChange'; input: EvidenceChangeInput } | { kind: 'inspection'; input: InspectionScope } | { kind: 'inspectionPage'; input: InspectionPageInput } | { kind: 'inspectionAsset'; input: InspectionAssetInput } | { kind: 'inspectionChange'; input: InspectionChangeInput } | { kind: 'noteChange'; input: NoteChangeInput } | { kind: 'sourceChange'; input: SourceChangeInput } | { kind: 'sourcePreview'; input: WorkerSourcePreview } | { kind: 'sourceImport'; input: WorkerSourceImport } | { kind: 'sourceAttach'; input: WorkerSourceAttachment } | { kind: 'sourceExport'; input: WorkerSourceExport } | { kind: 'sourceExportAttachment'; input: WorkerSourceAttachmentExport } | { kind: 'outline'; input: OutlineInput } | { kind: 'history'; input: HistoryInput } | { kind: 'rename'; input: RenameInput } | { kind: 'archive'; input: ArchiveInput } | { kind: 'data' | 'cleanup' } | { kind: 'reset'; input: ResetInput } | { kind: 'recoverReset'; input: string } | { kind: 'list' } | { kind: 'create'; input: CreateInput } | { kind: 'open'; input: OpenInput } | { kind: 'section'; input: SectionInput } | { kind: 'meta'; input: SectionMetaInput } | { kind: 'commit'; input: CommitInput } | { kind: 'importImage'; input: WorkerImageImport } | { kind: 'readImage'; input: ImageReadInput }
 export type ProjectValue = CitationsView | ProjectList | OpenProject | CommitReceipt | DataLocations | ImageAsset | ImageData | HistoryView | NotesView
-  | SourcesView | SourceImportPreview | SourceExportReceipt | InspectionView | InspectionPageText | WorkerInspectionAsset | EvidenceView | SearchView | SearchActivity
+  | SourcesView | SourceImportPreview | SourceExportReceipt | InspectionView | InspectionPageText | WorkerInspectionAsset | EvidenceView | SearchView | SearchActivity | ExportPreview | ExportJob
 export type ProjectAPI = {
+  previewDocx: (input: ExportOptions) => Promise<ProjectResult<ExportPreview>>
+  startDocx: (input: ExportStartInput) => Promise<ProjectResult<ExportJob>>
+  docxStatus: (input: ExportJobInput) => Promise<ProjectResult<ExportJob>>
+  cancelDocx: (input: ExportJobInput) => Promise<ProjectResult<ExportJob>>
   readCitations: (input: OpenInput) => Promise<ProjectResult<CitationsView>>
   changeCitationStyle: (input: CitationStyleInput) => Promise<ProjectResult<CitationsView>>
   search: (input: SearchInput) => Promise<ProjectResult<SearchView>>
@@ -126,6 +132,9 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (!record(v)) return false
   if (['list','data','cleanup'].includes(String(v.kind))) return exact(v, ['kind'])
   if (!exact(v, ['kind', 'input'])) return false
+  if (v.kind === 'exportPreview') return isExportOptions(v.input)
+  if (v.kind === 'exportStart') return isWorkerExportStart(v.input)
+  if (v.kind === 'exportStatus' || v.kind === 'exportCancel') return isExportJobInput(v.input)
   if (v.kind === 'citations') return isOpenInput(v.input)
   if (v.kind === 'citationStyle') return isCitationStyleInput(v.input)
   if (v.kind === 'outline') return isOutlineInput(v.input)
@@ -159,6 +168,8 @@ function summary(v: unknown): v is ProjectSummary {
   return record(v) && [v.projectId, v.workspaceId, v.headCommitId].every(isId) && typeof v.archived === 'boolean' && typeof v.title === 'string' && v.title.length <= 500 && typeof v.updatedAt === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v.updatedAt) && (v.destination === null || isDestination(v.destination))
 }
 export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is ProjectValue {
+  if(kind==='exportPreview')return isExportPreview(v)
+  if(kind==='exportStart'||kind==='exportStatus'||kind==='exportCancel')return isExportJob(v)
   if (kind === 'citations' || kind === 'citationStyle') return isCitationsView(v)
   if (!record(v)) return false
   if (kind === 'history') return isHistoryView(v)

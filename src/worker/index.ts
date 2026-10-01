@@ -45,6 +45,10 @@ async function receive(message: unknown): Promise<void> {
       if (command.kind === 'open' || command.kind === 'create') files?.beforeProjectChange()
       let value: ProjectValue
       switch (command.kind) {
+        case 'exportPreview': value = await repository.exportPreview(command.input); break
+        case 'exportStart': value = await repository.exportStart(command.input); break
+        case 'exportStatus': value = await repository.exportStatus(command.input); break
+        case 'exportCancel': value = await repository.exportCancel(command.input); break
         case 'list': value = await repository.list(); break
         case 'create': value = await repository.create(command.input); break
         case 'open': value = await repository.open(command.input); break
