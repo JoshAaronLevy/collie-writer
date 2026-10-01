@@ -6,6 +6,7 @@ import { manuscript, readCheckpoint, historyStorage } from './manuscript'
 import { validatePortableNotes } from './notes'
 import { validatePortableSources } from './sources'
 import { validatePortableInspection } from './inspection'
+import { validatePortableEvidence } from './evidence'
 import { inspectVersion, validateProjectSchema } from '../storage/schema'
 import { isHash, isUtc, LIMITS, SnapshotError, type BlobRef } from './manifest'
 
@@ -81,6 +82,7 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
   if (version >= 4) try { validatePortableNotes(db,projectId) } catch { return invalid() }
   if (version >= 5) try { validatePortableSources(db,projectId,assetIds) } catch { return invalid() }
   if (version >= 6) try { validatePortableInspection(db,projectId,assetIds) } catch { return invalid() }
+  if (version >= 7) try { validatePortableEvidence(db,projectId) } catch { return invalid() }
   let commits = 0
   for (const raw of db.prepare('SELECT * FROM commits').iterate()) {
     const commit = raw as Record<string, unknown>

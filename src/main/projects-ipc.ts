@@ -10,6 +10,7 @@ import { isId } from '../domain/editor/schema'
 import { DIRTY_CHANGED, PROJECT_CHANNELS, exact, record, isCreateInput, isOpenInput, isSectionInput, isSectionMetaInput, isCommitInput, isImageImportInput, isImageReadInput, projectFailure, type OpenInput, type ProjectCommand } from '../shared/projects'
 import { isSourceChangeInput, isSourcePreviewInput, isSourceImportInput, isSourceAttachmentInput, isSourceExportInput, isSourceAttachmentExportInput, SOURCE_PROGRESS, type BibliographyFormat } from '../shared/sources'
 import { isInspectionScope, isInspectionPageInput, isInspectionAssetInput, isInspectionChangeInput, type WorkerInspectionAsset } from '../shared/inspection'
+import { isEvidenceChangeInput } from '../shared/evidence'
 import { isProjectValue } from '../shared/projects'
 import type { SourceAssets } from './source-assets'
 import type { WorkingLocation } from './paths/working-root'
@@ -100,6 +101,8 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
       else if (exact(value,['requestId','input']) && kind==='inspectionPage' && isInspectionPageInput(value.input)) command={kind,input:value.input}
       else if (exact(value,['requestId','input']) && kind==='inspectionAsset' && isInspectionAssetInput(value.input)) command={kind,input:value.input}
       else if (exact(value,['requestId','input']) && kind==='inspectionChange' && isInspectionChangeInput(value.input)) command={kind,input:value.input}
+      else if (exact(value,['requestId','input']) && kind==='evidence' && isOpenInput(value.input)) command={kind,input:value.input}
+      else if (exact(value,['requestId','input']) && kind==='evidenceChange' && isEvidenceChangeInput(value.input)) command={kind,input:value.input}
       else if (exact(value,['requestId','input']) && kind==='sourceChange' && isSourceChangeInput(value.input)) command={kind,input:value.input}
       else if (exact(value,['requestId','input']) && kind==='sourcePreview' && isSourcePreviewInput(value.input)) {
         const input=value.input,g=sourceGrants.get(input.token)

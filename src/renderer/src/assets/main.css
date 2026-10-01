@@ -235,3 +235,11 @@ button {
 .source-inspector code { overflow-wrap: anywhere; }
 .inspected-pdf-canvas { display: block; max-width: 100%; height: auto; margin-block: .75rem; border: 1px solid #b7c2b6; background: #fff; }
 .manual-transcription { border: 1px solid #b7c2b6; padding: .7rem; margin-block: .7rem; }
+.evidence-panel { border-top: 2px solid #80909e; margin-top: 1.5rem; padding-top: 1rem; }
+.evidence-panel label { display: block; margin-block: .5rem; }
+.evidence-panel textarea, .evidence-panel select { display: block; box-sizing: border-box; max-width: 100%; width: 100%; }
+.evidence-panel li { margin-block: .5rem; overflow-wrap: anywhere; }
+.evidence-columns { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit,minmax(min(100%,22rem),1fr)); }
+.evidence-link-form { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit,minmax(min(100%,14rem),1fr)); align-items: end; }
+.evidence-link { border: 1px solid #b7c2b6; border-radius: .4rem; padding: .75rem; }
+.evidence-link blockquote { border-left: 3px solid #80909e; padding-left: .7rem; white-space: pre-wrap; }

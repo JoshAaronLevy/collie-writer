@@ -64,3 +64,7 @@ Archive container 1 now carries [working schema 3](working-project-v3.md), `mini
 ## Stage 12 compatibility extension
 
 The container remains version 1; current archives carry [working schema 6](working-project-v6.md), `minimumReader: 6` and editor schema 1. The older schema/minimum-reader combinations remain supported for local copy migration. Schema 4 added independent notes and annotations; schema 5 added canonical sources, retained import records and managed attachments; schema 6 adds source versions, page extraction coverage and excerpts. Every retained version's managed blob remains in the archive inventory even if its active attachment link has been removed. Independent copies re-scope the new tables. Earlier schema-2-only descriptions above are historical. No native archive or restore result is claimed.
+
+## Stage 13 compatibility extension
+
+The container remains version 1; new archives carry [working schema 7](working-project-v7.md), `minimumReader: 7` and editor schema 1. Older schema/minimum-reader combinations through 6 remain accepted for local copy migration. Schema 7 adds questions, claims, human evidence links, per-question source decisions and prior revisions. Independent copies re-scope these SQL tables; revision snapshots contain no project ID. The Stage 12 paragraph above describes the prior archive revision. No native archive or restore result is claimed.

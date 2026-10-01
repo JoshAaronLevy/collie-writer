@@ -28,6 +28,8 @@ import { readSources, changeSource, previewImport, commitImport, attachSourceFil
 import type { SourceChangeInput, SourcesView, SourceImportPreview, SourceExportReceipt, WorkerSourcePreview, WorkerSourceImport, WorkerSourceAttachment, WorkerSourceExport, WorkerSourceAttachmentExport } from '../../shared/sources'
 import { readInspection, readInspectionPage, inspectionAsset, changeInspection } from './inspection'
 import type { InspectionScope, InspectionPageInput, InspectionAssetInput, InspectionChangeInput, InspectionView, InspectionPageText, WorkerInspectionAsset } from '../../shared/inspection'
+import { readEvidence, changeEvidence } from './evidence'
+import type { EvidenceChangeInput, EvidenceView } from '../../shared/evidence'
 
 const catalogSchema = [
   'CREATE TABLE creation_intents (operation_id TEXT PRIMARY KEY, digest TEXT NOT NULL, project_id TEXT NOT NULL UNIQUE, workspace_id TEXT NOT NULL UNIQUE) STRICT',
@@ -78,6 +80,8 @@ async function selectedImage(path: string): Promise<Buffer> {
 }
 
 export class ProjectRepository {
+  evidence(input:OpenInput):Promise<EvidenceView>{return this.serial(async()=>{this.fileContext(input);return readEvidence(this.active!.db,input)})}
+  evidenceChange(input:EvidenceChangeInput):Promise<EvidenceView>{return this.serial(async()=>{this.fileContext(input);if(this.fileBusy)throw new ProjectError('PROJECT_LOCKED');const owned=this.active!,view=changeEvidence(owned.db,input);await this.discovery(owned);return view})}
   inspection(input:InspectionScope):Promise<InspectionView>{return this.serial(async()=>{this.fileContext(input);return readInspection(this.active!.db,input)})}
   inspectionPage(input:InspectionPageInput):Promise<InspectionPageText>{return this.serial(async()=>{this.fileContext(input);return readInspectionPage(this.active!.db,input)})}
   inspectionAsset(input:InspectionAssetInput):Promise<WorkerInspectionAsset>{return this.serial(async()=>{this.fileContext(input);const owned=this.active!;return inspectionAsset({root:this.root,workspace:owned.workspace,projectId:input.projectId,db:owned.db},input)})}

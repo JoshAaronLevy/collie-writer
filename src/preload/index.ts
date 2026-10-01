@@ -1,6 +1,7 @@
 import type { HistoryView } from '../shared/outline'
 import { isSourcesView, isSourcePreview, isSourceProgress, SOURCE_PROGRESS, type SourcesView, type SourceImportPreview, type SourcePick, type SourceExportReceipt } from '../shared/sources'
 import { isInspectionView, isInspectionPageText, isInspectionAsset, type InspectionView, type InspectionPageText, type InspectionAsset } from '../shared/inspection'
+import { isEvidenceView, type EvidenceView } from '../shared/evidence'
 import { isNotesView, type NotesView } from '../shared/notes'
 import { isDataLocations, type DataLocations } from '../shared/project-lifecycle'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -28,6 +29,8 @@ async function projectCall<T>(channel: string, validate: (value: unknown) => boo
 
 if (!process.contextIsolated || !process.sandboxed) throw new Error('Secure preload required')
 const api: CollieAPI = {
+  readEvidence: input => projectCall<EvidenceView>(PROJECT_CHANNELS.evidence,isEvidenceView,input),
+  changeEvidence: input => projectCall<EvidenceView>(PROJECT_CHANNELS.evidenceChange,isEvidenceView,input),
   readInspection: input => projectCall<InspectionView>(PROJECT_CHANNELS.inspection,isInspectionView,input),
   readInspectedPage: input => projectCall<InspectionPageText>(PROJECT_CHANNELS.inspectionPage,isInspectionPageText,input),
   openInspectedAsset: input => projectCall<InspectionAsset>(PROJECT_CHANNELS.inspectionAsset,isInspectionAsset,input),

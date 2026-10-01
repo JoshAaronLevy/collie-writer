@@ -47,7 +47,7 @@ export async function buildSnapshot(source: CaptureSource, capture: Capture, job
     ...citations.map(asset => ({ name: `citation-assets/${asset.ref.sha256}`, ...asset }))
   ]
   const manifest: SnapshotManifest = {
-    format: 'collie', formatVersion: 1, minimumReader: 6, schemaVersion: 6, editorVersion: 1,
+    format: 'collie', formatVersion: 1, minimumReader: 7, schemaVersion: 7, editorVersion: 1,
     projectId: capture.graph.projectId, snapshotId: randomUUID(), parentSnapshotId,
     headCommitId: capture.graph.headCommitId, createdAt: new Date().toISOString(),
     database: files[0].ref, blobs: capture.graph.blobs,
