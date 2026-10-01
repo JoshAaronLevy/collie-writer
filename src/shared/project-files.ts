@@ -4,7 +4,8 @@ import { exact, record, isDestination, isOpenInput, isProjectCode, type Destinat
 export const FILE_CHANNELS = {
   backup: 'files.backup', move: 'files.move', restore: 'files.restore', duplicate: 'files.duplicate', recover: 'files.recover',
   pick: 'files.pick', save: 'files.save', open: 'files.open', locate: 'files.locate', inspect: 'files.inspect',
-  status: 'files.status', cancel: 'files.cancel', answer: 'files.answer', consent: 'files.consent'
+  status: 'files.status', cancel: 'files.cancel', answer: 'files.answer', consent: 'files.consent',
+  revealProject: 'files.revealProject', revealWorking: 'files.revealWorking'
 } as const
 export const FILE_CHANGED = 'files.changed'
 export const FILE_ACTION = 'files.action'
@@ -42,6 +43,8 @@ export type FileAPI = {
   locateProjectFile: (input: LocateInput) => Promise<ProjectResult<FileStatus>>
   inspectProjectFile: (input: InspectInput) => Promise<ProjectResult<FileStatus>>
   getProjectFileStatus: (scope: OpenInput | null) => Promise<ProjectResult<FileStatus>>
+  revealProjectFile: (scope: OpenInput) => Promise<ProjectResult<boolean>>
+  revealWorkingData: () => Promise<ProjectResult<boolean>>
   cancelFileJob: (id: string) => Promise<ProjectResult<FileStatus>>
   answerFileJob: (input: { id: string; choice: FileChoice }) => Promise<ProjectResult<FileStatus>>
   confirmFileOverwrite: (id: string) => Promise<ProjectResult<FileStatus>>

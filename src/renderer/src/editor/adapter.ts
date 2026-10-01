@@ -87,6 +87,7 @@ export function createManuscriptEditor(options: {
   element: HTMLElement
   projectId?: string
   footnoteMode?: boolean
+  ariaLabel?: string
   payload: DocumentPayload
   imageUrl: (assetId: string) => string | undefined
   citationLabel: (citationId: string) => string
@@ -130,7 +131,7 @@ export function createManuscriptEditor(options: {
     enableContentCheck: true,
     injectCSS: false,
     editorProps: {
-      attributes: { role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Manuscript', spellcheck: 'true' },
+      attributes: { role: 'textbox', 'aria-multiline': 'true', 'aria-label': options.ariaLabel ?? 'Manuscript', spellcheck: 'true' },
       handleDOMEvents: {
         copy: (view,event) => writeClipboard(view,event as ClipboardEvent,false),
         cut: (view,event) => writeClipboard(view,event as ClipboardEvent,true)

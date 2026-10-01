@@ -21,6 +21,8 @@ export class StorageWorker {
   private authorize: (command: ProjectCommand) => void = () => { throw new Error('ACCESS_NOT_READY') }
   private authorizeFile: (command: FileCommand) => void = () => { throw new Error('ACCESS_NOT_READY') }
   private observe: (command: ProjectCommand, value: ProjectValue) => void = () => {}
+  private observeError: (code: string) => void = () => {}
+  onErrorCode(observe:(code:string)=>void):void { this.observeError=observe }
   setAccessPolicy(authorize:(command:ProjectCommand)=>void,authorizeFile:(command:FileCommand)=>void,observe:(command:ProjectCommand,value:ProjectValue)=>void):void { this.authorize=authorize;this.authorizeFile=authorizeFile;this.observe=observe }
   idle():boolean { return this.pending.size===0&&this.filePending.size===0 }
   private child: UtilityProcess | undefined
@@ -36,7 +38,7 @@ export class StorageWorker {
   private fileConsent: (id: string, challenge: string) => void = () => {}
   onFiles(changed: (status: FileStatus) => void, consent: (id: string, challenge: string) => void): void { this.fileChanged = changed; this.fileConsent = consent }
   requestFile(requestId: string, command: FileCommand): Promise<ProjectResult<FileStatus>> {
-    try { this.authorizeFile(command) } catch(error) { return Promise.resolve(projectFailure(requestId,projectError(error))) }
+    try { this.authorizeFile(command) } catch(error) { const code=projectError(error);this.observeError(code);return Promise.resolve(projectFailure(requestId,code)) }
     if (!this.child || this.stopping || this.status.state !== 'ready' || this.filePending.size >= 32 || this.filePending.has(requestId)) return Promise.resolve(projectFailure(requestId, 'UNAVAILABLE'))
     return new Promise(resolve => {
       const timer = setTimeout(() => { this.filePending.delete(requestId); resolve(projectFailure(requestId, 'UNAVAILABLE')) }, 60000)
@@ -51,7 +53,7 @@ export class StorageWorker {
     this.filePending.clear()
   }
   request(requestId: string, command: ProjectCommand): Promise<ProjectResult<ProjectValue>> {
-    try { this.authorize(command) } catch(error) { return Promise.resolve(projectFailure(requestId,projectError(error))) }
+    try { this.authorize(command) } catch(error) { const code=projectError(error);this.observeError(code);return Promise.resolve(projectFailure(requestId,code)) }
     if (!this.child || this.stopping || this.status.state !== 'ready' || this.pending.size >= 32 || this.pending.has(requestId)) return Promise.resolve(projectFailure(requestId, 'UNAVAILABLE'))
     return new Promise(resolve => {
       const timer = setTimeout(() => {
@@ -144,7 +146,7 @@ export class StorageWorker {
         const id = message.result.requestId, pending = this.filePending.get(id)
         if (!pending) return
         if (!isProjectResult<FileStatus>(message.result, id, isFileStatus)) { this.unavailable(child); return }
-        clearTimeout(pending.timer); this.filePending.delete(id); pending.resolve(message.result); return
+        clearTimeout(pending.timer); this.filePending.delete(id); if(!message.result.ok)this.observeError(message.result.error.code);pending.resolve(message.result); return
       }
       if (record(message) && exact(message, ['kind', 'result']) && message.kind === 'project-result' && record(message.result) && typeof message.result.requestId === 'string') {
         const id = message.result.requestId
@@ -153,6 +155,7 @@ export class StorageWorker {
         if (!isProjectResult<ProjectValue>(message.result, id, value => isProjectValue(pending.command.kind, value))) { this.unavailable(child); return }
         clearTimeout(pending.timer); this.pending.delete(id)
         if(message.result.ok)this.observe(pending.command,message.result.value)
+        else this.observeError(message.result.error.code)
         pending.resolve(message.result)
         return
       }

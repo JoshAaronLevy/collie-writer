@@ -10,7 +10,7 @@
 }
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
 }
 .shell {
   min-height: 100vh;
@@ -22,9 +22,12 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.25rem 2rem;
+  padding: 1rem clamp(.75rem, 3vw, 2rem);
   border-bottom: 1px solid #d8ded4;
+  flex-wrap: wrap;
 }
+.header-nav { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
+.header-nav a { color: inherit; }
 .wordmark {
   font-weight: 650;
   font-size: 1.1rem;
@@ -38,9 +41,11 @@ body {
   padding: 0.2rem 0.75rem;
 }
 main {
-  width: min(100%, 760px);
+  width: 100%;
+  max-width: 760px;
+  min-width: 0;
   margin: auto;
-  padding: 4rem 2rem;
+  padding: 2rem clamp(.75rem, 3vw, 2rem);
 }
 .eyebrow {
   text-transform: uppercase;
@@ -140,7 +145,7 @@ footer {
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 0.5rem 1.5rem;
-  padding: 1rem 2rem;
+  padding: 1rem clamp(.75rem, 3vw, 2rem);
   border-top: 1px solid #d8ded4;
   color: #526357;
   font-size: 0.78rem;
@@ -261,3 +266,30 @@ button {
 [data-citation], [data-footnote] { background: #8297b222; cursor: pointer; }
 
 [data-citation][data-numbered-note] { vertical-align: super; font-size: .8em; }
+
+.tutorial-panel, .settings-panel { margin-block: 1.5rem; padding: 1rem; border: 1px solid #b7c2b6; border-radius: .5rem; background: #fff; }
+.tutorial-steps li { margin-block: 1rem; }
+.tutorial-steps button { margin-inline-start: .4rem; }
+.visual-settings { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; }
+.visual-settings label { display: inline-flex; align-items: center; gap: .35rem; }
+.settings-panel details { margin-block: 1rem; }
+.settings-panel textarea { display: block; width: 100%; max-width: 100%; font: .9rem/1.4 ui-monospace, monospace; }
+button, select, summary, .header-nav a, input[type='button'], input[type='submit'], label:has(input[type='checkbox']) { min-height: 44px; }
+.header-nav a, label:has(input[type='checkbox']) { display: inline-flex; align-items: center; }
+button { max-width: 100%; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+:root[data-motion='reduced'] *, :root[data-motion='reduced'] *::before, :root[data-motion='reduced'] *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+@media (prefers-contrast: more) { :root { color: #111; background: #fff; } :focus-visible { outline-color: #000; } }
+:root[data-contrast='high'] { color: #111; background: #fff; --color-border: #111; }
+:root[data-contrast='high'] .shell, :root[data-contrast='high'] section, :root[data-contrast='high'] aside, :root[data-contrast='high'] .editor-host .tiptap { color: #111; background: #fff; }
+:root[data-contrast='high'] button, :root[data-contrast='high'] input, :root[data-contrast='high'] select, :root[data-contrast='high'] textarea { color: #111; background: #fff; border-color: #111; }
+:root[data-contrast='high'] :focus-visible { outline-color: #000; outline-width: 4px; }
+:root[data-contrast='high'] .project-error, :root[data-contrast='high'] .file-panel, :root[data-contrast='high'] .working-location, :root[data-contrast='high'] .tutorial-panel, :root[data-contrast='high'] .settings-panel { border-color: #111; }
+:root[data-contrast='high'] a { color: #000; text-decoration: underline; }
+@media (max-width: 600px) { .section-details { grid-template-columns: minmax(0, 1fr); } .section-details label:has(textarea) { grid-column: auto; } input, textarea, select { max-width: 100%; } }
+@media (forced-colors: active) { :focus-visible { outline: 3px solid Highlight; } [aria-current='true'], [aria-current='page'] { border: 2px solid Highlight; } }
+@media (prefers-contrast: more) {
+  :root .shell, :root section, :root aside, :root .editor-host .tiptap { color: #111; background: #fff; }
+  :root button, :root input, :root select, :root textarea { color: #111; background: #fff; border-color: #111; }
+  :root a { color: #000; text-decoration: underline; }
+}

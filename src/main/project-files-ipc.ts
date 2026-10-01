@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { lstat, readFile } from 'node:fs/promises'
@@ -44,6 +44,19 @@ export class ProjectFileIpc {
       const requestId = payload.requestId, input = payload.input
       try {
         if (!this.location.path()) throw new ProjectError('STORAGE_LOCATION_REQUIRED')
+        if(kind==='revealProject'){
+          if(!isOpenInput(input)||!sameScope(input,this.status.scope)||!this.status.destination)throw new ProjectError('NOT_FOUND')
+          const path=this.status.destination.path,info=await lstat(path)
+          if(!info.isFile()||info.isSymbolicLink())throw new ProjectError('DESTINATION_UNAVAILABLE')
+          shell.showItemInFolder(path)
+          return {ok:true,requestId,value:true}
+        }
+        if(kind==='revealWorking'){
+          if(input!==null)throw new ProjectError('VALIDATION')
+          const path=this.location.path()!,info=await lstat(path)
+          if(!info.isDirectory()||info.isSymbolicLink()||await shell.openPath(path))throw new ProjectError('UNAVAILABLE')
+          return {ok:true,requestId,value:true}
+        }
         if (kind === 'pick') {
           if (!isPickInput(input)) throw new ProjectError('VALIDATION')
           return { ok: true, requestId, value: await this.pick(event, input) }

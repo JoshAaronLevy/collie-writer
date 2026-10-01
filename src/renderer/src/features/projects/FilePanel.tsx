@@ -2,8 +2,9 @@ import { fileBusy, type FileChoice, type FileStatus } from '../../../../shared/p
 import { projectMessages } from '../../../../shared/projects'
 
 const phases = { reading: 'Reading the file; a cloud placeholder may need downloading', capture: 'Capturing protected writing', archive: 'Building the project file', staging: 'Preparing the chosen location', replacing: 'Replacing the chosen file', verifying: 'Reopening the written file', done: 'Finished' }
-export default function FilePanel({ status, dirty, disabled, save, locate, inspect, answer, cancel, consent }: {
+export default function FilePanel({ status, dirty, disabled, save, locate, inspect, reveal, answer, cancel, consent }: {
   status: FileStatus; dirty: boolean; disabled: boolean; save: (as: boolean) => void; locate: () => void; inspect: () => void
+  reveal: () => void
   answer: (id: string, choice: FileChoice) => void; cancel: (id: string) => void; consent: (id: string) => void
 }): React.JSX.Element {
   const restoring = status.job?.kind === 'restore' || status.job?.kind === 'recover'
@@ -16,14 +17,14 @@ export default function FilePanel({ status, dirty, disabled, save, locate, inspe
     unavailable: 'Destination unavailable. Local recovery remains on this computer.',
     interrupted: 'A previous file operation was interrupted. Retained candidates and previous files need inspection.'
   }
-  return <section className="file-panel" aria-labelledby="file-heading">
+  return <section className="file-panel" aria-labelledby="file-heading" id="project-file" tabIndex={-1}>
     <h2 id="file-heading">Project file</h2>
     {destination ? <p className="location-path">{destination.path}</p> : <p>No file destination selected.</p>}
     <p role="status">{active && job?.kind === 'save' ? 'Saving to chosen location…' : labels[status.state]}</p>
     <div className="project-actions">
       <button disabled={disabled || active} onClick={() => save(false)}>{status.state === 'unavailable' ? 'Retry Save' : 'Save…'}</button>
       <button disabled={disabled || active} onClick={() => save(true)}>Save As…</button>
-      {destination ? <><button disabled={disabled || active} onClick={locate}>Locate moved file…</button><button disabled={disabled || active} onClick={inspect}>Inspect saved file</button></> : null}
+      {destination ? <><button disabled={disabled || active} onClick={reveal}>Show project file</button><button disabled={disabled || active} onClick={locate}>Locate moved file…</button><button disabled={disabled || active} onClick={inspect}>Inspect saved file</button></> : null}
     </div>
     {status.state === 'external-change' || status.state === 'interrupted' ? <p>Inspect the saved file to open a separate copy, or use Save As to keep your local branch in another file. No versions are merged automatically.</p> : null}
     {active && job ? <div className="file-progress" aria-live="polite">

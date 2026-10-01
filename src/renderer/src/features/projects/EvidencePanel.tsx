@@ -77,7 +77,7 @@ export default function EvidencePanel({ project, focusItem, disabled, readOnly, 
   const related = view?.links.filter(link => link.documentId === focusSection || view?.claims.some(c => c.id === link.claimId && c.documentId === focusSection)) ?? []
   const history = (entityType: 'question'|'claim'|'link'|'decision', entityKey: string): React.JSX.Element | null => { const rows = view?.revisions.filter(r => r.entityType === entityType && r.entityKey === entityKey) ?? []; return rows.length ? <details><summary>{rows.length} earlier revision{rows.length === 1 ? '' : 's'}</summary><ol>{rows.map(r => <li key={r.revisionId}>{r.createdAt.slice(0,19)} · {oldValue(r.snapshot)}</li>)}</ol></details> : null }
 
-  return <section className="evidence-panel" aria-labelledby="evidence-title">
+  return <section className="evidence-panel" aria-labelledby="evidence-title" tabIndex={-1}>
     <h2 id="evidence-title">Questions, claims and evidence</h2>
     <p>These are human-organized research relationships. A support link records your assessment, not proof. Actual citations in draft text are listed separately.</p>
     {draftPending?<p role="status">Research form edits are not saved yet. <button type="button" disabled={locked} onClick={discardDrafts}>Discard pending research form edits</button></p>:null}

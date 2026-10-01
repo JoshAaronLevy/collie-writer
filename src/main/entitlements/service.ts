@@ -5,15 +5,16 @@ import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { isTrustedSender } from '../ipc'
 import { isInfoRequest } from '../../shared/schemas'
-import { ACCESS_CHANGED, ACCESS_CHANNELS, canEditProject, isDesignateInput, isFinishAccessInput, sameProject, type AccessState, type AccessView } from '../../shared/access'
+import { ACCESS_CHANGED, ACCESS_CHANNELS, canEditProject, isDesignateInput, isFinishAccessInput, isTutorialInput, sameProject, type AccessState, type AccessView } from '../../shared/access'
 import { commandCapability, commandScope } from '../../domain/capabilities'
 import { ProjectError, projectError } from '../../domain/projects/errors'
-import { exact, record, isOpenInput, projectFailure, type OpenInput, type ProjectCommand, type ProjectValue, type ProjectList } from '../../shared/projects'
+import { exact, record, isOpenInput, projectFailure, type OpenInput, type OpenProject, type ProjectCommand, type ProjectValue, type ProjectList } from '../../shared/projects'
 import { isId } from '../../domain/editor/schema'
 import { contained, directory, writeJson } from '../../worker/storage/files'
 import type { StorageWorker } from '../storage-worker'
 import { ISSUER_KEYS } from './keys'
 import { canonicalGrant, purchaseIdentity, verifyGrant, type SignedGrant } from './grant'
+import { seedTutorial } from '../tutorial'
 
 type Settings = { version: 1; revision: string; freeProject: OpenInput | null; sampleProject: OpenInput | null }
 type Cache = { version: 1; lastSeen: number; grants: SignedGrant[] }
@@ -25,6 +26,7 @@ export class AccessService {
   private cacheBroken=false
   private storageWarning=false
   private changing=false
+  private sampleBusy=false
   private clockBase=Date.now()
   private clockStart=performance.now()
   private observed=0
@@ -147,9 +149,37 @@ export class AccessService {
     if(prior)return prior.operationId===operationId&&prior.digest===digest
     this.drainOperations.set(slot,{operationId,digest});return true
   }
-  authorizeFileChange():void{if(this.transition)throw new ProjectError('ACCESS_TRANSITION');if(this.changing)throw new ProjectError('ACCESS_BUSY')}
+  authorizeFileChange():void{if(this.transition)throw new ProjectError('ACCESS_TRANSITION');if(this.changing||this.sampleBusy)throw new ProjectError('ACCESS_BUSY')}
   releaseWindow():void{this.active=null;this.activeWasEditable=false;this.transition=null;this.drainOperations.clear();this.lastView=''}
-  private requireSettled(keepActive=false):void{if(!this.root)throw new ProjectError('STORAGE_LOCATION_REQUIRED');if(!this.initialized||(!keepActive&&this.dirty())||!this.storage.idle()||this.changing)throw new ProjectError('ACCESS_BUSY')}
+  private requireSettled(keepActive=false):void{if(!this.root)throw new ProjectError('STORAGE_LOCATION_REQUIRED');if(!this.initialized||(!keepActive&&this.dirty())||!this.storage.idle()||this.changing||this.sampleBusy)throw new ProjectError('ACCESS_BUSY')}
+  private async tutorial(reset:boolean):Promise<OpenProject>{
+    this.requireSettled()
+    if(this.settingsBroken)throw new ProjectError('ACCESS_SETTINGS')
+    this.sampleBusy=true
+    try{
+      const old=this.settings.sampleProject
+      const listed=await this.storage.request(randomUUID(),{kind:'list'})
+      if(!listed.ok)throw new ProjectError(listed.error.code)
+      const exists=old&&(listed.value as ProjectList).projects.some(p=>sameProject(p,old))
+      let scope:OpenInput
+      if(old&&exists&&!reset)scope=old
+      else{
+        const created=await this.storage.request(randomUUID(),{kind:'create',input:{operationId:this.settings.revision,template:'article'}})
+        if(!created.ok)throw new ProjectError(created.error.code)
+        const project=created.value as OpenProject
+        scope={projectId:project.projectId,workspaceId:project.workspaceId}
+        // The sample privilege comes only from this trusted creation path.
+        this.changing=true
+        try{
+          const next:Settings={...this.settings,revision:randomUUID(),sampleProject:scope}
+          await writeJson(join(this.root,'capability-settings-v1.json'),next)
+          this.settings=next;this.publish()
+        }catch(error){this.storageWarning=true;this.publish();throw error
+        }finally{this.changing=false}
+      }
+      return await seedTutorial(this.storage,scope)
+    finally{this.sampleBusy=false}
+  }
   private async designate(scope:OpenInput,revision:string):Promise<AccessView>{
     // Keeping the already-open transitioning editor as the free project cannot revoke its
     // buffer's authority. It is also the recovery route when a flush needs manual repair.
@@ -160,6 +190,7 @@ export class AccessService {
     const listed=await this.storage.request(randomUUID(),{kind:'list'})
     if(!listed.ok)throw new ProjectError(listed.error.code)
     if(!(listed.value as ProjectList).projects.some(p=>sameProject(p,scope)))throw new ProjectError('NOT_FOUND')
+    if(sameProject(scope,this.settings.sampleProject))throw new ProjectError('VALIDATION')
     this.requireSettled(keepActive)
     if(revision!==this.settings.revision)throw new ProjectError('STALE_REVISION')
     this.changing=true
@@ -174,6 +205,7 @@ export class AccessService {
   /** Stage 20 channel adapters call this only with a signed issuer document. */
   async acceptGrant(value:unknown):Promise<AccessView>{
     if(!this.initialized)throw new ProjectError('ACCESS_BUSY')
+    if(this.sampleBusy)throw new ProjectError('ACCESS_BUSY')
     const signed=verifyGrant(value)
     if(this.cacheBroken)throw new ProjectError('ACCESS_SETTINGS') // Never overwrite an unreadable anti-replay ledger.
     if(this.changing)throw new ProjectError('ACCESS_BUSY')
@@ -199,6 +231,7 @@ export class AccessService {
       const requestId=payload.requestId
       try{
         if(kind==='read'&&isInfoRequest(payload))return {ok:true,requestId,value:this.view()}
+        if(kind==='tutorial'&&exact(payload,['requestId','input'])&&isTutorialInput(payload.input))return {ok:true,requestId,value:await this.tutorial(payload.input.reset)}
         if(kind==='designate'&&exact(payload,['requestId','input'])&&isDesignateInput(payload.input))return {ok:true,requestId,value:await this.designate(payload.input.scope,payload.input.expectedRevision)}
         if(kind==='finish'&&exact(payload,['requestId','input'])&&isFinishAccessInput(payload.input)){
           this.requireSettled()

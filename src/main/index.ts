@@ -15,6 +15,7 @@ import { ProjectFileIpc } from './project-files-ipc'
 import { ProjectLifecycle } from './lifecycle'
 import { SourceAssets } from './source-assets'
 import { AccessService } from './entitlements/service'
+import { SupportService } from './support'
 
 app.setName('Collie Writer')
 app.setAppUserModelId(APP_ID)
@@ -50,6 +51,8 @@ const storage = new StorageWorker((status) => {
     window.webContents.send(STORAGE_STATUS_CHANGED, status)
 })
 const access = new AccessService(() => window?.webContents,storage,() => unprotected,() => location.path(),devOrigin)
+const support = new SupportService(() => window?.webContents,()=>storage.current(),devOrigin)
+storage.onErrorCode(code=>support.recordError(code))
 storage.setAccessPolicy(command=>access.authorize(command),command=>{
   if(['open','restore','recover','duplicate','locate','inspect'].includes(command.kind)||command.kind==='answer'&&command.choice!=='cancel')access.authorizeFileChange()
 },(command,value)=>access.observe(command,value))
@@ -95,6 +98,7 @@ app
     )
     registerStorageIpc(() => window?.webContents, () => storage.current(), devOrigin)
     access.register()
+    support.register()
     registerProjectIpc(() => window?.webContents, location, storage, value => { unprotected = value }, devOrigin, sourceAssets)
     files.register()
     lifecycle.register()

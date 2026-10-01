@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AppInfo } from '../../shared/commands'
 import type { StorageStatus } from '../../shared/storage'
 import Projects from './features/projects/Projects'
+import SettingsPanel from './features/settings/SettingsPanel'
 
 export default function App(): React.JSX.Element {
   const [info, setInfo] = useState<AppInfo | null>(null)
@@ -47,6 +48,11 @@ export default function App(): React.JSX.Element {
       </a>
       <header className="app-header">
         <span className="wordmark">Collie Writer</span>
+        <nav aria-label="App sections" className="header-nav">
+          <a href="#tutorial" onClick={event=>{event.preventDefault();const target=document.getElementById('tutorial-title');target?.focus();target?.scrollIntoView({block:'start'})}}>Tutorial</a>
+          <a href="#data-locations" onClick={event=>{event.preventDefault();const target=document.getElementById('data-locations') as HTMLDetailsElement|null;if(target){target.open=true;target.focus();target.scrollIntoView({block:'start'})}}}>Data Locations</a>
+          <a href="#settings" onClick={event=>{event.preventDefault();const target=document.getElementById('settings-title');target?.focus();target?.scrollIntoView({block:'start'})}}>Settings and privacy</a>
+        </nav>
         <span className="build-label">Development</span>
       </header>
       <main id="workspace" tabIndex={-1}>
@@ -56,6 +62,7 @@ export default function App(): React.JSX.Element {
           <p>Source and licenses are available in Help → Third-party licenses.</p>
         </aside>
         <Projects storage={storageStatus} />
+        <SettingsPanel />
         <section className="storage-panel" aria-labelledby="storage-title">
           <h2 id="storage-title">SQLite engine</h2>
           <p role="status">

@@ -47,7 +47,7 @@ export default function CitationsPanel(props:Props):React.JSX.Element {
     }catch{setError('The style change was not acknowledged. Retry uses the same operation.')}finally{setLoading(false)}
   }
   const metadata=view?.issues.filter(i=>i.kind==='metadata')??[],references=view?.issues.filter(i=>i.kind==='reference')??[]
-  return <section className="citations-panel" aria-labelledby="citations-heading">
+  return <section className="citations-panel" aria-labelledby="citations-heading" tabIndex={-1}>
     <h2 id="citations-heading">Citations and bibliography</h2>
     <p>APA 7 or Chicago 18 notes and bibliography · English (US) · pinned offline style profile. Preview includes active manuscript sections in outline order.</p>
     <label>Style <select value={selectedStyle} disabled={props.readOnly||disabled||loading||!!pending.current} onChange={event=>setSelectedStyle(event.target.value as CitationStyle)}><option value="apa">APA 7</option><option value="chicago">Chicago 18 — notes and bibliography</option></select></label>

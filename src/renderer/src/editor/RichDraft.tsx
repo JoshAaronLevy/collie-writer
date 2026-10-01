@@ -40,7 +40,7 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
   useEffect(() => {
     if (!host.current) return
     try {
-      const next = createManuscriptEditor({ element: host.current, payload, imageUrl, projectId: references?.projectId, citationLabel: id => referenceRef.current?.labels.get(id) ?? '[citation]', onChange: () => {
+      const next = createManuscriptEditor({ element: host.current, payload, imageUrl, projectId: references?.projectId, ariaLabel:noteMode?'Note body':'Manuscript', citationLabel: id => referenceRef.current?.labels.get(id) ?? '[citation]', onChange: () => {
         setRevision(value => value + 1); onChange()
         if (editor.current) refreshCitationLabels(editor.current, new Map())
         if (countTimer.current) clearTimeout(countTimer.current)

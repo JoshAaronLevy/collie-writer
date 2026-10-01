@@ -25,6 +25,7 @@ import type { SearchHit } from '../../../../shared/search'
 import { editorIsComposing, serializeEditor } from '../../editor/adapter'
 import FilePanel from './FilePanel'
 import AccessPanel from './AccessPanel'
+import TutorialPanel from './TutorialPanel'
 import { canEditProject, sameProject, type AccessView } from '../../../../shared/access'
 function scopeOf(project: OpenInput): OpenInput { return { projectId: project.projectId, workspaceId: project.workspaceId } }
 const emptyFiles: FileStatus = { scope: null, destination: null, state: 'unsaved', job: null }
@@ -565,10 +566,25 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
         :kind==='import'?await window.collie.importAccessGrant():null
     if(result){if(result.ok){applyAccess(result.value);setNotice('Access settings updated. Existing writing and saved files were kept.')}else setError(result.error.message)}
   }
+  async function openTutorial(reset:boolean):Promise<void>{
+    setBusy(true)
+    if(current.current&&!await flush())return
+    window.collie.setUnprotectedChanges(isDirty())
+    if(isDirty()){setError('Protect pending drafts before opening or resetting the sample.');return}
+    const result=await window.collie.openTutorial({reset})
+    if(!result.ok){setError(result.error.message);return}
+    await select(result.value)
+    await refresh()
+    await refreshData()
+    const updated=await window.collie.readAccess()
+    if(updated.ok)applyAccess(updated.value)
+    setNotice(reset?'Fresh sample opened. The previous sample remains a local project.':'Tutorial sample opened. The fictional source and cited draft are ready.')
+  }
   const available = storage.state === 'ready' && location?.state === 'ready'
   return <section className="projects" aria-labelledby="projects-title">
     <h1 id="projects-title">Your projects</h1>
     <p>Write locally and choose a separate save location for each project.</p>
+    <TutorialPanel ready={!!access?.sampleProject&&list.projects.some(p=>sameProject(p,access?.sampleProject??null))} active={!!project&&sameProject(project,access?.sampleProject??null)} disabled={!available||busy||acting||fileActive||closing} start={()=>run(()=>openTutorial(false))} reset={()=>run(()=>openTutorial(true))}/>
     <AccessPanel access={access} project={project} list={list} disabled={!available||busy||acting||fileActive||closing} designate={()=>run(()=>changeAccess('designate'))} finish={()=>run(()=>changeAccess('finish'))} importGrant={()=>run(()=>changeAccess('import'))}/>
     {!location ? <p role="status">Finding the local working folder…</p> : <details className="working-location" open={location.state === 'required'}>
       <summary>Working-data location</summary><p>{location.message}</p>
@@ -576,7 +592,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
       <p>Keep this folder outside sync or mirroring tools. Portable files can go in your chosen local cloud folders.</p>
     </details>}
     {storage.state === 'unavailable' ? <p role="alert">The storage process is unavailable. Keep this window open and copy any unprotected text before quitting.</p> : null}
-    <div className="project-actions">
+    <div className="project-actions" id="new-project" tabIndex={-1}>
       <label>Template <select value={newTemplate} disabled={!available || acting || fileActive || closing} onChange={event => { setNewTemplate(event.target.value as ProjectTemplate); pendingCreate.current = null }}>{(Object.keys(templateNames) as ProjectTemplate[]).map(template => <option key={template} value={template}>{templateNames[template]}</option>)}</select></label>
       <button disabled={!available || acting || fileActive || closing} onClick={() => run(async () => {
         setBusy(true); if (current.current && !await flush()) return
@@ -593,7 +609,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     <label><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} /> Show archived projects</label>
     <ul className="project-list">{list.projects.filter(p => showArchived || !p.archived).map(p => <li key={p.projectId}>
       <button aria-current={project?.projectId === p.projectId ? 'true' : undefined} disabled={!available || acting || fileActive || closing} onClick={() => run(async () => { setBusy(true); if (current.current && !await flush()) return; await openLocal(scopeOf(p)) })}>
-        {p.title}{p.archived ? ' · archived' : ''} <span className="project-id">{p.projectId.slice(0, 8)}</span>
+        {p.title}{sameProject(p,access?.sampleProject??null)?' · tutorial sample':''}{p.archived ? ' · archived' : ''} <span className="project-id">{p.projectId.slice(0, 8)}</span>
         <small>{p.destination ? `${p.destination.path} · availability checked on open${p.headCommitId !== p.destination.headCommitId ? ' · newer edits protected locally' : ''}` : 'Local recovery · no file destination'} · {new Date(p.updatedAt).toLocaleString()}</small>
       </button>
     </li>)}</ul>
@@ -625,9 +641,9 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     {project ? <SearchPanel key={project.projectId} project={project} navigate={navigateSearch} /> : null}
     {outlineRetry ? <p role="alert">The outline/history operation has an unknown outcome. Editing is paused until the same operation is reconciled. <button disabled={working || closing} onClick={() => run(() => performOutline())}>Retry pending outline/history operation</button></p> : null}
     {project ? <HistoryPanel key={project.projectId} project={project} readOnly={accessReadOnly||accessTransition} history={history} disabled={busy || acting || closing || committing || fileActive} change={change => run(() => performOutline(change))} read={id => run(() => loadHistory(id))} navigate={(doc,anchor) => run(() => navigateSection(doc,anchor))} /> : null}
-    {project || fileActive ? <FilePanel status={files} dirty={dirty} disabled={!project || !available || acting || closing} save={as => run(() => save(as))} locate={() => run(() => openFile(false, true))} inspect={() => run(() => openFile(true))} answer={(id, choice) => { void window.collie.answerFileJob({ id, choice }).then(result => { if (!result.ok) setError(result.error.message) }) }} cancel={id => { void window.collie.cancelFileJob(id).then(result => { if (!result.ok) setError(result.error.message) }) }} consent={id => { void window.collie.confirmFileOverwrite(id).then(result => { if (!result.ok) setError(result.error.message) }) }} /> : null}
+    {project || fileActive ? <FilePanel status={files} dirty={dirty} disabled={!project || !available || acting || closing} save={as => run(() => save(as))} reveal={()=>run(async()=>{if(!current.current)return;const result=await window.collie.revealProjectFile(scopeOf(current.current));if(!result.ok)setError(result.error.message)})} locate={() => run(() => openFile(false, true))} inspect={() => run(() => openFile(true))} answer={(id, choice) => { void window.collie.answerFileJob({ id, choice }).then(result => { if (!result.ok) setError(result.error.message) }) }} cancel={id => { void window.collie.cancelFileJob(id).then(result => { if (!result.ok) setError(result.error.message) }) }} consent={id => { void window.collie.confirmFileOverwrite(id).then(result => { if (!result.ok) setError(result.error.message) }) }} /> : null}
     {project ? <ProjectManagement readOnly={accessReadOnly||accessTransition} key={`${project.projectId}-${project.title}`} project={project} disabled={!available || acting || fileActive || closing} rename={title => run(() => manage(title))} archive={() => run(() => manage())} backup={() => run(() => lifecycleFile('backup'))} move={() => run(() => lifecycleFile('move'))} duplicate={() => run(() => lifecycleFile('duplicate'))} /> : null}
-    <RecoveryPanel data={data} openProject={scope => run(async () => { setBusy(true); if (current.current && !await flush()) return; await openLocal(scope); await waitActive(); await refreshData() })} disabled={!available || acting || fileActive || closing} refresh={() => run(refreshData)} inspect={id => run(() => lifecycleFile('recover', id))} reset={review => run(() => resetLocal(review))} recoverReset={id => run(async () => {
+    <RecoveryPanel data={data} openProject={scope => run(async () => { setBusy(true); if (current.current && !await flush()) return; await openLocal(scope); await waitActive(); await refreshData() })} disabled={!available || acting || fileActive || closing} refresh={() => run(refreshData)} reveal={()=>run(async()=>{const result=await window.collie.revealWorkingData();if(!result.ok)setError(result.error.message)})} inspect={id => run(() => lifecycleFile('recover', id))} reset={review => run(() => resetLocal(review))} recoverReset={id => run(async () => {
       setBusy(true); if (current.current && !await flush()) return
       const result = await window.collie.recoverReset(id)
       if (result.ok) { setData(result.value); setList(result.value.projects) } else setError(result.error.message)

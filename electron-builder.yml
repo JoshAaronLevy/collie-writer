@@ -27,6 +27,7 @@ extraResources:
       - fonts/*.otf
       - vendor/paged.js
       - licenses/**
+      - tutorial/*.txt
 win:
   executableName: collie-writer-dev
   target: nsis

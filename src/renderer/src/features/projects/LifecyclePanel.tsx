@@ -25,15 +25,17 @@ export function ProjectManagement({ project, disabled, readOnly, rename, archive
   </section>
 }
 
-export function RecoveryPanel({ data, disabled, refresh, inspect, recoverReset, cleanup, reset, openProject }: {
+export function RecoveryPanel({ data, disabled, refresh, reveal, inspect, recoverReset, cleanup, reset, openProject }: {
   data: DataLocations | null; disabled: boolean; refresh: () => void; inspect: (id: string) => void
+  reveal:()=>void
   openProject: (scope: OpenInput) => void; recoverReset: (id: string) => void; cleanup: () => void; reset: (review: string) => void
 }): React.JSX.Element {
   const [confirmation, setConfirmation] = useState('')
-  return <details className="recovery-panel">
+  return <details className="recovery-panel" id="data-locations" tabIndex={-1}>
     <summary>Recovery, backups and Data Locations</summary>
     <p>Local recovery has no automatic expiry. Protect locally or Save acknowledges writing; unacknowledged keystrokes may be lost after force quit or power loss. Removing app data or using an uninstaller that removes it can destroy unsaved work.</p>
     <button disabled={disabled} onClick={refresh}>Refresh recovery and size</button>
+    <button disabled={disabled} onClick={reveal}>Show local working and recovery folder</button>
     {data ? <>
       <p className="location-path">Working data and recovery: {data.root}</p>
       <p>{data.sizeComplete ? 'Approximate local size' : 'Partial local size (some items could not be counted)'}: {(data.bytes / 1048576).toFixed(1)} MiB. Includes working projects, retained archives, journals and reset recovery. Chosen files elsewhere are additional.</p>

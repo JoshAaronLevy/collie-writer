@@ -26,7 +26,7 @@ export default function SourceInspector({project,sourceId,focusExcerptId,focusVe
   const selected=view?.versions.find(v=>v.id===selectedVersionId),active=view?.versions.find(v=>v.id===view.activeVersionId)
   const page=view?.pages.find(p=>p.versionId===selectedVersionId&&p.index===pageIndex)
   const loading=busy||extracting||disabled
-  useEffect(()=>{panel.current?.scrollIntoView({block:'start',behavior:'smooth'})},[sourceId])
+  useEffect(()=>{panel.current?.scrollIntoView({block:'start',behavior:document.documentElement.dataset.motion==='reduced'||matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})},[sourceId])
 
   useEffect(()=>{let alive=true;setView(null);setSelectedVersionId(null);setLoadedVersionId(null);loaded.current=null;setPageText('');void window.collie.readInspection(scope(project,sourceId)).then(r=>{if(alive){if(r.ok){setView(r.value);setSelectedVersionId(r.value.activeVersionId??r.value.versions[0]?.id??null)}else setError(r.error.message)}});void window.collie.readSources({projectId:project.projectId,workspaceId:project.workspaceId}).then(r=>{if(alive&&r.ok)setAttachments(r.value.sources.find(s=>s.id===sourceId)?.attachments??[])});return()=>{alive=false;cancelled.current=true;void closePdf()}},[project.projectId,project.workspaceId,sourceId])
   useEffect(()=>{if(!focusExcerptId||!view||focusedExcerpt.current===focusExcerptId)return;const excerpt=view.excerpts.find(item=>item.id===focusExcerptId);if(excerpt){focusedExcerpt.current=focusExcerptId;void navigateExcerpt(excerpt)}},[focusExcerptId,view?.sourceId])

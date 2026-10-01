@@ -21,6 +21,7 @@ import { DIRTY_CHANGED, PROJECT_CHANNELS, isLocation, isProjectResult, isProject
 import { isExportPreview, isExportJob, type ExportPreview, type ExportJob } from '../shared/exports'
 import { isRecipesView, isImportPick, isImportPreview, type RecipesView, type ImportPick, type ImportPreview } from '../shared/interchange'
 import { ACCESS_CHANNELS, ACCESS_CHANGED, isAccessView, type AccessView } from '../shared/access'
+import { SUPPORT_CHANNELS, isSupportPreview, isZoomLevel, type SupportPreview, type ZoomLevel } from '../shared/support'
 import { CLOSE_REPLY, FILE_ACTION, FILE_CHANGED, FILE_CHANNELS, isFileAction, isFileStatus, isSelection, type FileStatus, type FileSelection } from '../shared/project-files'
 
 async function projectCall<T>(channel: string, validate: (value: unknown) => boolean, input?: unknown): Promise<ProjectResult<T>> {
@@ -38,6 +39,11 @@ const api: CollieAPI = {
   designateFreeProject: input => projectCall<AccessView>(ACCESS_CHANNELS.designate,isAccessView,input),
   finishAccessTransition: input => projectCall<AccessView>(ACCESS_CHANNELS.finish,isAccessView,input),
   importAccessGrant: () => projectCall<AccessView>(ACCESS_CHANNELS.importGrant,isAccessView),
+  openTutorial: input => projectCall<OpenProject>(ACCESS_CHANNELS.tutorial,value=>isProjectValue('open',value),input),
+  revealProjectFile: input => projectCall<boolean>(FILE_CHANNELS.revealProject,value=>value===true,input),
+  revealWorkingData: () => projectCall<boolean>(FILE_CHANNELS.revealWorking,value=>value===true,null),
+  readSupportPreview: () => projectCall<SupportPreview>(SUPPORT_CHANNELS.preview,isSupportPreview),
+  setUiZoom: input => projectCall<ZoomLevel>(SUPPORT_CHANNELS.zoom,isZoomLevel,input),
   onAccessChanged: callback => {
     const listener=(_event:Electron.IpcRendererEvent,value:unknown):void=>{if(isAccessView(value))callback(value)}
     ipcRenderer.on(ACCESS_CHANGED,listener);return()=>ipcRenderer.removeListener(ACCESS_CHANGED,listener)

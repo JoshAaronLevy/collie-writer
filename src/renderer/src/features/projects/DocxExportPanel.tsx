@@ -122,7 +122,7 @@ export default function DocxExportPanel(props:Props):React.JSX.Element{
   async function cancel():Promise<void>{if(!job)return;const result=await window.collie.cancelDocx({...scope,jobId:job.id});if(!result.ok)setError(result.error.message);else setJob(result.value)}
   const metadata=preview?.issues.filter(i=>i.kind==='metadata')??[],blocking=preview?.issues.filter(i=>i.kind!=='metadata')??[]
   const validBaseName=/^[^\\/:*?"<>|.\u0000-\u001f][^\\/:*?"<>|\u0000-\u001f]*$/.test(baseName.trim())&&!/[. ]$/.test(baseName.trim())&&!/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(baseName.trim())
-  return <section className="docx-export-panel" aria-labelledby="docx-export-heading">
+  return <section className="docx-export-panel" aria-labelledby="docx-export-heading" tabIndex={-1}>
     <h2 id="docx-export-heading">Compile and export</h2>
     <p>Choose active writing sections in the order to publish. Export uses one protected local revision and does not save the project file.</p>
     <div className="export-selection"><h3>Include sections</h3>{orderedOutline.map(d=><label key={d.id} style={{display:'block',marginLeft:`${d.depth*1.25}rem`}}><input type="checkbox" checked={d.kind==='text'?selected.includes(d.id):texts.some(x=>belongsTo(x.id,d.id))&&texts.filter(x=>belongsTo(x.id,d.id)).every(x=>selected.includes(x.id))} onChange={()=>toggle(d.id)} disabled={props.disabled||busy}/>{d.kind==='text'?'Section':d.kind==='chapter'?'Chapter':'Part'}: {d.title}</label>)}</div>
