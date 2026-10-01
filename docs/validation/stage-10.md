@@ -1,0 +1,11 @@
+# Stage 10 completion record
+
+September 30, 2026 — **implementation complete — awaiting user testing**. Requested scope: human notes, inbox, reusable tags/categories, many-section links and inline passage annotations. Stage 11 sources/claims and AI remain outside this change.
+
+The plan, Stage 9 anchor/history contracts, storage/migration/archive paths and current renderer/worker bridge were read. Starting Git state was clean. Changed paths are `src/shared/notes.ts`, `projects.ts`; `src/worker/projects/notes.ts`, `repository.ts`, `outline.ts`, `portable-db.ts`, `incoming.ts`, `manifest.ts`, `snapshot.ts`; `src/worker/storage/schema.ts`, `migrations.ts`; `src/worker/index.ts`; `src/main/projects-ipc.ts`; `src/preload/index.ts`; `src/renderer/src/features/projects/NotesPanel.tsx`, `Projects.tsx`, `editor/RichDraft.tsx`, `assets/main.css`; the plan and Stage 10 docs.
+
+Schema/minimum reader **3→4** with retained-copy migration. Archive container and editor AST remain 1; prior schema-2/3 archives remain readable. The decision and [schema](../formats/working-project-v4.md) describe note revisions, tombstones, label membership, conservative annotation mapping and backup ownership. No migration/archive was executed by the assistant.
+
+No test code, fixture, harness or automated verification was added. No tests, typecheck, lint, format/audit/build/package check, app/server/browser launch, snapshot operation, screenshot, benchmark or other testing task was run. File and Git reads are source context, not a passed check. **Fixture counts and manual navigation results: unavailable** until the user performs the [manual guide](../manual-testing/stage-10.md).
+
+Pending user acceptance: note recovery on close/switch and storage failure; annotation draft close guard; selected-file/backup/duplicate round trip; label rename/merge/remove and keyboard focus; section move/merge links; annotation offset mapping and orphan display; old-project migration; native platform behavior and responsiveness. Annotation interpretation is locally committed only after its explicit Save action; the visible unsaved composer blocks project transitions and close. No user-confirmed acceptance or release gate is implied. Stop for the user's results before Stage 11.

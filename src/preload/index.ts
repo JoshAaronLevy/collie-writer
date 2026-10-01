@@ -1,4 +1,5 @@
 import type { HistoryView } from '../shared/outline'
+import { isNotesView, type NotesView } from '../shared/notes'
 import { isDataLocations, type DataLocations } from '../shared/project-lifecycle'
 import { contextBridge, ipcRenderer } from 'electron'
 import {
@@ -25,6 +26,8 @@ async function projectCall<T>(channel: string, validate: (value: unknown) => boo
 
 if (!process.contextIsolated || !process.sandboxed) throw new Error('Secure preload required')
 const api: CollieAPI = {
+  readNotes: input => projectCall<NotesView>(PROJECT_CHANNELS.notes, isNotesView, input),
+  changeNote: input => projectCall<NotesView>(PROJECT_CHANNELS.noteChange, isNotesView, input),
   onEditorAction: callback => {
     const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => { if (value === 'undo' || value === 'redo' || value === 'find' || value === 'paste-plain') callback(value) }
     ipcRenderer.on(EDITOR_ACTION, listener); return () => ipcRenderer.removeListener(EDITOR_ACTION, listener)

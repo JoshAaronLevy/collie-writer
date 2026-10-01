@@ -208,3 +208,11 @@ button {
 .history-comparison details { margin-block: .75rem; border-block-end: 1px solid #80909e; padding-block: .5rem; }
 .history-panel li { margin-block: .75rem; overflow-wrap: anywhere; }
 @media (max-width: 760px) { .history-columns { grid-template-columns: 1fr; } }
+.notes-panel { margin-block: 1.5rem; padding: 1rem; border: 1px solid #80909e; border-radius: .5rem; }
+.notes-panel label { display: block; margin-block: .6rem; }
+.notes-panel fieldset { margin-block: .8rem; border: 1px solid #b7c2b6; }
+.notes-panel fieldset label { display: inline-block; margin-inline-end: 1rem; }
+.notes-panel li { margin-block: .6rem; overflow-wrap: anywhere; }
+.notes-panel blockquote { margin-inline: 0; padding: .5rem .8rem; border-inline-start: 3px solid #80909e; white-space: pre-wrap; }
+.notes-panel textarea { width: 100%; max-width: 100%; min-height: 5rem; }
+.notes-panel button { margin: .2rem; }

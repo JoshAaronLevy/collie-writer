@@ -1,10 +1,11 @@
 import { isOutlineInput, isOutlineDocument, isHistoryInput, isHistoryView, type OutlineDocument, type OutlineInput, type HistoryInput, type HistoryView } from './outline'
 import { isRenameInput, isArchiveInput, isDataLocations, isResetInput, type RenameInput, type ArchiveInput, type DataLocations, type ResetInput } from './project-lifecycle'
 import { isId, readDocument, type DocumentPayload } from '../domain/editor/schema'
+import { isNoteChangeInput, isNotesView, type NoteChangeInput, type NotesView } from './notes'
 import { isProjectTemplate, type ProjectTemplate } from '../domain/projects/templates'
 
 export const PROJECT_CHANNELS = {
-  outline: 'outline.change', history: 'history.read',
+  outline: 'outline.change', history: 'history.read', notes: 'notes.read', noteChange: 'notes.change',
   location: 'projects.location', chooseLocation: 'projects.chooseLocation',
   rename: 'projects.rename', archive: 'projects.archive', data: 'projects.data', reset: 'projects.reset', recoverReset: 'projects.recoverReset', cleanup: 'projects.cleanup',
   list: 'projects.list', create: 'projects.create', open: 'projects.open', section: 'projects.section', meta: 'projects.sectionMeta', commit: 'document.commit', plainClipboard: 'document.plainClipboard', pickImage: 'images.pick', importImage: 'images.import', readImage: 'images.read'
@@ -51,9 +52,11 @@ export type WorkerImageImport = OpenInput & { operationId: string; sourcePath: s
 export type ImageReadInput = OpenInput & { assetId: string }
 export type ImageAsset = { assetId: string; mediaType: 'image/png' | 'image/jpeg'; width: number; height: number }
 export type ImageData = { mediaType: ImageAsset['mediaType']; base64: string }
-export type ProjectCommand = { kind: 'outline'; input: OutlineInput } | { kind: 'history'; input: HistoryInput } | { kind: 'rename'; input: RenameInput } | { kind: 'archive'; input: ArchiveInput } | { kind: 'data' | 'cleanup' } | { kind: 'reset'; input: ResetInput } | { kind: 'recoverReset'; input: string } | { kind: 'list' } | { kind: 'create'; input: CreateInput } | { kind: 'open'; input: OpenInput } | { kind: 'section'; input: SectionInput } | { kind: 'meta'; input: SectionMetaInput } | { kind: 'commit'; input: CommitInput } | { kind: 'importImage'; input: WorkerImageImport } | { kind: 'readImage'; input: ImageReadInput }
-export type ProjectValue = ProjectList | OpenProject | CommitReceipt | DataLocations | ImageAsset | ImageData | HistoryView
+export type ProjectCommand = { kind: 'notes'; input: OpenInput } | { kind: 'noteChange'; input: NoteChangeInput } | { kind: 'outline'; input: OutlineInput } | { kind: 'history'; input: HistoryInput } | { kind: 'rename'; input: RenameInput } | { kind: 'archive'; input: ArchiveInput } | { kind: 'data' | 'cleanup' } | { kind: 'reset'; input: ResetInput } | { kind: 'recoverReset'; input: string } | { kind: 'list' } | { kind: 'create'; input: CreateInput } | { kind: 'open'; input: OpenInput } | { kind: 'section'; input: SectionInput } | { kind: 'meta'; input: SectionMetaInput } | { kind: 'commit'; input: CommitInput } | { kind: 'importImage'; input: WorkerImageImport } | { kind: 'readImage'; input: ImageReadInput }
+export type ProjectValue = ProjectList | OpenProject | CommitReceipt | DataLocations | ImageAsset | ImageData | HistoryView | NotesView
 export type ProjectAPI = {
+  readNotes: (input: OpenInput) => Promise<ProjectResult<NotesView>>
+  changeNote: (input: NoteChangeInput) => Promise<ProjectResult<NotesView>>
   changeOutline: (input: OutlineInput) => Promise<ProjectResult<OpenProject>>
   readHistory: (input: HistoryInput) => Promise<ProjectResult<HistoryView>>
   getWorkingLocation: () => Promise<ProjectResult<LocationStatus>>
@@ -94,6 +97,8 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (!exact(v, ['kind', 'input'])) return false
   if (v.kind === 'outline') return isOutlineInput(v.input)
   if (v.kind === 'history') return isHistoryInput(v.input)
+  if (v.kind === 'notes') return isOpenInput(v.input)
+  if (v.kind === 'noteChange') return isNoteChangeInput(v.input)
   if (v.kind === 'rename') return isRenameInput(v.input)
   if (v.kind === 'archive') return isArchiveInput(v.input)
   if (v.kind === 'reset') return isResetInput(v.input)
@@ -109,6 +114,7 @@ function summary(v: unknown): v is ProjectSummary {
 export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is ProjectValue {
   if (!record(v)) return false
   if (kind === 'history') return isHistoryView(v)
+  if (kind === 'notes' || kind === 'noteChange') return isNotesView(v)
   if (['data','cleanup','reset','recoverReset'].includes(kind)) return isDataLocations(v)
   if (kind === 'list') return exact(v, ['projects', 'issues']) && Array.isArray(v.projects) && v.projects.length <= 10000 && v.projects.every(p => summary(p) && exact(p, ['projectId', 'workspaceId', 'title', 'headCommitId', 'updatedAt', 'archived', 'destination'])) && Array.isArray(v.issues) && v.issues.length <= 10000 && v.issues.every(p => record(p) && exact(p, ['projectId', 'code']) && isId(p.projectId) && isProjectCode(p.code))
   if (kind === 'commit') return exact(v, ['projectId', 'documentId', 'revisionId', 'headCommitId']) && Object.values(v).every(isId)

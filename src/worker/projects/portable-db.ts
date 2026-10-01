@@ -3,6 +3,7 @@ import { isId, readDocument } from '../../domain/editor/schema'
 import { isProjectTemplate } from '../../domain/projects/templates'
 import { exact, record } from '../../shared/projects'
 import { manuscript, readCheckpoint, historyStorage } from './manuscript'
+import { validatePortableNotes } from './notes'
 import { inspectVersion, validateProjectSchema } from '../storage/schema'
 import { isHash, isUtc, LIMITS, SnapshotError, type BlobRef } from './manifest'
 
@@ -31,7 +32,7 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
   let editorCount = 0
   const lookup = db.prepare('SELECT document_id,kind FROM editor_ids WHERE project_id=? AND id=?')
   const documents = db.prepare('SELECT * FROM documents').all() as Record<string, unknown>[]
-  const snapshot = version === 3 ? manuscript(db,projectId) : null
+  const snapshot = version >= 3 ? manuscript(db,projectId) : null
   if (documents.length < 1 || documents.length > 10000 || snapshot && snapshot.documents.length !== documents.length) return invalid()
   const positions = new Set<number>()
   function references(payload: unknown, documentId?: unknown): void {
@@ -73,6 +74,7 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
     }
   }
   if (snapshot && historyStorage(db,projectId).unreferenced.length) return invalid()
+  if (version >= 4) try { validatePortableNotes(db,projectId) } catch { return invalid() }
   let commits = 0
   for (const raw of db.prepare('SELECT * FROM commits').iterate()) {
     const commit = raw as Record<string, unknown>

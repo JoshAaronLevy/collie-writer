@@ -1,4 +1,5 @@
 import { isOutlineInput, isHistoryInput } from '../shared/outline'
+import { isNoteChangeInput } from '../shared/notes'
 import { isRenameInput, isArchiveInput, isResetInput } from '../shared/project-lifecycle'
 import { BrowserWindow, clipboard, dialog, ipcMain, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
@@ -57,6 +58,8 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
       if ((kind === 'list' || kind === 'data' || kind === 'cleanup') && isInfoRequest(value)) command = { kind }
       else if (exact(value, ['requestId', 'input']) && kind === 'outline' && isOutlineInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'history' && isHistoryInput(value.input)) command = { kind, input: value.input }
+      else if (exact(value, ['requestId', 'input']) && kind === 'notes' && isOpenInput(value.input)) command = { kind, input: value.input }
+      else if (exact(value, ['requestId', 'input']) && kind === 'noteChange' && isNoteChangeInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'create' && isCreateInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'open' && isOpenInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'section' && isSectionInput(value.input)) command = { kind, input: value.input }

@@ -7,6 +7,7 @@ import { canParent, effectiveState, type CheckpointSummary, type HistoryInput, t
 import { inWriteTransaction } from '../storage/driver'
 import { requestDigest } from '../storage/digest'
 import { checkpoint, readCheckpoint, historyStorage, conservedContent, freshRevisions, manuscript, reconcileAnchors, validateManuscript, writeManuscript } from './manuscript'
+import { reconcileAnnotationAnchors } from './notes'
 
 export function readHistory(db: Database.Database, input: HistoryInput): HistoryView {
   const project = db.prepare('SELECT head_commit_id FROM projects WHERE id=?').get(input.projectId) as { head_commit_id: string }
@@ -113,7 +114,7 @@ export function changeOutline(db: Database.Database, input: OutlineInput): strin
     if (['move','split','merge','state','details','repair'].includes(c.type) && conservedContent(before) !== conservedContent(after)) throw new ProjectError('VALIDATION')
     freshRevisions(before,after)
     validateManuscript(after)
-    if (!['checkpoint','prune'].includes(c.type)) writeManuscript(db,input.projectId,after)
+    if (!['checkpoint','prune'].includes(c.type)) { writeManuscript(db,input.projectId,after); reconcileAnnotationAnchors(db,input.projectId) }
     let selected = after.documents.find(d => d.id === selectedId && d.kind === 'text' && effectiveState(d,after.documents) === 'active')
     selected ??= after.documents.find(d => d.kind === 'text' && effectiveState(d,after.documents) === 'active')!
     const head = randomUUID(), time = new Date().toISOString()

@@ -11,6 +11,7 @@ type TableRowJson = { type: 'tableRow'; attrs: { blockId: string }; content: Tab
 const newCell = (type: TableCellJson['type']): TableCellJson => ({ type, attrs: { blockId: crypto.randomUUID() }, content: [{ type: 'paragraph', attrs: { blockId: crypto.randomUUID() } }] })
 
 type Props = {
+  noteMode?: boolean
   payload: DocumentPayload
   disabled: boolean
   onReady: (editor: Editor | null) => void
@@ -21,7 +22,7 @@ type Props = {
   importImage: () => void
 }
 
-export default function RichDraft({ payload, disabled, onReady, onChange, onIssue, onBlur, imageUrl, importImage }: Props): React.JSX.Element {
+export default function RichDraft({ payload, disabled, onReady, onChange, onIssue, onBlur, imageUrl, importImage, noteMode = false }: Props): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const findField = useRef<HTMLInputElement>(null)
   const editor = useRef<Editor | null>(null)
@@ -46,6 +47,7 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
   }, [])
   useEffect(() => { editor.current?.setEditable(!disabled, false) }, [disabled])
   useEffect(() => window.collie.onEditorAction(action => {
+    if (noteMode) return
     const instance = editor.current
     if (!instance) return
     if (action === 'find') { findField.current?.focus(); return }
@@ -164,12 +166,12 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
       <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={link}>Link</button>
       <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => command(e => { e.chain().focus().unsetMark('link').run() })}>Remove link</button>
       <button type="button" disabled={disabled} onClick={() => insertBlock('horizontalRule')}>Rule</button>
-      <button type="button" disabled={disabled} onClick={() => insertBlock('pageBreak')}>Page break</button>
+      {!noteMode ? <><button type="button" disabled={disabled} onClick={() => insertBlock('pageBreak')}>Page break</button>
       <button type="button" disabled={disabled} onClick={table}>Table 2×2</button>
       <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => growTable('row')}>Add row</button>
       <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => growTable('column')}>Add column</button>
       <button type="button" disabled={disabled} onClick={importImage}>Image…</button>
-      <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={imageDetails}>Image details</button>
+      <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={imageDetails}>Image details</button></> : null}
       <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => { void pastePlain() }}>Paste plain text</button>
       <button type="button" disabled={disabled} onClick={() => command(e => { undo(e.state, tr => e.view.dispatch(tr)) })}>Undo</button>
       <button type="button" disabled={disabled} onClick={() => command(e => { redo(e.state, tr => e.view.dispatch(tr)) })}>Redo</button>

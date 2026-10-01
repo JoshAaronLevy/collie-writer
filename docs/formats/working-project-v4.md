@@ -1,0 +1,18 @@
+# Working project schema 4
+
+Stage 10 extends [schema 3](working-project-v3.md). Application ID `1129270359` and editor AST version 1 remain unchanged. `user_version`, `format.schema_version`, and `format.minimum_reader` become **4**. The exact app-owned STRICT DDL is in `src/worker/storage/schema.ts`.
+
+| Table | Purpose |
+| --- | --- |
+| `notes` | Project-scoped stable note identity, independent revision, human origin, rich editor-subset body, active/archive/trash state and timestamps. |
+| `note_revisions` | Immutable pre-change note snapshots, including title/body/state and section/label links. |
+| `note_links` | Many-to-many note-to-section links. Sections retain identity through moves and merge tombstones. |
+| `note_labels` and `note_label_links` | Reusable tag/category identity and note membership. Archived labels and notes remain; label removal cannot delete a note. Normalized names prevent duplicate active labels of the same kind. |
+| `annotations` | Original quote and editable interpretation in separate columns, with retained block ID, UTF-16 offsets and explicit active/orphaned projection. |
+| `annotation_revisions` | Immutable pre-change interpretation/state snapshots. |
+
+Notes accept the supported manuscript editor subset: paragraphs, headings, lists, quotes, rules, text/marks/links and line breaks. They reject images, tables, page breaks, citations, footnotes and source references. Note bodies are bounded to 2 million encoded characters; quotes to 10,000 characters. A note is not a source or citation. Origin is human for this stage; the field allows later origin choices without an AI runtime.
+
+An annotation is created only when the submitted exact quote matches a single paragraph or heading at the submitted document revision, block ID and UTF-16 offsets. On a document edit, an unchanged prefix retains offsets, an unchanged suffix shifts by the exact length difference, and any edit overlapping the quote marks it orphaned. A block removed by editing or an outline operation becomes orphaned. A moved block retains its ID and updates the section projection. No fuzzy quote search or guessed replacement silently reattaches a comment. Original quote and interpretation remain readable after orphaning.
+
+The 3→4 migration validates the source, copies the database to retained backup and candidate files, adds tables on the candidate, validates it, then switches the active pointer. Failure retains the original and candidates. Archive container version remains 1. New archives declare schema/minimum reader 4; schema-2/3 archives remain readable and are copy-migrated after extraction. Backup/restore/duplicate include these tables and re-scope their project IDs for independent copies. Local note commit and chosen-file Save remain different acknowledgments.

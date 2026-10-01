@@ -1,4 +1,6 @@
 import { changeOutline, readHistory } from './outline'
+import { changeNote, mapDocumentAnnotations, readNotes, reconcileAnnotationAnchors } from './notes'
+import type { NoteChangeInput, NotesView } from '../../shared/notes'
 import { seedOutline, automaticCheckpoint, updateDocumentAnchors, manuscript } from './manuscript'
 import { effectiveState, isOutlineDocument, type OutlineDocument, type OutlineInput, type HistoryInput, type HistoryView } from '../../shared/outline'
 import Database from 'better-sqlite3'
@@ -119,6 +121,14 @@ export class ProjectRepository {
   history(input: HistoryInput): Promise<HistoryView> {
     return this.serial(async () => { this.fileContext(input); return readHistory(this.active!.db,input) })
   }
+  notes(input: OpenInput): Promise<NotesView> { return this.serial(async () => { this.fileContext(input); return readNotes(this.active!.db,input.projectId) }) }
+  noteChange(input: NoteChangeInput): Promise<NotesView> { return this.serial(async () => {
+    if (this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
+    this.fileContext(input)
+    const view = changeNote(this.active!.db,input)
+    await this.discovery(this.active!)
+    return view
+  }) }
   create(input: CreateInput): Promise<OpenProject> { return this.serial(() => this.createUnlocked(input)) }
   list(): Promise<ProjectList> { return this.serial(() => this.listUnlocked()) }
   commit(input: CommitInput): Promise<CommitReceipt> { return this.serial(() => this.commitUnlocked(input)) }
@@ -464,7 +474,10 @@ export class ProjectRepository {
       const revisionId = randomUUID(), headCommitId = randomUUID(), time = new Date().toISOString()
       owned.db.prepare('DELETE FROM editor_ids WHERE project_id=? AND document_id=?').run(input.projectId, input.documentId)
       this.indexIds(owned.db, input.projectId, input.documentId, payload)
+      const previousPayload = readDocument(JSON.parse((owned.db.prepare('SELECT payload FROM documents WHERE project_id=? AND id=?').get(input.projectId,input.documentId) as { payload: string }).payload))
+      mapDocumentAnnotations(owned.db,input.projectId,input.documentId,previousPayload,payload)
       updateDocumentAnchors(owned.db,input.projectId,input.documentId,payload)
+      reconcileAnnotationAnchors(owned.db,input.projectId)
       owned.db.prepare('UPDATE documents SET revision_id=?,payload=? WHERE project_id=? AND id=?').run(revisionId, JSON.stringify(payload), input.projectId, input.documentId)
       owned.db.prepare('INSERT INTO commits VALUES (?,?,?,?)').run(input.projectId, headCommitId, project.head_commit_id, time)
       owned.db.prepare('UPDATE projects SET head_commit_id=?,updated_at=? WHERE id=?').run(headCommitId, time, input.projectId)

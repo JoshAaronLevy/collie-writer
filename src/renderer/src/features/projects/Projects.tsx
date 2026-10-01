@@ -11,6 +11,7 @@ import type { DocumentPayload } from '../../../../domain/editor/schema'
 import type { Editor } from '@tiptap/core'
 import { templateNames, type ProjectTemplate } from '../../../../domain/projects/templates'
 import RichDraft from '../../editor/RichDraft'
+import NotesPanel, { type AnnotationCapture } from './NotesPanel'
 import { serializeEditor } from '../../editor/adapter'
 import FilePanel from './FilePanel'
 function scopeOf(project: OpenInput): OpenInput { return { projectId: project.projectId, workspaceId: project.workspaceId } }
@@ -39,6 +40,9 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
   const [committing, setCommitting] = useState(false), [retry, setRetry] = useState<CommitInput | null>(null)
   const [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [history, setHistory] = useState<HistoryView | null>(null)
+  const [annotationCapture, setAnnotationCapture] = useState<AnnotationCapture | null>(null)
+  const [noteDirty, setNoteDirty] = useState(false)
+  const noteDirtyRef = useRef(false), noteFlush = useRef<(() => Promise<boolean>) | null>(null)
   const [outlineRetry, setOutlineRetry] = useState(false)
   const outlinePending = useRef<OutlineInput | null>(null)
   const anchorToFocus = useRef<string | null>(null)
@@ -62,7 +66,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
   const selectedSection = project?.documents.find(doc => doc.id === project.documentId)
   const sectionReadOnly = !!selectedSection && effectiveState(selectedSection,project!.documents) !== 'active'
   const sectionDirty = !!selectedSection && (sectionTitle !== selectedSection.title || sectionStatus !== selectedSection.status || sectionSynopsis !== selectedSection.synopsis)
-  const dirty = editVersion !== protectedVersion || sectionDirty || retry !== null || committing
+  const dirty = editVersion !== protectedVersion || sectionDirty || retry !== null || committing || noteDirty
   const fileActive = fileBusy(files.job)
   function updateProject(next: OpenProject | null): void { current.current = next; setProject(next) }
   function updateHead(next: OpenProject): void {
@@ -84,7 +88,7 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     const doc = current.current?.documents.find(item => item.id === current.current?.documentId), fields = sectionFields.current
     return !!doc && (fields.title !== doc.title || fields.status !== doc.status || fields.synopsis !== doc.synopsis)
   }
-  function isDirty(): boolean { return editVersionRef.current !== protectedVersionRef.current || isMetaDirty() || !!retryCommit.current || !!committingTask.current }
+  function isDirty(): boolean { return editVersionRef.current !== protectedVersionRef.current || isMetaDirty() || !!retryCommit.current || !!committingTask.current || noteDirtyRef.current }
   function changed(): void {
     editVersionRef.current += 1; setEditVersion(editVersionRef.current)
     window.collie.setUnprotectedChanges(true)
@@ -110,12 +114,12 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
   }, [editVersion, project?.headCommitId, project?.destination?.headCommitId, files.state, dirty, fileActive, acting, closing, storage.state])
   useEffect(() => {
     if (!project || !dirty || closing || storage.state !== 'ready') return
-    const timer = setTimeout(() => { if (!actionTask.current && !retryCommit.current && !metaPending.current) void flush() }, 900)
+    const timer = setTimeout(() => { if (!actionTask.current && !retryCommit.current && !metaPending.current) void flushManuscript() }, 900)
     return () => clearTimeout(timer)
   }, [editVersion, sectionTitle, sectionStatus, sectionSynopsis, project?.documentId, closing, storage.state])
   useEffect(() => {
     if (!project || storage.state !== 'ready') return
-    const timer = setInterval(() => { if (isDirty() && !retryCommit.current && !metaPending.current && !actionTask.current && !closingRef.current) void flush() }, 5000)
+    const timer = setInterval(() => { if (isDirty() && !retryCommit.current && !metaPending.current && !actionTask.current && !closingRef.current) void flushManuscript() }, 5000)
     return () => clearInterval(timer)
   }, [project?.documentId, storage.state])
   async function refresh(): Promise<void> {
@@ -150,13 +154,14 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     for (const url of imageUrls.current.values()) URL.revokeObjectURL(url)
     imageUrls.current = loaded
     if (current.current?.projectId !== next.projectId) setHistory(null)
+    setAnnotationCapture(null)
     updateProject(next); setConflict(null); setEditorEpoch(value => value + 1)
     const selected = next.documents.find(doc => doc.id === next.documentId)!
     setSectionTitle(selected.title); setSectionStatus(selected.status as 'draft' | 'review' | 'complete'); setSectionSynopsis(selected.synopsis); metaPending.current = null
     sectionFields.current = { title: selected.title, status: selected.status as 'draft' | 'review' | 'complete', synopsis: selected.synopsis }
     editVersionRef.current = 0; protectedVersionRef.current = 0; setEditVersion(0); setProtectedVersion(0)
     retryCommit.current = null; setRetry(null); pendingSave.current = null
-    window.collie.setUnprotectedChanges(false); setError(imageIssue); setNotice('Draft protected locally.')
+    window.collie.setUnprotectedChanges(noteDirtyRef.current); setError(imageIssue); setNotice('Draft protected locally.')
     await refreshFiles()
   }
   async function importImage(): Promise<void> {
@@ -257,6 +262,10 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     setCommitting(false); return null
   }
   async function flush(): Promise<OpenProject | null> {
+    if (noteFlush.current && !await noteFlush.current()) return null
+    return flushManuscript()
+  }
+  async function flushManuscript(): Promise<OpenProject | null> {
     if (!current.current) return null
     const editor = editorRef.current
     if (!editor) { setError('This document could not be opened safely for editing. Its stored copy is retained.'); return null }
@@ -479,6 +488,27 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
     }
   }
   handlers.current = { action: handleAction, save: () => run(() => save(false, true)) }
+  async function captureAnnotation(): Promise<void> {
+    const p = current.current, e = editorRef.current
+    if (!p || !e) return
+    const selection = e.state.selection
+    if (selection.empty || !selection.$from.sameParent(selection.$to) || !['paragraph','heading'].includes(selection.$from.parent.type.name)) { setError('Select text within one paragraph or heading to annotate.'); return }
+    const blockId = selection.$from.parent.attrs.blockId as string | undefined
+    const startOffset = selection.$from.parentOffset, endOffset = selection.$to.parentOffset
+    const quote = selection.$from.parent.textBetween(startOffset,endOffset,'\n','\ufffc')
+    if (!blockId || !quote || quote.length !== endOffset-startOffset || quote.length > 10000) { setError('Select plain text within one paragraph or heading.'); return }
+    const saved = await flush()
+    if (!saved) return
+    setAnnotationCapture({ documentId:saved.documentId,expectedRevisionId:saved.revisionId,blockId,startOffset,endOffset,quote })
+    setNotice('Selected passage ready in Passage annotations below.')
+  }
+  async function afterNoteCommit(): Promise<void> {
+    const p = current.current
+    if (!p) return
+    const result = await window.collie.openSection({ ...scopeOf(p),documentId:p.documentId })
+    if (result.ok) updateHead(result.value); else setError(result.error.message)
+    await refresh()
+  }
   const available = storage.state === 'ready' && location?.state === 'ready'
   return <section className="projects" aria-labelledby="projects-title">
     <h1 id="projects-title">Your projects</h1>
@@ -521,13 +551,15 @@ export default function Projects({ storage }: { storage: StorageStatus }): React
         <label>Synopsis <textarea value={sectionSynopsis} maxLength={10000} disabled={busy || closing || outlineRetry || sectionReadOnly} onChange={event => { sectionFields.current.synopsis = event.target.value; setSectionSynopsis(event.target.value); metaPending.current = null }} /></label>
         <button type="submit" disabled={busy || acting || closing || sectionReadOnly}>{metaPending.current ? 'Retry section details' : 'Save section details'}</button>
       </form>
-      <RichDraft key={`${project.projectId}-${project.documentId}-${editorEpoch}`} payload={project.payload} disabled={busy || closing || outlineRetry || sectionReadOnly || storage.state !== 'ready'} onReady={editor => { editorRef.current = editor; if (editor && anchorToFocus.current) { const id = anchorToFocus.current; anchorToFocus.current = null; let target: number | null = null; editor.state.doc.descendants((node,position) => { if (node.attrs.blockId === id || node.attrs.citationId === id || node.attrs.footnoteId === id) { target = position; return false }; return true }); if (target !== null) { editor.commands.setTextSelection(Math.min(target+1,editor.state.doc.content.size)); editor.commands.focus(); editor.view.dispatch(editor.state.tr.scrollIntoView()) } } }} onChange={changed} onIssue={setError} onBlur={() => { if (isDirty() && !actionTask.current) void flush() }} imageUrl={assetId => imageUrls.current.get(assetId)} importImage={() => run(importImage)} />
+      <RichDraft key={`${project.projectId}-${project.documentId}-${editorEpoch}`} payload={project.payload} disabled={busy || closing || outlineRetry || sectionReadOnly || storage.state !== 'ready'} onReady={editor => { editorRef.current = editor; if (editor && anchorToFocus.current) { const id = anchorToFocus.current; anchorToFocus.current = null; let target: number | null = null; editor.state.doc.descendants((node,position) => { if (node.attrs.blockId === id || node.attrs.citationId === id || node.attrs.footnoteId === id) { target = position; return false }; return true }); if (target !== null) { editor.commands.setTextSelection(Math.min(target+1,editor.state.doc.content.size)); editor.commands.focus(); editor.view.dispatch(editor.state.tr.scrollIntoView()) } } }} onChange={changed} onIssue={setError} onBlur={() => { if (isDirty() && !actionTask.current) void flushManuscript() }} imageUrl={assetId => imageUrls.current.get(assetId)} importImage={() => run(importImage)} />
+        <button type="button" disabled={busy || closing || sectionReadOnly} onMouseDown={event => event.preventDefault()} onClick={() => { void captureAnnotation() }}>Annotate selection</button>
         <div className="project-actions"><button disabled={busy || committing || closing || outlineRetry || sectionReadOnly || !dirty || storage.state !== 'ready'} onClick={() => { void flush().then(() => refresh()) }}>{committing ? 'Protecting…' : retry ? 'Retry local commit' : 'Protect locally'}</button>
         <button onClick={() => { editorRef.current?.commands.focus(); editorRef.current?.commands.selectAll() }}>Select all for copying</button></div>
         <p>For an emergency copy, select this section and use your system Copy command, then paste into another local document.</p>
       <p role="status">{notice}</p>
       {conflict ? <details className="conflict-panel" open><summary>Stored version differs from this visible draft</summary><p>Keep this draft open for copying. The stored section below is a separate read-only copy; Collie Writer has not overwritten either version.</p><textarea readOnly aria-label="Stored section text for copying" value={readableDocument(conflict.payload)} /></details> : null}
     </div> : <p>Select a local project, open a file or create a blank project to begin.</p>}
+    {project ? <NotesPanel key={project.projectId} project={project} capture={annotationCapture} disabled={busy || closing || outlineRetry || storage.state !== 'ready'} registerFlush={fn => { noteFlush.current = fn }} dirtyChanged={value => { noteDirtyRef.current = value; setNoteDirty(value); window.collie.setUnprotectedChanges(isDirty()) }} onCommitted={afterNoteCommit} navigate={(id,anchor) => navigateSection(id,anchor)} /> : null}
     {outlineRetry ? <p role="alert">The outline/history operation has an unknown outcome. Editing is paused until the same operation is reconciled. <button disabled={working || closing} onClick={() => run(() => performOutline())}>Retry pending outline/history operation</button></p> : null}
     {project ? <HistoryPanel key={project.projectId} project={project} history={history} disabled={busy || acting || closing || committing || fileActive} change={change => run(() => performOutline(change))} read={id => run(() => loadHistory(id))} navigate={(doc,anchor) => run(() => navigateSection(doc,anchor))} /> : null}
     {project || fileActive ? <FilePanel status={files} dirty={dirty} disabled={!project || !available || acting || closing} save={as => run(() => save(as))} locate={() => run(() => openFile(false, true))} inspect={() => run(() => openFile(true))} answer={(id, choice) => { void window.collie.answerFileJob({ id, choice }).then(result => { if (!result.ok) setError(result.error.message) }) }} cancel={id => { void window.collie.cancelFileJob(id).then(result => { if (!result.ok) setError(result.error.message) }) }} consent={id => { void window.collie.confirmFileOverwrite(id).then(result => { if (!result.ok) setError(result.error.message) }) }} /> : null}
