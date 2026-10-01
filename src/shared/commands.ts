@@ -4,6 +4,7 @@ import type { LifecycleAPI } from './project-lifecycle'
 import type { FileAPI } from './project-files'
 import type { AccessAPI } from './access'
 import type { SupportAPI } from './support'
+import type { DirectAPI } from './direct-access'
 
 export const GET_INFO = 'app.getInfo'
 export const GET_STORAGE_STATUS = 'storage.getStatus'
@@ -25,7 +26,7 @@ export type Result<T> =
       requestId: string
       error: { code: AppErrorCode; message: string; retryable: boolean }
     }
-export type CollieAPI = ProjectAPI & FileAPI & LifecycleAPI & AccessAPI & SupportAPI & {
+export type CollieAPI = ProjectAPI & FileAPI & LifecycleAPI & AccessAPI & SupportAPI & DirectAPI & {
   onEditorAction: (callback: (action: 'undo' | 'redo' | 'find' | 'paste-plain') => void) => () => void
   getInfo: () => Promise<Result<AppInfo>>
   getStorageStatus: () => Promise<Result<StorageStatus>>

@@ -11,9 +11,11 @@ Stage 9 adds nested outline moves, block-boundary splits, merge tombstones, reve
 
 Stage 10 adds human note capture, an unfiled inbox, reusable tags/categories, many-section links and quoted passage annotations with visible orphan status. [Working schema 4](docs/formats/working-project-v4.md) copy-migrates older databases while retaining originals; new archives include notes and require the Stage 10 reader. Native and manual acceptance remain pending.
 
+Stage 20 has a [local commerce adapter checkpoint](docs/validation/stage-20.md): protected desktop purchase/restore controls, an isolated non-content entitlement service, signed-grant reconciliation and unpublished purchase-information pages. **Configured commerce remains blocked** by the value decision, authentic issuer/merchant setup and owner authorization; both checkout gates are closed. No service has been deployed or transaction performed. See [D7](docs/decisions/D7-direct-commerce.md), [prerequisites](docs/commerce/stage-20-prerequisites.md) and the [Stage 20 manual guide](docs/manual-testing/stage-20.md). This does not establish a paid release.
+
 ## Current implementation workflow
 
-Josh owns all testing, effective September 29, 2026. The assistant must not write/maintain tests, add automated verification infrastructure or run any testing/check/build/launch/browser-verification activity. Each implemented stage ends with `Stage X complete. As a user:` and an ordered list of actions with expected outcomes, then waits for Josh's feedback. See the standing [instructions](AGENTS.md) and [Stage 19 manual guide](docs/manual-testing/stage-19.md).
+Josh owns all testing, effective September 29, 2026. The assistant must not write/maintain tests, add automated verification infrastructure or run any testing/check/build/launch/browser-verification activity. Each implemented stage ends with `Stage X complete. As a user:` and an ordered list of actions with expected outcomes, then waits for Josh's feedback. Incomplete stages must report their blockers instead of claiming completion. See the standing [instructions](AGENTS.md) and [Stage 20 manual guide](docs/manual-testing/stage-20.md).
 
 Existing Stage 1 tests, package scripts and results remain historical. The former automatic native CI is archived under `.github/disabled-workflows/` and no longer runs on push/pull request. Do not re-enable or extend it. Implementation completion is recorded separately from user-confirmed acceptance.
 

@@ -1,0 +1,20 @@
+# Stage 20 implementation record
+
+October 1, 2026. **Local adapter checkpoint implemented — awaiting configuration and user testing. Overall configured commerce is blocked; Stage 20 is not accepted or production-complete.** Git began clean. No customer feedback, seller/account details, issuer keys, service origin, credentials or provider results were supplied. The [value gate](../research/stage-18-value-sessions.md) remains pending, and checkout is disabled in both desktop configuration and service policy. See the [prerequisite register and channel matrix](../commerce/stage-20-prerequisites.md).
+
+## Implemented source
+
+- `src/main/entitlements/direct/`: build-owned HTTPS configuration, independent session/claim/device secrets, encrypted OS-backed credential persistence, bounded service calls, exact browser/portal URL boundaries, signature/issuer/channel validation, restore/refresh/manage/disconnect operations. No credential or service URL enters renderer IPC.
+- `src/shared/direct-access.ts`, shared API, preload and main registration, `DirectAccessPanel.tsx`, Access/Settings copy: factual pricing, visible unconfigured state, browser session completion/resume, purchase restore, optional connection management and local-data explanations.
+- `services/entitlements/`: isolated dependency-free Node service, private schema-1 SQLite metadata, reviewed-product adapter, raw-byte webhook HMAC/timestamp/deduplication, serialized canonical reconciliation, monotonic Ed25519 grants, recovery-code/device token hashing and expiry, verified-owner support operations, and unpublished factual pricing/edition/privacy/refund/support pages. Checkout stays policy-disabled; no service is running or deployed.
+- An in-scope prerequisite correction closes the missing `try` brace before `finally` in the Stage 19 tutorial handler. This was found from source reading, not a passed check or runtime result.
+
+[D7](../decisions/D7-direct-commerce.md) records the integration decision, primary documentation and pending provider feasibility; the [service contract](../formats/direct-commerce-v1.md) records auth/data boundaries and the [operator runbook](../../services/entitlements/README.md) records setup, backup, rotation and support recovery. The desktop project schema remains SQL/minimum reader 9 and AST/archive 1. The signed grant format is unchanged. New service and encrypted device-connection formats initialize at version 1; no existing project data is migrated.
+
+## Limits and honest evidence
+
+No test code, automated verification infrastructure, fixtures, synthetic keys/grants, typecheck, lint, audit, formatting checks, build, package, app/service/browser launch, HTTP probe, webhook replay, transaction, account action or deployment was created/executed by the assistant. Source/config/docs/Git reading and editing plus public primary-documentation research were performed. All actual secure-storage, merchant, webhook, refund, native restore, cancellation, privacy/network and runtime behavior is unverified. The [manual guide](../manual-testing/stage-20.md) separates currently observable unconfigured behavior from configuration-dependent sandbox work.
+
+Prepared service source is not proof of eligible seller registration, real paid value, enforceable US checkout geography, reviewed purchase/legal copy, provider-controlled ad-free behavior or a hosted/signing environment. The service uses one local-disk owner, not a scalable multi-replica architecture. Unknown/mixed/changed catalogs and oversized histories stop reconciliation for support rather than invent rights. A corrupt desktop access cache still retains Stage 18's fail-closed anti-replay behavior and needs support; Disconnect removes only connection credentials.
+
+The Stage 20 local contract is available to a separately requested Stage 21 implementation. Paid launch still requires complete configured commerce and authentic user-reported results. Stages 21–23 were not started. Do not replace this partial/configuration-blocked status with an unqualified completion statement.

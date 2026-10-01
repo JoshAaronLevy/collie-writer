@@ -22,6 +22,7 @@ import { isExportPreview, isExportJob, type ExportPreview, type ExportJob } from
 import { isRecipesView, isImportPick, isImportPreview, type RecipesView, type ImportPick, type ImportPreview } from '../shared/interchange'
 import { ACCESS_CHANNELS, ACCESS_CHANGED, isAccessView, type AccessView } from '../shared/access'
 import { SUPPORT_CHANNELS, isSupportPreview, isZoomLevel, type SupportPreview, type ZoomLevel } from '../shared/support'
+import { DIRECT_CHANNELS, isDirectView, type DirectView } from '../shared/direct-access'
 import { CLOSE_REPLY, FILE_ACTION, FILE_CHANGED, FILE_CHANNELS, isFileAction, isFileStatus, isSelection, type FileStatus, type FileSelection } from '../shared/project-files'
 
 async function projectCall<T>(channel: string, validate: (value: unknown) => boolean, input?: unknown): Promise<ProjectResult<T>> {
@@ -35,6 +36,13 @@ async function projectCall<T>(channel: string, validate: (value: unknown) => boo
 
 if (!process.contextIsolated || !process.sandboxed) throw new Error('Secure preload required')
 const api: CollieAPI = {
+  readDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.read, isDirectView),
+  beginDirectAccess: input => projectCall<DirectView>(DIRECT_CHANNELS.begin, isDirectView, input),
+  resumeDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.resume, isDirectView),
+  claimDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.claim, isDirectView),
+  refreshDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.refresh, isDirectView),
+  manageDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.manage, isDirectView),
+  disconnectDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.disconnect, isDirectView),
   readAccess: () => projectCall<AccessView>(ACCESS_CHANNELS.read,isAccessView),
   designateFreeProject: input => projectCall<AccessView>(ACCESS_CHANNELS.designate,isAccessView,input),
   finishAccessTransition: input => projectCall<AccessView>(ACCESS_CHANNELS.finish,isAccessView,input),

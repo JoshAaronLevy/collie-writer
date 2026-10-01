@@ -178,7 +178,7 @@ export class AccessService {
         }finally{this.changing=false}
       }
       return await seedTutorial(this.storage,scope)
-    finally{this.sampleBusy=false}
+    }finally{this.sampleBusy=false}
   }
   private async designate(scope:OpenInput,revision:string):Promise<AccessView>{
     // Keeping the already-open transitioning editor as the free project cannot revoke its

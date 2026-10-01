@@ -16,6 +16,7 @@ import { ProjectLifecycle } from './lifecycle'
 import { SourceAssets } from './source-assets'
 import { AccessService } from './entitlements/service'
 import { SupportService } from './support'
+import { DirectAccessService } from './entitlements/direct/service'
 
 app.setName('Collie Writer')
 app.setAppUserModelId(APP_ID)
@@ -51,6 +52,7 @@ const storage = new StorageWorker((status) => {
     window.webContents.send(STORAGE_STATUS_CHANGED, status)
 })
 const access = new AccessService(() => window?.webContents,storage,() => unprotected,() => location.path(),devOrigin)
+const directAccess = new DirectAccessService(() => window?.webContents, access, devOrigin)
 const support = new SupportService(() => window?.webContents,()=>storage.current(),devOrigin)
 storage.onErrorCode(code=>support.recordError(code))
 storage.setAccessPolicy(command=>access.authorize(command),command=>{
@@ -98,6 +100,7 @@ app
     )
     registerStorageIpc(() => window?.webContents, () => storage.current(), devOrigin)
     access.register()
+    directAccess.register()
     support.register()
     registerProjectIpc(() => window?.webContents, location, storage, value => { unprotected = value }, devOrigin, sourceAssets)
     files.register()

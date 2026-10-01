@@ -1,0 +1,8 @@
+{
+  "name": "collie-writer-entitlements",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "engines": { "node": "24.21.0" },
+  "scripts": { "start": "node server.mjs" }
+}

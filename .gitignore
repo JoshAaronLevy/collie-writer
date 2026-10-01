@@ -10,3 +10,9 @@ out-tests/
 test-results/
 playwright-report/
 output/
+
+# Purchase-service runtime data and secrets never enter source or desktop packages.
+services/entitlements/.env
+services/entitlements/.env.*
+!services/entitlements/.env.example
+services/entitlements/runtime/

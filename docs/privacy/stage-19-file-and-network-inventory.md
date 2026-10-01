@@ -2,6 +2,8 @@
 
 October 1, 2026 source/config inventory. This records implemented paths and policy, not observed native traffic or an exhaustive binary audit. User-led clean-machine observation is pending.
 
+Stage 20 adds an optional, explicitly invoked main-process purchase transport and OS-encrypted connection store; its origin/key configuration is currently absent and checkout remains disabled. The renderer's request policy is unchanged. The table below is the Stage 19 checkpoint; consult the current [direct service contract](../formats/direct-commerce-v1.md) and [D7](../decisions/D7-direct-commerce.md) for the additional non-content purchase/browser boundaries.
+
 | Area | Current behavior and boundary |
 | --- | --- |
 | Working root | Verified internal unsynced folder. `workspaces/` holds SQLite/WAL, originals, excerpts, local history and recovery; `reset-recovery/`, file-operation candidates and retained previous copies are preserved. Stage 7 Data Locations lists work/recovery and size. |
