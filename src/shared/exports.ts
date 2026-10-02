@@ -1,7 +1,7 @@
 import { isId } from '../domain/editor/schema'
 import type { OpenInput } from './projects'
 
-export type ExportOptions = OpenInput & { documentIds: string[]; paper: 'Letter' | 'A4' }
+export type ExportOptions = OpenInput & { documentIds: string[]; paper: 'Letter' | 'A4'; titlePage: boolean; includeDescription: boolean }
 export type ExportIssue = { kind: 'reference' | 'metadata' | 'asset' | 'content'; documentId: string; message: string }
 export type ExportPreview = {
   headCommitId: string; digest: string; style: 'apa' | 'chicago'; paper: 'Letter' | 'A4';
@@ -22,24 +22,24 @@ export type ExportJobInput = OpenInput & { jobId: string }
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 const keys = (v: Record<string, unknown>, expected: string[]): boolean => Object.keys(v).length === expected.length && expected.every(k => Object.hasOwn(v,k))
 export function isExportOptions(v: unknown): v is ExportOptions {
-  return object(v) && keys(v,['projectId','workspaceId','documentIds','paper']) && isId(v.projectId) && isId(v.workspaceId) && (v.paper === 'Letter' || v.paper === 'A4') && Array.isArray(v.documentIds) && v.documentIds.length > 0 && v.documentIds.length <= 10000 && v.documentIds.every(isId) && new Set(v.documentIds).size === v.documentIds.length
+  return object(v) && keys(v,['projectId','workspaceId','documentIds','paper','titlePage','includeDescription']) && isId(v.projectId) && isId(v.workspaceId) && typeof v.titlePage === 'boolean' && typeof v.includeDescription === 'boolean' && (v.paper === 'Letter' || v.paper === 'A4') && Array.isArray(v.documentIds) && v.documentIds.length > 0 && v.documentIds.length <= 10000 && v.documentIds.every(isId) && new Set(v.documentIds).size === v.documentIds.length
 }
 export function isExportStart(v: unknown): v is ExportStartInput {
-  return object(v) && keys(v,['projectId','workspaceId','documentIds','paper','expectedHead','previewDigest','acknowledgeMetadata']) && isExportOptions({projectId:v.projectId,workspaceId:v.workspaceId,documentIds:v.documentIds,paper:v.paper}) && isId(v.expectedHead) && typeof v.previewDigest === 'string' && /^[a-f0-9]{64}$/.test(v.previewDigest) && typeof v.acknowledgeMetadata === 'boolean'
+  return object(v) && keys(v,['projectId','workspaceId','documentIds','paper','titlePage','includeDescription','expectedHead','previewDigest','acknowledgeMetadata']) && isExportOptions({projectId:v.projectId,workspaceId:v.workspaceId,documentIds:v.documentIds,paper:v.paper,titlePage:v.titlePage,includeDescription:v.includeDescription}) && isId(v.expectedHead) && typeof v.previewDigest === 'string' && /^[a-f0-9]{64}$/.test(v.previewDigest) && typeof v.acknowledgeMetadata === 'boolean'
 }
 export function isExportJobInput(v: unknown): v is ExportJobInput { return object(v) && keys(v,['projectId','workspaceId','jobId']) && [v.projectId,v.workspaceId,v.jobId].every(isId) }
 export function isExportFormat(v: unknown): v is ExportFormat { return v==='docx'||v==='pdf'||v==='markdown'||v==='text' }
 export function isExportBatchStart(v: unknown): v is ExportBatchStartInput {
-  if(!object(v)||!keys(v,['projectId','workspaceId','documentIds','paper','expectedHead','previewDigest','acknowledgeMetadata','formats','baseName']))return false
-  if(!isExportStart({projectId:v.projectId,workspaceId:v.workspaceId,documentIds:v.documentIds,paper:v.paper,expectedHead:v.expectedHead,previewDigest:v.previewDigest,acknowledgeMetadata:v.acknowledgeMetadata}))return false
+  if(!object(v)||!keys(v,['projectId','workspaceId','documentIds','paper','titlePage','includeDescription','expectedHead','previewDigest','acknowledgeMetadata','formats','baseName']))return false
+  if(!isExportStart({projectId:v.projectId,workspaceId:v.workspaceId,documentIds:v.documentIds,paper:v.paper,titlePage:v.titlePage,includeDescription:v.includeDescription,expectedHead:v.expectedHead,previewDigest:v.previewDigest,acknowledgeMetadata:v.acknowledgeMetadata}))return false
   return Array.isArray(v.formats)&&v.formats.length>0&&v.formats.length<=4&&v.formats.every(isExportFormat)&&new Set(v.formats).size===v.formats.length&&typeof v.baseName==='string'&&v.baseName.length>0&&v.baseName.length<=100&&/^[^\\/:*?"<>|.\u0000-\u001f][^\\/:*?"<>|\u0000-\u001f]*$/.test(v.baseName)&&!/[. ]$/.test(v.baseName)&&!/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(v.baseName)
 }
 export function isWorkerExportBatchStart(v: unknown): v is WorkerExportBatchStart {
-  if(!object(v)||!keys(v,['projectId','workspaceId','documentIds','paper','expectedHead','previewDigest','acknowledgeMetadata','formats','baseName','destinations'])||!isExportBatchStart({projectId:v.projectId,workspaceId:v.workspaceId,documentIds:v.documentIds,paper:v.paper,expectedHead:v.expectedHead,previewDigest:v.previewDigest,acknowledgeMetadata:v.acknowledgeMetadata,formats:v.formats,baseName:v.baseName})||!Array.isArray(v.destinations)||v.destinations.length!==v.formats.length)return false
-  return v.destinations.every((d,i)=>object(d)&&keys(d,['format','path','fingerprint'])&&d.format===v.formats[i]&&typeof d.path==='string'&&d.path.length>0&&d.path.length<=4096&&isWorkerExportStart({projectId:v.projectId,workspaceId:v.workspaceId,documentIds:v.documentIds,paper:v.paper,expectedHead:v.expectedHead,previewDigest:v.previewDigest,acknowledgeMetadata:v.acknowledgeMetadata,destinationPath:d.path,destinationFingerprint:d.fingerprint}))
+  if(!object(v)||!keys(v,['projectId','workspaceId','documentIds','paper','titlePage','includeDescription','expectedHead','previewDigest','acknowledgeMetadata','formats','baseName','destinations'])||!isExportBatchStart({projectId:v.projectId,workspaceId:v.workspaceId,documentIds:v.documentIds,paper:v.paper,titlePage:v.titlePage,includeDescription:v.includeDescription,expectedHead:v.expectedHead,previewDigest:v.previewDigest,acknowledgeMetadata:v.acknowledgeMetadata,formats:v.formats,baseName:v.baseName})||!Array.isArray(v.destinations)||v.destinations.length!==v.formats.length)return false
+  return v.destinations.every((d,i)=>object(d)&&keys(d,['format','path','fingerprint'])&&d.format===v.formats[i]&&typeof d.path==='string'&&d.path.length>0&&d.path.length<=4096&&isWorkerExportStart({projectId:v.projectId,workspaceId:v.workspaceId,documentIds:v.documentIds,paper:v.paper,titlePage:v.titlePage,includeDescription:v.includeDescription,expectedHead:v.expectedHead,previewDigest:v.previewDigest,acknowledgeMetadata:v.acknowledgeMetadata,destinationPath:d.path,destinationFingerprint:d.fingerprint}))
 }
 export function isWorkerExportStart(v: unknown): v is WorkerExportStart {
-  if (!object(v) || !keys(v,['projectId','workspaceId','documentIds','paper','expectedHead','previewDigest','acknowledgeMetadata','destinationPath','destinationFingerprint']) || !isExportStart({projectId:v.projectId,workspaceId:v.workspaceId,documentIds:v.documentIds,paper:v.paper,expectedHead:v.expectedHead,previewDigest:v.previewDigest,acknowledgeMetadata:v.acknowledgeMetadata}) || typeof v.destinationPath !== 'string' || v.destinationPath.length > 4096) return false
+  if (!object(v) || !keys(v,['projectId','workspaceId','documentIds','paper','titlePage','includeDescription','expectedHead','previewDigest','acknowledgeMetadata','destinationPath','destinationFingerprint']) || !isExportStart({projectId:v.projectId,workspaceId:v.workspaceId,documentIds:v.documentIds,paper:v.paper,titlePage:v.titlePage,includeDescription:v.includeDescription,expectedHead:v.expectedHead,previewDigest:v.previewDigest,acknowledgeMetadata:v.acknowledgeMetadata}) || typeof v.destinationPath !== 'string' || v.destinationPath.length > 4096) return false
   const f=v.destinationFingerprint
   return f===null || object(f) && keys(f,['dev','ino','size','mtimeMs','sha256']) && [f.dev,f.ino,f.size,f.mtimeMs].every(n=>typeof n==='number' && Number.isFinite(n) && n>=0) && typeof f.sha256==='string' && /^[a-f0-9]{64}$/.test(f.sha256)
 }

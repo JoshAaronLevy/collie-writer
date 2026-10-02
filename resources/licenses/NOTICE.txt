@@ -69,3 +69,8 @@ the other UI dependencies run locally; no hosted fonts, icon service,
 analytics, advertising, or component-gallery content is loaded by the app.
 Source Serif 4's four existing Latin font faces also supply the renderer's
 manuscript typography, with the same unmodified OFL assets listed above.
+
+PDF export metadata uses pdf-lib 1.17.1 (MIT) locally, with @pdf-lib/standard-fonts
+1.0.0 and @pdf-lib/upng 1.0.1 (MIT), pako 1.0.11 (MIT and Zlib), and tslib
+1.14.1 (0BSD). Complete distributed notices are in dependencies/. No PDF or
+project details are sent to a conversion or metadata service.

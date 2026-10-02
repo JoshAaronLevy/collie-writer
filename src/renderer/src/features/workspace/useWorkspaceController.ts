@@ -1,3 +1,4 @@
+import { requiredProjectName, projectText } from '../../../../domain/projects/details'
 import { useExportOperations } from './useExportOperations'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { effectiveState, type OutlineInput, type OutlineChange, type HistoryView } from '../../../../shared/outline'
@@ -38,6 +39,7 @@ export function useWorkspaceController(storage: StorageStatus) {
   const [access,setAccess]=useState<AccessView|null>(null)
   function applyAccess(next:AccessView):void { setAccess(next) }
   const [editVersion, setEditVersion] = useState(0), [protectedVersion, setProtectedVersion] = useState(0), [editorEpoch, setEditorEpoch] = useState(0)
+  const [newDetails,setNewDetails] = useState({title:'',byline:'',description:''})
   const [newTemplate, setNewTemplate] = useState<ProjectTemplate>('blank')
   const [sectionTitle, setSectionTitle] = useState(''), [sectionStatus, setSectionStatus] = useState<'draft' | 'review' | 'complete'>('draft'), [sectionSynopsis, setSectionSynopsis] = useState('')
   const sectionFields = useRef({ title: '', status: 'draft' as 'draft' | 'review' | 'complete', synopsis: '' })
@@ -63,7 +65,7 @@ export function useWorkspaceController(storage: StorageStatus) {
   const editVersionRef = useRef(0), protectedVersionRef = useRef(0), retryVersion = useRef(0)
   const retryCommit = useRef<CommitInput | null>(null), committingTask = useRef<Promise<OpenProject | null> | null>(null)
   const pendingCreate = useRef<CreateInput | null>(null), pendingSave = useRef<SaveInput | null>(null)
-  const pendingImage = useRef<{ projectId: string; workspaceId: string; operationId: string; token: string; alt: string; caption: string } | null>(null)
+  const pendingImage = useRef<{ projectId: string; workspaceId: string; documentId: string; operationId: string; token: string; alt: string; caption: string } | null>(null)
   const actionTask = useRef<Promise<unknown> | null>(null), closingRef = useRef(false)
   const fileState = useRef<FileStatus>(emptyFiles), alive = useRef(true)
   const jobWaiters = useRef(new Map<string, Set<(job: FileJobView | null) => void>>())
@@ -82,6 +84,12 @@ export function useWorkspaceController(storage: StorageStatus) {
   function updateHead(next: OpenProject): void {
     updateProject(next)
     if (sameScope(scopeOf(next), fileState.current.scope) && ['saved','pending'].includes(fileState.current.state)) applyFiles({ ...fileState.current, state: next.headCommitId === fileState.current.destination?.headCommitId ? 'saved' : 'pending' })
+  }
+  function acceptProjectDetails(next: OpenProject): void {
+    const p=current.current
+    if (!p || !sameScope(p,next)) return
+    // Details never replace the retained editor payload, document ID, selection or undo history.
+    updateHead({...p,title:next.title,byline:next.byline,description:next.description,projectKind:next.projectKind,template:next.template,detailsRevisionId:next.detailsRevisionId,headCommitId:next.headCommitId,updatedAt:next.updatedAt})
   }
   function applyFiles(next: FileStatus): void {
     fileState.current = next; setFiles(next)
@@ -190,10 +198,10 @@ export function useWorkspaceController(storage: StorageStatus) {
       const caption = window.prompt('Caption (optional)', '')
       if (caption === null) return
       if (alt.length > 2000 || caption.length > 10000) { setError('Image description or caption is too long. The image was not imported.'); return }
-      pendingImage.current = { ...scopeOf(p), operationId: crypto.randomUUID(), token: chosen.value.token, alt, caption }
+      pendingImage.current = { ...scopeOf(p), documentId:p.documentId, operationId: crypto.randomUUID(), token: chosen.value.token, alt, caption }
     }
     const input = pendingImage.current
-    const imported = await window.collie.importImage(input)
+    const imported = await window.collie.importImage({projectId:input.projectId,workspaceId:input.workspaceId,operationId:input.operationId,token:input.token})
     if (!imported.ok) { if (imported.error.code !== 'UNAVAILABLE') pendingImage.current = null; setError(imported.error.message); return }
     pendingImage.current = null
     const data = await window.collie.readImage({ ...scopeOf(p), assetId: imported.value.assetId })
@@ -264,7 +272,8 @@ export function useWorkspaceController(storage: StorageStatus) {
     if (!p) return null
     const input = prior ?? { ...scopeOf(p), documentId: p.documentId, operationId: crypto.randomUUID(), expectedRevisionId: p.revisionId, payload: value }
     setCommitting(true); setError(''); setNotice('Protecting edits locally…'); window.collie.setUnprotectedChanges(true)
-    const result = await window.collie.commitDocument(input)
+    retryCommit.current = input; retryVersion.current = version; setRetry(input)
+    const result = await window.collie.commitDocument(input).catch(() => ({ok:false as const,requestId:input.operationId,error:{code:'UNAVAILABLE' as const,message:'The local acknowledgment is unavailable. Retry keeps this exact draft operation.'}}))
     if (!alive.current) return null
     if (result.ok) {
       const next = { ...current.current!, documents: current.current!.documents.map(d => d.id === input.documentId ? { ...d, revisionId: result.value.revisionId } : d), payload: input.payload, revisionId: result.value.revisionId, headCommitId: result.value.headCommitId }
@@ -282,6 +291,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     setCommitting(false); return null
   }
   async function flush(forAccess = false, mode: FlushMode = 'save', exclude: string[] = []): Promise<OpenProject | null> {
+    if (composition.current) { setError('Finish composing the current text before continuing.'); return null }
     const issue = await drafts.protect(forAccess ? 'access' : mode, ['manuscript', 'section-metadata', ...exclude])
     if (issue) { setBlocker(issue); setError(issue.message); return null }
     const saved = await flushManuscript()
@@ -305,7 +315,7 @@ export function useWorkspaceController(storage: StorageStatus) {
       if (!written || !isMetaDirty()) return written
       const fields = { ...sectionFields.current }
       metaPending.current ??= { ...scopeOf(written), documentId: written.documentId, operationId: crypto.randomUUID(), expectedHead: written.headCommitId, title: fields.title.trim(), status: fields.status, synopsis: fields.synopsis }
-      const meta = await window.collie.updateSectionMeta(metaPending.current)
+      const meta = await window.collie.updateSectionMeta(metaPending.current).catch(() => ({ok:false as const,requestId:metaPending.current!.operationId,error:{code:'UNAVAILABLE' as const,message:'The section-details outcome is unknown. Retry the same details before changing them.'}}))
       if (!meta.ok) {
         if (meta.error.code !== 'UNAVAILABLE') metaPending.current = null
         setError(meta.error.message)
@@ -603,10 +613,12 @@ export function useWorkspaceController(storage: StorageStatus) {
     if (navigationTask.current || closingRef.current) return Promise.resolve(false)
     const task = (async (): Promise<boolean> => {
       if (outlinePending.current) { setError('Reconcile the pending outline/history operation before navigating.'); return false }
+      if (busy && !fileBusy(fileState.current.job)) { setError('Wait for the current project action before navigating.'); return false }
       // Input is frozen only for this bounded transition; retained jobs continue independently.
       setNavigating(true)
       const p = current.current
       if (p && !await flush(false, 'navigate')) return false
+      if (pendingImage.current && next.kind === 'workspace' && next.view === 'write' && next.documentId && next.documentId !== pendingImage.current.documentId) { setError('Retry the pending image import in its original section before choosing another section.');return false }
       if (next.kind === 'workspace') {
         const active = current.current
         if (!active || !sameScope(next.scope, active)) { setError('Open this project from Projects before navigating to its contents.'); return false }
@@ -632,7 +644,7 @@ export function useWorkspaceController(storage: StorageStatus) {
           editor.commands.setTextSelection(Math.min(position + 1, editor.state.doc.content.size))
         }
       }
-      setBlocker(null)
+      setBlocker(null);setError('')
       showDestination(next, next.kind === 'workspace' && next.view === 'write' ? () => editorRef.current?.commands.focus() : undefined)
       return true
     })().catch(() => { setError('Navigation could not finish. Your current drafts and pending operations are retained.'); return false })
@@ -665,23 +677,29 @@ export function useWorkspaceController(storage: StorageStatus) {
     if (!project) return
     return drafts.register('manuscript', { read: () => manuscriptHandle.current!.read(), flush: mode => manuscriptHandle.current!.flush!(mode), focus: () => manuscriptHandle.current!.focus?.() })
   }, [drafts, project?.projectId, project?.workspaceId])
+  useLayoutEffect(() => {
+    if (!project) return
+    const owner=project
+    return drafts.register('image-import', {read:()=>({scope:scopeOf(owner),kind:'image-import',entityId:pendingImage.current?.documentId??owner.documentId,label:'image import',dirty:false,composing:false,busy:false,pendingOperation:pendingImage.current,policy:'operation',target:writingDestination(owner,pendingImage.current?.documentId??owner.documentId)})})
+  }, [drafts,project?.projectId,project?.workspaceId])
   useLayoutEffect(() => { drafts.changed() })
   async function createProject(): Promise<void> {
     setBusy(true)
     if (current.current && !await flush(false, 'replace')) return
-    pendingCreate.current ??= { operationId: crypto.randomUUID(), template: newTemplate }
+    if (!pendingCreate.current && (!requiredProjectName(newDetails.title.trim()) || !requiredProjectName(newDetails.byline.trim()) || !projectText(newDetails.description,10000))) { setError('Enter a valid title, author and optional description.');return }
+    pendingCreate.current ??= { operationId: crypto.randomUUID(), template: newTemplate, title:newDetails.title.trim(),byline:newDetails.byline.trim(),description:newDetails.description }
     const result = await window.collie.createProject(pendingCreate.current)
-    if (result.ok) { pendingCreate.current = null; await select(result.value); await refresh() }
+    if (result.ok) { pendingCreate.current = null; setNewDetails({title:'',byline:'',description:''}); await select(result.value); await refresh() }
     else setError(result.error.message)
   }
   async function chooseProject(scope: OpenInput): Promise<void> {
-    setBusy(true)
     if (current.current && !await flush(false, 'replace')) return
     if (current.current && sameScope(current.current, scope)) { showDestination(writingDestination(current.current, current.current.documentId)); return }
+    setBusy(true)
     await openLocal(scope)
   }
 
-  return { ...exportOperations, composition, actionTask, renamePending, storage, drafts, destination, focusRevision, focusRequest, navigating, blocker, navigate, returnToDraft, showAccess, workspace, research, returnToWork,
+  return { ...exportOperations, newDetails, setNewDetails, acceptProjectDetails, composition, actionTask, renamePending, storage, drafts, destination, focusRevision, focusRequest, navigating, blocker, navigate, returnToDraft, showAccess, workspace, research, returnToWork,
 editorEpoch, setData, setList, location, setLocation, list, project, access, newTemplate, setNewTemplate, sectionTitle, setSectionTitle, sectionStatus, setSectionStatus, sectionSynopsis, setSectionSynopsis,
 sectionFields, busy, setBusy, acting, working, closing, committing, retry, error, setError, notice, setNotice, history, annotationCapture, noteDirty,
 sourceDirty,

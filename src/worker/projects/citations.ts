@@ -1,3 +1,4 @@
+import { readProjectDetails } from './details'
 import type Database from 'better-sqlite3'
 import { readFile } from 'node:fs/promises'
 import type { CitationStyleInput, CitationsView } from '../../shared/citations'
@@ -77,7 +78,9 @@ export async function readCitations(db: Database.Database, scope: OpenInput, wor
     const locale = assets.find(a => a.ref.id === 'en-US')!
     const used = new Set(view.occurrences.filter(o=>o.state==='active').flatMap(o=>o.sourceIds))
     const formatter = await createCitationFormatter(resources,view.style,sources.sources.filter(s => used.has(s.id) && s.state === 'active').map(s => toCsl(s.id,s.metadata) as unknown as Record<string,unknown>),{xml:await readFile(style.path,'utf8'),locale:await readFile(locale.path,'utf8')})
-    const compiled = compileManuscript({capturedHead:view.headCommitId,style:view.style,paper:'Letter',sections:ordered.map(d => ({documentId:d.id,title:d.title,includeTitle:false,pageBreakBefore:false,payload:d.payload}))},formatter)
+    const details=readProjectDetails(db,scope.projectId)
+    const title=(db.prepare('SELECT title FROM projects WHERE id=?').get(scope.projectId) as {title:string}).title
+    const compiled = compileManuscript({metadata:{title,byline:details.byline,description:null},titlePage:false,capturedHead:view.headCommitId,style:view.style,paper:'Letter',sections:ordered.map(d => ({documentId:d.id,title:d.title,includeTitle:false,pageBreakBefore:false,payload:d.payload}))},formatter)
     view.labels = Object.entries(compiled.bibliography.citations).map(([id,runs]) => ({id,text:plain(runs as Run[])}))
     view.notes = compiled.footnotes.map(n => ({id:n.originId,number:n.number,paragraphs:n.paragraphs.map(p => structuredClone(p.runs) as Run[])}))
     const labelMap = new Map(view.labels.map(l=>[l.id,l]))

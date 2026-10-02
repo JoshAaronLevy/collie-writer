@@ -1,3 +1,4 @@
+import { projectText, storedProjectTitle, requiredProjectName } from '../projects/details'
 import { ContentError, isId, readDocument, type Block, type CitationItem, type DocumentPayload, type Inline, type Mark } from '../editor/schema'
 
 export type Run = { kind: 'text'; text: string; marks: Mark[]; superscript?: boolean; subscript?: boolean; smallCaps?: boolean }
@@ -9,14 +10,17 @@ export type CompileBlock = Paragraph | { kind: 'pageBreak' | 'rule'; blockId: st
 export type CitationRequest = { id: string; items: CitationItem[]; noteIndex: number }
 export type CitationOutput = { citations: Record<string, Run[]>; bibliography: Run[][]; hangingIndent: boolean; lineSpacing: number; entrySpacing: number }
 export type CitationFormatter = (requests: CitationRequest[]) => CitationOutput
+export type CompilationMetadata = { title: string; byline: string; description: string | null }
 export type CompileInput = {
+  metadata: CompilationMetadata
+  titlePage: boolean
   capturedHead: string
   style: 'apa' | 'chicago'
   paper: 'Letter' | 'A4'
   sections: { documentId: string; title: string; includeTitle: boolean; pageBreakBefore: boolean; payload: DocumentPayload; headings?: { id: string; title: string; level: 1 | 2 }[]; titleLevel?: 1 | 2 | 3 }[]
 }
 export type Compilation = {
-  version: 2; capturedHead: string; style: 'apa' | 'chicago'; paper: 'Letter' | 'A4'
+  version: 3; metadata: CompilationMetadata; titlePage: boolean; capturedHead: string; style: 'apa' | 'chicago'; paper: 'Letter' | 'A4'
   sections: { documentId: string; blocks: CompileBlock[] }[]
   footnotes: { number: number; originId: string; paragraphs: Paragraph[] }[]
   bibliography: CitationOutput
@@ -34,6 +38,7 @@ function freeze<T>(value: T): Frozen<T> {
 /** Compile order determines author notes, automatic Chicago notes and citeproc noteIndex together. */
 export function compileManuscript(input: CompileInput, format: CitationFormatter): Frozen<Compilation> {
   if (!isId(input.capturedHead) || !['apa', 'chicago'].includes(input.style) || !['Letter', 'A4'].includes(input.paper) || !input.sections.length || input.sections.length > 10000) throw new ContentError('INVALID_COMPILATION', 'options')
+  if (!input.metadata || !storedProjectTitle(input.metadata.title) || !(input.metadata.byline === '' || requiredProjectName(input.metadata.byline)) || !(input.metadata.description === null || projectText(input.metadata.description,10000)) || typeof input.titlePage !== 'boolean') throw new ContentError('INVALID_COMPILATION', 'metadata')
   const requests: CitationRequest[] = []
   const pendingCitations = new WeakMap<Run, string>()
   const footnotes: Compilation['footnotes'] = []
@@ -127,5 +132,5 @@ export function compileManuscript(input: CompileInput, format: CitationFormatter
     if (block.kind === 'table') for (const paragraph of block.rows.flat(2)) sourceMap.push({ documentId: section.documentId, blockId: paragraph.blockId, kind: 'paragraph' })
   }
   for (const note of footnotes) { const documentId=originDocuments.get(note.originId); if(documentId) sourceMap.push({ documentId, blockId: note.originId, kind: 'footnote' }) }
-  return freeze({ version: 2, capturedHead: input.capturedHead, style: input.style, paper: input.paper, sections, footnotes, bibliography, sourceMap })
+  return freeze({ version: 3, metadata: { ...input.metadata }, titlePage: input.titlePage, capturedHead: input.capturedHead, style: input.style, paper: input.paper, sections, footnotes, bibliography, sourceMap })
 }

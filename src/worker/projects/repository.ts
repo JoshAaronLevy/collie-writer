@@ -1,3 +1,7 @@
+import { readProjectDetails } from './details'
+import { kindForTemplate, templateForKind } from '../../domain/projects/templates'
+import { requiredProjectName, storedProjectTitle } from '../../domain/projects/details'
+import type { ProjectDetailsInput } from '../../shared/projects'
 import { readCitations, changeCitationStyle } from './citations'
 import type { CitationStyleInput, CitationsView } from '../../shared/citations'
 import { projectCitations } from './citation-occurrences'
@@ -95,8 +99,14 @@ export class ProjectRepository {
   exportPreview(input:ExportOptions):Promise<ExportPreview>{return this.serial(async()=>{this.fileContext(input);return (await prepareExport(this.active!.db,this.active!.workspace,this.resources,input)).preview})}
   exportStart(input:WorkerExportStart):Promise<ExportJob>{return this.serial(async()=>{this.fileContext(input);const owned=this.active!,prepared=await prepareExport(owned.db,owned.workspace,this.resources,input);return this.exports.start(owned.workspace,input,prepared)})}
   exportBatchStart(input:WorkerExportBatchStart):Promise<ExportJob>{return this.serial(async()=>{this.fileContext(input);const owned=this.active!,prepared=await prepareExport(owned.db,owned.workspace,this.resources,input);return this.exports.startBatch(owned.workspace,input,prepared)})}
-  exportStatus(input:ExportJobInput):Promise<ExportJob>{return this.serial(async()=>{this.fileContext(input);return this.exports.status(this.active!.workspace,input.jobId)})}
-  exportCancel(input:ExportJobInput):Promise<ExportJob>{return this.serial(async()=>{this.fileContext(input);return this.exports.cancel(this.active!.workspace,input.jobId)})}
+  exportStatus(input:ExportJobInput):Promise<ExportJob>{return this.serial(async()=>{const workspace=await this.exportWorkspace(input);return this.exports.status(workspace,input.jobId)})}
+  exportCancel(input:ExportJobInput):Promise<ExportJob>{return this.serial(async()=>{const workspace=await this.exportWorkspace(input);return this.exports.cancel(workspace,input.jobId)})}
+  private async exportWorkspace(input:OpenInput):Promise<string>{
+    // Completed/running exports outlive active-project navigation. IDs remain validated by IPC.
+    const workspace=join(this.root,'workspaces',input.projectId,input.workspaceId)
+    await contained(this.root,workspace,true)
+    return workspace
+  }
   recipes(input:OpenInput):Promise<RecipesView>{return this.serial(async()=>{this.fileContext(input);return readRecipes(this.active!.db,input)})}
   recipeChange(input:RecipeChangeInput):Promise<RecipesView>{return this.serial(async()=>{this.fileContext(input);if(this.fileBusy)throw new ProjectError('PROJECT_LOCKED');const owned=this.active!,view=changeRecipe(owned.db,input);await this.discovery(owned);return view})}
   interchangePreview(input:WorkerImportPreview):Promise<ImportPreview>{return this.serial(async()=>{this.fileContext(input);return previewInterchange(input)})}
@@ -150,6 +160,28 @@ export class ProjectRepository {
   }
   open(input: OpenInput): Promise<OpenProject> { return this.serial(() => this.openUnlocked(input)) }
   section(input: SectionInput): Promise<OpenProject> { return this.serial(async () => { this.fileContext(input); return this.read(this.active!, input.documentId) }) }
+  details(input: ProjectDetailsInput): Promise<OpenProject> {
+    return this.serial(async () => {
+      if (this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
+      this.fileContext(input)
+      const owned = this.active!, digest = requestDigest({ kind: 'projectDetails', ...input })
+      inWriteTransaction(owned.db, () => {
+        const prior = owned.db.prepare('SELECT digest FROM domain_operations WHERE project_id=? AND operation_id=?').get(input.projectId,input.operationId) as { digest: string } | undefined
+        if (prior) { if (prior.digest !== digest) throw new ProjectError('OPERATION_CONFLICT'); return }
+        const before = this.read(owned)
+        if (before.headCommitId !== input.expectedHead || before.detailsRevisionId !== input.expectedRevisionId) throw new ProjectError('STALE_REVISION')
+        // Preserve a legacy title verbatim when changing another field.
+        if (input.title !== before.title && !requiredProjectName(input.title)) throw new ProjectError('VALIDATION')
+        const head = randomUUID(), time = new Date().toISOString()
+        owned.db.prepare('INSERT INTO commits VALUES (?,?,?,?)').run(input.projectId,head,before.headCommitId,time)
+        owned.db.prepare('UPDATE projects SET title=?,template=?,head_commit_id=?,updated_at=? WHERE id=?').run(input.title,templateForKind(input.projectKind),head,time,input.projectId)
+        owned.db.prepare('UPDATE project_details SET byline=?,description=?,kind=?,revision_id=? WHERE project_id=?').run(input.byline,input.description,input.projectKind,head,input.projectId)
+        owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(input.projectId,input.operationId,digest,JSON.stringify({projectId:input.projectId,documentId:before.documentId,revisionId:head,headCommitId:head}))
+      })
+      await this.discovery(owned)
+      return this.read(owned)
+    })
+  }
   meta(input: SectionMetaInput): Promise<OpenProject> {
     return this.serial(async () => {
       if (this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
@@ -264,6 +296,7 @@ export class ProjectRepository {
         const headCommitId = randomUUID(), time = new Date().toISOString()
         owned.db.prepare('INSERT INTO commits VALUES (?,?,?,?)').run(owned.projectId, headCommitId, before.headCommitId, time)
         owned.db.prepare('UPDATE projects SET title=?,head_commit_id=?,updated_at=? WHERE id=?').run(input.title, headCommitId, time, owned.projectId)
+        owned.db.prepare('UPDATE project_details SET revision_id=? WHERE project_id=?').run(headCommitId,owned.projectId)
         // Existing portable ID-only receipt contract; document content/revision is unchanged.
         owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(owned.projectId, input.operationId, digest, JSON.stringify({ projectId: owned.projectId, documentId: before.documentId, revisionId: before.revisionId, headCommitId }))
       })
@@ -364,13 +397,13 @@ export class ProjectRepository {
     }
     selected ??= documents.find(doc => doc.kind === 'text' && effectiveState(doc,documents) === 'active')
     if (project.length !== 1 || project[0].id !== owned.projectId || !Object.hasOwn(templateSections, project[0].template) || documents.length < 1 || documents.length > 10000 || !selected || selected.kind !== 'text' || !isId(project[0].head_commit_id) || !documents.every(isOutlineDocument)) throw new ProjectError('CORRUPT_PROJECT')
-    if (!project[0].title.length || project[0].title.length > 500 || !Number.isFinite(Date.parse(project[0].updated_at))) throw new ProjectError('CORRUPT_PROJECT')
+    if (!storedProjectTitle(project[0].title) || !Number.isFinite(Date.parse(project[0].updated_at))) throw new ProjectError('CORRUPT_PROJECT')
     let payload: DocumentPayload
     try {
       const row = owned.db.prepare('SELECT payload FROM documents WHERE project_id=? AND id=?').get(owned.projectId, selected.id) as { payload: string }
       payload = readDocument(JSON.parse(row.payload))
     } catch { throw new ProjectError('CORRUPT_PROJECT') }
-    return { projectId: owned.projectId, workspaceId: owned.workspaceId, title: project[0].title, headCommitId: project[0].head_commit_id, updatedAt: project[0].updated_at, archived: owned.archived, destination: destinationView(owned.destination), template: project[0].template, documents, documentId: selected.id, revisionId: selected.revisionId, payload }
+    return { ...readProjectDetails(owned.db,owned.projectId), projectId: owned.projectId, workspaceId: owned.workspaceId, title: project[0].title, headCommitId: project[0].head_commit_id, updatedAt: project[0].updated_at, archived: owned.archived, destination: destinationView(owned.destination), template: project[0].template, documents, documentId: selected.id, revisionId: selected.revisionId, payload }
   }
   private async discovery(owned: Owned): Promise<void> {
     const p = this.read(owned)
@@ -427,7 +460,7 @@ export class ProjectRepository {
         else owned = await this.acquire({ projectId, workspaceId: workspaces[0] })
         try {
           const p = this.read(owned)
-          const summary: ProjectSummary = { projectId, workspaceId: p.workspaceId, title: p.title, headCommitId: p.headCommitId, updatedAt: p.updatedAt, archived: p.archived, destination: p.destination }
+          const summary: ProjectSummary = { projectId, workspaceId: p.workspaceId, title: p.title, projectKind: p.projectKind, headCommitId: p.headCommitId, updatedAt: p.updatedAt, archived: p.archived, destination: p.destination }
           result.projects.push(summary)
         } finally { if (!active) this.release(owned) }
       } catch (error) { result.issues.push({ projectId, code: projectError(error) }) }
@@ -485,7 +518,8 @@ export class ProjectRepository {
           inWriteTransaction(db, () => {
             createProjectSchema(db)
             db.prepare('INSERT INTO commits VALUES (?,?,NULL,?)').run(projectId, head, time)
-            db.prepare('INSERT INTO projects VALUES (?,?,?,?,?,?,?)').run(projectId, input.template, 'Untitled project', 'en-US', head, time, time)
+            db.prepare('INSERT INTO projects VALUES (?,?,?,?,?,?,?)').run(projectId, input.template, input.title, 'en-US', head, time, time)
+            db.prepare('INSERT INTO project_details VALUES (?,?,?,?,?)').run(projectId,input.byline,input.description,kindForTemplate(input.template),head)
             for (const section of sections) {
               db.prepare('INSERT INTO documents VALUES (?,?,NULL,?,?,?,?,?,?,?,?)').run(projectId, section.documentId, section.position, 'text', section.title, 'draft', '', section.revision, 1, JSON.stringify(section.payload))
               this.indexIds(db, projectId, section.documentId, section.payload)

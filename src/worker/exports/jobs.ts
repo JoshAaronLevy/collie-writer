@@ -1,3 +1,4 @@
+import { addPdfMetadata } from './pdf-metadata'
 import { randomUUID, createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { link, mkdir, open, readFile, realpath, rename, unlink } from 'node:fs/promises'
@@ -53,7 +54,7 @@ export class ExportJobs{
     await mkdir(folder,{mode:0o700})
     const job:ExportJob={id,state:'rendering',headCommitId:preview.headCommitId,destinationPath:destination,phase:'Rendering DOCX from captured revision',error:null,reportPath:join(folder,'report.json'),counts:preview.counts,losses:preview.losses}
     const running:Running={job,controller:new AbortController(),task:Promise.resolve(),folder}
-    await writeJson(join(folder,'manifest.json'),{version:1,capturedAt:new Date().toISOString(),preview,acknowledgedMetadata:input.acknowledgeMetadata,sourceMap:model.sourceMap,imageAssets:[...images].map(([assetId,image])=>({assetId,bytes:image.bytes.length,sha256:createHash('sha256').update(image.bytes).digest('hex')}))})
+    await writeJson(join(folder,'manifest.json'),{version:1,capturedAt:new Date().toISOString(),preview,acknowledgedMetadata:input.acknowledgeMetadata,compilationVersion:model.version,metadata:model.metadata,titlePage:model.titlePage,sourceMap:model.sourceMap,imageAssets:[...images].map(([assetId,image])=>({assetId,bytes:image.bytes.length,sha256:createHash('sha256').update(image.bytes).digest('hex')}))})
     await this.persist(running)
     this.jobs.set(id,running)
     running.task=new Promise<void>(resolve=>setImmediate(()=>{void this.render(running,input,model,images).finally(resolve)}))
@@ -75,7 +76,7 @@ export class ExportJobs{
     await mkdir(join(workspace,'exports'),{recursive:true,mode:0o700});await mkdir(folder,{mode:0o700})
     const job:ExportJob={id,state:'rendering',headCommitId:preview.headCommitId,destinationPath:dirname(input.destinations[0].path),phase:'Rendering captured revision',error:null,reportPath:join(folder,'report.json'),counts:preview.counts,losses:preview.losses,files:input.destinations.map(d=>({format:d.format,path:d.path,state:'pending',error:null,bytes:null,pages:null,losses:[]}))}
     const running:Running={job,controller:new AbortController(),task:Promise.resolve(),folder}
-    await writeJson(join(folder,'manifest.json'),{version:2,capturedAt:new Date().toISOString(),preview,formats:input.formats,acknowledgedMetadata:input.acknowledgeMetadata,sourceMap:model.sourceMap,imageAssets:[...images].map(([assetId,image])=>({assetId,bytes:image.bytes.length,sha256:createHash('sha256').update(image.bytes).digest('hex')}))})
+    await writeJson(join(folder,'manifest.json'),{version:2,capturedAt:new Date().toISOString(),preview,formats:input.formats,acknowledgedMetadata:input.acknowledgeMetadata,compilationVersion:model.version,metadata:model.metadata,titlePage:model.titlePage,sourceMap:model.sourceMap,imageAssets:[...images].map(([assetId,image])=>({assetId,bytes:image.bytes.length,sha256:createHash('sha256').update(image.bytes).digest('hex')}))})
     await this.persist(running);this.jobs.set(id,running)
     running.task=new Promise<void>(resolve=>setImmediate(()=>{void this.renderBatch(running,input,model,images).finally(resolve)}))
     return {...job}
@@ -117,7 +118,7 @@ export class ExportJobs{
           cancelled(signal)
           const printed=await this.renderPdf!(document,signal)
           if(printed.capturedHead!==job.headCommitId)throw new ProjectError('STALE_REVISION')
-          bytes=printed.bytes;pages=printed.pages
+          bytes=await addPdfMetadata(printed.bytes,model.metadata,signal);pages=printed.pages
           if(bytes.length<100||bytes.subarray(0,5).toString('ascii')!=='%PDF-'||!bytes.subarray(-2048).toString('ascii').includes('%%EOF'))throw new ProjectError('VALIDATION')
         }else{
           const sidecar=`${input.baseName}-assets-${job.id}`
@@ -150,7 +151,7 @@ export class ExportJobs{
   }
   async status(workspace:string,id:string):Promise<ExportJob>{
     const live=this.jobs.get(id)
-    if(live)return {...live.job}
+    if(live){if(live.folder!==join(workspace,'exports',id))throw new ProjectError('DENIED');return {...live.job}}
     const path=join(workspace,'exports',id,'report.json')
     let raw:unknown
     try{raw=JSON.parse(await readFile(path,'utf8'))}catch{throw new ProjectError('NOT_FOUND')}
@@ -168,6 +169,7 @@ export class ExportJobs{
   async cancel(workspace:string,id:string):Promise<ExportJob>{
     const running=this.jobs.get(id)
     if(!running)return this.status(workspace,id)
+    if(running.folder!==join(workspace,'exports',id))throw new ProjectError('DENIED')
     if(running.job.state==='rendering')running.controller.abort()
     return {...running.job}
   }

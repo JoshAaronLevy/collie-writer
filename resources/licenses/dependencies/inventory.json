@@ -774,5 +774,38 @@
     "notices": [
       "scheduler-0.28.0-LICENSE"
     ]
+  },
+  {
+    "package": "pdf-lib",
+    "version": "1.17.1",
+    "license": "MIT",
+    "notices": [
+      "pdf-lib-1.17.1-LICENSE.md"
+    ]
+  },
+  {
+    "package": "@pdf-lib/standard-fonts",
+    "version": "1.0.0",
+    "license": "MIT",
+    "notices": [
+      "@pdf-lib-standard-fonts-1.0.0-LICENSE.md"
+    ]
+  },
+  {
+    "package": "@pdf-lib/upng",
+    "version": "1.0.1",
+    "license": "MIT",
+    "notices": [
+      "@pdf-lib-upng-1.0.1-LICENSE"
+    ]
+  },
+  {
+    "package": "tslib",
+    "version": "1.14.1",
+    "license": "0BSD",
+    "notices": [
+      "tslib-1.14.1-LICENSE.txt",
+      "tslib-1.14.1-CopyrightNotice.txt"
+    ]
   }
 ]

@@ -68,13 +68,18 @@ export async function exportDocx(model: Frozen<Compilation>, resourceRoot: strin
     footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ children: [PageNumber.CURRENT] })] })] }) },
     children: section.blocks.filter((item, position) => !(index && position === 0 && item.kind === 'pageBreak' && item.blockId === section.documentId)).flatMap(block)
   }))
+  if (model.titlePage) sections[0].children.unshift(
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 1440, after: 480 }, children: textRuns({kind:'text',text:model.metadata.title,marks:[{type:'bold'}]}) }),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: textRuns({kind:'text',text:model.metadata.byline,marks:[]}) }),
+    new Paragraph({ children: [new PageBreak()] })
+  )
   const children = sections.at(-1)!.children
   if (model.bibliography.bibliography.length) {
     children.push(new Paragraph({ style: 'heading1', text: model.style === 'apa' ? 'References' : 'Bibliography', pageBreakBefore: true }))
     model.bibliography.bibliography.forEach((entry, index) => children.push(paragraph({ kind: 'paragraph', blockId: `bibliography-${index}`, runs: entry, style: 'bibliography' })))
   }
   const doc = new Document({
-    creator: 'Collie Writer', description: `Captured revision ${model.capturedHead}`,
+    title: model.metadata.title, creator: model.metadata.byline, description: model.metadata.description ?? undefined,
     fonts: await Promise.all(fontFiles.map(async ([name, filename]) => ({ name, data: await readFile(join(resourceRoot, 'fonts', filename)) }))),
     styles: {
       default: { document: { run: { font: 'Source Serif 4', size: 24 }, paragraph: { spacing: { line: 360, after: 120 } } } },

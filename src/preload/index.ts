@@ -135,6 +135,7 @@ const api: CollieAPI = {
   getWorkingLocation: () => projectCall<LocationStatus>(PROJECT_CHANNELS.location, isLocation),
   chooseWorkingLocation: () => projectCall<LocationStatus>(PROJECT_CHANNELS.chooseLocation, isLocation),
   listProjects: () => projectCall<ProjectList>(PROJECT_CHANNELS.list, value => isProjectValue('list', value)),
+  updateProjectDetails: input => projectCall<OpenProject>(PROJECT_CHANNELS.details, value => isProjectValue('details', value), input),
   createProject: input => projectCall<OpenProject>(PROJECT_CHANNELS.create, value => isProjectValue('create', value), input),
   openProject: input => projectCall<OpenProject>(PROJECT_CHANNELS.open, value => isProjectValue('open', value), input),
   changeOutline: input => projectCall<OpenProject>(PROJECT_CHANNELS.outline, value => isProjectValue('outline', value), input),

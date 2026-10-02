@@ -1,9 +1,11 @@
+import { isProjectTemplate, kindForTemplate } from '../../domain/projects/templates'
+import { readProjectDetails } from '../projects/details'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { backupStorageDatabase, inWriteTransaction, openStorageDatabase } from './driver'
-import { PROJECT_SCHEMA_VERSION, assetTable, outlineTables, noteTables, sourceTables, inspectionTables, evidenceTables, citationTables, interchangeTables, inspectVersion, validateProjectSchema } from './schema'
+import { PROJECT_SCHEMA_VERSION, assetTable, outlineTables, noteTables, sourceTables, inspectionTables, evidenceTables, citationTables, interchangeTables, projectDetailsTable, inspectVersion, validateProjectSchema } from './schema'
 import { contained, directory, syncFile, syncDirectory, writeJson } from './files'
 import { ProjectError } from '../../domain/projects/errors'
 
@@ -67,6 +69,19 @@ const migrations: readonly Migration[] = [{
     for (const sql of interchangeTables) db.exec(sql)
     db.prepare('UPDATE format SET schema_version=9,minimum_reader=9').run()
   }
+}, {
+  from: 9, to: 10,
+  validateSource: db => validateProjectSchema(db, 9),
+  apply: db => {
+    db.exec(projectDetailsTable)
+    const insert = db.prepare('INSERT INTO project_details VALUES (?,?,?,?,?)')
+    for (const row of db.prepare('SELECT id,template,head_commit_id FROM projects').all() as { id: string; template: unknown; head_commit_id: string }[]) {
+      if (!isProjectTemplate(row.template)) throw new ProjectError('CORRUPT_PROJECT')
+      insert.run(row.id, '', '', kindForTemplate(row.template), row.head_commit_id)
+      readProjectDetails(db, row.id)
+    }
+    db.prepare('UPDATE format SET schema_version=10,minimum_reader=10').run()
+  }
 }]
 
 export async function activeDatabase(root: string, workspace: string): Promise<string> {
@@ -121,7 +136,7 @@ export async function openProjectDatabase(root: string, workspace: string, nativ
           }
         })
         validateProjectSchema(candidate)
-        for (const row of candidate.prepare('SELECT id FROM projects').all() as { id: string }[]) manuscript(candidate, row.id)
+        for (const row of candidate.prepare('SELECT id FROM projects').all() as { id: string }[]) { manuscript(candidate, row.id); readProjectDetails(candidate, row.id) }
         candidate.pragma('wal_checkpoint(TRUNCATE)')
       } finally { candidate.close() }
       // Backups and candidate remain on any failure. Publication follows verified copy completion.

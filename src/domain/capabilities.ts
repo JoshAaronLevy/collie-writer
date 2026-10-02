@@ -7,7 +7,7 @@ export function commandCapability(command: ProjectCommand): Capability {
     case 'create': return 'create'
     case 'recipeChange': return 'recipes'
     case 'exportBatchStart': return command.input.formats.length>1 ? 'batch' : 'read'
-    case 'commit': case 'meta': case 'outline': case 'noteChange': case 'sourceChange':
+    case 'commit': case 'meta': case 'details': case 'outline': case 'noteChange': case 'sourceChange':
     case 'sourceImport': case 'sourceAttach': case 'evidenceChange': case 'citationStyle':
     case 'importImage': case 'interchangeCommit': case 'rename': return 'edit'
     // Extraction is an inspection aid. Selecting a source version or creating human excerpts is editing.

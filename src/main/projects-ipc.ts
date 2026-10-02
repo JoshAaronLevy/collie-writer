@@ -10,7 +10,7 @@ import { projectError } from '../domain/projects/errors'
 import { isTrustedSender } from './ipc'
 import { isInfoRequest } from '../shared/schemas'
 import { isId } from '../domain/editor/schema'
-import { DIRTY_CHANGED, PROJECT_CHANNELS, exact, record, isCreateInput, isOpenInput, isSectionInput, isSectionMetaInput, isCommitInput, isImageImportInput, isImageReadInput, projectFailure, type OpenInput, type ProjectCommand } from '../shared/projects'
+import { DIRTY_CHANGED, PROJECT_CHANNELS, exact, record, isProjectDetailsInput, isCreateInput, isOpenInput, isSectionInput, isSectionMetaInput, isCommitInput, isImageImportInput, isImageReadInput, projectFailure, type OpenInput, type ProjectCommand } from '../shared/projects'
 import { isSourceChangeInput, isSourcePreviewInput, isSourceImportInput, isSourceAttachmentInput, isSourceExportInput, isSourceAttachmentExportInput, SOURCE_PROGRESS, type BibliographyFormat } from '../shared/sources'
 import { isInspectionScope, isInspectionPageInput, isInspectionAssetInput, isInspectionChangeInput, type WorkerInspectionAsset } from '../shared/inspection'
 import { isEvidenceChangeInput } from '../shared/evidence'
@@ -218,6 +218,7 @@ export function registerProjectIpc(owner: () => WebContents | undefined, locatio
       else if (exact(value, ['requestId', 'input']) && kind === 'create' && isCreateInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'open' && isOpenInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'section' && isSectionInput(value.input)) command = { kind, input: value.input }
+      else if (exact(value, ['requestId', 'input']) && kind === 'details' && isProjectDetailsInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'meta' && isSectionMetaInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'commit' && isCommitInput(value.input)) command = { kind, input: value.input }
       else if (exact(value, ['requestId','input']) && kind === 'readImage' && isImageReadInput(value.input)) command = { kind, input: value.input }

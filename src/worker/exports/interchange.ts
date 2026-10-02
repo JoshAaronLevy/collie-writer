@@ -76,6 +76,11 @@ export function exportInterchange(model: Frozen<Compilation>, images: ReadonlyMa
     }
   }
   const parts: string[] = []
+  if (model.titlePage) {
+    const literal = (text: string): string => markdown ? escape(text).replace(/([#>+.-])/g, '\\$1') : text
+    parts.push(`${markdown ? '# ' : ''}${literal(model.metadata.title)}\n\n${literal(model.metadata.byline)}`)
+    losses.add('The selected title page is opening text; text formats have no native metadata or page layout.')
+  }
   for (const section of model.sections) parts.push(section.blocks.map(block).join('\n\n'))
   if (model.footnotes.length) {
     parts.push(markdown ? '## Notes' : 'Notes')

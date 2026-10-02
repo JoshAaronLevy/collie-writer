@@ -1,3 +1,4 @@
+import { readProjectDetails } from '../projects/details'
 import type Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
 import { readFile, lstat } from 'node:fs/promises'
@@ -20,6 +21,9 @@ import type { ManagedImage } from './assets'
 export type PreparedExport = { preview: ExportPreview; model: Frozen<Compilation> | null; images: Map<string,ManagedImage> }
 export async function prepareExport(db: Database.Database, workspace: string, resources: string, input: ExportOptions): Promise<PreparedExport> {
   const snapshot=manuscript(db,input.projectId), sources=readSources(db,input.projectId)
+  const details=readProjectDetails(db,input.projectId)
+  const title=(db.prepare('SELECT title FROM projects WHERE id=?').get(input.projectId) as {title:string}).title
+  const metadata={title,byline:details.byline,description:input.includeDescription?details.description:null}
   const rows=new Map(snapshot.documents.map(d=>[d.id,d]))
   const selected: RetainedDocument[]=input.documentIds.map(id=>{
     const row=rows.get(id)
@@ -27,7 +31,7 @@ export async function prepareExport(db: Database.Database, workspace: string, re
     return row
   })
   const style=(db.prepare('SELECT style FROM citation_settings WHERE project_id=?').get(input.projectId) as {style:'apa'|'chicago'}|undefined)?.style??'apa'
-  const preview:ExportPreview={headCommitId:sources.headCommitId,digest:requestDigest({head:sources.headCommitId,style,paper:input.paper,documentIds:input.documentIds}),style,paper:input.paper,sections:selected.map(d=>({documentId:d.id,title:d.title,blocks:d.payload.ast.content.length})),counts:{paragraphs:0,tables:0,images:0,footnotes:0,citations:0,bibliography:0},issues:[],losses:[]}
+  const preview:ExportPreview={headCommitId:sources.headCommitId,digest:requestDigest({head:sources.headCommitId,style,paper:input.paper,documentIds:input.documentIds,titlePage:input.titlePage,metadata}),style,paper:input.paper,sections:selected.map(d=>({documentId:d.id,title:d.title,blocks:d.payload.ast.content.length})),counts:{paragraphs:0,tables:0,images:0,footnotes:0,citations:0,bibliography:0},issues:[],losses:[]}
   const record=new Map(sources.sources.map(s=>[s.id,s])),used=new Set<string>(),imageIds=new Map<string,string>()
   for(const doc of selected){
     for(const occurrence of citationOccurrences(doc.payload)){
@@ -90,7 +94,7 @@ export async function prepareExport(db: Database.Database, workspace: string, re
       const titleLevel=(ancestors.some(a=>a.kind==='chapter')?ancestors.some(a=>a.kind==='part')?3:2:ancestors.length?2:1) as 1|2|3
       return {documentId:d.id,title:d.title,includeTitle:true,pageBreakBefore:index>0,payload:d.payload,headings,titleLevel}
     })
-    const model=compileManuscript({capturedHead:preview.headCommitId,style,paper:input.paper,sections},formatter)
+    const model=compileManuscript({metadata,titlePage:input.titlePage,capturedHead:preview.headCommitId,style,paper:input.paper,sections},formatter)
     for(const section of model.sections)for(const block of section.blocks){if(block.kind==='paragraph')preview.counts.paragraphs++;if(block.kind==='table')preview.counts.tables++;if(block.kind==='image')preview.counts.images++}
     preview.counts.footnotes=model.footnotes.length
     preview.counts.bibliography=model.bibliography.bibliography.length

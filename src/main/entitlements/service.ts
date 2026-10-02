@@ -164,7 +164,7 @@ export class AccessService {
       let scope:OpenInput
       if(old&&exists&&!reset)scope=old
       else{
-        const created=await this.storage.request(randomUUID(),{kind:'create',input:{operationId:this.settings.revision,template:'article'}})
+        const created=await this.storage.request(randomUUID(),{kind:'create',input:{operationId:this.settings.revision,template:'article',title:'Untitled project',byline:'Collie Writer tutorial',description:''}})
         if(!created.ok)throw new ProjectError(created.error.code)
         const project=created.value as OpenProject
         scope={projectId:project.projectId,workspaceId:project.workspaceId}

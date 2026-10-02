@@ -4,6 +4,7 @@ import { rename, lstat, mkdir } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { isId } from '../../domain/editor/schema'
 import { backupStorageDatabase } from '../storage/driver'
+import { PROJECT_SCHEMA_VERSION } from '../storage/schema'
 import { contained, syncDirectory, syncFile, writeJson } from '../storage/files'
 import { readPortableGraph, includesHeads, type PortableGraph } from './portable-db'
 import { requireSpace, fileHash, type Progress } from './streams'
@@ -40,6 +41,7 @@ export async function captureDatabase(source: CaptureSource, target: string, min
 
 /** Streaming phase runs outside capture boundary; exact blob leases survive until completion. */
 export async function buildSnapshot(source: CaptureSource, capture: Capture, jobFolder: string, resources: string, parentSnapshotId: string | null, signal?: AbortSignal, progress?: Progress): Promise<SnapshotManifest> {
+  if (capture.graph.schemaVersion !== PROJECT_SCHEMA_VERSION) throw new SnapshotError('INVALID_ARCHIVE')
   const citations = await projectCitationFiles(source.workspace, resources, signal)
   const files: ArchiveFile[] = [
     { name: 'project.sqlite', path: capture.database, ref: await fileHash(capture.database, LIMITS.database, signal) },
@@ -47,7 +49,7 @@ export async function buildSnapshot(source: CaptureSource, capture: Capture, job
     ...citations.map(asset => ({ name: `citation-assets/${asset.ref.sha256}`, ...asset }))
   ]
   const manifest: SnapshotManifest = {
-    format: 'collie', formatVersion: 1, minimumReader: 9, schemaVersion: 9, editorVersion: 1,
+    format: 'collie', formatVersion: 1, minimumReader: PROJECT_SCHEMA_VERSION, schemaVersion: PROJECT_SCHEMA_VERSION, editorVersion: 1,
     projectId: capture.graph.projectId, snapshotId: randomUUID(), parentSnapshotId,
     headCommitId: capture.graph.headCommitId, createdAt: new Date().toISOString(),
     database: files[0].ref, blobs: capture.graph.blobs,

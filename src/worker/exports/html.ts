@@ -64,7 +64,8 @@ export async function exportPrintDocument(model: Frozen<Compilation>, resolveIma
     close(); return html
   }
   const bibliography = model.bibliography.bibliography.length ? `<section class="bibliography-section"><h1>${model.style === 'apa' ? 'References' : 'Bibliography'}</h1>${model.bibliography.bibliography.map(entry => `<p class="bibliography">${runs(entry)}</p>`).join('')}</section>` : ''
-  const body = model.sections.map(s => `<section>${blocks(s.blocks)}</section>`).join('') + bibliography
+  const titlePage = model.titlePage ? `<section class="project-title-page"><h1>${escapeHtml(model.metadata.title)}</h1><p>${escapeHtml(model.metadata.byline)}</p></section>` : ''
+  const body = titlePage + model.sections.map(s => `<section>${blocks(s.blocks)}</section>`).join('') + bibliography
   const css = `
 @font-face { font-family: 'Source Serif 4'; src: url('/fonts/SourceSerif4-Regular.ttf'); }
 @font-face { font-family: 'Source Serif 4'; font-weight: 700; src: url('/fonts/SourceSerif4-Bold.ttf'); }
@@ -78,6 +79,7 @@ body { margin: 0; font: 12pt/1.5 'Source Serif 4', 'Noto Sans CJK SC', 'Noto Nas
 p { margin: 0 0 6pt; orphans: 2; widows: 2; overflow-wrap: anywhere; }
 h1,h2,h3 { break-after: avoid; line-height: 1.2; } h1 {font-size: 18pt} h2 {font-size: 16pt} h3 {font-size: 14pt}
 .quote { margin-left: 0.5in; margin-right: 0.5in; }
+.project-title-page { padding-top: 1in; text-align: center; break-after: page; }
 .page-break,.bibliography-section { break-before: page; }
 figure { margin: 6pt 0; break-inside: avoid; } img { max-width: 100%; object-fit: contain; }
 figcaption { font-size: 10pt; font-style: italic; }

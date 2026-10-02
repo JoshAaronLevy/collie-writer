@@ -1,3 +1,4 @@
+import { readProjectDetails } from './details'
 import { validatePortableCitations } from './citation-occurrences'
 import { validatePortableInterchange } from './interchange'
 import Database from 'better-sqlite3'
@@ -25,6 +26,8 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
   const project = projects[0]
   if (!isId(project.id) || !isId(project.head_commit_id) || !isProjectTemplate(project.template) || project.locale !== 'en-US' || !text(project.title, 500) || project.title === '' || !isUtc(project.created_at) || !isUtc(project.updated_at)) return invalid()
   const projectId = project.id, headCommitId = project.head_commit_id
+  if (version >= 10) try { readProjectDetails(db,projectId) } catch { return invalid() }
+  else if (project.template === 'essay' || project.template === 'critique') return invalid()
   const blobs = new Map<string, BlobRef>(), assetIds = new Set<string>()
   for (const raw of db.prepare('SELECT * FROM managed_assets').iterate()) {
     const asset = raw as Record<string, unknown>

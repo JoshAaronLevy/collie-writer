@@ -2,7 +2,7 @@
 
 ## Confirmed decisions
 
-**Recorded October 1, 2026.** Josh selected Mantine, required semantic class names and properly scoped CSS, added Study critique as a primary project type, and accepted the remaining recommendations from the initial plan. These are the implementation baseline; do not reopen them as unanswered questions. I01 and I02 were subsequently explicitly requested. I01 specifications and I02 visual-foundation implementation are complete — awaiting user testing; I03 and later stages have not begun.
+**Recorded October 1, 2026.** Josh selected Mantine, required semantic class names and properly scoped CSS, added Study critique as a primary project type, and accepted the remaining recommendations from the initial plan. These are the implementation baseline; do not reopen them as unanswered questions. I01–I04 were subsequently explicitly requested. I01 specifications and I02–I04 implementation are complete — awaiting user testing. I05 and later stages have not begun; no runtime acceptance is implied.
 
 | Area | Confirmed direction |
 | --- | --- |
@@ -35,7 +35,7 @@ For this improvement plan, include the category, its clear description, and its 
 
 ## Purpose and status
 
-**Prepared and revised October 1, 2026. Status: I01 specifications and I02 visual-foundation implementation complete — awaiting user testing; I03–I15 implementation not started.** All 15 stage briefs retain model/effort recommendations and execution contracts. I01's [experience specification](docs/design/app-experience.md), [architecture decision](docs/decisions/improvement-01-experience.md), [provider evidence](docs/ai/provider-eligibility.md), [completion record](docs/validation/improvement-I01.md), and [manual review guide](docs/manual-testing/improvement-I01.md) are delivered. I02's [implementation record](docs/validation/improvement-I02.md) and [manual guide](docs/manual-testing/improvement-I02.md) document the delivered theme, shared controls and startup preferences; runtime, visual and accessibility acceptance remains pending. I01's provider prerequisites remain unresolved for I10; that does not block the local design sequence. The existing local-feature commercial matrix and AI access assignments remain unchanged. No dependency installation, application change, provider account action, inference, purchase, or publication occurred in I01.
+**Prepared and revised October 1, 2026. Status: I01 specifications and I02–I04 implementation complete — awaiting user testing; I05–I15 implementation not started.** All 15 stage briefs retain model/effort recommendations and execution contracts. I01's [experience specification](docs/design/app-experience.md), [architecture decision](docs/decisions/improvement-01-experience.md), [provider evidence](docs/ai/provider-eligibility.md), [completion record](docs/validation/improvement-I01.md), and [manual review guide](docs/manual-testing/improvement-I01.md) are delivered. I02's [implementation record](docs/validation/improvement-I02.md) and [manual guide](docs/manual-testing/improvement-I02.md) document the delivered theme, shared controls and startup preferences; runtime, visual and accessibility acceptance remains pending. I03's [session/navigation record](docs/validation/improvement-I03.md) and I04's [project-details record](docs/validation/improvement-I04.md) document their delivered code and pending manual acceptance. I04 advances working SQL/minimum reader to 10 and frozen compilation to 3; AST/archive remain 1. I01's provider prerequisites remain unresolved for I10; that does not block the local design sequence. The existing local-feature commercial matrix and AI access assignments remain unchanged. No dependency installation, application change, provider account action, inference, purchase, or publication occurred in I01.
 
 The goal is to make Collie Writer feel considered from its first screen: modern, calm, professional, and inviting. A new writer should understand the next action immediately, create a nonfiction project through a short guided flow, optionally connect their own eligible AI account, and arrive in a workspace organized around writing and research.
 
@@ -254,8 +254,8 @@ The model families and effort controls are documented in [OpenAI's model-selecti
 | --- | --- | --- | --- |
 | I01 | Experience specifications and provider feasibility record | Confirmed decisions above | Implementation complete — awaiting user document review; [record](docs/validation/improvement-I01.md) |
 | I02 | Mantine theme, semantic scoped CSS, and reusable components | I01 experience specification; provider gate not required | Implementation complete — awaiting user testing; [record](docs/validation/improvement-I02.md) |
-| I03 | Persistent session/draft ownership and app navigation | I02 | Not started |
-| I04 | Portable project metadata and nonfiction starting structures, including Study critique | Confirmed metadata/category decisions, I03 | Not started |
+| I03 | Persistent session/draft ownership and app navigation | I02 | Implementation complete — awaiting user testing; [record](docs/validation/improvement-I03.md) |
+| I04 | Portable project metadata and nonfiction starting structures, including Study critique | Confirmed metadata/category decisions, I03 | Implementation complete — awaiting user testing; [record](docs/validation/improvement-I04.md) |
 | I05 | Guided project creation | I02–I04 | Not started |
 | I06 | Returning-user library and project lifecycle surfaces | I03–I05 | Not started |
 | I07 | Focused writing workspace | I03, I04, I06 | Not started |
@@ -302,7 +302,7 @@ Work:
 
 #### Model: Astra | Effort: High
 
-**Status, October 1, 2026:** implementation complete — awaiting user testing. Delivered Mantine 9.6.3, Lucide 1.49.0, semantic tokens/scoped styles, persistent light/dark/system and accessibility preferences, real shell/Settings controls and a support-preview dialog. See the [theme/CSP/ownership decision](docs/decisions/improvement-02-visual-foundation.md), [evidence](docs/validation/improvement-I02.md), and [manual guide](docs/manual-testing/improvement-I02.md). Formats are unchanged; no checks or launches were performed. Packaged CSP, visual quality and accessibility remain unobserved. I03 has not started.
+**Status, October 1, 2026:** implementation complete — awaiting user testing. Delivered Mantine 9.6.3, Lucide 1.49.0, semantic tokens/scoped styles, persistent light/dark/system and accessibility preferences, real shell/Settings controls and a support-preview dialog. See the [theme/CSP/ownership decision](docs/decisions/improvement-02-visual-foundation.md), [evidence](docs/validation/improvement-I02.md), and [manual guide](docs/manual-testing/improvement-I02.md). Formats are unchanged; no checks or launches were performed. Packaged CSP, visual quality and accessibility remain unobserved. I03 and I04 were subsequently requested and implemented; their records below retain pending acceptance.
 
 **Why this recommendation:** Establishes the visual system, Mantine integration, accessible states, and CSP-compatible styling.
 
@@ -332,6 +332,8 @@ Work:
 
 #### Model: Astra | Effort: Extra High
 
+**Status, October 1, 2026:** implementation complete — awaiting user testing. Delivered the persistent workspace/session owner, typed destinations, retained draft/editor regions, explicit-save guards, global operation status and close/access integration. See the [decision](docs/decisions/improvement-03-session-navigation.md), [evidence](docs/validation/improvement-I03.md) and [manual guide](docs/manual-testing/improvement-I03.md). I03 changed no project formats; I04 owns the subsequent format change.
+
 **Why this recommendation:** Moves intertwined draft, retry, autosave, entitlement, and close ownership without losing work.
 
 **Purpose:** enable simpler screens without losing drafts or weakening save/close behavior.
@@ -359,6 +361,8 @@ Work:
 ### Stage I04 — Add real project details and nonfiction templates
 
 #### Model: Astra | Effort: Extra High
+
+**Status, October 1, 2026:** implementation complete — awaiting user testing. Delivered seven authoritative nonfiction types, required new-create details, a usable retained Project details form, exact authorized update/retry commands, retained-copy SQL/minimum reader 10, complete portable/copy readers, and frozen compilation 3 with author properties and explicit title-page/description choices. AST/archive remain 1. See the [format](docs/formats/working-project-v10.md), [decision](docs/decisions/improvement-04-project-details.md), [evidence](docs/validation/improvement-I04.md) and [manual guide](docs/manual-testing/improvement-I04.md). No checks or launches were performed. I05 is not started.
 
 **Why this recommendation:** Changes persistent formats and every portable/export consumer while preserving old projects.
 
@@ -719,7 +723,7 @@ This stage does not authorize release publication, store submission, account act
 
 | Area | Rule |
 | --- | --- |
-| Current formats | Working SQL/minimum reader 9, editor AST 1, archive container 1, compilation model 2 are the starting baseline. Presentation refactors do not change them. |
+| Current formats | The pre-improvement baseline was SQL/minimum reader 9 and compilation 2. I04 now delivers SQL/minimum reader 10 and compilation 3; editor AST 1 and archive container 1 remain unchanged. Native migration/output acceptance is pending. |
 | New metadata | I04 owns the complete versioned migration and every affected reader/writer. Record actual new versions; preserve legacy content and old archive support. |
 | Conversations/proposals | I12/I13 own their versioned persistent changes when authorized. Extend archive/snapshot/restore/duplicate graphs with the tables and references, not just the UI. |
 | Portable vs local | Project details and conversation/proposal content travel in projects, backups, and independent copies by default. View preferences, credentials, provider session handles, runtime files, paths, and active jobs remain device-local. |
@@ -745,10 +749,10 @@ For each explicitly requested improvement stage:
 | Milestone | Required implementation | Acceptance/release condition | Status |
 | --- | --- | --- | --- |
 | Agreed plan and I01 specifications | Confirmed decisions, screen specifications, architecture decision, provider evidence | Product choices settled; detailed document review awaits Josh | I01 implementation complete — awaiting user testing (document review); provider enablement gates remain open |
-| Calm local experience | I02–I09 | User-reported new/returning/offline writing and research outcomes | I02 implementation complete — awaiting user testing; I03–I09 not started |
+| Calm local experience | I02–I09 | User-reported new/returning/offline writing and research outcomes | I02–I04 implementation complete — awaiting user testing; I05–I09 not started |
 | First working AI experience | I10–I12 | Provider eligibility/funding evidence plus user-reported native behavior | Not implemented; external gates unresolved |
 | Proofreading | I13 | User-reviewed correction/stale-target/reversal outcomes | Scope confirmed; not implemented, provider-dependent |
 | Provider choice | I14, later increment | Second provider independently eligible and usable | Deferred until independently eligible; not a first-provider release dependency |
 | Complete improvement experience | I15 and all selected scope | User acceptance recorded; remaining release gates explicit | Not implemented |
 
-Current handoff: review I02 through its [manual guide](docs/manual-testing/improvement-I02.md). I01 document review and I02 runtime acceptance have no user-reported results. Stop for Josh's observations; I03 requires a separate explicit request. Product and styling choices remain settled. I02 delivers the local visual foundation, leaves project formats unchanged, and does not implement later navigation/onboarding/AI stages or resolve the independent release NO-GO.
+Current handoff: follow the [I04 manual guide](docs/manual-testing/improvement-I04.md), with [I03 navigation scenarios](docs/manual-testing/improvement-I03.md) for the prerequisite. I01–I04 have no user-reported acceptance results. I04 is implementation complete — awaiting user testing; its new formats and export metadata do not establish native durability or output fidelity. Stop for Josh's observations. I05 needs a separate explicit request. No AI route was enabled and the independent release status remains NO-GO.

@@ -1,5 +1,7 @@
+import NewProjectForm from '../project-details/NewProjectForm'
+import ProjectDetailsForm from '../project-details/ProjectDetailsForm'
 import '../projects/Projects.css'
-import { templateNames, type ProjectTemplate } from '../../../../domain/projects/templates'
+import { templateNames, templateForKind } from '../../../../domain/projects/templates'
 import { projectMessages } from '../../../../shared/projects'
 import { sameProject } from '../../../../shared/access'
 import type { DocumentPayload } from '../../../../domain/editor/schema'
@@ -36,20 +38,18 @@ function readableDocument(payload: DocumentPayload): string {
 }
 
 export default function WorkspaceViews(): React.JSX.Element {
-  const { composition, drafts, actionTask, destination, storage, location, setLocation, list, project, access, newTemplate, setNewTemplate, sectionTitle, setSectionTitle, sectionStatus, setSectionStatus, sectionSynopsis, setSectionSynopsis,
+  const { composition, drafts, actionTask, destination, storage, location, setLocation, list, project, access, sectionTitle, setSectionTitle, sectionStatus, setSectionStatus, sectionSynopsis, setSectionSynopsis,
 sectionFields, busy, setBusy, acting, closing, committing, retry, setError, notice, setNotice, history, annotationCapture, noteDirty,
 sourceDirty,
 inspectionTarget, citationContext, setCitationContext, outlineRetry, conflict, data, showArchived, setShowArchived,
-metaPending, current, editorRef, imageUrls, anchorToFocus, pendingCreate, sectionReadOnly, dirty, fileActive, accessReadOnly, accessTransition, available,
+metaPending, current, editorRef, imageUrls, anchorToFocus, sectionReadOnly, dirty, fileActive, accessReadOnly, accessTransition, available,
 updateProject, isDirty, changed, refresh, refreshData, importImage, navigateSection, navigateSearch, loadHistory, performOutline, saveSectionMeta, flush, flushManuscript,
-run, waitActive, openFile, lifecycleFile, manage, resetLocal, captureAnnotation, afterNoteCommit, changeAccess, openTutorial, createProject, chooseProject, research, navigate, navigating, editorEpoch, setData, setList } = useWorkspaceSession()
+run, waitActive, openFile, lifecycleFile, manage, resetLocal, captureAnnotation, afterNoteCommit, changeAccess, openTutorial, chooseProject, research, navigate, navigating, editorEpoch, setData, setList } = useWorkspaceSession()
   return <div className="projects">
 <WorkspaceNavigation />
 <div inert={navigating || closing} onCompositionStartCapture={() => { composition.current = true; drafts.changed() }} onCompositionEndCapture={() => { composition.current = false; drafts.changed() }}>
 <RetainedRegion name="setup" label="New project">
-<h1>New project</h1>    <div className="project-actions" id="new-project" tabIndex={-1}>
-      <label>Template <select value={newTemplate} disabled={!available || acting || fileActive || closing || !!pendingCreate.current} onChange={event => { setNewTemplate(event.target.value as ProjectTemplate); pendingCreate.current = null }}>{(Object.keys(templateNames) as ProjectTemplate[]).map(template => <option key={template} value={template}>{templateNames[template]}</option>)}</select></label>
-      <button disabled={!available || acting || fileActive || closing} onClick={() => run(createProject)}>{pendingCreate.current ? 'Retry project creation' : 'Create project'}</button>
+<h1>New project</h1><NewProjectForm />    <div className="project-actions" id="new-project" tabIndex={-1}>
       <button disabled={!available || acting || fileActive || closing} onClick={() => run(() => openFile())}>Open project file…</button>
       <button disabled={!available || acting || fileActive || closing} onClick={() => run(() => lifecycleFile('restore'))}>Restore backup…</button>
       <button disabled={!available || acting || fileActive || closing} onClick={() => run(refreshData)}>Refresh projects</button>
@@ -67,7 +67,7 @@ run, waitActive, openFile, lifecycleFile, manage, resetLocal, captureAnnotation,
     <label><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} /> Show archived projects</label>
     <ul className="project-list">{list.projects.filter(p => showArchived || !p.archived).map(p => <li key={p.projectId}>
       <button aria-current={project?.projectId === p.projectId ? 'true' : undefined} disabled={!available || acting || fileActive || closing} onClick={() => run(() => chooseProject(scopeOf(p)))}>
-        {p.title}{sameProject(p,access?.sampleProject??null)?' · tutorial sample':''}{p.archived ? ' · archived' : ''} <span className="project-id">{p.projectId.slice(0, 8)}</span>
+        {p.title} · {templateNames[templateForKind(p.projectKind)]}{sameProject(p,access?.sampleProject??null)?' · tutorial sample':''}{p.archived ? ' · archived' : ''} <span className="project-id">{p.projectId.slice(0, 8)}</span>
         <small>{p.destination ? `${p.destination.path} · availability checked on open${p.headCommitId !== p.destination.headCommitId ? ' · newer edits protected locally' : ''}` : 'Local recovery · no file destination'} · {new Date(p.updatedAt).toLocaleString()}</small>
       </button>
     </li>)}</ul>
@@ -85,7 +85,7 @@ run, waitActive, openFile, lifecycleFile, manage, resetLocal, captureAnnotation,
         <label>Synopsis <textarea value={sectionSynopsis} maxLength={10000} disabled={busy || closing || outlineRetry || sectionReadOnly || accessReadOnly || accessTransition || !!metaPending.current} onChange={event => { sectionFields.current.synopsis = event.target.value; setSectionSynopsis(event.target.value); metaPending.current = null }} /></label>
         <button type="submit" disabled={busy || acting || closing || sectionReadOnly || accessReadOnly || accessTransition}>{metaPending.current ? 'Retry section details' : 'Save section details'}</button>
       </form>
-      <RichDraft key={`${project.projectId}-${project.documentId}-${editorEpoch}`} payload={project.payload} references={{focusAnchor:anchorToFocus.current,projectId:project.projectId,sources:citationContext?.projectId===project.projectId?citationContext.sources:[],labels:new Map(!dirty&&citationContext?.projectId===project.projectId&&citationContext.view?.headCommitId===project.headCommitId?citationContext.view.labels.map(label=>[label.id,label.text]):[])}} disabled={busy || closing || outlineRetry || sectionReadOnly || accessReadOnly || accessTransition || storage.state !== 'ready'} onReady={editor => { editorRef.current = editor; if (editor && anchorToFocus.current) { const id = anchorToFocus.current; anchorToFocus.current = null; let target: number | null = null; editor.state.doc.descendants((node,position) => { if (node.attrs.blockId === id || node.attrs.citationId === id || node.attrs.footnoteId === id) { target = position; return false }; return true }); if (target !== null) { editor.commands.setTextSelection(Math.min(target+1,editor.state.doc.content.size)); editor.commands.focus(); editor.view.dispatch(editor.state.tr.scrollIntoView()) } } }} onChange={changed} onIssue={setError} onBlur={() => { if (isDirty() && !actionTask.current) void flushManuscript() }} imageUrl={assetId => imageUrls.current.get(assetId)} importImage={() => run(importImage)} />
+      <RichDraft key={`${project.projectId}-${project.documentId}-${editorEpoch}`} payload={project.payload} references={{focusAnchor:anchorToFocus.current,projectId:project.projectId,sources:citationContext?.projectId===project.projectId?citationContext.sources:[],labels:new Map(!dirty&&citationContext?.projectId===project.projectId&&citationContext.view?.headCommitId===project.headCommitId?citationContext.view.labels.map(label=>[label.id,label.text]):[])}} disabled={busy || closing || outlineRetry || sectionReadOnly || accessReadOnly || accessTransition || storage.state !== 'ready'} onReady={editor => { editorRef.current = editor; if (editor && anchorToFocus.current) { const id = anchorToFocus.current; anchorToFocus.current = null; let target: number | null = null; editor.state.doc.descendants((node,position) => { if (node.attrs.blockId === id || node.attrs.citationId === id || node.attrs.footnoteId === id) { target = position; return false }; return true }); if (target !== null) { editor.commands.setTextSelection(Math.min(target+1,editor.state.doc.content.size)); editor.commands.focus(); editor.view.dispatch(editor.state.tr.scrollIntoView()) } else setError('The exact passage is no longer present in this section.') } }} onChange={changed} onIssue={setError} onBlur={() => { if (isDirty() && !actionTask.current) void flushManuscript() }} imageUrl={assetId => imageUrls.current.get(assetId)} importImage={() => run(importImage)} />
         <button type="button" disabled={busy || closing || sectionReadOnly || accessReadOnly || accessTransition} onMouseDown={event => event.preventDefault()} onClick={() => { void captureAnnotation() }}>Annotate selection</button>
         <div className="project-actions"><button disabled={busy || committing || closing || outlineRetry || sectionReadOnly || (!accessTransition && accessReadOnly) || !dirty || storage.state !== 'ready'} onClick={() => { void flush().then(() => refresh()) }}>{committing ? 'Protecting…' : retry ? 'Retry local commit' : 'Protect locally'}</button>
         <button onClick={() => { editorRef.current?.commands.focus(); editorRef.current?.commands.selectAll() }}>Select all for copying</button></div>
@@ -117,7 +117,8 @@ run, waitActive, openFile, lifecycleFile, manage, resetLocal, captureAnnotation,
 {project ? <HistoryPanel key={project.projectId} project={project} readOnly={accessReadOnly||accessTransition} history={history} disabled={busy || acting || closing || committing || fileActive} change={change => run(() => performOutline(change))} read={id => run(() => loadHistory(id))} navigate={(doc,anchor) => run(() => navigateSection(doc,anchor))} /> : null}
 </RetainedRegion>
 <RetainedRegion name="details" label="Project actions">
-{project ? <ProjectManagement readOnly={accessReadOnly||accessTransition} key={`${project.projectId}-${project.title}`} project={project} disabled={!available || acting || fileActive || closing} rename={title => run(() => manage(title))} archive={() => run(() => manage())} backup={() => run(() => lifecycleFile('backup'))} move={() => run(() => lifecycleFile('move'))} duplicate={() => run(() => lifecycleFile('duplicate'))} /> : null}
+{project?<ProjectDetailsForm key={project.projectId} project={project} disabled={busy||acting||closing||fileActive||storage.state!=='ready'} readOnly={accessReadOnly||accessTransition}/>:null}
+{project ? <ProjectManagement key={`${project.projectId}-${project.title}`} project={project} disabled={!available || acting || fileActive || closing} archive={() => run(() => manage())} backup={() => run(() => lifecycleFile('backup'))} move={() => run(() => lifecycleFile('move'))} duplicate={() => run(() => lifecycleFile('duplicate'))} /> : null}
 {project ? <InterchangeImportPanel key={`import-${project.projectId}`} project={project} disabled={busy||closing||acting||fileActive||accessReadOnly||accessTransition||storage.state!=='ready'} flush={flush} onProject={updateProject} /> : null}
 </RetainedRegion>
 <RetainedRegion name="settings-appearance" label="Appearance and privacy">

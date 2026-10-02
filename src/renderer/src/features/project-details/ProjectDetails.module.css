@@ -1,0 +1,24 @@
+.project-details-form {
+  display: grid;
+  gap: var(--collie-space-6);
+  max-width: 42rem;
+  margin-block: var(--collie-space-6);
+}
+.project-details-fields {
+  display: grid;
+  gap: var(--collie-space-4);
+}
+.project-type-description {
+  margin: 0;
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-sm);
+}
+.project-details-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--collie-space-3);
+}
+.project-details-form:focus-visible {
+  outline: var(--collie-focus-width) solid var(--mantine-primary-color-filled);
+  outline-offset: var(--collie-space-1);
+}

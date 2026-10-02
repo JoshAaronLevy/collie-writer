@@ -9,3 +9,7 @@ Each guide starts with `Stage X complete. As a user:` and a numbered action/expe
 These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience and provider specifications](improvement-I01.md) is a document-review guide; it requires no app launch or provider account. Its [completion record](../validation/improvement-I01.md) tracks pending feedback.
 
 [I02 — visual foundation](improvement-I02.md) covers the actual Mantine shell/Settings, appearance and accessibility preferences, keyboard/menu/dialog interaction, and a separate user-owned packaged-CSP observation. Its [completion record](../validation/improvement-I02.md) distinguishes delivered code from still-pending runtime acceptance.
+
+[I03 — persistent session and navigation](improvement-I03.md) covers retained drafts, explicit-save guards, typed destinations, focus, global jobs and close/access behavior. Its [record](../validation/improvement-I03.md) contains no claimed runtime acceptance.
+
+[I04 — project details and nonfiction templates](improvement-I04.md) covers the seven starting structures, details fields and guards, legacy copy migration, Save/duplicate/backup/restore, and frozen export properties/title-page choices. Its [record](../validation/improvement-I04.md) tracks implementation separately from user results.

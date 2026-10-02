@@ -95,6 +95,7 @@ async function receive(message: unknown): Promise<void> {
         case 'sourceExportAttachment': value = await repository.sourceExportAttachment(command.input); break
         case 'noteChange': value = await repository.noteChange(command.input); break
         case 'section': value = await repository.section(command.input); break
+        case 'details': value = await repository.details(command.input); break
         case 'meta': value = await repository.meta(command.input); break
         case 'commit': value = await repository.commit(command.input); break
         case 'importImage': value = await repository.importImage(command.input); break

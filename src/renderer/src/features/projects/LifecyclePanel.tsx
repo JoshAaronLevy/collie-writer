@@ -1,30 +1,13 @@
-import { useRetainedDraft } from '../workspace/DraftOwner'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import type { DataLocations } from '../../../../shared/project-lifecycle'
 import type { OpenInput, OpenProject } from '../../../../shared/projects'
 
-export function ProjectManagement({ project, disabled, readOnly, rename, archive, backup, move, duplicate }: {
-  project: OpenProject; disabled: boolean; readOnly: boolean; rename: (title: string) => void; archive: () => void
+export function ProjectManagement({ project, disabled, archive, backup, move, duplicate }: {
+  project: OpenProject; disabled: boolean; archive: () => void
   backup: () => void; move: () => void; duplicate: () => void
 }): React.JSX.Element {
-  const [title, setTitle] = useState(project.title)
-  const { renamePending } = useWorkspaceSession()
-  const panel = useRef<HTMLElement>(null)
-  const scope = {projectId:project.projectId,workspaceId:project.workspaceId}
-  const draftBinding = useRetainedDraft('project-title',{
-    read:()=>({scope,kind:'project-title',entityId:project.projectId,label:'project title',dirty:title!==project.title,composing:false,busy:false,
-      pendingOperation:renamePending.current,policy:'explicit',target:{kind:'workspace',scope,view:'details'}}),focus:()=>panel.current?.focus()
-  })
-  return <section ref={panel} tabIndex={-1} {...draftBinding} aria-labelledby="manage-heading">
-    <h2 id="manage-heading">Manage project</h2>
-    <form onSubmit={event => { event.preventDefault(); if (title.trim()) rename(title.trim()) }}>
-      <label htmlFor="project-title">Project title</label>
-      <input id="project-title" value={title} maxLength={500} disabled={disabled||readOnly||!!renamePending.current} onChange={event => setTitle(event.target.value)} />
-      <button disabled={disabled || readOnly || !title.trim()}>{renamePending.current?'Retry rename':'Rename title'}</button>
-      {title!==project.title?<button type="button" disabled={disabled||!!renamePending.current} onClick={()=>setTitle(project.title)}>Clear title changes</button>:null}
-    </form>
-    <p>The title is independent of the filename. Renaming creates a local revision; Save updates the chosen file.</p>
+  return <section aria-labelledby="manage-heading">
+    <h2 id="manage-heading">Project files and organization</h2>
     <div className="project-actions">
       <button disabled={disabled} onClick={backup}>Backup to new file…</button>
       <button disabled={disabled || !project.destination} onClick={move}>Move to new location…</button>
