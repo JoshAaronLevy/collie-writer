@@ -264,7 +264,7 @@ The model families and effort controls are documented in [OpenAI's model-selecti
 | I14 | Later second-provider integration, when eligible | I10–I12, independent provider gate | Deferred later increment; eligibility unresolved |
 | I15 | Complete-experience refinement and user acceptance handoff | I02–I13; include I14 only when available | Not started |
 
-### I01 — Specify the confirmed experience and provider feasibility
+### Stage I01 — Specify the confirmed experience and provider feasibility
 
 #### Model: Astra | Effort: High
 
@@ -292,7 +292,7 @@ Work:
 
 **Implementation completion:** The three linked specification/decision artifacts and stage evidence/manual-review guide exist, implementation boundaries are concrete, and each provider gate has a dated evidence-based disposition. An unresolved external provider dependency does not prevent completing this documentation stage; it remains an explicit prerequisite for I10. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I02 — Establish the visual foundation
+### Stage I02 — Establish the visual foundation
 
 #### Model: Astra | Effort: High
 
@@ -320,7 +320,7 @@ Work:
 
 **Implementation completion:** The real shell and preference controls use Mantine, shared product components and scoped semantic styles are available, preferences apply without mounting Settings, and the theme/CSP/license decisions and manual guide are documented. Runtime/accessibility acceptance remains user-owned. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I03 — Separate session ownership from navigation
+### Stage I03 — Separate session ownership from navigation
 
 #### Model: Astra | Effort: Extra High
 
@@ -348,7 +348,7 @@ Work:
 
 **Implementation completion:** A single documented session/draft owner drives usable typed navigation, all flush/retry/access/close responsibilities have a persistent home, and no old panel lifecycle is implicitly relied on for durability. Source changes and manual transition scenarios are recorded; native behavior is not claimed observed. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I04 — Add real project details and nonfiction templates
+### Stage I04 — Add real project details and nonfiction templates
 
 #### Model: Astra | Effort: Extra High
 
@@ -381,7 +381,7 @@ Implement the retained-copy format change and complete consumer matrix in a new 
 
 **Implementation completion:** The metadata form, atomic create/update contracts, all seven template mappings, retained-copy migrations, portable consumers, capability classifications, and frozen export metadata/title-page behavior are implemented and documented together. No orphaned metadata-only UI or deferred consumer migration counts as completion. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I05 — Build the guided project creation flow
+### Stage I05 — Build the guided project creation flow
 
 #### Model: Sol | Effort: High
 
@@ -410,7 +410,7 @@ Work:
 
 **Implementation completion:** Every configured category enters one resumable/idempotent setup flow, title/byline/description use the shared contract, no destination is assigned, free designation remains explicit, and local writing is reachable through the truthful connection boundary. Live AI readiness is not a completion claim for this stage. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I06 — Make returning projects and lifecycle actions clear
+### Stage I06 — Make returning projects and lifecycle actions clear
 
 #### Model: Sol | Effort: High
 
@@ -438,7 +438,7 @@ Work:
 
 **Implementation completion:** Returning selection and the library are implemented with named reachable lifecycle/recovery destinations, read-only states, retained-copy behavior, and safe fallback. Existing local work remains discoverable independently of selected-file reachability. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I07 — Create the focused writing workspace
+### Stage I07 — Create the focused writing workspace
 
 #### Model: Astra | Effort: High
 
@@ -467,7 +467,7 @@ Work:
 
 **Implementation completion:** The new workspace contains all existing editor/outline/history entry points with documented pane/selection/state ownership and correct save-state semantics. The manual guide covers focus, selection, outline, references, narrow layouts, and recovery visibility; AST semantics remain intact. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I08 — Organize research, notes, and evidence around tasks
+### Stage I08 — Organize research, notes, and evidence around tasks
 
 #### Model: Sol | Effort: High
 
@@ -495,7 +495,7 @@ Work:
 
 **Implementation completion:** Sources, inspection, notes, evidence, and search have focused destinations sharing one draft owner and stable navigation targets. Existing source/provenance capabilities remain reachable without adding new retrieval or critique automation. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I09 — Integrate export, settings, help, and the complete local journey
+### Stage I09 — Integrate export, settings, help, and the complete local journey
 
 #### Model: Astra | Effort: High
 
@@ -524,7 +524,7 @@ Work:
 
 **Implementation completion:** The full local capability-to-destination map is implemented, export/preflight/result states and settings/help/tutorial flows are coherent, and the independent local milestone has a complete manual guide. Provider absence does not block local writing or mark AI complete. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I10 — Implement the first eligible provider boundary
+### Stage I10 — Implement the first eligible provider boundary
 
 #### Model: Astra | Effort: Extra High
 
@@ -557,7 +557,7 @@ Main owns the allowlisted provider/auth route, approved default-browser URL laun
 
 **Implementation completion:** The permitted configured provider boundary, credential isolation, editing/session/funding enforcement, bounded lifecycle, narrow IPC, and packaging/privacy decisions are implemented. If authentic route/funding prerequisites are absent, status is blocked/partial instead. Native results await the user. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I11 — Deliver the AI connection step and account controls
+### Stage I11 — Deliver the AI connection step and account controls
 
 #### Model: Sol | Effort: High
 
@@ -585,7 +585,7 @@ Work:
 
 **Implementation completion:** Onboarding and Settings use real I10 state and browser authentication, all cancel/retry/return/expired/unavailable paths preserve writing, and no token or fake-success state enters the renderer. End-to-end sign-in observation awaits the user. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I12 — Add project conversations with explicit context
+### Stage I12 — Add project conversations with explicit context
 
 #### Model: Astra | Effort: Extra High
 
@@ -617,7 +617,7 @@ Capture outgoing context as stable references plus the exact approved text/revis
 
 **Implementation completion:** Durable portable chat and immutable context authorization are implemented with safe rendering, local streaming recovery, explicit retry/stop, correct capability enforcement, and disconnected export. All storage/copy consumers and the manual guide are updated; provider behavior remains honestly tracked. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I13 — Add human-reviewed proofreading
+### Stage I13 — Add human-reviewed proofreading
 
 #### Model: Astra | Effort: Extra High
 
@@ -648,7 +648,7 @@ Each structured proposal contains exact before/replacement text, target/revision
 
 **Implementation completion:** Bounded capture, durable structured proposal review, explicit rejection/application, stale-target refusal, transactional projection updates, and reversal are implemented. The documented supported subset is visible to the user; unobserved AI quality and rich-content preservation remain pending. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I14 — Add another provider without fragmenting the experience
+### Stage I14 — Add another provider without fragmenting the experience
 
 #### Model: Astra | Effort: High
 
@@ -678,7 +678,7 @@ If no second provider qualifies, keep this later stage deferred with its exact e
 
 **Implementation completion:** One additional eligible provider actually implements the shared contract, with current evidence, supported capability disclosures, and packaging/manual guidance. Otherwise name the missing external dependency and leave this stage incomplete; first-provider functionality remains independent. Every stage also delivers the evidence record, updated ledger, and user-owned guide required below.
 
-### I15 — Refine the full experience and record user acceptance
+### Stage I15 — Refine the full experience and record user acceptance
 
 #### Model: Astra | Effort: High
 
