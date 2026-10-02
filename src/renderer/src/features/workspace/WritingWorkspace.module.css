@@ -38,3 +38,5 @@
 @media (forced-colors: active) { .workspace-pane-resizer { border-inline-start: 1px solid ButtonText; } }
 
 .writing-source-excerpt .writing-excerpt-origin { font-size: .75rem; margin-top: .5rem; }
+
+.writing-related-item { height: auto; white-space: normal; text-align: left; }

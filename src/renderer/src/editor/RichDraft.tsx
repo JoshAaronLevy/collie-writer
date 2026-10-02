@@ -11,6 +11,7 @@ import { setBlockType } from '@tiptap/pm/commands'
 import { wrapInList } from '@tiptap/pm/schema-list'
 import { undo, redo } from '@tiptap/pm/history'
 import { safeLink, type DocumentPayload } from '../../../domain/editor/schema'
+import { manuscriptAnchor } from './anchors'
 import ReferenceTools, { type ReferenceContext } from './ReferenceTools'
 import { createManuscriptEditor, editorIsComposing, focusedManuscriptEditor, refreshCitationLabels } from './adapter'
 
@@ -42,6 +43,7 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
   disabledRef.current = disabled
   const [, setRevision] = useState(0)
   const [words, setWords] = useState(0)
+  const [editorReady, setEditorReady] = useState(false)
   const [query, setQuery] = useState(''), [replacement, setReplacement] = useState('')
   const [match, setMatch] = useState('')
   const [findOpen, setFindOpen] = useState(false), [referencesOpen, setReferencesOpen] = useState(false)
@@ -51,7 +53,7 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
   const afterDialog = useRef<(() => void) | null>(null)
   const formDraft = useEditorFormDraft('Link or image details', dialog !== null, noteMode)
   useEffect(() => { if (findOpen) findField.current?.focus() }, [findOpen])
-  useEffect(() => { if (references?.focusAnchor) setReferencesOpen(true) }, [references?.focusAnchor])
+  useEffect(() => { if (references?.focusAnchor && editor.current && manuscriptAnchor(editor.current,references.focusAnchor)?.reference) setReferencesOpen(true) }, [references?.focusAnchor,references?.focusRequest,editorReady])
   function openFind(): void { setFindOpen(true); findField.current?.focus() }
   function captureTools(): void { toolsSelection.current = captureSelection(editor.current) }
   function menuAction(action: () => void): void {
@@ -91,7 +93,7 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
       }, onIssue })
       const updateSelection = (): void => setRevision(value => value + 1)
       next.on('selectionUpdate', updateSelection)
-      editor.current = next; onReady(next); setWords((next.state.doc.textContent.match(/\S+/gu) ?? []).length); setRevision(value => value + 1)
+      editor.current = next; setEditorReady(true); onReady(next); setWords((next.state.doc.textContent.match(/\S+/gu) ?? []).length); setRevision(value => value + 1)
       return () => { if (countTimer.current) clearTimeout(countTimer.current); next.off('selectionUpdate', updateSelection); onReady(null); editor.current = null; next.destroy() }
     } catch { onIssue('The stored document cannot be opened for editing without loss. Keep its original file and local recovery for repair.') }
   }, [])

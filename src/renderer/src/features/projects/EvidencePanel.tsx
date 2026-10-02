@@ -1,154 +1,183 @@
-import { useRetainedDraft } from '../workspace/DraftOwner'
+import { Checkbox, TextInput } from '@mantine/core'
 import { useEffect, useRef, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
-import type { EvidenceChange, EvidenceLink, EvidenceRole, EvidenceView, ResearchItem } from '../../../../shared/evidence'
+import type { EvidenceChange, EvidenceRole, ResearchItem, ResearchDecision } from '../../../../shared/evidence'
+import { AppButton, SelectField, TextareaField } from '../../components/ui/Controls'
+import { EmptyState } from '../../components/ui/Feedback'
+import { ResearchHeader, ResearchLayout } from '../research/ResearchLayout'
+import { useResearchData } from '../research/ResearchData'
+import { UsageStatus } from '../research/SourceUsage'
+import { linkWarnings } from '../research/usage'
+import { useRetainedDraft } from '../workspace/DraftOwner'
+import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import './EvidencePanel.css'
 
-const scope = (project: OpenProject) => ({ projectId: project.projectId, workspaceId: project.workspaceId })
-const roles: EvidenceRole[] = ['support','challenge','background','potential_use']
-const title = (view: EvidenceView | null, id: string): string => view?.sources.find(s => s.id === id)?.title ?? id.slice(0,8)
-const section = (view: EvidenceView | null, id: string): string => view?.sections.find(s => s.id === id)?.title ?? id.slice(0,8)
-const oldValue = (snapshot: string): string => { try { const value = JSON.parse(snapshot) as Record<string,unknown>; return String(value.text ?? [value.state,value.role,value.reason].filter(Boolean).join(' · ')).slice(0,400) } catch { return 'Prior revision retained' } }
+type ItemKind = 'question' | 'claim'
+type ItemDraft = { kind: ItemKind; original: ResearchItem | null; text: string; documentId: string; noteId: string }
+const roles: EvidenceRole[] = ['support', 'challenge', 'background', 'potential_use']
+const draftFor = (kind: ItemKind, item: ResearchItem | null): ItemDraft => ({ kind, original: item, text: item?.text ?? '', documentId: item?.documentId ?? '', noteId: item?.noteId ?? '' })
+const oldValue = (snapshot: string): string => { try { const value = JSON.parse(snapshot) as Record<string, unknown>; return String(value.text ?? [value.state, value.role, value.reason].filter(Boolean).join(' · ')).slice(0,400) } catch { return 'Prior revision retained' } }
 
-export default function EvidencePanel({ project, focusItem, disabled, readOnly, onCommitted, navigate, inspect }: { project: OpenProject; focusItem: {kind:'question'|'claim';id:string}|null; disabled: boolean; readOnly:boolean; onCommitted: () => Promise<void>; navigate: (id: string, anchor?: string) => Promise<void>; inspect: (sourceId: string, excerptId: string) => void }): React.JSX.Element {
-  const panel = useRef<HTMLElement>(null), focusedRequest = useRef<string | null>(null)
-  const pending = useRef<{operationId:string;change:EvidenceChange}|null>(null)
-  const [view,setView] = useState<EvidenceView|null>(null)
-  const [busy,setBusy] = useState(false),[error,setError] = useState(''),[message,setMessage] = useState('')
-  const [questionId,setQuestionId] = useState<string|null>(null),[claimId,setClaimId] = useState<string|null>(null)
-  const [questionText,setQuestionText] = useState(''),[claimText,setClaimText] = useState('')
-  const [questionSection,setQuestionSection] = useState(''),[questionNote,setQuestionNote] = useState('')
-  const [claimSection,setClaimSection] = useState(''),[claimNote,setClaimNote] = useState('')
-  const [focusSource,setFocusSource] = useState(''),[focusSection,setFocusSection] = useState('')
-  const [decisionSource,setDecisionSource] = useState(''),[decisionReason,setDecisionReason] = useState('')
-  const [linkSource,setLinkSource] = useState(''),[linkExcerpt,setLinkExcerpt] = useState(''),[linkTargetKind,setLinkTargetKind] = useState<'claim'|'section'>('claim'),[linkTarget,setLinkTarget] = useState(''),[linkRole,setLinkRole] = useState<EvidenceRole>('support')
-  const question = view?.questions.find(x => x.id === questionId),claim = view?.claims.find(x => x.id === claimId)
-  const locked = disabled || busy || !!pending.current
-  const selectedDecision = view?.decisions.find(d => d.questionId === questionId && d.sourceId === decisionSource)
-  const draftPending=!!view&&(questionText!==(question?.text??'')||questionSection!==(question?.documentId??'')||questionNote!==(question?.noteId??'')||claimText!==(claim?.text??'')||claimSection!==(claim?.documentId??'')||claimNote!==(claim?.noteId??'')||decisionReason!==(selectedDecision?.reason??'')||!!linkSource||!!linkTarget||!!linkExcerpt)
-
-  useEffect(() => { let live = true; void window.collie.readEvidence(scope(project)).then(result => { if (!live) return; if (result.ok) setView(result.value); else setError(result.error.message) }); return () => { live = false } },[project.projectId,project.workspaceId,project.headCommitId])
-  async function mutate(change: EvidenceChange, retry = false): Promise<void> {
-    if(readOnly){setError('Choose this project for free editing before changing research.');return}
-    if(pending.current&&!retry){setError('Retry the pending research change before making another change.');return}
-    pending.current ??= {operationId:crypto.randomUUID(),change}
-    const operation=pending.current
-    setBusy(true); setError(''); setMessage('')
-    try {
-      const result = await window.collie.changeEvidence({ ...scope(project),...operation })
-      if (!result.ok) { if(result.error.code!=='UNAVAILABLE')pending.current=null;setError(result.error.message); return }
-      pending.current=null
-      if(change.type==='createLink'){setLinkSource('');setLinkExcerpt('');setLinkTarget('')}
-      if (change.type === 'createQuestion') setQuestionId(change.id)
-      if (change.type === 'createClaim') setClaimId(change.id)
-      setView(result.value); setMessage('Research change protected locally. Save or back up the project file separately.')
-      await onCommitted()
-    } catch { setError('The research change has an unknown outcome. Retry the same change before continuing.') } finally { setBusy(false) }
+export default function EvidencePanel({ project, focusItem, focusSourceId, disabled, readOnly, onCommitted, navigate, inspect }: {
+  project: OpenProject; focusItem: { kind: ItemKind | 'link'; id: string } | null; focusSourceId?: string;
+  disabled: boolean; readOnly: boolean; onCommitted: () => Promise<void>; navigate: (id: string, anchor?: string) => Promise<void>; inspect: (sourceId: string, excerptId: string) => void
+}): React.JSX.Element {
+  const session = useWorkspaceSession(), data = useResearchData(), { view } = data
+  const scope = { projectId: project.projectId, workspaceId: project.workspaceId }
+  const panel = useRef<HTMLElement>(null), focused = useRef(''), pending = useRef<{ operationId: string; change: EvidenceChange } | null>(null)
+  const [tab, setTab] = useState<ItemKind | 'link'>('question'), [query, setQuery] = useState(''), [includeRemoved, setIncludeRemoved] = useState(false)
+  const [draft, setDraft] = useState<ItemDraft | null>(null), [linkId, setLinkId] = useState<string | null>(null), [newLink, setNewLink] = useState(false)
+  const [decisionSource, setDecisionSource] = useState(''), [decisionReason, setDecisionReason] = useState(''), [decisionBase, setDecisionBase] = useState<ResearchDecision | null>(null)
+  const [linkSource, setLinkSource] = useState(''), [linkExcerpt, setLinkExcerpt] = useState(''), [targetKind, setTargetKind] = useState<'claim' | 'section'>('claim'), [targetId, setTargetId] = useState(''), [targetRevision, setTargetRevision] = useState(''), [role, setRole] = useState<EvidenceRole>('support')
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('')
+  const itemDirty = !!draft && (draft.text !== (draft.original?.text ?? '') || draft.documentId !== (draft.original?.documentId ?? '') || draft.noteId !== (draft.original?.noteId ?? ''))
+  const decisionDirty = decisionReason !== (decisionBase?.reason ?? '')
+  const dirty = itemDirty || decisionDirty || !!linkSource || !!linkExcerpt || !!targetId || newLink && role !== 'support'
+  const locked = disabled || busy || !!pending.current || !data.fresh
+  const link = view?.links.find(item => item.id === linkId)
+  const item = draft?.original ? (draft.kind === 'question' ? view?.questions : view?.claims)?.find(row => row.id === draft.original?.id) : null
+  const canChangeContext = (): boolean => {
+    if (session.composition.current || dirty || busy || pending.current) { setError('Save or explicitly discard the current research form before choosing another item.'); return false }
+    setError(''); return true
   }
-  function chooseItem(kind: 'question'|'claim', item: ResearchItem | null): void {
-    if(draftPending){setError('Save or discard pending research form edits before selecting another item.');return}
-    if (kind === 'question') { setQuestionId(item?.id ?? null); setQuestionText(item?.text ?? ''); setQuestionSection(item?.documentId ?? ''); setQuestionNote(item?.noteId ?? ''); setDecisionSource(''); setDecisionReason('') }
-    else { setClaimId(item?.id ?? null); setClaimText(item?.text ?? ''); setClaimSection(item?.documentId ?? ''); setClaimNote(item?.noteId ?? '') }
+  function choose(kind: ItemKind, selected: ResearchItem | null): void {
+    setTab(kind); setDraft(draftFor(kind, selected)); setLinkId(null); setNewLink(false)
+    setDecisionSource(''); setDecisionReason(''); setDecisionBase(null)
+  }
+  function selectDecision(sourceId: string): void {
+    const saved = view?.decisions.find(row => row.questionId === draft?.original?.id && row.sourceId === sourceId) ?? null
+    setDecisionSource(sourceId); setDecisionBase(saved); setDecisionReason(saved?.reason ?? '')
+  }
+  function discard(): void {
+    if(session.composition.current)return
+    if (draft) setDraft(draftFor(draft.kind, item ?? null))
+    const saved = view?.decisions.find(row => row.questionId === draft?.original?.id && row.sourceId === decisionSource) ?? null
+    setDecisionBase(saved); setDecisionReason(saved?.reason ?? '')
+    setLinkSource(''); setLinkExcerpt(''); setTargetId(''); setTargetRevision(''); setRole('support'); setError('')
   }
   useEffect(() => {
-    if (!focusItem) { focusedRequest.current = null; return }
-    const key = `${focusItem.kind}:${focusItem.id}`
-    if (!view || draftPending || focusedRequest.current === key) return
-    const target = (focusItem.kind === 'question' ? view.questions : view.claims).find(item => item.id === focusItem.id)
-    if (target) { focusedRequest.current = key; chooseItem(focusItem.kind, target) }
-    else setError('The requested question or claim is no longer available.')
-  }, [focusItem?.id, focusItem?.kind, view?.questions, view?.claims])
+    if (!focusItem) { focused.current = ''; return }
+    const key = `${focusItem.kind}:${focusItem.id}:${focusSourceId ?? ''}:${session.focusRevision}`
+    if (!view || dirty || busy || pending.current || focused.current === key) return
+    focused.current = key; setIncludeRemoved(true); setQuery(''); setError('')
+    if (focusItem.kind === 'link') {
+      if (!view.links.some(row => row.id === focusItem.id)) { setError('This evidence link is no longer available.'); return }
+      setTab('link'); setLinkId(focusItem.id); setDraft(null); setNewLink(false); return
+    }
+    const found = (focusItem.kind === 'question' ? view.questions : view.claims).find(row => row.id === focusItem.id)
+    if (!found) { setError('This question or claim is no longer available.'); return }
+    choose(focusItem.kind, found)
+    if (focusSourceId && focusItem.kind === 'question') {
+      const saved = view.decisions.find(row => row.questionId === found.id && row.sourceId === focusSourceId) ?? null
+      setDecisionSource(focusSourceId); setDecisionBase(saved); setDecisionReason(saved?.reason ?? '')
+    }
+  }, [focusItem?.id, focusItem?.kind, focusSourceId, session.focusRevision, view, dirty, busy])
 
-  function discardDrafts():void{
-    setQuestionText(question?.text??'');setQuestionSection(question?.documentId??'');setQuestionNote(question?.noteId??'')
-    setClaimText(claim?.text??'');setClaimSection(claim?.documentId??'');setClaimNote(claim?.noteId??'')
-    setDecisionReason(selectedDecision?.reason??'');setLinkSource('');setLinkExcerpt('');setLinkTarget('');setError('')
+  async function mutate(change: EvidenceChange, retry = false): Promise<void> {
+    if (readOnly || disabled) { setError('Editing is unavailable for this project right now.'); return }
+    if (pending.current && !retry) { setError('Retry the pending research change first.'); return }
+    if (session.composition.current) return
+    pending.current ??= { operationId: crypto.randomUUID(), change }
+    const operation = pending.current
+    setBusy(true); setError(''); setMessage('')
+    try {
+      const result = await window.collie.changeEvidence({ ...scope, ...operation })
+      if (!result.ok) { if (result.error.code !== 'UNAVAILABLE') pending.current = null; setError(result.error.message); return }
+      pending.current = null; data.accept(result.value)
+      const savedChange = operation.change
+      if (savedChange.type === 'createQuestion' || savedChange.type === 'updateQuestion' || savedChange.type === 'createClaim' || savedChange.type === 'updateClaim') {
+        const kind = savedChange.type.endsWith('Question') ? 'question' : 'claim'
+        const saved = (kind === 'question' ? result.value.questions : result.value.claims).find(row => row.id === savedChange.id)
+        if (saved) setDraft(draftFor(kind, saved))
+      } else if (savedChange.type === 'decide') {
+        const saved = result.value.decisions.find(row => row.questionId === savedChange.questionId && row.sourceId === savedChange.sourceId) ?? null
+        setDecisionBase(saved); setDecisionReason(saved?.reason ?? '')
+      } else if (savedChange.type === 'createLink') {
+        setLinkId(savedChange.id); setNewLink(false); setLinkSource(''); setLinkExcerpt(''); setTargetId(''); setTargetRevision('')
+      }
+      setMessage('Research change protected locally. Save or back up the project file separately.')
+      await onCommitted()
+    } catch { setError(pending.current ? 'The change has an unknown outcome. Retry the same research change.' : 'The change was saved, but the workspace could not refresh. Reopen Research to refresh it.') }
+    finally { setBusy(false) }
   }
-  function saveItem(kind: 'question'|'claim'): void {
-    const selected = kind === 'question' ? question : claim
-    const text = kind === 'question' ? questionText : claimText
-    const documentId = (kind === 'question' ? questionSection : claimSection) || null
-    const noteId = (kind === 'question' ? questionNote : claimNote) || null
-    if (!text.trim()) { setError('Enter a question or claim first.'); return }
-    if (selected) void mutate({type:kind === 'question' ? 'updateQuestion' : 'updateClaim',id:selected.id,expectedRevisionId:selected.revisionId,text,documentId,noteId,state:selected.state})
-    else { const id = crypto.randomUUID(); void mutate({type:kind === 'question' ? 'createQuestion' : 'createClaim',id,text,documentId,noteId}) }
+  function saveItem(): void {
+    if (!draft || !draft.text.trim()) return
+    const { kind, original, text, documentId, noteId } = draft
+    if (original) void mutate({ type: kind === 'question' ? 'updateQuestion' : 'updateClaim', id: original.id, expectedRevisionId: original.revisionId, text, documentId: documentId || null, noteId: noteId || null, state: original.state })
+    else void mutate({ type: kind === 'question' ? 'createQuestion' : 'createClaim', id: crypto.randomUUID(), text, documentId: documentId || null, noteId: noteId || null })
   }
-  function linkStatus(link: EvidenceLink): string[] {
-    if (!view) return []
-    const issues: string[] = []
-    const source = view.sources.find(s => s.id === link.sourceId)
-    if (source?.state !== 'active') issues.push(`source ${source?.state ?? 'missing'}`)
-    const target = link.claimId ? view.claims.find(c => c.id === link.claimId) : view.sections.find(s => s.id === link.documentId)
-    if (!target) issues.push('target missing')
-    else { if (target.state !== 'active') issues.push(`target ${target.state}`); if (target.revisionId !== link.targetRevisionId) issues.push('target wording or structure changed; review again') }
-    if (link.excerptId) { const excerpt = view.excerpts.find(e => e.id === link.excerptId); if (!excerpt) issues.push('excerpt missing'); else if (excerpt.versionId !== (view.sources.find(s => s.id === excerpt.sourceId)?.activeVersionId ?? null)) issues.push('excerpt belongs to an older source version') }
-    if (link.review === 'needs_review') issues.push('marked for review')
-    return issues
-  }
-  const activeSources = view?.sources.filter(s => s.state === 'active') ?? []
-  const activeSections = view?.sections.filter(s => s.state === 'active') ?? []
-  const activeClaims = view?.claims.filter(c => c.state === 'active') ?? []
-  const filteredExcerpts = view?.excerpts.filter(e => e.sourceId === linkSource) ?? []
-  const related = view?.links.filter(link => link.documentId === focusSection || view?.claims.some(c => c.id === link.claimId && c.documentId === focusSection)) ?? []
-  const history = (entityType: 'question'|'claim'|'link'|'decision', entityKey: string): React.JSX.Element | null => { const rows = view?.revisions.filter(r => r.entityType === entityType && r.entityKey === entityKey) ?? []; return rows.length ? <details><summary>{rows.length} earlier revision{rows.length === 1 ? '' : 's'}</summary><ol>{rows.map(r => <li key={r.revisionId}>{r.createdAt.slice(0,19)} · {oldValue(r.snapshot)}</li>)}</ol></details> : null }
-
-  const draftBinding=useRetainedDraft('research',{
-    read:()=>({scope:scope(project),kind:'questions-claims-decisions',entityId:questionId??claimId,label:'research form edits',
-      dirty:draftPending||!!pending.current,composing:false,busy,pendingOperation:pending.current,policy:'explicit',issue:error,
-      target:{kind:'workspace',scope:scope(project),view:'research',target:{kind:'evidence'}}}),
-    focus:()=>panel.current?.focus()
+  const binding = useRetainedDraft('research', {
+    read: () => ({ scope, kind: 'questions-claims-decisions', entityId: draft?.original?.id ?? linkId, label: 'research form edits', dirty: dirty || !!pending.current, composing: false, busy, pendingOperation: pending.current, policy: 'explicit', issue: error, target: { kind: 'workspace', scope, view: 'research', target: { kind: 'evidence', item: tab === 'link' && linkId ? {kind:'link',id:linkId} : draft?.original && draft.kind === tab ? {kind:draft.kind,id:draft.original.id} : undefined, sourceId: decisionSource || undefined } } }),
+    focus: () => panel.current?.focus()
   })
-  return <section ref={panel} {...draftBinding} className="evidence-panel" aria-labelledby="evidence-title" tabIndex={-1}>
-    <h2 id="evidence-title">Questions, claims and evidence</h2>
-    <p>These are human-organized research relationships. A support link records your assessment, not proof. Actual citations in draft text are listed separately.</p>
-    {draftPending?<p role="status">Research form edits are not saved yet. <button type="button" disabled={locked} onClick={discardDrafts}>Discard pending research form edits</button></p>:null}
-    {pending.current?<button type="button" disabled={disabled||busy||readOnly} onClick={()=>{if(pending.current)void mutate(pending.current.change,true)}}>Retry pending research change</button>:null}
-    <div className="evidence-columns">
-      <div>
-        <h3>Research questions</h3>
-        <button type="button" disabled={locked||readOnly} onClick={() => chooseItem('question',null)}>New question</button>
-        <ul>{view?.questions.map(q => <li key={q.id}><button type="button" disabled={locked} aria-current={q.id === questionId ? 'true' : undefined} onClick={() => chooseItem('question',q)}>{q.text}</button> · {q.state}{q.documentId && view?.sections.find(s => s.id === q.documentId)?.revisionId !== q.documentRevisionId ? ' · section changed' : ''}</li>)}</ul>
-        <label>Question <textarea value={questionText} maxLength={10000} onChange={e => setQuestionText(e.target.value)} rows={3} disabled={locked||readOnly} /></label>
-        <label>Related section <select value={questionSection} onChange={e => setQuestionSection(e.target.value)} disabled={locked||readOnly}><option value="">None</option>{activeSections.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
-        <label>Related note <select value={questionNote} onChange={e => setQuestionNote(e.target.value)} disabled={locked||readOnly}><option value="">None</option>{view?.notes.filter(n => n.state === 'active').map(n => <option key={n.id} value={n.id}>{n.title}</option>)}</select></label>
-        <button type="button" disabled={locked||readOnly || !questionText.trim()} onClick={() => saveItem('question')}>{question ? 'Save question' : 'Create question'}</button>
-        {question ? <><button type="button" disabled={locked||readOnly} onClick={() => void mutate({type:'updateQuestion',id:question.id,expectedRevisionId:question.revisionId,text:question.text,documentId:question.documentId,noteId:question.noteId,state:question.state === 'active' ? 'archived' : 'active'})}>{question.state === 'active' ? 'Archive question' : 'Restore question'}</button>{history('question',question.id)}</> : null}
-      </div>
-      <div>
-        <h3>Claims</h3>
-        <button type="button" disabled={locked||readOnly} onClick={() => chooseItem('claim',null)}>New claim</button>
-        <ul>{view?.claims.map(c => <li key={c.id}><button type="button" disabled={locked} aria-current={c.id === claimId ? 'true' : undefined} onClick={() => chooseItem('claim',c)}>{c.text}</button> · {c.state}{c.documentId && view?.sections.find(s => s.id === c.documentId)?.revisionId !== c.documentRevisionId ? ' · section changed' : ''}</li>)}</ul>
-        <label>Claim <textarea value={claimText} maxLength={10000} onChange={e => setClaimText(e.target.value)} rows={3} disabled={locked||readOnly} /></label>
-        <label>Related section <select value={claimSection} onChange={e => setClaimSection(e.target.value)} disabled={locked||readOnly}><option value="">None</option>{activeSections.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
-        <label>Related note <select value={claimNote} onChange={e => setClaimNote(e.target.value)} disabled={locked||readOnly}><option value="">None</option>{view?.notes.filter(n => n.state === 'active').map(n => <option key={n.id} value={n.id}>{n.title}</option>)}</select></label>
-        <button type="button" disabled={locked||readOnly || !claimText.trim()} onClick={() => saveItem('claim')}>{claim ? 'Save claim' : 'Create claim'}</button>
-        {claim ? <><button type="button" disabled={locked||readOnly} onClick={() => void mutate({type:'updateClaim',id:claim.id,expectedRevisionId:claim.revisionId,text:claim.text,documentId:claim.documentId,noteId:claim.noteId,state:claim.state === 'active' ? 'archived' : 'active'})}>{claim.state === 'active' ? 'Archive claim' : 'Restore claim'}</button>{history('claim',claim.id)}</> : null}
-      </div>
-    </div>
-    <h3>Question-specific source decision</h3>
-    <p>Rejecting a source here does not remove it from another question, section, excerpt or actual citation.</p>
-    <label>Question <select value={questionId ?? ''} onChange={e => chooseItem('question',view?.questions.find(q => q.id === e.target.value) ?? null)} disabled={locked}><option value="">Choose question</option>{view?.questions.map(q => <option key={q.id} value={q.id}>{q.text}</option>)}</select></label>
-    <label>Source <select value={decisionSource} onChange={e => { if(decisionReason!==(selectedDecision?.reason??'')||!!linkSource||!!linkTarget||!!linkExcerpt){setError('Save or discard the pending decision reason before selecting another source.');return}setDecisionSource(e.target.value); setDecisionReason(view?.decisions.find(d => d.questionId === questionId && d.sourceId === e.target.value)?.reason ?? '') }} disabled={locked || !question}><option value="">Choose source</option>{view?.sources.filter(s => s.state !== 'merged').map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
-    <label>Reason <textarea value={decisionReason} maxLength={2000} onChange={e => setDecisionReason(e.target.value)} rows={2} disabled={locked||readOnly || !decisionSource} /></label>
-    <div className="project-actions">{(['candidate','kept','rejected'] as const).map(state => <button type="button" key={state} disabled={locked||readOnly || !question || !decisionSource || state === 'rejected' && !decisionReason.trim()} onClick={() => void mutate({type:'decide',questionId:question!.id,sourceId:decisionSource,expectedRevisionId:selectedDecision?.revisionId ?? null,state,reason:decisionReason})}>{state === 'candidate' ? 'Mark candidate' : state === 'kept' ? 'Keep for this question' : 'Reject for this question'}</button>)}</div>
-    {selectedDecision ? <div><p>Current decision: {selectedDecision.state}. {selectedDecision.reason}</p>{history('decision',`${selectedDecision.questionId}|${selectedDecision.sourceId}`)}</div> : null}
-    <ul>{view?.decisions.filter(d => d.questionId === questionId).map(d => <li key={d.sourceId}>{title(view,d.sourceId)} · {d.state}{d.reason ? ` · ${d.reason}` : ''}</li>)}</ul>
-    <h3>Link source evidence</h3>
-    <div className="evidence-link-form">
-      <label>Source <select value={linkSource} onChange={e => { setLinkSource(e.target.value); setLinkExcerpt('') }} disabled={locked||readOnly}><option value="">Choose source</option>{activeSources.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
-      <label>Exact excerpt (optional) <select value={linkExcerpt} onChange={e => setLinkExcerpt(e.target.value)} disabled={locked||readOnly || !linkSource}><option value="">Whole source or potential use</option>{filteredExcerpts.map(e => <option key={e.id} value={e.id}>{e.quote.slice(0,100)} · {e.kind} · version {e.sha256.slice(0,8)}</option>)}</select></label>
-      <label>Target type <select value={linkTargetKind} onChange={e => { setLinkTargetKind(e.target.value as 'claim'|'section'); setLinkTarget('') }} disabled={locked||readOnly}><option value="claim">Claim</option><option value="section">Section</option></select></label>
-      <label>Target <select value={linkTarget} onChange={e => setLinkTarget(e.target.value)} disabled={locked||readOnly}><option value="">Choose target</option>{linkTargetKind === 'claim' ? activeClaims.map(c => <option key={c.id} value={c.id}>{c.text}</option>) : activeSections.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
-      <label>Role <select value={linkRole} onChange={e => setLinkRole(e.target.value as EvidenceRole)} disabled={locked||readOnly}>{roles.map(role => <option key={role} value={role}>{role.replace('_',' ')}</option>)}</select></label>
-      <button type="button" disabled={locked||readOnly || !linkSource || !linkTarget} onClick={() => { const revisionId = linkTargetKind === 'claim' ? view?.claims.find(c => c.id === linkTarget)?.revisionId : view?.sections.find(s => s.id === linkTarget)?.revisionId; if (!revisionId) { setError('Choose a current target.'); return } void mutate({type:'createLink',id:crypto.randomUUID(),sourceId:linkSource,excerptId:linkExcerpt || null,claimId:linkTargetKind === 'claim' ? linkTarget : null,documentId:linkTargetKind === 'section' ? linkTarget : null,expectedTargetRevisionId:revisionId,role:linkRole}) }}>Create manual evidence link</button>
-    </div>
-    <h3>Section to evidence</h3>
-    <label>Section <select value={focusSection} onChange={e => { setFocusSection(e.target.value); setFocusSource('') }}><option value="">Choose section</option>{view?.sections.map(s => <option key={s.id} value={s.id}>{s.title} · {s.state}</option>)}</select></label>
-    {focusSection ? <><p>Sources linked to this section in the source library: {view?.sourceSections.filter(x => x.documentId === focusSection).map(x => title(view,x.sourceId)).join('; ') || 'none'}.</p><p>Actual citation occurrences in current draft text: {view?.citations.filter(x => x.documentId === focusSection).length ?? 0}. Manual evidence links below are separate.</p><ul>{view?.citations.filter(x => x.documentId === focusSection).map(x => <li key={`${x.citationId}-${x.sourceId}`}>Actual citation: {title(view,x.sourceId)} <button type="button" onClick={() => void navigate(x.documentId,x.citationId)}>Go to citation</button></li>)}</ul><button type="button" onClick={() => void navigate(view?.sections.find(s => s.id === focusSection)?.replacementId ?? focusSection)}>Go to section{view?.sections.find(s => s.id === focusSection)?.replacementId ? ' replacement' : ''}</button></> : null}
-    <h3>Source to sections and evidence</h3>
-    <label>Source <select value={focusSource} onChange={e => { setFocusSource(e.target.value); setFocusSection('') }}><option value="">Choose source</option>{view?.sources.map(s => <option key={s.id} value={s.id}>{s.title} · {s.state}</option>)}</select></label>
-    {focusSource ? <><ul>{view?.sourceSections.filter(x => x.sourceId === focusSource).map(x => <li key={x.documentId}><button type="button" onClick={() => void navigate(x.documentId)}>{section(view,x.documentId)}</button> · source-library use</li>)}</ul><p>Actual citation occurrences in current draft text: {view?.citations.filter(x => x.sourceId === focusSource).length ?? 0}. A manual link or rejection does not change them.</p><ul>{view?.citations.filter(x => x.sourceId === focusSource).map(x => <li key={`${x.documentId}-${x.citationId}`}>Actual citation in {section(view,x.documentId)} <button type="button" onClick={() => void navigate(x.documentId,x.citationId)}>Go to citation</button></li>)}</ul></> : null}
-    <h3>Manual evidence links and provenance</h3>
-    <ul>{(focusSection ? related : focusSource ? view?.links.filter(x => x.sourceId === focusSource) : view?.links)?.map(link => { const excerpt = view?.excerpts.find(e => e.id === link.excerptId),issues = linkStatus(link); return <li key={link.id} className="evidence-link"><p><strong>{link.role.replace('_',' ')}</strong> · {title(view!,link.sourceId)} → {link.claimId ? view?.claims.find(c => c.id === link.claimId)?.text ?? 'missing claim' : section(view!,link.documentId!)} · {link.state} · human {link.review}</p>{excerpt ? <blockquote>{excerpt.quote}</blockquote> : <p>Whole source; no exact excerpt attached.</p>}{excerpt ? <p>{excerpt.kind} · page {excerpt.pageIndex === 0 ? 'plain text' : excerpt.pageIndex ?? 'unavailable'} · original version {excerpt.sha256.slice(0,12)} <button type="button" onClick={() => inspect(excerpt.sourceId,excerpt.id)}>Go to exact excerpt</button></p> : null}{issues.length ? <p role="status">Review needed: {issues.join('; ')}.</p> : null}<p>Linked {link.createdAt.slice(0,19)} · last changed {link.updatedAt.slice(0,19)}. This is a manual relationship, not an actual citation.</p><label>Evidence role <select value={link.role} disabled={locked||readOnly} onChange={e => void mutate({type:'changeLink',id:link.id,expectedRevisionId:link.revisionId,role:e.target.value as EvidenceRole,review:'needs_review',state:link.state})}>{roles.map(role => <option key={role} value={role}>{role.replace('_',' ')}</option>)}</select></label><div className="project-actions"><button type="button" disabled={locked||readOnly} onClick={() => void mutate({type:'changeLink',id:link.id,expectedRevisionId:link.revisionId,role:link.role,review:'reviewed',state:'active'})}>Confirm against current target</button><button type="button" disabled={locked||readOnly} onClick={() => void mutate({type:'changeLink',id:link.id,expectedRevisionId:link.revisionId,role:link.role,review:'needs_review',state:link.state})}>Needs review</button><button type="button" disabled={locked||readOnly} onClick={() => void mutate({type:'changeLink',id:link.id,expectedRevisionId:link.revisionId,role:link.role,review:link.review,state:link.state === 'active' ? 'removed' : 'active'})}>{link.state === 'active' ? 'Remove link' : 'Restore link'}</button>{link.claimId ? <button type="button" onClick={() => chooseItem('claim',view?.claims.find(c => c.id === link.claimId) ?? null)}>Go to claim</button> : <button type="button" onClick={() => void navigate(view?.sections.find(s => s.id === link.documentId)?.replacementId ?? link.documentId!)}>Go to section</button>}</div>{history('link',link.id)}</li> })}</ul>
-    {message ? <p role="status">{message}</p> : null}{error ? <p role="alert">{error}</p> : null}
+  const history = (entityType: 'question' | 'claim' | 'link' | 'decision', key: string): React.JSX.Element | null => {
+    const rows = view?.revisions.filter(row => row.entityType === entityType && row.entityKey === key) ?? []
+    return rows.length ? <details className="research-disclosure"><summary>Earlier revisions ({rows.length})</summary><ol>{rows.map(row => <li key={row.revisionId}>{new Date(row.createdAt).toLocaleString()} · {oldValue(row.snapshot)}</li>)}</ol></details> : null
+  }
+  const openSection = (id: string): React.JSX.Element => {
+    const section = view?.sections.find(row => row.id === id)
+    return <><AppButton variant="subtle" disabled={section?.state !== 'active'} onClick={() => void navigate(id)}>{section?.title || 'Missing section'}{section?.state !== 'active' ? ` (${section?.state ?? 'missing'})` : ''}</AppButton>{section?.replacementId ? <AppButton variant="subtle" onClick={() => void navigate(section.replacementId!)}>Open merged section’s replacement</AppButton> : null}</>
+  }
+  const openNote = (id: string): React.JSX.Element => { const note = view?.notes.find(row => row.id === id); return <AppButton variant="subtle" disabled={!note} onClick={() => session.research({ kind: 'notes', noteId: id })}>{note?.title || 'Missing note'}{note?.state !== 'active' ? ` (${note?.state ?? 'missing'})` : ''}</AppButton> }
+  const selectedExcerpt = view?.excerpts.find(row => row.id === link?.excerptId)
+  const targetLabel = (claimId: string | null, documentId: string | null): string => claimId ? view?.claims.find(row => row.id === claimId)?.text ?? 'Missing claim' : view?.sections.find(row => row.id === documentId)?.title ?? 'Missing section'
+  const visibleItems = (tab === 'question' ? view?.questions : view?.claims)?.filter(row => (includeRemoved || row.state === 'active') && row.text.toLocaleLowerCase().includes(query.toLocaleLowerCase())) ?? []
+  const visibleLinks = view?.links.filter(row => (includeRemoved || row.state === 'active') && `${view.sources.find(source => source.id === row.sourceId)?.title} ${targetLabel(row.claimId,row.documentId)} ${row.role}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())) ?? []
+  return <section ref={panel} {...binding} tabIndex={-1} className="evidence-panel" aria-labelledby="evidence-title">
+    <ResearchHeader id="evidence-title" title="Questions & claims" >Organize your argument and the evidence behind it. A manual relationship records your assessment; it does not insert a citation.</ResearchHeader>
+    <UsageStatus />
+    <div className="research-actions" aria-label="Research collections">{(['question','claim','link'] as const).map(kind => <AppButton key={kind} variant={tab === kind ? 'filled' : 'subtle'} aria-pressed={tab === kind} onClick={() => { if (canChangeContext()) { setTab(kind); setQuery('') } }}>{kind === 'question' ? 'Questions' : kind === 'claim' ? 'Claims' : 'Evidence links'}</AppButton>)}</div>
+    {dirty ? <p role="status">You have unsaved research edits. <AppButton variant="subtle" disabled={busy||!!pending.current} onClick={discard}>Discard form edits</AppButton></p> : null}
+    {pending.current ? <AppButton disabled={busy || disabled || readOnly} onClick={() => { if (pending.current) void mutate(pending.current.change,true) }}>Retry pending research change</AppButton> : null}
+    {error ? <p role="alert">{error}</p> : null}{message ? <p role="status">{message}</p> : null}
+    <ResearchLayout sidebar={<>
+      <TextInput label="Find in this collection" value={query} onChange={event => setQuery(event.target.value)} type="search" />
+      <Checkbox label="Include archived or removed items" checked={includeRemoved} onChange={event => setIncludeRemoved(event.currentTarget.checked)} />
+      <AppButton disabled={locked || readOnly} onClick={() => { if (!canChangeContext()) return; if (tab === 'link') { setNewLink(true); setLinkId(null); setDraft(null) } else choose(tab,null) }}>Add {tab === 'link' ? 'evidence link' : tab}</AppButton>
+      <ul className="research-item-list">{tab === 'link' ? visibleLinks.map(row => <li key={row.id}><AppButton variant="subtle" classNames={{inner:"research-item-inner",label:"research-item-label"}} className="research-item-button" aria-current={row.id === linkId ? 'true' : undefined} disabled={busy} onClick={() => { if (canChangeContext()) { setLinkId(row.id); setNewLink(false); setDraft(null) } }}><strong>{view?.sources.find(source => source.id === row.sourceId)?.title ?? 'Missing source'}</strong><span>{row.role.replace('_',' ')} · {targetLabel(row.claimId,row.documentId)}</span><span className="research-state">{row.state === 'removed' ? 'Removed · ' : ''}{view && linkWarnings(view,row).length ? 'Needs review' : 'Reviewed'}</span></AppButton></li>) : visibleItems.map(row => <li key={row.id}><AppButton variant="subtle" classNames={{inner:"research-item-inner",label:"research-item-label"}} className="research-item-button" aria-current={row.id === draft?.original?.id ? 'true' : undefined} disabled={busy} onClick={() => { if (canChangeContext()) choose(tab as ItemKind,row) }}><strong>{row.text}</strong><span className="research-state">{row.state}{row.documentId ? ` · ${view?.sections.find(section => section.id === row.documentId)?.title ?? 'Missing section'}` : ''}</span></AppButton></li>)}</ul>
+      {(tab === 'link' ? visibleLinks : visibleItems).length === 0 ? <p>No matching {tab === 'link' ? 'evidence links' : `${tab}s`}. Add one or adjust the filter.</p> : null}
+    </>}>
+      {tab !== 'link' && draft?.kind === tab ? <div className="research-detail-inner">
+        <form className="research-form" onSubmit={event => { event.preventDefault(); saveItem() }}>
+          <h3>{draft.original ? `Edit ${tab}` : `New ${tab}`}</h3>
+          {item?.state === 'archived' ? <p role="status">This {tab} is archived. Its relationships and revisions are retained.</p> : null}
+          {item && item.revisionId !== draft.original?.revisionId ? <p role="status">This item changed since you opened the form. Your edits remain here. <AppButton variant="subtle" disabled={busy||!!pending.current} onClick={discard}>Discard edits and reload saved item</AppButton></p> : null}
+          <TextareaField label={tab === 'question' ? 'Question' : 'Claim'} value={draft.text} maxLength={10000} rows={4} disabled={locked || readOnly} onChange={event => setDraft({ ...draft, text: event.target.value })} />
+          <details className="research-disclosure"><summary>Related writing and note</summary>
+            <SelectField label="Related section" value={draft.documentId} disabled={locked || readOnly} onChange={event => setDraft({ ...draft, documentId: event.target.value })}><option value="">None</option>{view?.sections.map(row => <option key={row.id} value={row.id} disabled={row.state !== 'active' && row.id !== draft.documentId}>{row.title}{row.state !== 'active' ? ` (${row.state})` : ''}</option>)}</SelectField>
+            <SelectField label="Related note" value={draft.noteId} disabled={locked || readOnly} onChange={event => setDraft({ ...draft, noteId: event.target.value })}><option value="">None</option>{view?.notes.map(row => <option key={row.id} value={row.id} disabled={row.state !== 'active' && row.id !== draft.noteId}>{row.title}{row.state !== 'active' ? ` (${row.state})` : ''}</option>)}</SelectField>
+          </details>
+          <div className="research-actions"><AppButton type="submit" disabled={locked || readOnly || !draft.text.trim()}>{draft.original ? 'Save changes' : `Create ${tab}`}</AppButton>{item ? <AppButton variant="subtle" disabled={locked || readOnly || dirty} onClick={() => void mutate({ type: tab === 'question' ? 'updateQuestion' : 'updateClaim', id: item.id, expectedRevisionId: item.revisionId, text: item.text, documentId: item.documentId, noteId: item.noteId, state: item.state === 'active' ? 'archived' : 'active' })}>{item.state === 'active' ? 'Archive' : 'Restore'}</AppButton> : null}</div>
+        </form>
+        {item ? <>
+          {item.documentId ? <div><h4>Writing context</h4>{openSection(item.documentId)}{view?.sections.find(row => row.id === item.documentId)?.revisionId !== item.documentRevisionId ? <p role="status">The related section has changed since this {tab} was saved.</p> : null}</div> : null}
+          {item.noteId ? <div><h4>Related note</h4>{openNote(item.noteId)}</div> : null}
+          {tab === 'question' ? <div className="research-form"><h4>Sources considered for this question</h4><p>Keep or reject a source for this question. Other questions, writing, and citations keep their own relationships.</p>
+            <ul className="research-item-list">{view?.decisions.filter(row => row.questionId === item.id).map(row => <li key={row.sourceId}><AppButton variant="subtle" classNames={{inner:"research-item-inner",label:"research-item-label"}} className="research-item-button" disabled={locked} onClick={() => { if (!decisionDirty) selectDecision(row.sourceId); else setError('Save or discard the current decision reason first.') }}><strong>{view.sources.find(source => source.id === row.sourceId)?.title ?? 'Missing source'}</strong><span>{row.state}{row.reason ? ` · ${row.reason}` : ''}</span></AppButton></li>)}</ul>
+            <SelectField label="Source" value={decisionSource} disabled={locked || decisionDirty} onChange={event => selectDecision(event.target.value)}><option value="">Choose a source</option>{view?.sources.map(row => <option key={row.id} value={row.id} disabled={row.state === 'merged'}>{row.title}{row.state !== 'active' ? ` (${row.state})` : ''}</option>)}</SelectField>
+            {decisionSource ? <><AppButton variant="subtle" onClick={() => session.research({ kind: 'sources', sourceId: decisionSource, page: 'usage' })}>View source and all uses</AppButton><TextareaField label="Decision reason" value={decisionReason} maxLength={2000} rows={3} disabled={locked || readOnly} onChange={event => setDecisionReason(event.target.value)} /><div className="research-actions">{(['candidate','kept','rejected'] as const).map(state => <AppButton key={state} variant={decisionBase?.state === state ? 'filled' : 'light'} disabled={locked || readOnly || itemDirty || state === 'rejected' && !decisionReason.trim()} onClick={() => void mutate({ type: 'decide', questionId: item.id, sourceId: decisionSource, expectedRevisionId: decisionBase?.revisionId ?? null, state, reason: decisionReason })}>{state === 'candidate' ? 'Mark candidate' : state === 'kept' ? 'Keep for this question' : 'Reject for this question'}</AppButton>)}</div><p>A rejection requires a reason and can be reversed here.</p>{history('decision',`${item.id}|${decisionSource}`)}</> : null}
+          </div> : <div><h4>Evidence for this claim</h4><ul className="research-item-list">{view?.links.filter(row => row.claimId === item.id).map(row => <li key={row.id}><AppButton variant="subtle" onClick={() => session.research({ kind: 'evidence', item: { kind: 'link', id: row.id } })}>{view.sources.find(source => source.id === row.sourceId)?.title ?? 'Missing source'} · {row.role.replace('_',' ')} · {row.state}</AppButton></li>)}</ul></div>}
+          {history(tab,item.id)}
+        </> : null}
+      </div> : tab === 'link' && newLink ? <form className="research-detail-inner research-form" onSubmit={event => { event.preventDefault(); if (linkSource && targetId && targetRevision) void mutate({ type: 'createLink', id: crypto.randomUUID(), sourceId: linkSource, excerptId: linkExcerpt || null, claimId: targetKind === 'claim' ? targetId : null, documentId: targetKind === 'section' ? targetId : null, expectedTargetRevisionId: targetRevision, role }) }}>
+        <h3>New evidence link</h3>
+        <SelectField label="Source" value={linkSource} disabled={locked || readOnly} onChange={event => { setLinkSource(event.target.value); setLinkExcerpt('') }}><option value="">Choose source</option>{view?.sources.filter(row => row.state === 'active').map(row => <option key={row.id} value={row.id}>{row.title}</option>)}</SelectField>
+        <SelectField label="Exact excerpt (optional)" value={linkExcerpt} disabled={locked || readOnly || !linkSource} onChange={event => setLinkExcerpt(event.target.value)}><option value="">Whole source</option>{view?.excerpts.filter(row => row.sourceId === linkSource).map(row => <option key={row.id} value={row.id}>{row.quote.slice(0,120)} · {row.kind}{view.sources.find(source => source.id === row.sourceId)?.activeVersionId !== row.versionId ? ' · earlier version' : ''}</option>)}</SelectField>
+        {linkExcerpt ? <blockquote className="research-quote">{view?.excerpts.find(row => row.id === linkExcerpt)?.quote}</blockquote> : null}
+        <SelectField label="Link to" value={targetKind} disabled={locked || readOnly} onChange={event => { setTargetKind(event.target.value as 'claim' | 'section'); setTargetId(''); setTargetRevision('') }}><option value="claim">Claim</option><option value="section">Section</option></SelectField>
+        <SelectField label={targetKind === 'claim' ? 'Claim' : 'Section'} value={targetId} disabled={locked || readOnly} onChange={event => { const id = event.target.value; setTargetId(id); setTargetRevision((targetKind === 'claim' ? view?.claims : view?.sections)?.find(row => row.id === id)?.revisionId ?? '') }}><option value="">Choose target</option>{targetKind === 'claim' ? view?.claims.filter(row => row.state === 'active').map(row => <option key={row.id} value={row.id}>{row.text}</option>) : view?.sections.filter(row => row.state === 'active').map(row => <option key={row.id} value={row.id}>{row.title}</option>)}</SelectField>
+        <SelectField label="Evidence role" value={role} disabled={locked || readOnly} onChange={event => setRole(event.target.value as EvidenceRole)}>{roles.map(value => <option key={value} value={value}>{value.replace('_',' ')}</option>)}</SelectField>
+        <AppButton type="submit" disabled={locked || readOnly || !linkSource || !targetId}>Create evidence link</AppButton>
+      </form> : tab === 'link' && link ? <div className="research-detail-inner">
+        <h3>{view?.sources.find(row => row.id === link.sourceId)?.title ?? 'Missing source'}</h3><p>{link.role.replace('_',' ')} → {targetLabel(link.claimId,link.documentId)}</p>
+        <p>{link.state} · human {link.review.replace('_',' ')}. This manual relationship is separate from manuscript citations.</p>
+        {view && linkWarnings(view,link).length ? <p role="status">Review needed: {linkWarnings(view,link).join('; ')}.</p> : null}
+        {selectedExcerpt ? <><blockquote className="research-quote">{selectedExcerpt.quote}</blockquote><p>{selectedExcerpt.kind} · {selectedExcerpt.pageIndex === 0 ? 'plain text' : selectedExcerpt.pageIndex === null ? 'page unavailable' : `PDF page ${selectedExcerpt.pageIndex}`}</p><AppButton variant="light" onClick={() => inspect(selectedExcerpt.sourceId,selectedExcerpt.id)}>Open exact excerpt and original</AppButton></> : <p>{link.excerptId ? 'The linked excerpt is unavailable. Its identity has not been replaced.' : 'Whole source; no exact excerpt attached.'}</p>}
+        <div className="research-actions"><AppButton variant="subtle" onClick={() => session.research({ kind: 'sources', sourceId: link.sourceId, page: 'usage' })}>View all source uses</AppButton>{link.claimId ? <AppButton variant="subtle" onClick={() => session.research({ kind: 'evidence', item: { kind: 'claim', id: link.claimId! } })}>Open claim</AppButton> : link.documentId ? openSection(link.documentId) : null}</div>
+        <SelectField label="Evidence role" value={link.role} disabled={locked || readOnly} onChange={event => void mutate({ type: 'changeLink', id: link.id, expectedRevisionId: link.revisionId, role: event.target.value as EvidenceRole, review: 'needs_review', state: link.state })}>{roles.map(value => <option key={value} value={value}>{value.replace('_',' ')}</option>)}</SelectField>
+        <div className="research-actions"><AppButton disabled={locked || readOnly} onClick={() => void mutate({ type: 'changeLink', id: link.id, expectedRevisionId: link.revisionId, role: link.role, review: 'reviewed', state: 'active' })}>Confirm against current target</AppButton><AppButton variant="light" disabled={locked || readOnly} onClick={() => void mutate({ type: 'changeLink', id: link.id, expectedRevisionId: link.revisionId, role: link.role, review: 'needs_review', state: link.state })}>Needs review</AppButton><AppButton variant="subtle" disabled={locked || readOnly} onClick={() => void mutate({ type: 'changeLink', id: link.id, expectedRevisionId: link.revisionId, role: link.role, review: link.review, state: link.state === 'active' ? 'removed' : 'active' })}>{link.state === 'active' ? 'Remove link' : 'Restore link'}</AppButton></div>
+        <details className="research-disclosure"><summary>Provenance and history</summary><p>Linked {new Date(link.createdAt).toLocaleString()}; last changed {new Date(link.updatedAt).toLocaleString()}.</p>{selectedExcerpt ? <p>Retained original SHA-256: <code>{selectedExcerpt.sha256}</code></p> : null}{history('link',link.id)}</details>
+      </div> : <EmptyState title={tab === 'link' ? 'Follow the evidence' : `Choose a ${tab}`} >{tab === 'link' ? 'Select an evidence link or add one to connect a source to your argument.' : 'Choose an item to see its writing context, sources, and history, or add your first one.'}</EmptyState>}
+    </ResearchLayout>
   </section>
 }

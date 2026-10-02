@@ -1,0 +1,8 @@
+.source-usage { min-width: 0; overflow-wrap: anywhere; }
+.source-usage h3 { font-size: 1.1rem; margin: 0 0 .75rem; }
+.source-usage h4 { font-size: 1rem; margin: 1.5rem 0 .5rem; }
+.source-usage ul { padding: 0; margin: 0; list-style: none; }
+.source-usage li { border-bottom: 1px solid var(--collie-border); padding-block: .75rem; }
+.source-usage li p { margin-block: .5rem; white-space: pre-wrap; }
+.source-usage blockquote { margin: .75rem 0; padding-left: .75rem; border-left: 3px solid var(--collie-accent); white-space: pre-wrap; }
+.source-usage .source-usage-state { display: block; color: var(--collie-text-secondary); font-size: .875rem; }

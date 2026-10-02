@@ -42,7 +42,7 @@ function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; faile
   const channel = info ? info.channel === 'production' ? 'Direct' : info.channel === 'beta' ? 'Beta' : 'Development' : null
 
   return (
-    <div className={styles['app-shell']} data-writing={destination.kind==='workspace'&&destination.view==='write'} data-focus={destination.kind==='workspace'&&destination.view==='write'&&writingView.preferences.focus}>
+    <div className={styles['app-shell']} data-research={destination.kind==='workspace'&&(destination.view==='research'||destination.view==='search')} data-writing={destination.kind==='workspace'&&destination.view==='write'} data-focus={destination.kind==='workspace'&&destination.view==='write'&&writingView.preferences.focus}>
       <a className={styles['skip-link']} href="#workspace" onClick={event => {
         event.preventDefault()
         content.current?.focus()

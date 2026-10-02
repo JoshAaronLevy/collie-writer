@@ -1,0 +1,9 @@
+.source-inspector { min-width: 0; }
+.source-inspector [hidden] { display: none; }
+.source-inspector .inspected-pdf-canvas { display: block; max-width: 100%; height: auto; margin-block: var(--collie-space-4); border: 1px solid var(--collie-border); }
+.source-inspector .inspector-version-list { list-style: none; padding: 0; }
+.source-inspector .inspector-version-list li { padding-block: var(--collie-space-3); border-bottom: 1px solid var(--collie-border); }
+.source-inspector .inspector-excerpt, .source-inspector .inspector-transcription { padding: var(--collie-space-4); margin-bottom: var(--collie-space-6); background: var(--collie-surface-muted); border-radius: var(--collie-radius-surface); }
+.source-inspector .inspector-context { white-space: pre-wrap; }
+.source-inspector code { overflow-wrap: anywhere; }
+.source-inspector h2 { font-size: 1.25rem; }

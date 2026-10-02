@@ -1,0 +1,8 @@
+.search-panel { max-width: 64rem; margin-inline: auto; }
+.search-panel .search-filters { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--collie-space-4); }
+.search-panel .search-results { padding-left: var(--collie-space-6); max-height: 65vh; overflow: auto; }
+.search-panel .search-results li { padding: var(--collie-space-4); border-bottom: 1px solid var(--collie-border); overflow-wrap: anywhere; }
+.search-panel .search-results h2 { font-size: 1.125rem; margin-block: var(--collie-space-2); }
+.search-panel .search-excerpt { white-space: pre-wrap; }
+.search-panel mark { color: var(--collie-highlight-text); background: var(--collie-highlight); }
+@media (max-width: 42rem) { .search-panel .search-filters { grid-template-columns: minmax(0,1fr); } }

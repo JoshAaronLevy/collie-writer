@@ -35,3 +35,15 @@ Projects now offers separate Open and labeled Actions controls per row, Recent/A
 ## Improvement I07 pending observations
 
 Write now has labeled project switching and chapter/section navigation, outline actions with non-drag equivalents, pointer/keyboard resizers with separator/value semantics, and narrow alternate views whose hidden panes are inert. Focus mode retains a visible exit action and global errors/jobs. Scoped semantic styles use the existing theme and contrast tokens. Link/image/citation dialogs have labels, focus containment/return, explicit draft ownership and selection guards. Find and section details are on demand; reference bodies remain mounted when collapsed. Keyboard traversal, menu/dialog focus, selection/undo, IME, screen readers, narrow/200% layout, theme/contrast/reduced motion, native pickers and packaged CSP are **unobserved**. The [I07 guide](../manual-testing/improvement-I07.md) supplies user actions; no assistant-driven checks occurred.
+
+## Improvement I08 pending observations
+
+| Journey | Implemented presentation | User observation still needed |
+| --- | --- | --- |
+| Research lists and details | Labeled Mantine fields/actions, selected-item states, responsive shared layout, hidden/inert retained editors | Keyboard and screen-reader list/detail order, readable labels, narrow/200% layout, themes/high contrast |
+| Source usage and writing companion | Separate relationship counts, section/chapter selection, state labels and exact-context links | Citation and footnote targeting, chapter comprehension, long source titles, Back focus and stable original context |
+| Originals and excerpts | Original reader, selected exact quote, on-demand transcription/correction and version/provenance disclosure | PDF canvas/text order, selection, source version/page accuracy, earlier/corrected excerpt announcements |
+| Notes, annotations and evidence | Named label dialogs, separate quote/interpretation, archived/orphan/revised states, reversible question decisions | IME/form retention, dialog focus/escape, explicit save/discard and accessible contextual errors |
+| Search and indexing | Focused results with labels, retained query/page/scroll, pagination summary focus, disclosed coverage and global job status | Return from writing/research, live status clarity, index cancellation and real long-result performance |
+
+No assistant accessibility, browser, screenshot, app launch or other validation was performed. All results remain awaiting Josh’s [I08 manual observations](../manual-testing/improvement-I08.md); implementation does not establish accessibility acceptance.

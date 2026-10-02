@@ -1,0 +1,29 @@
+# Improvement I08 — Research, notes and source context
+
+October 2, 2026. **Implementation complete — awaiting user testing.** The full `app-improvement-plan.md`, I03/I07 ownership and handoff records, relevant renderer/shared contracts, and Stage 10–14 decisions informed this work. No user-reported acceptance result exists.
+
+Josh's additional I08 note about source usage in both Research and writing was preserved verbatim, together with the chosen model/effort. The plan's reverted I07 status was restored from the already delivered I07 record. I09 and later stages were not implemented.
+
+| Paths (renderer paths relative to `src/renderer/src/`) | Delivered change |
+| --- | --- |
+| `features/research/ResearchData.tsx`, `usage.ts`, `SourceUsage.tsx`, `SourceUsage.css` | Shared derived saved-usage snapshot; four relationship types; source-to-writing/research links and section/chapter-to-source summaries |
+| `features/research/ResearchLayout.tsx`, `ResearchLayout.css` | Shared semantic list/detail layout, responsive presentation and guarded Back/writing actions |
+| `features/projects/SourcesPanel.tsx`, `SourcesPanel.css` | Focused source list, usage/details/originals views, grouped metadata, bibliography preview/report, retained exact source and attachment retries |
+| `features/projects/NotesPanel.tsx`, `NotesPanel.css` | Retained note editor, separate annotations/labels, named label dialogs, related context and captured draft revisions |
+| `features/projects/EvidencePanel.tsx`, `EvidencePanel.css` | Selected question/claim/link details; reversible per-question decisions, evidence review/provenance and explicit forms |
+| `features/projects/SourceInspector.tsx`, `SourceInspector.css` | Original reader, version disclosure, selected excerpt/context, optional human forms and exact pending original-copy retention |
+| `features/projects/SearchPanel.tsx`, `SearchPanel.css` | Focused search/filter/results/coverage flow, request-bound result labels, retained result scroll and global indexing activity |
+| `app/navigation.ts`, `features/workspace/useWorkspaceController.ts`, `WorkspaceSession.tsx`, `WorkspaceViews.tsx` | Typed research detail targets, shared read owner, bounded transient Back trail, target/anchor checks and retained research destinations outside legacy CSS |
+| `features/workspace/WritingSidePanel.tsx`, `WritingWorkspace.tsx`, `WritingWorkspace.module.css`, `editor/anchors.ts`, `RichDraft.tsx`, `ReferenceTools.tsx` | Sources for section/chapter, writing-side research context, Back action and exact footnote-citation navigation |
+| `App.tsx`, `App.module.css`, `features/projects/Projects.css` | Wider research shell and relocation of research styles to their owners |
+| Plan, AGENTS, [decision](../decisions/improvement-08-research-workspace.md), [manual guide](../manual-testing/improvement-I08.md), manual index, privacy/accessibility records | Stage status, ownership/compatibility decisions and user handoff |
+
+No domain migration, new IPC command, worker change, dependency or stored preference. SQL/minimum reader **10**, AST/archive **1**, compilation **3** remain. The shared usage response is derived from existing saved content; form buffers and pending operations remain with their original owners. Back history is transient and stores typed IDs, not paths or grants. No provider or external retrieval was enabled.
+
+**No tests or test code, harnesses, fixtures, mocks, verification/audit scripts or testing-only controls were added or maintained. No tests, typecheck, lint, formatting checks, builds, package checks, app/server/browser launches, screenshots, benchmarks, CI or delegated verification were run.** Only ordinary source/documentation/Git inspection and edits were used. Source inspection is not runtime acceptance.
+
+Pending user observations include source creation/import/metadata and selected detail navigation; both directions of usage including chapter aggregation, footnote citations and distinct manual relationships; question rejection/reversal, evidence target revisions, removed/merged/orphan states; exact original/version/page/excerpt and transcription/correction behavior; note/annotation rich text, label dialogs and revision conflicts; retained query/page/scroll and index cancellation; draft and exact retry protections, native close/access transitions; offline behavior, narrow/200% layout, keyboard/IME/VoiceOver/NVDA, light/dark/high contrast/reduced motion and packaged CSP. Existing native parser/output, recovery/migration, scale, commerce/signing/store/provider and release gates remain unresolved.
+
+MVP limits: usage reflects saved content and direct relationships, not unsaved drafts, inferred argument relevance or export inclusion; chapter counts aggregate descendants including retained inactive states; Back returns to a stable block/reference rather than a precise caret across edited documents. PDF limits and lack of OCR are unchanged. Search cannot include unextracted pages. No runtime/visual/performance conclusion has been drawn. Release remains **NO-GO**.
+
+Record actual platform, action and result only after Josh supplies them. Follow the [I08 manual guide](../manual-testing/improvement-I08.md), then stop for feedback; I09 requires its own explicit request.

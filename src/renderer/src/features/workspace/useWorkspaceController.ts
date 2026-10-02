@@ -1,3 +1,4 @@
+import { manuscriptAnchor, payloadHasAnchor } from '../../editor/anchors'
 import { useWritingPreferences } from './useWritingPreferences'
 import { captureSelection, restoreSelection } from '../../editor/selection'
 import { useExportOperations } from './useExportOperations'
@@ -40,6 +41,8 @@ export function useWorkspaceController(storage: StorageStatus) {
   const [blocker, setBlocker] = useState<DraftBlocker | null>(null)
   const focusRequest = useRef<(() => void) | null>(null)
   const origin = useRef<AppDestination | null>(null)
+  const [backTrail, setBackTrail] = useState<AppDestination[]>([])
+  const [referenceAnchor,setReferenceAnchor]=useState<{id:string;documentId:string;request:number}|null>(null)
   const [location, setLocation] = useState<LocationStatus | null>(null)
   const [list, setList] = useState<ProjectList>({ projects: [], issues: [] })
   const [project, setProject] = useState<OpenProject | null>(null)
@@ -228,6 +231,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     if (result.ok) applyFiles(result.value); else setError(result.error.message)
   }
   async function select(next: OpenProject, after: 'write' | 'setup' | 'details' = 'write'): Promise<void> {
+    if(!sameScope(current.current,next)){setBackTrail([]);setReferenceAnchor(null)}
     const referenced = new Set<string>()
     const visit = (node: unknown): void => { if (!node || typeof node !== 'object') return; for (const [key, value] of Object.entries(node)) { if (key === 'assetId' && typeof value === 'string') referenced.add(value); else visit(value) } }
     visit(next.payload.ast)
@@ -612,6 +616,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     if (!saved) return
     if(!sameScope(p,saved)||saved.documentId!==p.documentId||!restoreSelection(captured,editorRef.current)){setError('The passage changed while protecting your writing. Select it again before annotating.');return}
     setAnnotationCapture({ documentId:saved.documentId,expectedRevisionId:saved.revisionId,blockId,startOffset,endOffset,quote })
+    rememberOrigin(captureOrigin(destinationRef.current))
     showDestination({ kind: 'workspace', scope: scopeOf(saved), view: 'research', target: { kind: 'notes' } })
     setNotice('Selected passage ready in Passage annotations.')
   }
@@ -669,30 +674,55 @@ export function useWorkspaceController(storage: StorageStatus) {
   }
   async function resolveResearch(target: ResearchTarget, p: OpenProject): Promise<boolean> {
     const missing = (): false => { setError('The requested research item is unavailable. No different item was selected.'); return false }
-    if (target.kind === 'notes' && target.noteId) {
+    if (target.kind === 'notes' && (target.noteId || target.annotationId)) {
       const result = await window.collie.readNotes(scopeOf(p))
-      if (!result.ok || !result.value.notes.some(n => n.id === target.noteId)) return missing()
+      if (!result.ok || target.noteId && !result.value.notes.some(n => n.id === target.noteId) || target.annotationId && !result.value.annotations.some(a => a.id === target.annotationId)) return missing()
     } else if (target.kind === 'sources' && target.sourceId) {
       const result = await window.collie.readSources(scopeOf(p))
       if (!result.ok || !result.value.sources.some(s => s.id === target.sourceId)) return missing()
     } else if (target.kind === 'evidence' && target.item) {
       const result = await window.collie.readEvidence(scopeOf(p))
-      if (!result.ok || !(target.item.kind === 'question' ? result.value.questions : result.value.claims).some(item => item.id === target.item!.id)) return missing()
+      if (!result.ok || target.sourceId && !result.value.sources.some(source => source.id === target.sourceId) || !(target.item.kind === 'question' ? result.value.questions : target.item.kind === 'claim' ? result.value.claims : result.value.links).some(item => item.id === target.item!.id)) return missing()
     } else if (target.kind === 'inspector') {
       const result = await window.collie.readInspection({ ...scopeOf(p), sourceId: target.sourceId })
-      if (!result.ok || target.excerptId && !result.value.excerpts.some(e => e.id === target.excerptId)
+      if (!result.ok || target.excerptId && !result.value.excerpts.some(e => e.id === target.excerptId && (!target.versionId || e.versionId === target.versionId))
         || target.versionId && !result.value.versions.some(v => v.id === target.versionId)) return missing()
       setInspectionTarget({ sourceId: target.sourceId, excerptId: target.excerptId ?? null, versionId: target.versionId ?? null, pageIndex: target.pageIndex ?? null })
     }
     return true
   }
-  function navigate(next: AppDestination): Promise<boolean> {
+  function captureOrigin(previous:AppDestination):AppDestination {
+    if(previous.kind==='workspace'&&previous.view==='write'&&editorRef.current){
+      const selection=editorRef.current.state.selection
+      const node=(selection as {node?:{attrs:Record<string,unknown>}}).node
+      const selectedAnchor=node?.attrs.footnoteId??node?.attrs.citationId??selection.$from.parent.attrs.blockId
+      previous={...previous,documentId:current.current?.documentId,anchorId:typeof selectedAnchor==='string'?selectedAnchor:previous.anchorId}
+    }
+    if(previous.kind==='workspace'&&previous.view==='research'){
+      const owner={sources:'sources',notes:'notes',evidence:'research',inspector:'transcription'}[previous.target.kind]
+      const target=drafts.states().find(state=>state.id===owner)?.target
+      if(target?.kind==='workspace'&&sameScope(target.scope,previous.scope))previous=target
+    }
+    return previous
+  }
+  function rememberOrigin(previous:AppDestination):void {
+    setBackTrail(trail=>[...trail.slice(-19),previous])
+  }
+  const backDestination=backTrail.at(-1)??null
+  const backLabel=backDestination?.kind==='workspace'?(backDestination.view==='write'?'writing':backDestination.view==='research'?'research':backDestination.view):backDestination?.kind==='library'?'Projects':'previous view'
+  async function goBack():Promise<boolean>{
+    if(!backDestination)return false
+    if(!await navigate(backDestination,false))return false
+    setBackTrail(trail=>trail.slice(0,-1));return true
+  }
+  function navigate(next: AppDestination, remember=true): Promise<boolean> {
     if (navigationTask.current || closingRef.current) return Promise.resolve(false)
     const task = (async (): Promise<boolean> => {
       if (outlinePending.current) { setError('Reconcile the pending outline/history operation before navigating.'); return false }
       if (busy && !fileBusy(fileState.current.job)) { setError('Wait for the current project action before navigating.'); return false }
       // Input is frozen only for this bounded transition; retained jobs continue independently.
       setNavigating(true)
+      const previous=captureOrigin(destinationRef.current)
       const p = current.current
       if (p && !await flush(false, 'navigate')) return false
       if (next.kind === 'library' && storage.state === 'ready') await refresh()
@@ -707,21 +737,24 @@ export function useWorkspaceController(storage: StorageStatus) {
           }
           if (!await resolveResearch(next.target, active)) return false
         } else if (next.view === 'write' && next.documentId && next.documentId !== active.documentId) {
+          const requested = active.documents.find(document => document.id === next.documentId)
+          if (!requested || requested.state === 'merged' || requested.kind !== 'text') { setError(`The requested section is ${requested?.state ?? 'missing'}. Restore it in the outline, or explicitly open its replacement. No different section was selected.`); return false }
           const result = await window.collie.openSection({ ...scopeOf(active), documentId: next.documentId })
           if (!result.ok) { setError(result.error.message); return false }
+          if(result.value.documentId!==next.documentId){setError('The section was merged. Open its replacement explicitly; no different section was selected.');return false}
+          if(next.anchorId&&!payloadHasAnchor(result.value.payload,next.anchorId)){setError('The exact passage is no longer present. Your current section is retained.');return false}
           anchorToFocus.current = next.anchorId ?? null
           await select(result.value)
         } else if (next.view === 'write' && next.anchorId) {
           const editor = editorRef.current
-          let position: number | null = null
-          editor?.state.doc.descendants((node, pos) => {
-            if (node.attrs.blockId === next.anchorId || node.attrs.citationId === next.anchorId || node.attrs.footnoteId === next.anchorId) { position = pos; return false }
-            return true
-          })
-          if (position === null || !editor) { setError('The exact passage is no longer present. Your current section is retained.'); return false }
-          editor.commands.setTextSelection(Math.min(position + 1, editor.state.doc.content.size))
+          const anchor=editor?manuscriptAnchor(editor,next.anchorId):null
+          if (!anchor || !editor) { setError('The exact passage is no longer present. Your current section is retained.'); return false }
+          if(anchor.footnote)editor.commands.setNodeSelection(anchor.position)
+          else editor.commands.setTextSelection(Math.min(anchor.position+1,editor.state.doc.content.size))
         }
       }
+      if(next.kind==='workspace'&&next.view==='write'&&next.anchorId)setReferenceAnchor({id:next.anchorId,documentId:next.documentId??current.current!.documentId,request:Date.now()})
+      if(remember&&JSON.stringify(previous)!==JSON.stringify(next))rememberOrigin(previous)
       setBlocker(null);setError('')
       showDestination(next, next.kind === 'workspace' && next.view === 'write' ? () => editorRef.current?.commands.focus() : undefined)
       return true
@@ -800,7 +833,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     await openLocal(scope,after)
   }
 
-  return { writingView, ...exportOperations, acceptProjectDetails, composition, actionTask, renamePending, storage, drafts, destination, focusRevision, focusRequest, navigating, blocker, navigate, returnToDraft, showAccess, workspace, research, returnToWork,
+  return { backDestination, backLabel, goBack, referenceAnchor, writingView, ...exportOperations, acceptProjectDetails, composition, actionTask, renamePending, storage, drafts, destination, focusRevision, focusRequest, navigating, blocker, navigate, returnToDraft, showAccess, workspace, research, returnToWork,
 startupPending, libraryIssue, setLibraryIssue, libraryView, setLibraryView,
 editorEpoch, setData, setList, location, setLocation, list, project, access, sectionTitle, setSectionTitle, sectionStatus, setSectionStatus, sectionSynopsis, setSectionSynopsis,
 sectionFields, busy, setBusy, acting, working, closing, committing, retry, error, setError, notice, setNotice, history, annotationCapture, noteDirty,

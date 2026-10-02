@@ -13,7 +13,7 @@ import type { CitationItem, DocumentPayload } from '../../../domain/editor/schem
 import type { SourceRecord } from '../../../shared/sources'
 import { bindFootnoteEditor, editorIsComposing, createManuscriptEditor, documentFromEditorJson, refreshCitationLabels } from './adapter'
 
-export type ReferenceContext = { focusAnchor?: string | null; projectId: string; sources: SourceRecord[]; labels: ReadonlyMap<string,string> }
+export type ReferenceContext = { focusAnchor?: string | null; focusRequest?: number; projectId: string; sources: SourceRecord[]; labels: ReadonlyMap<string,string> }
 function findAnchor(editor: Editor, id: string): { node: PMNode; pos: number } | null {
   let found: {node: PMNode; pos: number} | null = null
   editor.state.doc.descendants((node,pos) => { if (node.attrs.citationId === id || node.attrs.footnoteId === id) found={node,pos} })
@@ -118,6 +118,7 @@ function FootnoteBody({owner,id,context,disabled,issue,close}:{owner:Editor;id:s
     return()=>{owner.off('update',sync);bindFootnoteEditor(owner,null);editor.current=null;instance.destroy()}
   },[owner,id])
   useEffect(()=>{if(editor.current){editor.current.setEditable(!disabled);refreshCitationLabels(editor.current,context.labels)}},[disabled,context.labels])
+  useEffect(()=>{const instance=editor.current,anchor=context.focusAnchor;if(!instance||!anchor)return;const citation=findAnchor(instance,anchor);if(citation){instance.commands.setNodeSelection(citation.pos);instance.commands.focus()}},[context.focusAnchor,context.focusRequest])
   return <section className="footnote-editor" aria-label="Author footnote" onKeyDown={event=>{if(event.key==='Escape'&&!editor.current?.view.composing){event.preventDefault();close()}}}>
     <h4>Author footnote {context.labels.get(id)??'— numbering pending'}</h4>
     <p>Paragraphs and citations are saved with this section. Press Escape to return to the reference.</p>
@@ -136,10 +137,10 @@ export default function ReferenceTools({editor,context,disabled,issue}:{editor:E
     const id=context.focusAnchor
     if(!id)return
     const main=findAnchor(editor,id)
-    if(main){editor.commands.setNodeSelection(main.pos);editor.commands.focus();return}
+    if(main){editor.commands.setNodeSelection(main.pos);if(main.node.type.name==='footnote')setNoteId(id);else editor.commands.focus();return}
     const note=notes.find(n=>n.body.content.some(p=>p.content?.some(i=>i.type==='citation'&&i.attrs.citationId===id)))
     if(note)setNoteId(note.id)
-  },[context.focusAnchor,editor])
+  },[context.focusAnchor,context.focusRequest,editor])
   const selected=(editor.state.selection as {node?:PMNode}).node
   const openNote=(id:string|null):void=>{if(editorIsComposing(editor)){issue('Finish composing footnote text before changing references.');return}setNoteId(id)}
   const returnToReference=():void=>{if(editorIsComposing(editor)){issue('Finish composing footnote text before returning to the manuscript.');return}if(noteId){const anchor=findAnchor(editor,noteId);if(anchor)editor.commands.setTextSelection(anchor.pos+1)}setNoteId(null);editor.commands.focus()}

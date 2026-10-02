@@ -1,35 +1,81 @@
+import { TextInput } from '@mantine/core'
 import { useEffect, useRef, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
 import type { SearchActivity, SearchHit, SearchInput, SearchKind, SearchView } from '../../../../shared/search'
 import type { NoteLabel } from '../../../../shared/notes'
+import { AppButton, SelectField } from '../../components/ui/Controls'
+import { EmptyState } from '../../components/ui/Feedback'
+import { ResearchHeader } from '../research/ResearchLayout'
+import { sectionPath } from '../research/usage'
+import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useRetainedDraft } from '../workspace/DraftOwner'
+import './SearchPanel.css'
 
-const scope=(p:OpenProject)=>({projectId:p.projectId,workspaceId:p.workspaceId})
-function highlighted(value:string,query:string):React.JSX.Element {const at=value.toLocaleLowerCase().indexOf(query.trim().toLocaleLowerCase());return at<0||!query.trim()?<>{value}</>:<>{value.slice(0,at)}<mark>{value.slice(at,at+query.trim().length)}</mark>{value.slice(at+query.trim().length)}</>}
-export default function SearchPanel({project,navigate}:{project:OpenProject;navigate:(hit:SearchHit)=>void}):React.JSX.Element {
-  const [query,setQuery]=useState(''),[kind,setKind]=useState<SearchKind|'all'>('all'),[tag,setTag]=useState(''),[section,setSection]=useState(''),[source,setSource]=useState('')
-  const [sources,setSources]=useState<{id:string;title:string}[]>([]),[tags,setTags]=useState<NoteLabel[]>([])
-  const [view,setView]=useState<SearchView|null>(null),[activity,setActivity]=useState<SearchActivity|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[offset,setOffset]=useState(0)
-  const resultSummary=useRef<HTMLParagraphElement|null>(null),focusNextPage=useRef(false)
-  useEffect(()=>{if(focusNextPage.current&&view?.offset===offset){focusNextPage.current=false;resultSummary.current?.focus()}},[view,offset])
-  useEffect(()=>{let live=true;void window.collie.readSources(scope(project)).then(r=>{if(live&&r.ok)setSources(r.value.sources.map(s=>({id:s.id,title:s.metadata.title})))});void window.collie.readNotes(scope(project)).then(r=>{if(live&&r.ok)setTags(r.value.labels.filter(l=>l.kind==='tag'&&l.state==='active'))});return()=>{live=false}},[project.projectId,project.workspaceId,project.headCommitId])
-  useEffect(()=>{let live=true;const read=()=>{void window.collie.readSearchActivity(scope(project)).then(r=>{if(live){if(r.ok)setActivity(r.value);else setError(r.error.message)}})};read();const timer=setInterval(read,2000);return()=>{live=false;clearInterval(timer)}},[project.projectId,project.workspaceId])
-  useEffect(()=>{setOffset(0)},[query,kind,tag,section,source])
-  useEffect(()=>{let live=true;const timer=setTimeout(()=>{const input:SearchInput={...scope(project),query,kind,tagId:tag||null,documentId:section||null,sourceId:source||null,offset};void window.collie.search(input).then(r=>{if(!live)return;if(r.ok){setView(r.value);setActivity(r.value.activity);setError('')}else setError(r.error.message)})},250);return()=>{live=false;clearTimeout(timer)}},[project.projectId,project.workspaceId,query,kind,tag,section,source,offset,activity?.state,activity?.processed])
-  async function act(action:'refresh'|'rebuild'|'cancel'):Promise<void>{setBusy(true);setError('');try{const r=await window.collie.changeSearch({...scope(project),action});if(r.ok)setActivity(r.value);else setError(r.error.message)}finally{setBusy(false)}}
-  const a=activity??view?.activity
-  return <section className="search-panel" aria-labelledby="local-search-title">
-    <h2 id="local-search-title">Local search and indexing activity</h2>
-    <p>Searches committed local content. Unsaved editor text and unextracted PDF pages are not searchable. Search results are a rebuildable index; your originals remain in the project.</p>
-    <div className="search-filters">
-      <label>Exact phrase <input type="search" value={query} maxLength={200} onChange={e=>setQuery(e.target.value)} placeholder="Search a phrase" /></label>
-      <label>Type <select value={kind} onChange={e=>setKind(e.target.value as SearchKind|'all')}><option value="all">All</option>{(['draft','note','source','question','claim','page'] as const).map(type=><option key={type} value={type}>{type}</option>)}</select></label>
-      <label>Tag <select value={tag} onChange={e=>setTag(e.target.value)}><option value="">Any</option>{tags.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-      <label>Section <select value={section} onChange={e=>setSection(e.target.value)}><option value="">Any</option>{project.documents.filter(d=>d.kind==='text').map(d=><option key={d.id} value={d.id}>{d.title}</option>)}</select></label>
-      <label>Source <select value={source} onChange={e=>setSource(e.target.value)}><option value="">Any</option>{sources.map(s=><option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
-    </div>
-    {a?<div role="status"><p>Index: {a.state} · {a.processed} of {a.total} records examined · {a.indexed} entries for {a.expected} searchable records. {a.indexedHead!==a.currentHead?'The index has not caught up with the current project commit.':''}</p><p>Extracted pages with text: {a.pagesWithText}. Pages without searchable text or with extraction errors: {a.pagesWithoutText}. Active sources without fully indexed inspection: {a.uninspectedSources}.</p>{a.uninspected.length?<details><summary>Sources still needing inspection or extraction ({a.uninspectedSources})</summary><ul>{a.uninspected.map(s=><li key={s.id}>{s.title} · {s.status}</li>)}</ul>{a.uninspectedSources>a.uninspected.length?<p>Showing the first {a.uninspected.length} sources.</p>:null}</details>:null}{a.error?<p>{a.error}</p>:null}</div>:null}
-    <div className="project-actions"><button type="button" disabled={busy||a?.state==='running'||a?.state==='queued'} onClick={()=>void act('refresh')}>Retry or refresh index</button><button type="button" disabled={busy||a?.state==='running'||a?.state==='queued'} onClick={()=>void act('rebuild')}>Rebuild local index</button><button type="button" disabled={busy||a?.state!=='running'&&a?.state!=='queued'} onClick={()=>void act('cancel')}>Cancel indexing</button></div>
-    {query.trim()?<><p ref={resultSummary} tabIndex={-1} aria-live="polite">{view?.hits.length??0} results on this page. {view?.hasMore?'More results are available.':''} A changed or removed result cannot be opened until the index catches up.</p><ol start={offset+1}>{view?.hits.map(hit=><li key={hit.key}><strong>{hit.kind}: {hit.title}</strong> · {hit.status.replace('_',' ')}{hit.kind==='page'&&hit.pageIndex===0?' · plain text':''}<p>{highlighted(hit.excerpt,query)}</p><button type="button" disabled={hit.status==='stale'||hit.status==='removed'} onClick={()=>navigate(hit)}>Open original location</button></li>)}</ol><div className="project-actions"><button type="button" disabled={offset===0} onClick={()=>{focusNextPage.current=true;setOffset(Math.max(0,offset-50))}}>Previous</button><button type="button" disabled={!view?.hasMore||offset>=10000} onClick={()=>{focusNextPage.current=true;setOffset(offset+50)}}>Next</button></div></>:null}
-    {error?<p role="alert">{error}</p>:null}
+const scope = (project: OpenProject) => ({ projectId: project.projectId, workspaceId: project.workspaceId })
+const labels: Record<SearchKind, string> = { draft: 'Writing', note: 'Note', source: 'Source', question: 'Question', claim: 'Claim', page: 'Extracted source text' }
+function highlighted(value: string, query: string): React.JSX.Element {
+  const at = value.toLocaleLowerCase().indexOf(query.trim().toLocaleLowerCase())
+  return at < 0 || !query.trim() ? <>{value}</> : <>{value.slice(0,at)}<mark>{value.slice(at,at+query.trim().length)}</mark>{value.slice(at+query.trim().length)}</>
+}
+export default function SearchPanel({ project, navigate }: { project: OpenProject; navigate: (hit: SearchHit) => void }): React.JSX.Element {
+  const session = useWorkspaceSession()
+  const [query,setQuery] = useState(''), [kind,setKind] = useState<SearchKind|'all'>('all'), [tag,setTag] = useState(''), [section,setSection] = useState(''), [source,setSource] = useState('')
+  const [sources,setSources] = useState<{id:string;title:string}[]>([]), [tags,setTags] = useState<NoteLabel[]>([])
+  const [view,setView] = useState<SearchView|null>(null), [activity,setActivity] = useState<SearchActivity|null>(null), [error,setError] = useState(''), [busy,setBusy] = useState(false), [offset,setOffset] = useState(0), [searching,setSearching] = useState(false)
+  const [submitted,setSubmitted] = useState(''), [retry,setRetry] = useState(0)
+  const resultSummary = useRef<HTMLParagraphElement|null>(null), focusNextPage = useRef(false)
+  const requestKey = JSON.stringify([query,kind,tag,section,source,offset])
+  useEffect(() => { if (focusNextPage.current && submitted === requestKey && !searching) { focusNextPage.current = false; resultSummary.current?.focus() } }, [submitted,requestKey,searching])
+  useEffect(() => {
+    let live = true
+    void window.collie.readSources(scope(project)).then(result => { if (live && result.ok) setSources(result.value.sources.map(row => ({id:row.id,title:row.metadata.title}))) }).catch(() => { if(live) setError('Source filters could not be loaded.') })
+    void window.collie.readNotes(scope(project)).then(result => { if (live && result.ok) setTags(result.value.labels.filter(row => row.kind==='tag' && row.state==='active')) }).catch(() => { if(live) setError('Tag filters could not be loaded.') })
+    return () => { live=false }
+  }, [project.projectId,project.workspaceId,project.headCommitId,retry])
+  useEffect(() => {
+    let live = true
+    const read = (): void => { void window.collie.readSearchActivity(scope(project)).then(result => { if(live){ if(result.ok)setActivity(result.value);else setError(result.error.message) } }).catch(() => { if(live)setError('Index activity is unavailable. Your content is retained; retry when storage is available.') }) }
+    read(); const timer = setInterval(read,2000)
+    return () => { live=false;clearInterval(timer) }
+  }, [project.projectId,project.workspaceId,retry])
+  useEffect(() => {
+    let live = true; setSearching(!!query.trim())
+    const timer = setTimeout(() => {
+      if (!query.trim()) { setView(null);setSubmitted(requestKey);setSearching(false);return }
+      const input: SearchInput = { ...scope(project),query,kind,tagId:tag||null,documentId:section||null,sourceId:source||null,offset }
+      void window.collie.search(input).then(result => { if (!live)return; if(result.ok){setView(result.value);setActivity(result.value.activity);setSubmitted(requestKey);setError('')}else setError(result.error.message) }).catch(() => { if(live)setError('Search could not finish. Retry to search saved local content.') }).finally(() => { if(live)setSearching(false) })
+    },250)
+    return () => { live=false;clearTimeout(timer) }
+  }, [project.projectId,project.workspaceId,project.headCommitId,requestKey,activity?.state,activity?.processed,activity?.indexedHead,activity?.currentHead,retry])
+  async function act(action:'refresh'|'rebuild'|'cancel'):Promise<void> {
+    setBusy(true);setError('')
+    try { const result=await window.collie.changeSearch({...scope(project),action});if(result.ok)setActivity(result.value);else setError(result.error.message) }
+    catch { setError('Index activity could not be updated. Refresh its status before retrying.') }
+    finally { setBusy(false) }
+  }
+  const a=activity??view?.activity, indexing=a?.state==='running'||a?.state==='queued', current=submitted===requestKey
+  useRetainedDraft('search-index-operation', {
+    read: () => ({ scope:scope(project),kind:'search-index',entityId:null,label:'local search index',dirty:false,composing:false,busy:busy||indexing,pendingOperation:null,policy:'operation',status:indexing?`${a?.processed??0} of ${a?.total??0} records examined`:undefined,issue:a?.error??undefined,target:{kind:'workspace',scope:scope(project),view:'search'} })
+  })
+  return <section className="search-panel" aria-label="Search this project">
+    <ResearchHeader title="Search">Find a phrase in saved writing, notes, research, and extracted source text.</ResearchHeader>
+    <TextInput label="Exact phrase" type="search" value={query} maxLength={200} onChange={event=>{setQuery(event.target.value);setOffset(0)}} placeholder="Search this project" />
+    <details className="research-disclosure"><summary>Filter results{kind!=='all'||tag||section||source?' · filters applied':''}</summary><div className="search-filters">
+      <SelectField label="Content type" value={kind} onChange={event=>{setKind(event.target.value as SearchKind|'all');setOffset(0)}}><option value="all">All content</option>{Object.entries(labels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</SelectField>
+      <SelectField label="Tag" value={tag} onChange={event=>{setTag(event.target.value);setOffset(0)}}><option value="">Any tag</option>{tags.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</SelectField>
+      <SelectField label="Section" value={section} onChange={event=>{setSection(event.target.value);setOffset(0)}}><option value="">Any section</option>{project.documents.filter(row=>row.kind==='text').map(row=><option key={row.id} value={row.id}>{sectionPath(project.documents,row.id)} · {row.state}</option>)}</SelectField>
+      <SelectField label="Source" value={source} onChange={event=>{setSource(event.target.value);setOffset(0)}}><option value="">Any source</option>{sources.map(row=><option key={row.id} value={row.id}>{row.title}</option>)}</SelectField>
+    </div><AppButton variant="subtle" onClick={()=>{setKind('all');setTag('');setSection('');setSource('');setOffset(0)}}>Clear filters</AppButton></details>
+    <p className="research-state">Search uses saved content. Unsaved edits and PDF pages without extracted text are not included.</p>
+    {error?<p role="alert">{error} <AppButton variant="subtle" onClick={()=>setRetry(value=>value+1)}>Retry search and status</AppButton></p>:null}
+    <p ref={resultSummary} tabIndex={-1} aria-live="polite">{searching?'Searching…':query.trim()&&current&&view?`${view.hits.length} results on this page.${view.hasMore?' More results are available.':''}`:''}</p>
+    {!query.trim()?<EmptyState title="Find the original context">Enter a phrase to search within this project. Opening a result keeps your search here for the Back action.</EmptyState>:current&&view?<>
+      {!view.hits.length?<EmptyState title="No matching results">Try a shorter phrase or clear the filters. If content was just saved, check indexing below.</EmptyState>:<ol className="search-results" start={offset+1}>{view.hits.map(hit=><li key={hit.key}><p className="research-state">{labels[hit.kind]} · {hit.status.replace('_',' ')}{hit.kind==='page'?hit.pageIndex===0?' · plain text':hit.pageIndex!==null?` · PDF page ${hit.pageIndex}`:' · page unavailable':''}</p><h2>{hit.title}</h2><p className="search-excerpt">{highlighted(hit.excerpt,query)}</p><AppButton variant="light" disabled={hit.status==='stale'||hit.status==='removed'||searching} onClick={()=>navigate(hit)}>Open original context</AppButton>{hit.status==='stale'||hit.status==='removed'?<p className="research-state">This result changed or was removed. Refresh the index to resolve it; another item will not be substituted.</p>:null}</li>)}</ol>}
+      <div className="research-actions"><AppButton variant="default" disabled={searching||offset===0} onClick={()=>{focusNextPage.current=true;setOffset(Math.max(0,offset-50))}}>Previous results</AppButton><AppButton variant="default" disabled={searching||!view.hasMore||offset>=10000} onClick={()=>{focusNextPage.current=true;setOffset(offset+50)}}>Next results</AppButton></div>
+    </>:null}
+    <details className="research-disclosure"><summary>Indexing and coverage{indexing?' · updating':a&&a.indexedHead!==a.currentHead?' · saved content not fully indexed':''}</summary>
+      {a?<><p role="status">{a.state} · {a.processed} of {a.total} records examined · {a.indexed} entries for {a.expected} searchable records.</p><p>{a.pagesWithText} extracted pages with text; {a.pagesWithoutText} pages without searchable text or with extraction errors. {a.uninspectedSources} sources need inspection or extraction.</p>{a.error?<p role="alert">{a.error}</p>:null}<ul>{a.uninspected.map(row=><li key={row.id}><AppButton variant="subtle" onClick={()=>session.research({kind:'inspector',sourceId:row.id})}>{row.title}</AppButton> · {row.status}</li>)}</ul>{a.uninspectedSources>a.uninspected.length?<p>Showing the first {a.uninspected.length} sources needing attention.</p>:null}</>:<p>Loading index status…</p>}
+      <div className="research-actions"><AppButton variant="default" disabled={busy||indexing} onClick={()=>void act('refresh')}>Refresh index</AppButton><AppButton variant="subtle" disabled={busy||indexing} onClick={()=>void act('rebuild')}>Rebuild index</AppButton><AppButton variant="subtle" disabled={busy||!indexing} onClick={()=>void act('cancel')}>Cancel indexing</AppButton></div><p>The local index can be rebuilt. Cancelling it keeps your writing and originals.</p>
+    </details>
   </section>
 }

@@ -1,0 +1,7 @@
+.notes-panel { min-width: 0; }
+.notes-panel [hidden] { display: none; }
+.notes-panel .note-interpretation { white-space: pre-wrap; overflow-wrap: anywhere; }
+.notes-panel .note-label-list { list-style: none; padding: 0; }
+.notes-panel .note-label-list li { padding-block: .75rem; border-bottom: 1px solid var(--collie-border); }
+.notes-panel .editor-host .tiptap { min-height: 16rem; }
+.note-label-form { display: grid; gap: 1rem; }

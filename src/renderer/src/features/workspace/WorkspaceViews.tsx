@@ -29,7 +29,7 @@ export default function WorkspaceViews(): React.JSX.Element {
     dirty, files, fileActive, accessReadOnly, accessTransition, available, updateProject, refreshData,
     navigateSection, navigateSearch, loadHistory, performOutline, flush, run, waitActive, lifecycleFile,
     manage, resetLocal, afterNoteCommit, changeAccess, openTutorial, chooseProject, research, navigating,
-    setData, setList } = useWorkspaceSession()
+    setData, setList, goBack, backDestination } = useWorkspaceSession()
   return <>
 <RetainedRegion name="setup" label="New project">
   {startupPending && storage.state !== 'unavailable' && location?.state !== 'required' ? <p role="status">Opening local projects…</p> : <OnboardingWizard />}
@@ -44,23 +44,25 @@ export default function WorkspaceViews(): React.JSX.Element {
 {project ? <HistoryPanel key={project.projectId} project={project} readOnly={accessReadOnly||accessTransition} history={history} disabled={busy || acting || closing || committing || fileActive} change={change => run(() => performOutline(change))} read={id => run(() => loadHistory(id))} navigate={(doc,anchor) => run(() => navigateSection(doc,anchor))} /> : null}
 </RetainedRegion>
 </div>
-<div className="projects">
+<div className="research-destinations">
 <div inert={navigating || closing} onCompositionStartCapture={() => { composition.current = true; drafts.changed() }} onCompositionEndCapture={() => { composition.current = false; drafts.changed() }}>
 <RetainedRegion name="research-inspector" label="Source inspector">
-{project && inspectionTarget ?<SourceInspector readOnly={accessReadOnly||accessTransition} key={`${project.projectId}-${inspectionTarget.sourceId}`} project={project} sourceId={inspectionTarget.sourceId} focusExcerptId={inspectionTarget.excerptId} focusVersionId={inspectionTarget.versionId} focusPageIndex={inspectionTarget.pageIndex} disabled={busy||closing||outlineRetry||sourceDirty||storage.state!=='ready'} onCommitted={afterNoteCommit} close={() => research({ kind: 'sources' })} />:null}
+{project && inspectionTarget ?<SourceInspector readOnly={accessReadOnly||accessTransition} key={`${project.projectId}-${inspectionTarget.sourceId}`} project={project} sourceId={inspectionTarget.sourceId} focusExcerptId={inspectionTarget.excerptId} focusVersionId={inspectionTarget.versionId} focusPageIndex={inspectionTarget.pageIndex} disabled={busy||closing||outlineRetry||sourceDirty||storage.state!=='ready'} onCommitted={afterNoteCommit} close={() => { if(backDestination)void goBack();else research({ kind: 'sources',sourceId:inspectionTarget.sourceId,page:'usage' }) }} />:null}
 </RetainedRegion>
 <RetainedRegion name="research-notes" label="Notes and annotations">
-{project ? <NotesPanel key={project.projectId} project={project} capture={annotationCapture} focusNoteId={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='notes'?destination.target.noteId??null:null} disabled={accessReadOnly || accessTransition || busy || closing || outlineRetry || storage.state !== 'ready'} onCommitted={afterNoteCommit} navigate={(id,anchor) => navigateSection(id,anchor)} /> : null}
+{project ? <NotesPanel key={project.projectId} project={project} capture={annotationCapture} focusAnnotationId={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='notes'?destination.target.annotationId??null:null} focusNoteId={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='notes'?destination.target.noteId??null:null} disabled={accessReadOnly || accessTransition || busy || closing || outlineRetry || storage.state !== 'ready'} onCommitted={afterNoteCommit} navigate={(id,anchor) => navigateSection(id,anchor)} /> : null}
 </RetainedRegion>
 <RetainedRegion name="research-sources" label="Sources">
-{project ? <SourcesPanel readOnly={accessReadOnly||accessTransition} key={project.projectId} project={project} focusSourceId={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='sources'?destination.target.sourceId??null:null} disabled={busy || closing || outlineRetry || storage.state !== 'ready'} onCommitted={afterNoteCommit} onInspect={sourceId=>research({kind:'inspector',sourceId})} /> : null}
+{project ? <SourcesPanel readOnly={accessReadOnly||accessTransition} key={project.projectId} project={project} focusPage={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='sources'?destination.target.page:undefined} focusSourceId={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='sources'?destination.target.sourceId??null:null} disabled={busy || closing || outlineRetry || storage.state !== 'ready'} onCommitted={afterNoteCommit} onInspect={sourceId=>research({kind:'inspector',sourceId})} /> : null}
 </RetainedRegion>
 <RetainedRegion name="research-evidence" label="Questions and claims">
-{project ? <EvidencePanel readOnly={accessReadOnly||accessTransition} key={project.projectId} project={project} focusItem={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='evidence'?destination.target.item??null:null} disabled={busy || closing || outlineRetry || noteDirty || sourceDirty || storage.state !== 'ready'} onCommitted={afterNoteCommit} navigate={(id,anchor)=>navigateSection(id,anchor)} inspect={(sourceId,excerptId)=>research({kind:'inspector',sourceId,excerptId})} /> : null}
+{project ? <EvidencePanel readOnly={accessReadOnly||accessTransition} key={project.projectId} project={project} focusSourceId={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='evidence'?destination.target.sourceId:undefined} focusItem={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='evidence'?destination.target.item??null:null} disabled={busy || closing || outlineRetry || noteDirty || sourceDirty || storage.state !== 'ready'} onCommitted={afterNoteCommit} navigate={(id,anchor)=>navigateSection(id,anchor)} inspect={(sourceId,excerptId)=>research({kind:'inspector',sourceId,excerptId})} /> : null}
 </RetainedRegion>
 <RetainedRegion name="search" label="Project search">
 {project ? <SearchPanel key={project.projectId} project={project} navigate={navigateSearch} /> : null}
 </RetainedRegion>
+</div></div>
+<div className="projects"><div inert={navigating || closing} onCompositionStartCapture={() => { composition.current = true; drafts.changed() }} onCompositionEndCapture={() => { composition.current = false; drafts.changed() }}>
 <RetainedRegion name="export" label="Export">
 {project ? <CitationsPanel readOnly={accessReadOnly||accessTransition} key={project.projectId} project={project} dirty={dirty} disabled={busy||closing||acting||fileActive||storage.state!=='ready'} flush={flush} onCommitted={afterNoteCommit} onContext={(sources,view)=>setCitationContext({projectId:project.projectId,sources,view})} navigate={navigateSection} source={sourceId=>research({kind:'sources',sourceId})} /> : null}
 {project ? <DocxExportPanel paid={access?.paid??false} key={project.projectId} project={project} disabled={busy||closing||acting||fileActive||storage.state!=='ready'} flush={flush} onProject={updateProject} /> : null}

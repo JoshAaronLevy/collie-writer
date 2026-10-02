@@ -1,10 +1,17 @@
+import { TextInput, Textarea } from '@mantine/core'
+import { AppButton, TextareaField } from '../../components/ui/Controls'
+import { EmptyState } from '../../components/ui/Feedback'
+import { ResearchHeader, ResearchLayout } from '../research/ResearchLayout'
+import { useResearchData } from '../research/ResearchData'
+import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import './SourceInspector.css'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import { useEffect, useRef, useState } from 'react'
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFWorker, RenderTask } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import type { OpenProject } from '../../../../shared/projects'
 import { PDF_EXTRACTOR, PDF_INSPECTION_LIMIT, PDF_PAGE_LIMIT, TEXT_EXTRACTOR, type InspectionChange, type InspectionView, type InspectedVersion, type SourceExcerpt } from '../../../../shared/inspection'
-import type { SourceAttachment } from '../../../../shared/sources'
+import type { SourceAttachment, SourceAttachmentInput } from '../../../../shared/sources'
 
 const scope=(p:OpenProject,sourceId:string)=>({projectId:p.projectId,workspaceId:p.workspaceId,sourceId})
 const tidy=(value:unknown)=>typeof value==='string'?value.replace(/[\u0000-\u001f]/g,' ').trim().slice(0,500):''
@@ -12,6 +19,10 @@ async function deadline<T>(promise:Promise<T>,ms:number):Promise<T>{let timer:Re
 type Loaded={versionId:string;pdf:PDFDocumentProxy|null;text:string|null;labels:string[]|null;title:string;author:string}
 
 export default function SourceInspector({project,sourceId,focusExcerptId,focusVersionId,focusPageIndex,disabled,readOnly,onCommitted,close}:{project:OpenProject;sourceId:string;focusExcerptId:string|null;focusVersionId:string|null;focusPageIndex:number|null;disabled:boolean;readOnly:boolean;onCommitted:()=>Promise<void>;close:()=>void}):React.JSX.Element{
+  const session=useWorkspaceSession(),research=useResearchData()
+  const [sourceTitle,setSourceTitle]=useState('Source original'),[excerptId,setExcerptId]=useState<string|null>(null),[excerptQuery,setExcerptQuery]=useState(''),[showTranscription,setShowTranscription]=useState(false),[readRevision,setReadRevision]=useState(0)
+  const visible=session.destination.kind==='workspace'&&session.destination.view==='research'&&session.destination.target.kind==='inspector'&&session.destination.target.sourceId===sourceId
+  const reimportPending=useRef<SourceAttachmentInput|null>(null)
   const pendingExcerpt=useRef<{operationId:string;change:InspectionChange}|null>(null)
   const [view,setView]=useState<InspectionView|null>(null),[attachments,setAttachments]=useState<SourceAttachment[]>([])
   const [selectedVersionId,setSelectedVersionId]=useState<string|null>(null),[loadedVersionId,setLoadedVersionId]=useState<string|null>(null)
@@ -19,20 +30,37 @@ export default function SourceInspector({project,sourceId,focusExcerptId,focusVe
   const [progress,setProgress]=useState(''),[message,setMessage]=useState(''),[error,setError]=useState('')
   const [manualQuote,setManualQuote]=useState(''),[manualLabel,setManualLabel]=useState('Manual transcription')
   const [correctionFor,setCorrectionFor]=useState<SourceExcerpt|null>(null),[correctionQuote,setCorrectionQuote]=useState(''),[correctionLabel,setCorrectionLabel]=useState('Human correction')
-  const draftPending=!!manualQuote||manualLabel!=='Manual transcription'||!!correctionFor&&(correctionQuote!==correctionFor.quote||correctionLabel!=='Human correction')||!!pendingExcerpt.current
+  const draftPending=!!manualQuote||manualLabel!=='Manual transcription'||!!correctionFor&&(correctionQuote!==correctionFor.quote||correctionLabel!=='Human correction')||!!pendingExcerpt.current||!!reimportPending.current
   const [reimportBytes,setReimportBytes]=useState<{current:number;total:number}|null>(null)
   const loaded=useRef<Loaded|null>(null),task=useRef<PDFDocumentLoadingTask|null>(null),pdfWorker=useRef<{port:Worker;worker:PDFWorker}|null>(null),cancelled=useRef(false),reimportOperation=useRef<string|null>(null),selection=useRef<HTMLTextAreaElement|null>(null),canvas=useRef<HTMLCanvasElement|null>(null),panel=useRef<HTMLElement|null>(null)
   const focusedExcerpt=useRef<string|null>(null)
   const selected=view?.versions.find(v=>v.id===selectedVersionId),active=view?.versions.find(v=>v.id===view.activeVersionId)
   const page=view?.pages.find(p=>p.versionId===selectedVersionId&&p.index===pageIndex)
-  const loading=busy||extracting||disabled||!!pendingExcerpt.current
+  const loading=busy||extracting||disabled||!!pendingExcerpt.current||!!reimportPending.current
 
 
-  useEffect(()=>{let alive=true;setView(null);setSelectedVersionId(null);setLoadedVersionId(null);loaded.current=null;setPageText('');void window.collie.readInspection(scope(project,sourceId)).then(r=>{if(alive){if(r.ok){setView(r.value);setSelectedVersionId(r.value.activeVersionId??r.value.versions[0]?.id??null)}else setError(r.error.message)}});void window.collie.readSources({projectId:project.projectId,workspaceId:project.workspaceId}).then(r=>{if(alive&&r.ok)setAttachments(r.value.sources.find(s=>s.id===sourceId)?.attachments??[])});return()=>{alive=false;cancelled.current=true;void closePdf()}},[project.projectId,project.workspaceId,sourceId])
-  useEffect(()=>{if(!focusExcerptId||!view||focusedExcerpt.current===focusExcerptId)return;const excerpt=view.excerpts.find(item=>item.id===focusExcerptId);if(excerpt){focusedExcerpt.current=focusExcerptId;void navigateExcerpt(excerpt)}},[focusExcerptId,view?.sourceId])
-  useEffect(()=>{if(!focusVersionId||!view||focusExcerptId)return;const version=view.versions.find(item=>item.id===focusVersionId);if(version)void openVersion(version,focusPageIndex??undefined)},[focusVersionId,focusPageIndex,view?.sourceId])
+  useEffect(()=>{let alive=true;setView(null);setSelectedVersionId(null);setLoadedVersionId(null);loaded.current=null;setPageText('');void window.collie.readInspection(scope(project,sourceId)).then(r=>{if(alive){if(r.ok){setView(r.value);setSelectedVersionId(r.value.activeVersionId??r.value.versions[0]?.id??null)}else setError(r.error.message)}}).catch(()=>{if(alive)setError('Source inspection could not be loaded. Reload it to retry.')});void window.collie.readSources({projectId:project.projectId,workspaceId:project.workspaceId}).then(r=>{if(alive&&r.ok){const source=r.value.sources.find(s=>s.id===sourceId);setAttachments(source?.attachments??[]);setSourceTitle(source?.metadata.title??'Missing source')}}).catch(()=>{if(alive)setError('Source details could not be read. The original and excerpts are retained.')});return()=>{alive=false;cancelled.current=true;void closePdf()}},[project.projectId,project.workspaceId,sourceId,readRevision])
+  useEffect(()=>{
+    if(!visible||!view||busy||extracting||draftPending)return
+    const key=`${focusExcerptId}:${focusVersionId}:${focusPageIndex}:${session.focusRevision}:${readRevision}`
+    if(focusedExcerpt.current===key)return
+    if(!focusExcerptId&&!focusVersionId){focusedExcerpt.current=null;return}
+    focusedExcerpt.current=key
+    if(focusExcerptId){const excerpt=view.excerpts.find(item=>item.id===focusExcerptId);if(excerpt){setExcerptQuery('');void navigateExcerpt(excerpt)}else setError('The requested excerpt is missing. No different excerpt was selected.')}
+    else if(focusVersionId){const version=view.versions.find(item=>item.id===focusVersionId);if(version)void openVersion(version,focusPageIndex??undefined);else setError('The requested original version is missing. No newer version was substituted.')}
+  },[focusExcerptId,focusVersionId,focusPageIndex,session.focusRevision,readRevision,view?.sourceId,busy,extracting,draftPending,visible])
+  useEffect(()=>{
+    if(!visible||!view||busy||extracting||draftPending||view.headCommitId===project.headCommitId)return
+    let live=true
+    void Promise.all([window.collie.readInspection(scope(project,sourceId)),window.collie.readSources({projectId:project.projectId,workspaceId:project.workspaceId})]).then(([inspection,sources])=>{
+      if(!live)return
+      if(inspection.ok)setView(inspection.value);else setError(inspection.error.message)
+      if(sources.ok){const source=sources.value.sources.find(item=>item.id===sourceId);setSourceTitle(source?.metadata.title??'Missing source');setAttachments(source?.attachments??[])}else setError(sources.error.message)
+    }).catch(()=>{if(live)setError('Updated inspection details could not be read. Your loaded original and excerpts remain available.')})
+    return()=>{live=false}
+  },[project.headCommitId,visible,busy,extracting,draftPending,sourceId])
   useEffect(()=>window.collie.onSourceProgress(p=>{if(p.operationId===reimportOperation.current)setReimportBytes({current:p.transferred,total:p.total})}),[])
-  useEffect(()=>{let alive=true;setPageText('');if(page?.state==='text'&&selectedVersionId){void window.collie.readInspectedPage({...scope(project,sourceId),versionId:selectedVersionId,pageIndex}).then(r=>{if(alive){if(r.ok)setPageText(r.value.text);else setError(r.error.message)}})}return()=>{alive=false}},[project.projectId,project.workspaceId,sourceId,selectedVersionId,pageIndex,page?.textHash])
+  useEffect(()=>{let alive=true;setPageText('');if(page?.state==='text'&&selectedVersionId){void window.collie.readInspectedPage({...scope(project,sourceId),versionId:selectedVersionId,pageIndex}).then(r=>{if(alive){if(r.ok)setPageText(r.value.text);else setError(r.error.message)}}).catch(()=>{if(alive)setError('Saved page text could not be loaded. Reopen the original to retry.')})}return()=>{alive=false}},[project.projectId,project.workspaceId,sourceId,selectedVersionId,pageIndex,page?.textHash])
   useEffect(()=>{if(!loaded.current?.pdf||loaded.current.versionId!==selectedVersionId||!canvas.current)return;let live=true;const running:{render:RenderTask|null}={render:null};const doc=loaded.current.pdf;void (async()=>{try{const pdfjs=await import('pdfjs-dist');const pdfPage=await deadline(doc.getPage(pageIndex),10000);if(!live||!canvas.current)return;const plain=pdfPage.getViewport({scale:1}),scale=Math.min(1.2,Math.sqrt(4_000_000/(plain.width*plain.height)));const viewport=pdfPage.getViewport({scale});const element=canvas.current,context=element.getContext('2d');if(!context)throw new Error('CANVAS_UNAVAILABLE');element.width=Math.ceil(viewport.width);element.height=Math.ceil(viewport.height);running.render=pdfPage.render({canvas:element,canvasContext:context,viewport,annotationMode:pdfjs.AnnotationMode.DISABLE});await deadline(running.render.promise,15000)}catch{running.render?.cancel();if(live)setError('This PDF page could not be rendered. Its source bytes and earlier excerpts remain available.')}})();return()=>{live=false;running.render?.cancel()}},[loadedVersionId,selectedVersionId,pageIndex])
 
   async function mutate(change:InspectionChange):Promise<InspectionView|null>{
@@ -68,6 +96,7 @@ export default function SourceInspector({project,sourceId,focusExcerptId,focusVe
       if(bytes.byteLength!==access.value.bytes||bytes.byteLength>PDF_INSPECTION_LIMIT)throw new Error('SOURCE_CHANGED')
       if(v.mediaType==='text/plain'){
         const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes)
+        if(jump!==undefined&&jump!==0){setError('That page does not exist in this plain text original. No other page was substituted.');return}
         loaded.current={versionId:v.id,pdf:null,text,labels:null,title:'',author:''};setLoadedVersionId(v.id);setPageIndex(0)
       }else{
         const pdfjs=await import('pdfjs-dist')
@@ -81,7 +110,8 @@ export default function SourceInspector({project,sourceId,focusExcerptId,focusVe
         const labels=await deadline(pdf.getPageLabels(),10000).catch(()=>null)
         const metadata=await deadline(pdf.getMetadata(),10000).catch(()=>null) as {info?:{Title?:unknown;Author?:unknown}}|null
         loaded.current={versionId:v.id,pdf,text:null,labels,title:tidy(metadata?.info?.Title),author:tidy(metadata?.info?.Author)}
-        setLoadedVersionId(v.id);setPageIndex(jump&&jump>=1&&jump<=pdf.numPages?jump:1)
+        if(jump!==undefined&&(jump<1||jump>pdf.numPages)){loaded.current=null;await closePdf();setError('That page is not present in this original. No other page was substituted.');return}
+        setLoadedVersionId(v.id);setPageIndex(jump??1)
       }
     }catch(problem){const reason=problem&&typeof problem==='object'&&'name'in problem&&problem.name==='PasswordException'?'password_required':problem instanceof Error&&problem.message==='PAGE_LIMIT'?'unsupported':'failed';await closePdf();await markOpenFailure(v,reason);setError(reason==='password_required'?'This PDF requires a password. Its original remains stored; no text was extracted.':reason==='unsupported'?'This PDF exceeds the supported page limit. Its original remains stored.':'The selected source could not be opened safely. Its original and earlier excerpts remain stored.')}
     finally{setBusy(false)}
@@ -123,15 +153,36 @@ export default function SourceInspector({project,sourceId,focusExcerptId,focusVe
   }
   function cancelExtraction():void{cancelled.current=true;setProgress('Stopping after the current page…')}
   async function excerpt():Promise<void>{const v=selected,area=selection.current;if(!v||!area||!page||page.state!=='text')return;const start=area.selectionStart,end=area.selectionEnd,quote=pageText.slice(start,end);if(!quote.trim()||quote.length>10000){setError('Select up to 10,000 characters in saved extracted text.');return}setBusy(true);setError('');try{if(await mutate({type:'excerpt',id:crypto.randomUUID(),versionId:v.id,pageIndex,kind:'extracted',quote,startOffset:start,endOffset:end,label:'Selected extracted text',supersedesId:null})){setMessage('Exact excerpt saved with its source version, page and text range.');await onCommitted()}}finally{setBusy(false)}}
-  async function transcribe():Promise<void>{const v=selected;if(!v||!manualQuote.trim()||!manualLabel.trim())return;setBusy(true);setError('');try{if(await mutate({type:'excerpt',id:crypto.randomUUID(),versionId:v.id,pageIndex,kind:'transcription',quote:manualQuote,startOffset:null,endOffset:null,label:manualLabel,supersedesId:null})){setManualQuote('');setManualLabel('Manual transcription');setMessage('Labeled manual transcription saved. It is not represented as extracted PDF text.');await onCommitted()}}finally{setBusy(false)}}
+  async function transcribe():Promise<void>{const v=selected;if(!v||!manualQuote.trim()||!manualLabel.trim())return;setBusy(true);setError('');try{if(await mutate({type:'excerpt',id:crypto.randomUUID(),versionId:v.id,pageIndex,kind:'transcription',quote:manualQuote,startOffset:null,endOffset:null,label:manualLabel,supersedesId:null})){setManualQuote('');setManualLabel('Manual transcription');setShowTranscription(false);setMessage('Labeled manual transcription saved. It is not represented as extracted PDF text.');await onCommitted()}}finally{setBusy(false)}}
   async function correct():Promise<void>{const original=correctionFor;if(!original||!correctionQuote.trim()||!correctionLabel.trim())return;setBusy(true);setError('');try{if(await mutate({type:'excerpt',id:crypto.randomUUID(),versionId:original.versionId,pageIndex:original.pageIndex,kind:'correction',quote:correctionQuote,startOffset:null,endOffset:null,label:correctionLabel,supersedesId:original.id})){setCorrectionFor(null);setMessage('Correction saved as a new record. The original quotation is unchanged.');await onCommitted()}}finally{setBusy(false)}}
-  async function reimport():Promise<void>{if(!allowInspectionTargetChange())return;setBusy(true);setError('');try{const picked=await window.collie.pickSourceVersion({projectId:project.projectId,workspaceId:project.workspaceId});if(!picked.ok){setError(picked.error.message);return}if(!picked.value)return;const operationId=crypto.randomUUID();reimportOperation.current=operationId;setReimportBytes(null);const result=await window.collie.attachSourceFile({...scope(project,sourceId),operationId,token:picked.value.token});if(!result.ok){setError(result.error.message);return}setAttachments(result.value.sources.find(s=>s.id===sourceId)?.attachments??[]);const inspected=await window.collie.readInspection(scope(project,sourceId));if(inspected.ok){setView(inspected.value);setSelectedVersionId(inspected.value.versions.find(v=>v.attachmentId===operationId)?.id??null);setMessage('New immutable version copied. Inspect and compare it, then choose whether to make it active.')}else setError(inspected.error.message);await onCommitted()}finally{reimportOperation.current=null;setReimportBytes(null);setBusy(false)}}
-  async function navigateExcerpt(item:SourceExcerpt):Promise<void>{if(!allowInspectionTargetChange())return;const v=view?.versions.find(x=>x.id===item.versionId);if(!v)return;setSelectedVersionId(v.id);await openVersion(v,item.pageIndex??undefined);setPageIndex(item.pageIndex??0)}
-  function allowInspectionTargetChange():boolean { if (!draftPending) return true; setError('Save or explicitly discard the transcription or correction before changing its source page.');return false }
+  async function reimport(retry=false):Promise<void>{
+    if(readOnly||busy||extracting||!retry&&!allowInspectionTargetChange())return
+    setBusy(true);setError('')
+    try{
+      if(!reimportPending.current){const picked=await window.collie.pickSourceVersion({projectId:project.projectId,workspaceId:project.workspaceId});if(!picked.ok){setError(picked.error.message);return}if(!picked.value)return;reimportPending.current={...scope(project,sourceId),operationId:crypto.randomUUID(),token:picked.value.token}}
+      const input=reimportPending.current;reimportOperation.current=input.operationId;setReimportBytes(null)
+      const result=await window.collie.attachSourceFile(input)
+      if(!result.ok){if(result.error.code!=='UNAVAILABLE')reimportPending.current=null;setError(result.error.message);return}
+      reimportPending.current=null;setAttachments(result.value.sources.find(s=>s.id===sourceId)?.attachments??[])
+      const inspected=await window.collie.readInspection(scope(project,sourceId))
+      if(inspected.ok){setView(inspected.value);setSelectedVersionId(inspected.value.versions.find(v=>v.attachmentId===input.operationId)?.id??selectedVersionId);setMessage('New immutable version copied. Compare it before choosing whether to make it active.')}else setError(inspected.error.message)
+      await onCommitted()
+    }catch{setError(reimportPending.current?'The copy has an unknown outcome. Retry the same original copy before continuing.':'The original was copied, but its view could not refresh. Reload source inspection.')}
+    finally{reimportOperation.current=null;setReimportBytes(null);setBusy(false)}
+  }
+  async function navigateExcerpt(item:SourceExcerpt):Promise<void>{
+    if(!allowInspectionTargetChange())return
+    setExcerptId(item.id)
+    const version=view?.versions.find(row=>row.id===item.versionId)
+    if(!version){setError('The original version is missing. The exact excerpt remains available.');return}
+    if(item.pageIndex===null){setSelectedVersionId(version.id);setLoadedVersionId(null);loaded.current=null;await closePdf();setError('This excerpt has no page anchor. Its quote is retained; open the original explicitly to inspect it.');return}
+    await openVersion(version,item.pageIndex)
+  }
+  function allowInspectionTargetChange():boolean { if (session.composition.current||busy||extracting)return false; if (!draftPending) return true; setError('Save or explicitly discard the transcription or correction before changing its source page.');return false }
   const draftBinding=useRetainedDraft('transcription',{
     read:()=>({scope:{projectId:project.projectId,workspaceId:project.workspaceId},kind:'transcription',entityId:sourceId,label:'transcription or correction',dirty:draftPending,
-      composing:false,busy,pendingOperation:pendingExcerpt.current,policy:'explicit',issue:error,
-      target:{kind:'workspace',scope:{projectId:project.projectId,workspaceId:project.workspaceId},view:'research',target:{kind:'inspector',sourceId}}}),
+      composing:false,busy,pendingOperation:pendingExcerpt.current??reimportPending.current,policy:'explicit',issue:error,
+      target:{kind:'workspace',scope:{projectId:project.projectId,workspaceId:project.workspaceId},view:'research',target:{kind:'inspector',sourceId,versionId:selectedVersionId??undefined,pageIndex:loadedVersionId?pageIndex:undefined,excerptId:excerptId??undefined}}}),
     focus:()=>panel.current?.focus()
   })
   useRetainedDraft('inspection-operation',{
@@ -139,30 +190,48 @@ export default function SourceInspector({project,sourceId,focusExcerptId,focusVe
       composing:false,busy:busy||extracting,pendingOperation:null,policy:'operation',status:progress||(busy?'Working…':message)||undefined,issue:error||undefined,
       target:{kind:'workspace',scope:{projectId:project.projectId,workspaceId:project.workspaceId},view:'research',target:{kind:'inspector',sourceId}}})
   })
-  return <aside tabIndex={-1} {...draftBinding} ref={panel} className="source-inspector" aria-labelledby="inspector-title">
-    <div className="project-actions"><h2 id="inspector-title">Source inspector</h2><button type="button" onClick={close}>Close inspector</button></div>
-    {draftPending?<p role="status">Transcription or correction edits are not saved yet. <button type="button" disabled={loading} onClick={()=>{setManualQuote('');setManualLabel('Manual transcription');setCorrectionFor(null);setCorrectionQuote('');setCorrectionLabel('Human correction')}}>Discard pending transcription edits</button></p>:null}
-    <p>Managed originals stay local. PDF pages are inert images with no interactive links, forms or scripts. Extracted text can be incomplete or out of reading order; scanned pages need manual transcription.</p>
-    <button type="button" disabled={loading||readOnly} onClick={()=>void reimport()}>Reimport PDF or text as a new version…</button>
-    {reimportBytes?<p role="status">Copying new version: {Math.round(100*reimportBytes.current/reimportBytes.total)}%</p>:null}
-    {attachments.filter(a=>['application/pdf','text/plain'].includes(a.mediaType)&&!view?.versions.some(v=>v.attachmentId===a.id)).map(a=><p key={a.id}><button type="button" disabled={loading} onClick={()=>void ensure(a.id)}>Inspect retained {a.name}</button></p>)}
-    {pendingExcerpt.current?<button type="button" disabled={busy||extracting||disabled||readOnly} onClick={()=>void retryExcerpt()}>Retry pending excerpt</button>:null}
-    <h3>Versions</h3>
-    <ul>{view?.versions.map(v=><li key={v.id}><button type="button" disabled={loading} aria-current={selectedVersionId===v.id?'true':undefined} onClick={()=>{if(!allowInspectionTargetChange())return;setSelectedVersionId(v.id);setLoadedVersionId(null);loaded.current=null;void closePdf();setPageIndex(v.mediaType==='application/pdf'?1:0)}}>{v.mediaType==='application/pdf'?'PDF':'Text'} · {v.createdAt.slice(0,10)} · {v.sha256.slice(0,12)}</button> {view.activeVersionId===v.id?'· active':''} · {v.status==='extracting'?'interrupted or running':v.status} · {v.pagesWithText}/{v.totalPages??(v.mediaType==='text/plain'?1:0)} {v.mediaType==='application/pdf'?'pages with text':'text parts'} <button type="button" disabled={loading} onClick={()=>void openVersion(v)}>Open version</button>{view.activeVersionId!==v.id?<button type="button" disabled={loading||readOnly} onClick={()=>void chooseActive(v)}>Use as active</button>:null}</li>)}</ul>
-    {selected?<><p>Source version hash: <code>{selected.sha256}</code>. Extractor: {selected.extractorVersion??'not run'}. {selected.mediaType==='application/pdf'&&selected.totalPages!==null?`${selected.pagesProcessed} of ${selected.totalPages} pages processed; ${selected.pagesWithText} yielded text.`:''}</p>
-      {active&&active.id!==selected.id?<p role="status">This version differs from the active version: {active.sha256===selected.sha256?'same file bytes':'different file bytes'}. Old excerpts remain on their original version. Review the metadata and text before switching.</p>:null}
-      <details><summary>Version metadata and comparison</summary><p>Canonical title at import: {selected.metadata.title}. Current active version title at import: {active?.metadata.title??'none'}.</p><p>PDF title: {selected.documentTitle||'not available'}; PDF author: {selected.documentAuthor||'not available'}.</p><p>Active PDF title: {active?.documentTitle||'not available'}; active PDF author: {active?.documentAuthor||'not available'}.</p></details>
-      {loadedVersionId===selected.id?<><div className="project-actions"><button type="button" disabled={loading||selected.status==='indexed'||selected.status==='no_text'} onClick={()=>void extract()}>{selected.pagesProcessed?'Resume extraction':'Extract text page by page'}</button>{extracting?<button type="button" onClick={cancelExtraction}>Cancel extraction</button>:null}</div>
-        {loaded.current?.pdf?<div className="project-actions"><button type="button" disabled={loading||draftPending||pageIndex<=1} onClick={()=>setPageIndex(n=>n-1)}>Previous PDF page</button><span>PDF page {pageIndex} of {loaded.current.pdf.numPages}{loaded.current.labels?.[pageIndex-1]?` · label ${loaded.current.labels[pageIndex-1]}`:''}</span><button type="button" disabled={loading||draftPending||pageIndex>=loaded.current.pdf.numPages} onClick={()=>setPageIndex(n=>n+1)}>Next PDF page</button></div>:<p>Plain text version; no PDF page number.</p>}
-        {loaded.current?.pdf?<canvas ref={canvas} className="inspected-pdf-canvas" role="img" aria-label={`Rendered PDF page ${pageIndex}`} />:null}
-        <label>Saved extracted text for this {loaded.current?.pdf?'page':'text version'} <textarea ref={selection} value={pageText} readOnly rows={9} aria-label="Saved extracted source text" /></label>
-        {page?.error?<p role="alert">{page.error}</p>:null}
-        {page?.state==='failed'?<p role="alert">This page could not yield reliable text. Its original can still be viewed.</p>:!pageText?<p>No selectable saved text for this page. A scan may need manual transcription; OCR is not included.</p>:<button type="button" disabled={loading||readOnly} onClick={()=>void excerpt()}>Save selected exact excerpt</button>}
-        <div className="manual-transcription"><label>Manual transcription or reading note <textarea readOnly={readOnly||loading} value={manualQuote} maxLength={10000} onChange={e=>setManualQuote(e.target.value)} rows={3} /></label><label>Required label <input disabled={readOnly||loading} value={manualLabel} maxLength={200} onChange={e=>setManualLabel(e.target.value)} /></label><button type="button" disabled={loading||readOnly||!manualQuote.trim()||!manualLabel.trim()} onClick={()=>void transcribe()}>Save labeled transcription</button></div>
-      </>:<p>Open this version to view pages and inspect or extract text.</p>}
-    </>:null}
-    <h3>Retained excerpts</h3><ul>{view?.excerpts.map(item=><li key={item.id}><blockquote>{item.quote}</blockquote><p>{item.kind} · {item.label} · {item.pageIndex===0?'plain text':item.pageIndex===null?'page unavailable':`PDF page ${item.pageIndex}${item.pageLabel?` (label ${item.pageLabel})`:''}`} · version {item.versionId.slice(0,8)} {item.startOffset!==null&&item.endOffset!==null?`· saved text offsets ${item.startOffset}–${item.endOffset}`:''} {view.activeVersionId!==item.versionId?'· older version; anchor stale against active version':''}</p>{item.contextBefore||item.contextAfter?<p>Context: …{item.contextBefore}<strong>{item.quote}</strong>{item.contextAfter}…</p>:null}<button type="button" disabled={loading} onClick={()=>void navigateExcerpt(item)}>Go to inspected version and page</button><button type="button" disabled={loading||readOnly} onClick={()=>{if(!allowInspectionTargetChange())return;setCorrectionLabel('Human correction');setCorrectionFor(item);setCorrectionQuote(item.quote)}}>Correct as new record</button></li>)}</ul>
-    {correctionFor?<div className="manual-transcription"><h4>Correction to retained excerpt</h4><p>The original remains unchanged.</p><textarea readOnly={readOnly||loading} value={correctionQuote} maxLength={10000} onChange={e=>setCorrectionQuote(e.target.value)} rows={3} aria-label="Corrected passage" /><label>Required label <input disabled={readOnly||loading} value={correctionLabel} maxLength={200} onChange={e=>setCorrectionLabel(e.target.value)} /></label><button type="button" disabled={loading||readOnly||!correctionQuote.trim()||!correctionLabel.trim()} onClick={()=>void correct()}>Save correction</button><button type="button" disabled={loading} onClick={()=>setCorrectionFor(null)}>Cancel</button></div>:null}
-    {progress?<p role="status">{progress}</p>:null}{message?<p role="status">{message}</p>:null}{error?<p role="alert">{error}</p>:null}
-  </aside>
+  const chosenExcerpt=view?.excerpts.find(item=>item.id===excerptId)
+  const excerptLinks=research.view?.links.filter(item=>item.excerptId===excerptId)??[]
+  const versionName=(id:string):string=>{const index=view?.versions.findIndex(item=>item.id===id)??-1;const version=view?.versions[index];return version?`${version.mediaType==='application/pdf'?'PDF':'Text'} original ${index+1} · ${new Date(version.createdAt).toLocaleDateString()}`:'Missing original'}
+  return <section tabIndex={-1} {...draftBinding} ref={panel} className="source-inspector" aria-label="Source original and excerpts">
+    <ResearchHeader title={sourceTitle}>Read the original, keep exact excerpts, and return to your argument.</ResearchHeader>
+    <div className="research-actions"><AppButton variant="subtle" onClick={close}>Return to context</AppButton><AppButton variant="subtle" onClick={()=>session.research({kind:'sources',sourceId,page:'usage'})}>Where this source is used</AppButton></div>
+    {error?<p role="alert">{error}</p>:null}{message?<p role="status">{message}</p>:null}{progress?<p role="status">{progress}</p>:null}
+    {reimportBytes?<p role="status">Copying new original: {Math.round(100*reimportBytes.current/Math.max(1,reimportBytes.total))}%</p>:null}
+    {pendingExcerpt.current?<AppButton disabled={busy||extracting||disabled||readOnly} onClick={()=>void retryExcerpt()}>Retry pending excerpt</AppButton>:null}
+    {reimportPending.current?<AppButton disabled={busy||extracting||disabled||readOnly} onClick={()=>void reimport(true)}>Retry original copy</AppButton>:null}
+    {draftPending?<p role="status">Keep this view until the transcription, correction or pending copy is resolved. <AppButton variant="subtle" disabled={loading} onClick={()=>{setManualQuote('');setManualLabel('Manual transcription');setCorrectionFor(null);setCorrectionQuote('');setCorrectionLabel('Human correction');setShowTranscription(false)}}>Discard form edits</AppButton></p>:null}
+    {!view?<EmptyState title="Source inspection"><AppButton variant="default" disabled={loading} onClick={()=>setReadRevision(value=>value+1)}>Reload source inspection</AppButton></EmptyState>:null}
+    <details className="research-disclosure"><summary>Originals and version history ({view?.versions.length??0})</summary>
+      <p>Originals stay local. Reimporting retains earlier versions and their excerpts.</p>
+      <AppButton variant="default" disabled={loading||readOnly} onClick={()=>void reimport()}>Add a newer PDF or text original…</AppButton>
+      {attachments.filter(item=>['application/pdf','text/plain'].includes(item.mediaType)&&!view?.versions.some(version=>version.attachmentId===item.id)).map(item=><p key={item.id}><AppButton variant="light" disabled={loading} onClick={()=>void ensure(item.id)}>Inspect {item.name}</AppButton></p>)}
+      <ul className="inspector-version-list">{view?.versions.map(version=><li key={version.id}><strong>{versionName(version.id)}</strong><p>{view.activeVersionId===version.id?'Active version · ':''}{version.status==='extracting'?'extraction interrupted or running':version.status} · {version.pagesWithText} pages or text parts with saved text</p><div className="research-actions"><AppButton variant="default" disabled={loading} onClick={()=>{if(allowInspectionTargetChange()){setExcerptId(null);void openVersion(version)}}}>Open this original</AppButton>{view.activeVersionId!==version.id?<AppButton variant="subtle" disabled={loading||readOnly||draftPending} onClick={()=>void chooseActive(version)}>Use as active version</AppButton>:null}</div></li>)}</ul>
+    </details>
+    <ResearchLayout sidebar={<>
+      <h2>Retained excerpts</h2><TextInput label="Find an excerpt" type="search" value={excerptQuery} onChange={event=>setExcerptQuery(event.currentTarget.value)}/>
+      <ul className="research-item-list">{view?.excerpts.filter(item=>`${item.quote} ${item.label}`.toLocaleLowerCase().includes(excerptQuery.toLocaleLowerCase())).map(item=><li key={item.id}><AppButton variant="subtle" className="research-item-button" classNames={{label:'research-item-label',inner:'research-item-inner'}} aria-current={excerptId===item.id?'true':undefined} disabled={loading} onClick={()=>void navigateExcerpt(item)}><span>{item.quote.slice(0,140)}</span><small>{item.kind} · {item.pageIndex===0?'plain text':item.pageIndex===null?'no page anchor':`PDF page ${item.pageIndex}`} · {view.activeVersionId===item.versionId?'active original':'earlier original'}</small></AppButton></li>)}</ul>
+      {!view?.excerpts.length?<p>Open an original and extract its text, then select a passage to keep an exact excerpt.</p>:null}
+    </>}>
+      {chosenExcerpt?<section className="inspector-excerpt" aria-label="Selected exact excerpt"><h2>{chosenExcerpt.label}</h2><blockquote className="research-quote">{chosenExcerpt.quote}</blockquote><p>{chosenExcerpt.kind} · {versionName(chosenExcerpt.versionId)} · {chosenExcerpt.pageIndex===0?'plain text':chosenExcerpt.pageIndex===null?'page unavailable':`PDF page ${chosenExcerpt.pageIndex}${chosenExcerpt.pageLabel?` (label ${chosenExcerpt.pageLabel})`:''}`}</p>
+        {view?.activeVersionId!==chosenExcerpt.versionId?<p role="status">This excerpt belongs to an earlier original. Its quote and original anchor have been retained.</p>:null}
+        <div className="research-actions"><AppButton variant="light" disabled={loading||readOnly} onClick={()=>{if(!allowInspectionTargetChange())return;setCorrectionFor(chosenExcerpt);setCorrectionQuote(chosenExcerpt.quote);setCorrectionLabel('Human correction')}}>Correct as a new record</AppButton><AppButton variant="subtle" disabled={loading||draftPending} onClick={()=>setExcerptId(null)}>Hide excerpt detail</AppButton></div>
+        <details className="research-disclosure"><summary>Exact context and provenance</summary><p className="inspector-context">{chosenExcerpt.contextBefore}<strong>{chosenExcerpt.quote}</strong>{chosenExcerpt.contextAfter}</p><p>{chosenExcerpt.startOffset!==null?`Saved text offsets ${chosenExcerpt.startOffset}–${chosenExcerpt.endOffset}.`: 'Human-authored text without extracted offsets.'}</p><p>Original SHA-256: <code>{view?.versions.find(item=>item.id===chosenExcerpt.versionId)?.sha256??'unavailable'}</code></p>{chosenExcerpt.supersedesId?<AppButton variant="subtle" disabled={loading} onClick={()=>{const original=view?.excerpts.find(item=>item.id===chosenExcerpt.supersedesId);if(original)void navigateExcerpt(original);else setError('The earlier excerpt is unavailable.')}}>Open the unchanged earlier excerpt</AppButton>:null}</details>
+        {excerptLinks.length?<div><h3>Used as evidence</h3>{excerptLinks.map(link=><AppButton key={link.id} variant="subtle" onClick={()=>session.research({kind:'evidence',item:{kind:'link',id:link.id}})}>{link.role.replace('_',' ')} · {link.claimId?research.view?.claims.find(item=>item.id===link.claimId)?.text??'Missing claim':research.view?.sections.find(item=>item.id===link.documentId)?.title??'Missing section'} · {link.state}</AppButton>)}</div>:<p>No manual evidence links use this excerpt yet.</p>}
+      </section>:null}
+      {correctionFor?<form className="research-form inspector-transcription" onSubmit={event=>{event.preventDefault();void correct()}}><h3>Correction to retained excerpt</h3><p>The original remains unchanged.</p><TextareaField label="Corrected passage" disabled={readOnly||loading} value={correctionQuote} maxLength={10000} onChange={event=>setCorrectionQuote(event.currentTarget.value)} rows={4}/><TextInput label="Required correction label" disabled={readOnly||loading} value={correctionLabel} maxLength={200} onChange={event=>setCorrectionLabel(event.currentTarget.value)}/><div className="research-actions"><AppButton type="submit" disabled={loading||readOnly||!correctionQuote.trim()||!correctionLabel.trim()}>Save correction</AppButton><AppButton variant="default" disabled={loading} onClick={()=>setCorrectionFor(null)}>Cancel correction</AppButton></div></form>:null}
+      {selected?<section aria-label="Original reader"><h2>{versionName(selected.id)}</h2><p>{selected.status} · {selected.pagesProcessed} processed · {selected.pagesWithText} with text{selected.totalPages!==null?` · ${selected.totalPages} total PDF pages`:''}</p>
+        {active&&active.id!==selected.id?<p role="status">Viewing an earlier original ({active.sha256===selected.sha256?'same file bytes':'different file bytes'} from the active version).</p>:null}
+        <details className="research-disclosure"><summary>Version metadata and extraction details</summary><p>Title at import: {selected.metadata.title}. Active title at import: {active?.metadata.title??'none'}.</p><p>PDF metadata: {selected.documentTitle||'no title'}; {selected.documentAuthor||'no author'}. Active PDF: {active?.documentTitle||'no title'}; {active?.documentAuthor||'no author'}.</p><p>Original SHA-256: <code>{selected.sha256}</code>. Extractor: {selected.extractorVersion??'not run'}.</p><p>PDF pages are inert images. Extracted text may be incomplete or out of reading order. Scanned pages need manual transcription; OCR is not included.</p></details>
+        {loadedVersionId===selected.id?<><div className="research-actions"><AppButton variant="default" disabled={loading||selected.status==='indexed'||selected.status==='no_text'} onClick={()=>void extract()}>{selected.pagesProcessed?'Resume text extraction':'Extract text'}</AppButton>{extracting?<AppButton variant="light" onClick={cancelExtraction}>Cancel extraction</AppButton>:null}</div>
+          {loaded.current?.pdf?<div className="research-actions"><AppButton variant="default" disabled={loading||draftPending||pageIndex<=1} onClick={()=>{setExcerptId(null);setPageIndex(value=>value-1)}}>Previous page</AppButton><span>PDF page {pageIndex} of {loaded.current.pdf.numPages}{loaded.current.labels?.[pageIndex-1]?` · label ${loaded.current.labels[pageIndex-1]}`:''}</span><AppButton variant="default" disabled={loading||draftPending||pageIndex>=loaded.current.pdf.numPages} onClick={()=>{setExcerptId(null);setPageIndex(value=>value+1)}}>Next page</AppButton></div>:<p>Plain text original; no PDF page number.</p>}
+          {loaded.current?.pdf?<canvas ref={canvas} className="inspected-pdf-canvas" role="img" aria-label={`Rendered PDF page ${pageIndex}`}/>:null}
+          <Textarea label="Saved extracted source text" ref={selection} value={pageText} readOnly rows={9}/>
+          {page?.error?<p role="alert">{page.error}</p>:null}{page?.state==='failed'?<p role="alert">This page could not yield reliable text. The original is retained.</p>:!pageText?<p>No saved text on this page. Extract text above, or transcribe a scanned passage manually.</p>:<AppButton disabled={loading||readOnly} onClick={()=>void excerpt()}>Save selected exact excerpt</AppButton>}
+          <div className="research-actions"><AppButton variant="subtle" disabled={loading||readOnly} aria-expanded={showTranscription} onClick={()=>setShowTranscription(true)}>Write a manual transcription</AppButton></div>
+          <form className="research-form inspector-transcription" hidden={!showTranscription} inert={!showTranscription} onSubmit={event=>{event.preventDefault();void transcribe()}}><TextareaField label="Manual transcription or reading note" disabled={readOnly||loading} value={manualQuote} maxLength={10000} onChange={event=>setManualQuote(event.currentTarget.value)} rows={4}/><TextInput label="Required transcription label" disabled={readOnly||loading} value={manualLabel} maxLength={200} onChange={event=>setManualLabel(event.currentTarget.value)}/><div className="research-actions"><AppButton type="submit" disabled={loading||readOnly||!manualQuote.trim()||!manualLabel.trim()}>Save labeled transcription</AppButton><AppButton variant="default" disabled={loading} onClick={()=>{setManualQuote('');setManualLabel('Manual transcription');setShowTranscription(false)}}>Cancel transcription</AppButton></div></form>
+        </>:<AppButton variant="default" disabled={loading} onClick={()=>void openVersion(selected)}>Open original</AppButton>}
+      </section>:<EmptyState title="Attach an original to start reading">Open the source’s Originals and history view to attach a local PDF or text file. Existing attachments can be prepared under Originals and version history above.</EmptyState>}
+    </ResearchLayout>
+  </section>
 }

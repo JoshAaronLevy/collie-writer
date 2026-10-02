@@ -1,9 +1,9 @@
 import type { OpenInput } from '../../../shared/projects'
 
 export type ResearchTarget =
-  | { kind: 'sources'; sourceId?: string }
-  | { kind: 'notes'; noteId?: string }
-  | { kind: 'evidence'; item?: { kind: 'question' | 'claim'; id: string } }
+  | { kind: 'sources'; sourceId?: string; page?: 'details' | 'usage' | 'files' }
+  | { kind: 'notes'; noteId?: string; annotationId?: string }
+  | { kind: 'evidence'; item?: { kind: 'question' | 'claim' | 'link'; id: string }; sourceId?: string }
   | { kind: 'inspector'; sourceId: string; versionId?: string; excerptId?: string; pageIndex?: number }
 
 export type WorkspaceView = 'write' | 'research' | 'search' | 'export' | 'history' | 'details'

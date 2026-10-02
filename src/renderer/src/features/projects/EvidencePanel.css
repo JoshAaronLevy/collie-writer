@@ -1,0 +1,4 @@
+.evidence-panel { display: grid; gap: var(--collie-space-4); }
+.evidence-panel h3, .evidence-panel h4 { margin-block: 0 var(--collie-space-2); }
+.evidence-panel code { overflow-wrap: anywhere; }
+.evidence-panel .research-detail-inner > div { display: grid; gap: var(--collie-space-2); }
