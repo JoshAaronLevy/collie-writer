@@ -21,6 +21,7 @@ export function registerAiIpc(owner:()=>WebContents|undefined,service:AiService,
         else if(kind==='cancelConnect'&&isAiAttempt(input))value=await service.cancelConnect(input.attemptId)
         else if(kind==='refresh'&&isAiConnection(input))value=await service.refresh(input.connectionId)
         else if(kind==='disconnect'&&isAiConnection(input))value=await service.disconnect(input.connectionId)
+        else if(kind==='select'&&isAiConnection(input))value=await service.select(input.connectionId)
         else if(kind==='models'&&isAiConnection(input))value=await service.models(input.connectionId)
         else if(kind==='prepare'&&isAiPrepare(input))value=await service.prepare(input)
         else if(kind==='start'&&isAiStart(input))value=await service.start(input)

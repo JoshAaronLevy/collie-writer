@@ -35,6 +35,7 @@ export class AiService {
   private authAbort:AbortController|null=null
   private connectionState:AiStatus['state']|null=null
   private lastReason:AiReason|null=null
+  private statusSequence=0
   private revocation:AiStatus['remoteRevocation']='none'
   private runtimeState:AiStatus['runtime']='unavailable'
   private prepared=new Map<string,Prepared>()
@@ -90,11 +91,14 @@ export class AiService {
     reasons.push('funding-unknown','isolation-unresolved')
     if(this.runtimeState!=='development-installed')reasons.push('runtime-unavailable')
     if(this.lastReason&&!reasons.includes(this.lastReason))reasons.push(this.lastReason)
-    return {provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',configured:!!config,
-      channelPermitted:!!config&&!reasons.includes('configuration-required'),commercialApproved:!!config?.commercialReference,funding:'unknown',runtime:this.runtimeState,
+    const settled=!!this.credentials&&secureAiStorage()&&!this.storageFailure&&!this.journalFailure&&!this.busy&&!this.attempt&&!this.running&&!this.closing
+    const permitted=!!config&&!reasons.some(reason=>['configuration-required','commercial-activation-pending','development-access-unavailable'].includes(reason))
+    return {sequence:++this.statusSequence,provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',configured:!!config,
+      channelPermitted:permitted,commercialApproved:!!config?.commercialReference,funding:'unknown',runtime:this.runtimeState,
       state:this.connectionState??(!config?'unavailable':selected?.tokens?'signed-in':'signed-out'),reasons,attemptId:this.attempt?.attemptId??null,
       activeConnectionId:this.credentials?.activeId??null,connections:this.credentials?.accounts.map(a=>({id:a.id,label:a.label,
-        state:!a.tokens?'signed-out':a.refreshPending||a.tokens.expiresAt<=Date.now()?'expired':'signed-in',planConsent:!!a.tokens?.scopes.includes('chatgpt.tokens.use.direct')}))??[],remoteRevocation:this.revocation}
+        state:!a.tokens?'signed-out':a.refreshPending||a.tokens.expiresAt<=Date.now()?'expired':'signed-in',planConsent:!!a.tokens?.scopes.includes('chatgpt.tokens.use.direct')}))??[],remoteRevocation:this.revocation,
+      actions:{connect:settled&&permitted,refresh:settled&&permitted,disconnect:settled,select:settled&&permitted}}
   }
   private requireIdle():void {if(this.closing||this.busy||this.attempt||this.running)throw new AiError('busy')}
   private account(id:string):Account {
@@ -191,6 +195,22 @@ export class AiService {
       if(this.credentials!.activeId===id)this.credentials!.activeId=null
       this.revocation=!hadTokens?'none':confirmed?'confirmed':'unconfirmed';await this.saveCredentials();this.lastReason=null
     }finally{this.busy=false;this.connectionState=null;this.authAbort=null;this.publish()}
+    return this.status()
+  }
+  /** Choosing an already protected account is a local explicit action. It never
+   * reopens OAuth, refreshes a token, sends context or establishes AI eligibility. */
+  async select(id:string):Promise<AiStatus> {
+    await this.ensure();this.requireIdle()
+    const config=registration(),account=this.account(id)
+    if(account.clientId!==config.clientId)throw new AiError('configuration-required')
+    if(!account.tokens)throw new AiError('signed-out')
+    const previous=this.credentials!.activeId
+    this.busy=true
+    try{
+      this.credentials!.activeId=id;this.prepared.clear()
+      await this.saveCredentials();this.lastReason=null
+    }catch(error){this.credentials!.activeId=previous;throw error}
+    finally{this.busy=false;this.publish()}
     return this.status()
   }
   private requireSession(id:string):Account {

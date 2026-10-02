@@ -5,6 +5,8 @@ import type { StorageStatus } from '../../shared/storage'
 import SaveMenu from './features/workspace/SaveMenu'
 import AboutPanel from './features/settings/AboutPanel'
 import Orientation from './features/help/Orientation'
+import { AiConnectionsProvider } from './features/ai-connections/AiConnectionsProvider'
+import { AiConnectionNotice } from './features/ai-connections/AiConnectionNotice'
 import Projects from './features/projects/Projects'
 import { WorkspaceSessionProvider, useWorkspaceSession } from './features/workspace/WorkspaceSession'
 import { WorkspaceStatus } from './features/workspace/WorkspaceStatus'
@@ -35,7 +37,7 @@ export default function App(): React.JSX.Element {
     }).catch(() => { if (active) setFailed(true) })
     return () => { active = false; unsubscribe() }
   }, [])
-  return <WorkspaceSessionProvider storage={storageStatus}><AppShell info={info} failed={failed} storageStatus={storageStatus} /></WorkspaceSessionProvider>
+  return <WorkspaceSessionProvider storage={storageStatus}><AiConnectionsProvider><AppShell info={info} failed={failed} storageStatus={storageStatus} /></AiConnectionsProvider></WorkspaceSessionProvider>
 }
 
 function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; failed: boolean; storageStatus: StorageStatus }): React.JSX.Element {
@@ -84,6 +86,7 @@ function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; faile
           </StatusBanner>
         </div> : null}
         <WorkspaceStatus />
+        <AiConnectionNotice />
         <Orientation />
         <Projects />
         <RetainedRegion name="help-about" label="About and help">

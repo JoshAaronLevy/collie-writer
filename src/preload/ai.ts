@@ -16,6 +16,7 @@ export const aiApi:AiAPI={
   cancelAiConnection:input=>call(AI_CHANNELS.cancelConnect,isAiStatus,input),
   refreshAiConnection:input=>call(AI_CHANNELS.refresh,isAiStatus,input),
   disconnectAi:input=>call(AI_CHANNELS.disconnect,isAiStatus,input),
+  selectAiConnection:input=>call(AI_CHANNELS.select,isAiStatus,input),
   aiModels:input=>call(AI_CHANNELS.models,isAiModels,input),
   prepareAiOperation:input=>call(AI_CHANNELS.prepare,isAiPrepared,input),
   startAiOperation:input=>call(AI_CHANNELS.start,isAiOperation,input),

@@ -24,7 +24,7 @@ October 2, 2026. Implementation map, not a record of runtime acceptance. App nav
 | File conflict/job/retained candidate | Global status → Project file needs attention; Settings → Data & recovery | Visible across destinations; no overwrite of unresolved external branches |
 | Retained versions, interrupted/reset recovery, working folder | Settings → Data & recovery | Existing inspected independent restore and guarded reversible reset; no cache purge |
 | Free designation, purchase/restore and local rights | Settings → Collie access | Main remains authoritative; authentic provisioning prerequisites remain unresolved |
-| AI connections/models | Settings → AI connections; Write → AI companion | Unavailable in this build; no credentials, SDK, inference or metered fallback |
+| AI connections/models | Third setup step; Settings → AI connections; Write → AI companion/provider indicator; global pending progress | I11 shared real main account contract, exact actions and local account selection; live access/generation and authoritative model/ready eligibility remain unavailable under I10 |
 | Theme, zoom, contrast, motion and remembered author | Settings → Appearance & accessibility | Existing app-profile startup owner, no project setting duplication |
 | Guide and optional separate sample | App menu → Explore the tutorial; About → Writing guide | New trusted synthetic nonfiction sample; fresh reset retains older copies |
 | Three-point orientation | First eligible Write view until dismissed | Device-local dismissal, no repeated project setup; guide remains accessible |
@@ -33,3 +33,5 @@ October 2, 2026. Implementation map, not a record of runtime acceptance. App nav
 | Updates | Settings → Updates; native Help | Explicit existing direct updater and flush-before-restart, no new endpoint |
 
 Pending operation links resolve the owning scope before opening it. Export result links additionally identify the session job. Runtime versions are intentionally in About/support, while actionable storage, save, access and recovery failures remain in global/contextual status. I09 introduces no new general-purpose filesystem or network interface.
+
+**I11 addendum, October 2:** Connection UI is now implemented across the above entry points. Continue without AI retains the same project and can open for reading without changing free designation. Account completion does not automatically replace the current destination; guarded Return to connection and origin/visible-focus restoration preserve ongoing work. The [I11 guide](../manual-testing/improvement-I11.md) owns current and conditional later observations. No user acceptance is recorded.

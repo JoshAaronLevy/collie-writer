@@ -1,0 +1,33 @@
+# I11 implementation record
+
+October 2, 2026. **Implementation complete — awaiting user testing.** I11 delivers local connection/account UI over the actual I10 service. I10 overall remains partial and no usable AI milestone is claimed. Working tree was clean when this stage began. User results for I01–I11: none supplied.
+
+## Delivered paths
+
+| Owner | Change |
+| --- | --- |
+| `src/renderer/src/features/ai-connections/AiConnectionsProvider.tsx` | Persistent local status/event owner; ordered snapshots, serial commands, exact cancellation, unknown-result reconciliation and guarded origin/focus return |
+| `AiConnectionPanel.tsx`, `connection-copy.ts`, `AiConnections.module.css` in that feature | Shared service-derived provider/account presentation, reason-specific actions, saved-account choice, renewal/reconnection, disconnect confirmation, funding/runtime details and scoped semantic styles |
+| `AiConnectionNotice.tsx`, `AiProviderIndicator.tsx` in that feature | Global pending/failure/unknown account progress and compact truthful writing indicator |
+| `src/renderer/src/App.tsx` | One persistent connection provider and global notice above retained destinations |
+| Onboarding wizard, `features/settings/ConnectionSettings.tsx`, writing workspace/side panel | Third setup step, account Settings and companion wiring; draft-preserving local continuation, including read-only continuation without a forced designation |
+| `src/shared/ai.ts`, `src/preload/ai.ts`, `src/main/ai/ipc.ts`, `service.ts` | Strict status sequence/actions validation and bounded main-owned local selection of an already protected account |
+| [Decision](../decisions/improvement-11-ai-connections.md), [manual guide](../manual-testing/improvement-I11.md), plan/AGENTS, runbook/navigation/privacy/accessibility/index | Actual delivered state, downstream contracts, remaining provider dependencies and user-owned handoff |
+
+All renderer feature paths are relative to `src/renderer/src/`. New CSS uses existing static tokens, semantic source classes and feature ownership. There is no new dependency, generic URL/HTTP/RPC surface, provider branding asset, localStorage key, portable table, fixture, mock provider, test-only UI, activation configuration or network origin.
+
+## Review basis and execution limits
+
+The entire improvement plan, settled product/style/manual-testing rules, I05/I09/I10 records and actual delivered status/auth/runtime contracts were read. I02's static Mantine/CSP/dialog convention, persistent session/navigation/creation/draft boundaries, account IPC/preload validation and privacy/accessibility maps guided this stage. I07/I08's user notes and model/effort recommendations are preserved.
+
+React best-practices guidance informed persistent event ownership, state derivation and UI structure. No skill workflow overrode the standing policy. Ordinary source and Git reads are not passed tests.
+
+No tests/test code, harnesses, fixtures, mocks, test-only controls, verification scripts or CI were added or maintained. No suites, typecheck, lint, formatter, audit, build/package commands, app/dev server/browser launch, screenshot, probe, SDK/runtime invocation, sign-in, inference, registration, outreach or submission were performed. No private profile or saved manuscript was inspected.
+
+## Compatibility, limits and observations
+
+SQL/minimum reader **10**, editor AST/archive **1**, frozen compilation **3** remain unchanged. Existing exact creation/retry receipts, safe local working root, first native Save, free designation, close/update and draft retention still own their behavior. Selecting accounts updates only I10's existing protected credential selection and invalidates prepared operations. No migration or transcript persistence was added.
+
+All registration entries remain null. Funding/isolation refusals, unverified model eligibility and absent packaged runtime remain I10's exact incomplete work. I11's ready/eligible positive presentation depends on a later authoritative service contract; current UI can only display real delivered states and never invent ready. Live OAuth, renewal/rotation, disconnect/revocation, concurrent/late-callback and secure-storage observations remain pending authentic supported access. I12/I13 features were not implemented.
+
+Current manual coverage: third setup step and local continuation, preserved receipt/details/no duplicate, Settings reason details and disabled sign-in, non-network status refresh, shared writing indicator/companion, navigation/draft protection, reopen, theme/zoom/keyboard. Conditional live steps are documented for supported later access only. All native/UI/security/accessibility outcomes remain **unobserved**. User-reported I11 acceptance: **none**. Release remains **NO-GO**. Stop after the guide and wait for Josh's results; do not automatically advance to I12.

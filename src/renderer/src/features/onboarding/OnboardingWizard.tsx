@@ -8,6 +8,7 @@ import { ProjectDetailsFields, detailsErrors } from '../project-details/ProjectD
 import { AppButton, ChoiceField } from '../../components/ui/Controls'
 import { StatusBanner } from '../../components/ui/Feedback'
 import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { AiConnectionPanel } from '../ai-connections/AiConnectionPanel'
 import {
   emptySetupDraft, readSetupDraft, writeSetupDraft, discardSetupDraft, writeAuthorPreference,
   type SetupDraft, type SetupReceipt
@@ -237,14 +238,15 @@ export default function OnboardingWizard(): React.JSX.Element {
 
     {draft.step==='connection' && created?<div className={styles['connection-content']}>
       <p className={styles['created-confirmation']}>“{draft.title}” was created on this device. It has no selected project-file destination yet.</p>
-      <StatusBanner title="AI connection is unavailable in this build">You can start writing and using Research without an AI account. The app has no provider sign-in or AI request capability yet.</StatusBanner>
+      <AiConnectionPanel />
       {!editable?<div className={styles['editing-choice']}>
         <h2>Choose where to edit</h2>
         <p>{existingFree?`“${existingFree.title}” is currently your free editable project. Choose this project if you want to write here instead; protect its pending work first.`:'Choose this project as your free editable project to write here.'} Reading, export, and backup remain available either way.</p>
         <AppButton variant="default" disabled={busy||!session.access||!session.available} onClick={designate}>Use this project for free writing</AppButton>
       </div>:null}
       {editable?<p role="status">This project is ready for writing under your current Collie access.</p>:null}
-        <div className={styles['setup-actions']}><AppButton variant="default" disabled={busy} onClick={()=>save({...latest.current,step:'details'})}>Back to project details</AppButton><AppButton variant="subtle" disabled={busy} onClick={()=>{void leave()}}>Leave setup; keep project</AppButton><AppButton className={styles['setup-primary-action']} disabled={busy||!editable} onClick={()=>openCreated('write')}>Continue without AI</AppButton></div>
+      {!editable?<p>You can also open this project for reading now and choose editing access later.</p>:null}
+        <div className={styles['setup-actions']}><AppButton variant="default" disabled={busy} onClick={()=>save({...latest.current,step:'details'})}>Back to project details</AppButton><AppButton variant="subtle" disabled={busy} onClick={()=>{void leave()}}>Leave setup; keep project</AppButton><AppButton className={styles['setup-primary-action']} disabled={busy} onClick={()=>openCreated('write')}>Continue without AI</AppButton></div>
     </div>:null}
   </section>
 }

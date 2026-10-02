@@ -1,6 +1,6 @@
 # I10 provider boundary and activation runbook
 
-October 2, 2026. **Independent local implementation delivered — awaiting user testing. I10 overall remains partial.** This describes actual code plus exact missing integration work. No sign-in, runtime process, inference or native behavior has been observed. I11 connection UI and I12 conversations are separate stages; the current Settings screen still says connections are unavailable.
+October 2, 2026. **Independent local implementation delivered — awaiting user testing. I10 overall remains partial.** This describes actual code plus exact missing integration work. No sign-in, runtime process, inference or native behavior has been observed. I11 subsequently delivered the shared connection UI described below; I12 conversations remain a separate stage. Current UI reports real unavailable reasons while registration remains unset.
 
 ## Delivered components
 
@@ -67,3 +67,9 @@ I11 can now consume the real connection/status methods and unavailable reasons. 
 ## Owner handoff
 
 No account or runtime setup is needed to review the delivered code/design. Use the [I10 manual guide](../manual-testing/improvement-I10.md) for current visible behavior. The [approval guide](openai-approval-guide.md) remains available for owner-led provider contact; applying is not a condition for developing I11's local UI. Do not fill a permission reference with sample text or change refusal functions merely to try the app. Subsequent authentic route inputs and bounded corrections belong to a resumed I10. Commercial, signing, store, output-fidelity and release NO-GO requirements remain independent.
+
+## I11 integration addendum — October 2, 2026
+
+I11's persistent renderer owner now consumes the real account contract in setup, Settings, the writing companion and global progress. Main status includes monotonically ordered `sequence` and explicit `actions` permissions, validated end to end; neither field establishes inference eligibility. The exact named `ai.select` method locally chooses an existing protected connection, verifies idle/configured client mapping/tokens, persists `activeId` and invalidates prepared grants. It cannot sign in, refresh, invoke a model or send context. It changes no persistent format. Main still never reports ready.
+
+The owner reconciles local status on availability, explicit request, app focus and during a pending sign-in, without provider networking. Connect/cancel/reconnect/renew/disconnect use actual main methods; unknown replies require reconciliation. No model enumeration or connectivity inference is triggered. See the [I11 decision](../decisions/improvement-11-ai-connections.md) and [manual guide](../manual-testing/improvement-I11.md). All live/native behavior remains unobserved and all I10 missing inputs/enforcement/distribution above remain pending.

@@ -12,6 +12,7 @@ import { scopeOf } from './useWorkspaceController'
 import { PaneResizeHandle } from './PaneResizeHandle'
 import { WritingSidePanel, readableWriting } from './WritingSidePanel'
 import type { SecondaryPanel } from './useWritingPreferences'
+import { AiProviderIndicator } from '../ai-connections/AiProviderIndicator'
 import { sameScope } from '../../../../shared/project-files'
 import styles from './WritingWorkspace.module.css'
 
@@ -65,7 +66,8 @@ export default function WritingWorkspace(): React.JSX.Element {
     {!preferences.focus?<div className={styles['writing-view-actions']}>
       {narrow?<><AppButton variant={mobilePane==='editor'?'default':'subtle'} aria-pressed={mobilePane==='editor'} onClick={()=>changeView(()=>setMobilePane('editor'))}>Manuscript</AppButton><AppButton variant={mobilePane==='outline'?'default':'subtle'} aria-pressed={mobilePane==='outline'} onClick={()=>changeView(()=>setMobilePane('outline'))}>Projects and outline</AppButton></>:null}
       <div className={styles['writing-panel-options']} role="group" aria-label="Writing companion">
-        {(['notes','source','ai'] as const).map(mode=><AppButton variant={preferences.panel===mode?'default':'subtle'} aria-pressed={preferences.panel===mode} key={mode} onClick={()=>panel(preferences.panel===mode&&(!narrow||mobilePane==='panel')?'closed':mode)}>{mode==='notes'?'Notes':mode==='source'?'Sources':'AI'}</AppButton>)}
+        {(['notes','source'] as const).map(mode=><AppButton variant={preferences.panel===mode?'default':'subtle'} aria-pressed={preferences.panel===mode} key={mode} onClick={()=>panel(preferences.panel===mode&&(!narrow||mobilePane==='panel')?'closed':mode)}>{mode==='notes'?'Notes':'Sources'}</AppButton>)}
+        <AiProviderIndicator active={preferences.panel==='ai'} onOpen={()=>panel(preferences.panel==='ai'&&(!narrow||mobilePane==='panel')?'closed':'ai')} />
         {preferences.panel!=='closed'?<AppButton variant="subtle" onClick={()=>panel('closed')}>Close panel</AppButton>:null}
       </div>
     </div>:null}

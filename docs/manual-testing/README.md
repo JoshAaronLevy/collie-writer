@@ -25,3 +25,5 @@ These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience a
 [I09 — complete local journey](improvement-I09.md) covers export, Save options, settings/help and the optional nonfiction sample. Its [record](../validation/improvement-I09.md) distinguishes implementation from pending user/native/output observations.
 
 [I10 — provider foundation](improvement-I10.md) covers delivered internal code/document review and existing local UI continuity. Its [record](../validation/improvement-I10.md) distinguishes delivered independent engineering from incomplete funding/isolation methods, missing registration and packaged runtime, and pending native observations. I11/I12 own the real provider screens; there is no testing-only UI or probe.
+
+[I11 — AI connections](improvement-I11.md) covers the actual third setup step, shared Settings/writing account state, unavailable reasons, local continuation and conditional later real browser/account actions. Its [record](../validation/improvement-I11.md) separates implemented UI from I10's unavailable access/funding/isolation/runtime and pending user observations.
