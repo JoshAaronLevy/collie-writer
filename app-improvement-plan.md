@@ -477,6 +477,8 @@ Work:
 
 **Implementation contract and deliverables:** Use a single secondary-panel mode (`closed`, `notes`, `source`, or `ai`) with local pane/focus-mode preferences. Before AI is implemented, its entry point gives the honest availability state rather than a working-looking composer. At narrow widths/200% zoom, move optional panes into drawers/alternate views while preserving a usable editor. Opening a dialog captures the current selection and restores the valid selection before an explicit formatting/link/citation/image/annotation action. Closing a panel must not recreate the editor or erase its undo/composition state. Deliver common formatting, style/insert menus, contextual image/table actions, find/replace, section details, outline/history, and keyboard alternatives to dragging. Derive status from both local dirty/protected state and authoritative file-job status; include unprotected edits, no destination, in-progress, unavailable, conflict, and interrupted outcomes. Feature CSS belongs beside workspace/editor/outline components, not in root CSS.
 
+**Additional important note:** The workspace also needs to have a navigation menu that lets a user switch between projects, along with jump to sections or chapters in a current project. This can be done in a well-designed sidebar.
+
 **Likely paths:** workspace layout, `RichDraft.tsx`, `ReferenceTools.tsx`, outline/history components, shared dialogs, and styles. Retain the editor AST and existing data semantics.
 
 **User-owned acceptance:** write, reorganize, format, cite, and add a footnote in a disposable project; open/close side panels without losing selection or text; resize and use focus mode; find undo/history and distinguish local protection from file save.
