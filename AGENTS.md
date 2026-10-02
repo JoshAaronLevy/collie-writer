@@ -1,6 +1,18 @@
 # Working in Collie Writer
 
-This is a fresh Electron/React/TypeScript product. The authoritative specification and stage index is [mvp-implementation-plan.md](mvp-implementation-plan.md). `mvp-planning-prompt.md` is referenced by the planning history but is absent from this checkout; do not invent a replacement. The Cultural Analysis application is reference history, not a dependency; do not copy its code/private data or require its checkout. Make project changes only here.
+This is a fresh Electron/React/TypeScript product. The authoritative MVP specification and stage index is [mvp-implementation-plan.md](mvp-implementation-plan.md). The approved direction and stage index for the subsequent UX/UI and onboarding improvements is [app-improvement-plan.md](app-improvement-plan.md); use the plan named in the user's request and keep its stage numbers separate from the MVP stages. Approval of a plan does not authorize implementing unrequested stages. `mvp-planning-prompt.md` is referenced by the planning history but is absent from this checkout; do not invent a replacement. The Cultural Analysis application is reference history, not a dependency; do not copy its code/private data or require its checkout. Make project changes only here.
+
+## UI library and semantic CSS — standing instruction
+
+Mantine is the selected primary UI component library for the app improvement work. Use its components and theme consistently with the calm, modern, professional and inviting direction in [app-improvement-plan.md](app-improvement-plan.md). Introduce the library and migrate existing surfaces only within the requested improvement stage; this selection is not an instruction to refactor the entire app at once.
+
+- **Name app-authored CSS classes for the element's role, using descriptive lowercase hyphenated names.** Use names such as `project-selection-container`, `project-type-card`, `project-type-card-title` and `project-details-form`. Do not use stacks of utility or atomic classes such as `py-4 m2 flex-center`, introduce Tailwind-style class composition, or replace semantic names with cryptic abbreviations. A class should explain what it styles in the product.
+- **Keep styles with their actual owner and scope.** Put component-only styles beside that component; put styles shared within a feature in that feature's stylesheet; extract styles used by a shared component into that shared component's stylesheet. Use the smallest real common owner based on actual reuse. Do not duplicate a shared rule across unrelated files or move feature styles into a global file merely for convenience.
+- Prefer CSS Modules with semantic source class names, or a component/feature stylesheet scoped beneath a clearly named root class. Module-generated class suffixes and Mantine-generated internal classes are acceptable; this naming rule governs the classes we author. Use explicit semantic state names or scoped state attributes for variants.
+- Reserve the root stylesheet (`main.css` or its successor) for app-wide design tokens, resets, base element defaults and genuinely global styles. **Do not dump page layouts, project cards, onboarding forms, panel styles or other feature rules into it.** Keep reusable product components responsible for their own CSS.
+- Use Mantine's supported theme and styling APIs to attach scoped semantic classes and configure consistent component defaults. Do not target generated class hashes or add broad global `.mantine-*` overrides. Express recurring layout and presentation in the appropriate scoped CSS and theme tokens rather than piles of one-off styling props or inline style objects. Keep inline values limited to values that are genuinely dynamic at runtime.
+
+These rules apply to new UI and any UI being changed within the requested scope. Preserve existing behavior and the user-owned manual-testing policy during the migration.
 
 ## User-owned manual testing — standing instruction
 
