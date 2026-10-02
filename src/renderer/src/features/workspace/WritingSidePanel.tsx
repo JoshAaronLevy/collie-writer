@@ -1,3 +1,4 @@
+import { ProofreadingPanel } from '../ai/proofreading/ProofreadingPanel'
 import { useEffect, useState } from 'react'
 import { SelectField, AppButton } from '../../components/ui/Controls'
 import type { Note } from '../../../../shared/notes'
@@ -19,7 +20,7 @@ export function readableWriting(value: unknown): string {
   return ''
 }
 export function WritingSidePanel({ mode, active }: { mode: SecondaryPanel; active: boolean }): React.JSX.Element {
-  const { project, research } = useWorkspaceSession()
+  const { project, research, writingView } = useWorkspaceSession()
   const researchData = useResearchData()
   const [notes,setNotes]=useState<Note[]>([]),[sources,setSources]=useState<SourceRecord[]>([])
   const [noteId,setNoteId]=useState(''),[sourceId,setSourceId]=useState(''),[inspection,setInspection]=useState<InspectionView|null>(null)
@@ -48,7 +49,11 @@ export function WritingSidePanel({ mode, active }: { mode: SecondaryPanel; activ
   const note=notes.find(item=>item.id===noteId),source=sources.find(item=>item.id===sourceId)
   return <div className={styles['writing-side-content']}>
     <h2>{mode==='notes'?'Notes':mode==='source'?'Sources':'AI assistance'}</h2>
-    <div hidden={mode!=='ai'} inert={mode!=='ai'}><ConversationPanel /></div>
+    <div hidden={mode!=='ai'} inert={mode!=='ai'}>
+      <SelectField label="AI assistance" value={writingView.aiTool} onChange={event=>writingView.setAiTool(event.currentTarget.value as 'conversation'|'proofreading')}><option value="conversation">Conversations</option><option value="proofreading">Proofreading</option></SelectField>
+      <div hidden={writingView.aiTool!=='conversation'} inert={writingView.aiTool!=='conversation'}><ConversationPanel /></div>
+      <div hidden={writingView.aiTool!=='proofreading'} inert={writingView.aiTool!=='proofreading'}><ProofreadingPanel /></div>
+    </div>
     {mode!=='ai'?<>
       <p>Saved content alongside your manuscript. Open Research to edit or inspect the original.</p>
       {loading?<p role="status">Loading saved {mode==='notes'?'notes':'sources'}…</p>:null}

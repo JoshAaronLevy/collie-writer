@@ -1,3 +1,4 @@
+import type { ProofreadingAPI } from './proofreading'
 import type { ConversationAPI } from './conversations'
 import type { StorageStatus } from './storage'
 import type { ProjectResult } from './projects'
@@ -30,7 +31,7 @@ export type Result<T> =
       requestId: string
       error: { code: AppErrorCode; message: string; retryable: boolean }
     }
-export type CollieAPI = ProjectAPI & FileAPI & LifecycleAPI & AccessAPI & SupportAPI & DirectAPI & AiAPI & ConversationAPI & {
+export type CollieAPI = ProjectAPI & FileAPI & LifecycleAPI & AccessAPI & SupportAPI & DirectAPI & AiAPI & ConversationAPI & ProofreadingAPI & {
   helpAction: (action: HelpAction) => Promise<ProjectResult<boolean>>
   onEditorAction: (callback: (action: 'undo' | 'redo' | 'find' | 'paste-plain') => void) => () => void
   getInfo: () => Promise<Result<AppInfo>>

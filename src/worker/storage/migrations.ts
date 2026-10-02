@@ -1,3 +1,5 @@
+import { validatePortableProofreading } from '../projects/proofreading'
+import { validatePortableConversations } from '../projects/conversations'
 import { isProjectTemplate, kindForTemplate } from '../../domain/projects/templates'
 import { readProjectDetails } from '../projects/details'
 import Database from 'better-sqlite3'
@@ -5,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { backupStorageDatabase, inWriteTransaction, openStorageDatabase } from './driver'
-import { PROJECT_SCHEMA_VERSION, assetTable, outlineTables, noteTables, sourceTables, inspectionTables, evidenceTables, citationTables, interchangeTables, projectDetailsTable, conversationTables, inspectVersion, validateProjectSchema } from './schema'
+import { PROJECT_SCHEMA_VERSION, assetTable, outlineTables, noteTables, sourceTables, inspectionTables, evidenceTables, citationTables, interchangeTables, projectDetailsTable, conversationTables, proofreadingTables, inspectVersion, validateProjectSchema } from './schema'
 import { contained, directory, syncFile, syncDirectory, writeJson } from './files'
 import { ProjectError } from '../../domain/projects/errors'
 
@@ -89,6 +91,13 @@ const migrations: readonly Migration[] = [{
     for (const sql of conversationTables) db.exec(sql)
     db.prepare('UPDATE format SET schema_version=11,minimum_reader=11').run()
   }
+}, {
+  from: 11, to: 12,
+  validateSource: db => validateProjectSchema(db, 11),
+  apply: db => {
+    for (const sql of proofreadingTables) db.exec(sql)
+    db.prepare('UPDATE format SET schema_version=12,minimum_reader=12').run()
+  }
 }]
 
 export async function activeDatabase(root: string, workspace: string): Promise<string> {
@@ -143,7 +152,7 @@ export async function openProjectDatabase(root: string, workspace: string, nativ
           }
         })
         validateProjectSchema(candidate)
-        for (const row of candidate.prepare('SELECT id FROM projects').all() as { id: string }[]) { manuscript(candidate, row.id); readProjectDetails(candidate, row.id) }
+        for (const row of candidate.prepare('SELECT id FROM projects').all() as { id: string }[]) { manuscript(candidate, row.id); readProjectDetails(candidate, row.id); validatePortableConversations(candidate,row.id); validatePortableProofreading(candidate,row.id) }
         candidate.pragma('wal_checkpoint(TRUNCATE)')
       } finally { candidate.close() }
       // Backups and candidate remain on any failure. Publication follows verified copy completion.

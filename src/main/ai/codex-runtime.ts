@@ -10,9 +10,9 @@ import { contained, directory } from '../../worker/storage/files'
 import { AiError } from './errors'
 import { CODEX_VERSION, OPENAI } from './deployment'
 import type { AiStorage } from './storage'
+import type { RuntimeUpdate, TextRuntime } from './runtime'
 
 type Pending = { resolve:(v:unknown)=>void; reject:(e:AiError)=>void; timer:ReturnType<typeof setTimeout> }
-export type RuntimeUpdate = { text:string; state:'running'|'completed'|'cancelled'|'failed'|'unknown'; reason:AiReason|null }
 const runtimeId=(value:unknown):value is string=>aiText(value,512)&&value.length>0
 const targets:Record<string,string>={'darwin-arm64':'aarch64-apple-darwin','darwin-x64':'x86_64-apple-darwin','win32-x64':'x86_64-pc-windows-msvc'}
 export async function codexExecutable():Promise<string> {
@@ -32,7 +32,7 @@ export async function codexExecutable():Promise<string> {
 }
 /** No runtime method or configuration is chosen by the renderer. Each request
  * uses a fresh process/profile/thread, so previous context cannot leak into it. */
-export class CodexRuntime {
+export class CodexRuntime implements TextRuntime {
   private child:ChildProcessWithoutNullStreams|null=null
   private requests=new Map<number,Pending>()
   private nextId=1

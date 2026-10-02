@@ -1,3 +1,5 @@
+import { ProofreadingProvider } from './features/ai/proofreading/ProofreadingProvider'
+import { ProofreadingNotice } from './features/ai/proofreading/ProofreadingPanel'
 import { ConversationProvider } from './features/ai/conversations/ConversationProvider'
 import { ConversationNotice } from './features/ai/conversations/ConversationPanel'
 import { useEffect, useRef, useState } from 'react'
@@ -39,7 +41,7 @@ export default function App(): React.JSX.Element {
     }).catch(() => { if (active) setFailed(true) })
     return () => { active = false; unsubscribe() }
   }, [])
-  return <WorkspaceSessionProvider storage={storageStatus}><AiConnectionsProvider><ConversationProvider><AppShell info={info} failed={failed} storageStatus={storageStatus} /></ConversationProvider></AiConnectionsProvider></WorkspaceSessionProvider>
+  return <WorkspaceSessionProvider storage={storageStatus}><AiConnectionsProvider><ConversationProvider><ProofreadingProvider><AppShell info={info} failed={failed} storageStatus={storageStatus} /></ProofreadingProvider></ConversationProvider></AiConnectionsProvider></WorkspaceSessionProvider>
 }
 
 function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; failed: boolean; storageStatus: StorageStatus }): React.JSX.Element {
@@ -90,6 +92,7 @@ function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; faile
         <WorkspaceStatus />
         <AiConnectionNotice />
         <ConversationNotice />
+        <ProofreadingNotice />
         <Orientation />
         <Projects />
         <RetainedRegion name="help-about" label="About and help">

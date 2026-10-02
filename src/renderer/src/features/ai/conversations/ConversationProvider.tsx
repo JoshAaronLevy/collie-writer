@@ -8,7 +8,7 @@ import { scopeOf } from '../../workspace/useWorkspaceController'
 import { useRetainedDraft } from '../../workspace/DraftOwner'
 import { useAiConnections } from '../../ai-connections/AiConnectionsProvider'
 import { connectionReason } from '../../ai-connections/connection-copy'
-import { selectedRanges } from './selection'
+import { selectedRanges } from '../selection'
 
 type Draft = { text:string; historyIds:string[]; source:CaptureSource; review:{input:ConversationReview;capture:AiCapture;excluded:number;connectionId:string|null;model:string|null}|null }
 const emptyDraft=():Draft=>({text:'',historyIds:[],source:{kind:'none'},review:null})
@@ -34,7 +34,7 @@ function useConversationController() {
     void (async()=>{
       if(!await s.navigate({kind:'workspace',scope:captured,view:'write',documentId:s.project!.documentId}))return
       if(!belongs(captured))return
-      s.writingView.revealPanel('ai')
+      s.writingView.setAiTool('conversation');s.writingView.revealPanel('ai')
       if(rename||pendingRef.current||locked.current)return
       if(run?.attemptId&&(run.pending||run.issue)) {
         const origin=state.current.selected

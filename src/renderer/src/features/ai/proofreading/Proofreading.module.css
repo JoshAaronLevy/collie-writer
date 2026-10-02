@@ -1,0 +1,22 @@
+.proofreading-panel { display: grid; gap: var(--collie-space-3); min-width: 0; font-size: .875rem; line-height: 1.55; }
+.proofreading-heading { display: grid; gap: var(--collie-space-2); }
+.proofreading-heading p, .proofreading-caption { color: var(--collie-text-secondary); font-size: .8125rem; }
+.proofreading-scope, .proofreading-history, .proofreading-account { border-block-start: 1px solid var(--collie-border); padding-block: var(--collie-space-3); }
+.proofreading-panel summary { cursor: pointer; font-weight: 600; margin-block: var(--collie-space-2); }
+.proofreading-panel h4, .proofreading-panel h5 { margin-block: var(--collie-space-2); font-size: .875rem; }
+.proofreading-actions { display: flex; flex-wrap: wrap; gap: var(--collie-space-2); align-items: center; }
+.proofreading-actions button, .proofreading-panel .proofreading-list-item { height: auto; min-height: 2.25rem; max-width: 100%; white-space: normal; overflow-wrap: anywhere; padding-block: .5rem; }
+.proofreading-review, .proofreading-finding, .proofreading-recovery { display: grid; gap: var(--collie-space-2); padding: var(--collie-space-3); border: 1px solid var(--collie-border); border-radius: var(--collie-radius-control); background: var(--collie-surface); }
+.proofreading-review { border-color: var(--collie-accent); }
+.proofreading-capture { font-size: .8125rem; }
+.proofreading-text-run { padding-block: var(--collie-space-2); border-block-end: 1px solid var(--collie-border); }
+.proofreading-exact-text, .proofreading-original, .proofreading-replacement { font-family: inherit; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; user-select: text; }
+.proofreading-original, .proofreading-replacement { border-inline-start: 2px solid var(--collie-border); padding-inline-start: var(--collie-space-3); }
+.proofreading-replacement { border-color: var(--collie-accent); }
+.proofreading-list { display: grid; gap: var(--collie-space-2); list-style: none; margin: 0; padding: 0; }
+.proofreading-list li { display: grid; min-width: 0; }
+.proofreading-list-item { text-align: start; justify-content: start; }
+.proofreading-list li > span { font-size: .75rem; color: var(--collie-text-secondary); }
+.proofreading-outcome { font-weight: 600; }
+.proofreading-error { color: var(--collie-error); border-inline-start: 2px solid var(--collie-error); padding-inline-start: var(--collie-space-3); }
+.proofreading-notice { display: flex; flex-wrap: wrap; align-items: center; gap: var(--collie-space-3); padding: var(--collie-space-2) var(--collie-space-4); border-block-end: 1px solid var(--collie-border); background: var(--collie-surface); font-size: .8125rem; }

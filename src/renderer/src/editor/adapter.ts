@@ -1,5 +1,5 @@
 import { Editor, Extension, Mark, Node as TiptapNode, type Extensions } from '@tiptap/core'
-import { Plugin } from '@tiptap/pm/state'
+import { Plugin, type Transaction } from '@tiptap/pm/state'
 import { closeHistory, history, undo, redo } from '@tiptap/pm/history'
 import { keymap } from '@tiptap/pm/keymap'
 import { baseKeymap, toggleMark } from '@tiptap/pm/commands'
@@ -8,6 +8,14 @@ import { readDocument, safeLink, type DocumentPayload } from '../../../domain/ed
 
 let lastCut: { editor: Editor; projectId: string; encoded: string } | null = null
 const footnoteEditors = new WeakMap<Editor, Editor>()
+const mutationLocks = new WeakSet<Editor>()
+const approvedTransactions = new WeakSet<Transaction>()
+/** A pending worker correction must also block keyboard/programmatic document edits. */
+export function lockEditorMutation(editor:Editor,locked:boolean):void { if(locked)mutationLocks.add(editor);else mutationLocks.delete(editor) }
+export function dispatchProtectedCorrection(editor:Editor,transaction:Transaction):void {
+  approvedTransactions.add(transaction)
+  try{editor.view.dispatch(transaction)}finally{approvedTransactions.delete(transaction)}
+}
 export function bindFootnoteEditor(owner: Editor, child: Editor | null): void { if (child) footnoteEditors.set(owner,child); else footnoteEditors.delete(owner) }
 export function focusedManuscriptEditor(owner: Editor): Editor { const child=footnoteEditors.get(owner); return child?.view.hasFocus() ? child : owner }
 export function editorIsComposing(editor: Editor): boolean { return editor.view.composing || !!footnoteEditors.get(editor)?.view.composing }
@@ -61,6 +69,7 @@ export function manuscriptExtensions(
       addProseMirrorPlugins() {
         const mark = (name: 'bold' | 'italic' | 'underline' | 'strike') => (state: Parameters<ReturnType<typeof toggleMark>>[0], dispatch: Parameters<ReturnType<typeof toggleMark>>[1]) => inTableCell(state.selection) || toggleMark(state.schema.marks[name])(state, dispatch)
         return [history(), keymap({ 'Mod-z': undo, 'Mod-Shift-z': redo, 'Mod-y': redo, 'Mod-b': mark('bold'), 'Mod-i': mark('italic'), 'Mod-u': mark('underline'), 'Mod-Shift-x': mark('strike') }), keymap(baseKeymap), new Plugin({
+          filterTransaction: transaction => !transaction.docChanged || !mutationLocks.has(this.editor) || approvedTransactions.has(transaction),
           appendTransaction(transactions, _old, state) {
             if (!transactions.some(t => t.docChanged)) return null
             const seen = new Set<string>()

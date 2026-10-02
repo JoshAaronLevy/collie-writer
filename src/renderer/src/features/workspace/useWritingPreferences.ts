@@ -20,6 +20,7 @@ function read(): WritingPreferences {
 export function useWritingPreferences() {
   const [preferences, setPreferences] = useState(read)
   const [issue, setIssue] = useState('')
+  const [aiTool,setAiTool]=useState<'conversation'|'proofreading'>('conversation')
   const [revealRevision,setRevealRevision]=useState(0)
   useEffect(() => {
     try { localStorage.setItem(key, JSON.stringify(preferences)); setIssue('') }
@@ -29,5 +30,5 @@ export function useWritingPreferences() {
     setPreferences(value => ({ ...value, ...patch }))
   }
   function revealPanel(panel:SecondaryPanel):void {update({panel,focus:false});setRevealRevision(value=>value+1)}
-  return { preferences, update, issue, revealPanel, revealRevision }
+  return { preferences, update, issue, revealPanel, revealRevision, aiTool, setAiTool }
 }

@@ -118,7 +118,7 @@ export function seedOutline(db: Database.Database, title = 'Before outline/histo
     checkpoint(db,p.id,project.head_commit_id,snapshot,'structural',title)
   }
 }
-export function checkpoint(db: Database.Database, projectId: string, head: string, snapshot: ManuscriptSnapshot, reason: 'manual' | 'automatic' | 'structural' | 'restore', title: string): void {
+export function checkpoint(db: Database.Database, projectId: string, head: string, snapshot: ManuscriptSnapshot, reason: 'manual' | 'automatic' | 'structural' | 'restore', title: string): string {
   const parent = db.prepare('SELECT id FROM history_checkpoints WHERE project_id=? ORDER BY rowid DESC LIMIT 1').get(projectId) as { id: string } | undefined
   if ((db.prepare('SELECT count(*) AS n FROM history_checkpoints WHERE project_id=?').get(projectId) as { n: number }).n >= 100000) throw new ProjectError('LIMIT_EXCEEDED')
   if (Buffer.byteLength(JSON.stringify(snapshot)) > 256 * 1024 ** 2) throw new ProjectError('LIMIT_EXCEEDED')
@@ -134,7 +134,9 @@ export function checkpoint(db: Database.Database, projectId: string, head: strin
     return { documentId: document.id, contentId: id }
   })
   const payload = JSON.stringify({ version: 1, documents: refs })
-  db.prepare('INSERT INTO history_checkpoints VALUES (?,?,?,?,?,?,?,?,?,?)').run(projectId,randomUUID(),parent?.id ?? null,head,new Date().toISOString(),'human',reason,title,payload,Buffer.byteLength(payload))
+  const checkpointId = randomUUID()
+  db.prepare('INSERT INTO history_checkpoints VALUES (?,?,?,?,?,?,?,?,?,?)').run(projectId,checkpointId,parent?.id ?? null,head,new Date().toISOString(),'human',reason,title,payload,Buffer.byteLength(payload))
+  return checkpointId
 }
 export function automaticCheckpoint(db: Database.Database, projectId: string, force = false): void {
   const last = db.prepare('SELECT created_at,head_commit_id FROM history_checkpoints WHERE project_id=? ORDER BY rowid DESC LIMIT 1').get(projectId) as { created_at: string; head_commit_id: string } | undefined

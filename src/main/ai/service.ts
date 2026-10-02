@@ -6,7 +6,9 @@ import { sameProject } from '../../shared/access'
 import type { OpenInput } from '../../shared/projects'
 import type { AccessService } from '../entitlements/service'
 import { RELEASE } from '../release'
-import { CodexRuntime, codexExecutable, type RuntimeUpdate } from './codex-runtime'
+import { CodexRuntime, codexExecutable } from './codex-runtime'
+import { PROVIDER_RUNTIMES } from './registry'
+import type { RuntimeUpdate } from './runtime'
 import { OPENAI_REGISTRATIONS, registration, requireIncludedFunding, requireTextOnlyRuntime } from './deployment'
 import { AiError, aiReason } from './errors'
 import { OpenAiSignIn, refreshOpenAi } from './openai-auth'
@@ -227,7 +229,7 @@ export class AiService {
     await this.ensure();this.requireIdle();const account=this.requireSession(id)
     // Catalog access sends no prompt. Isolation must still be established before launching a child.
     requireTextOnlyRuntime()
-    const runtime=new CodexRuntime(this.storage);this.busy=true
+    const runtime=PROVIDER_RUNTIMES[AI_PROVIDER].create(this.storage);this.busy=true
     try{await runtime.open(account.tokens!.access);return await runtime.models()}
     finally{await runtime.close();this.busy=false}
   }
@@ -270,7 +272,7 @@ export class AiService {
     try{await this.storage.retain(item);this.retained.set(input.operationId,item)}catch{this.storageFailure=true;throw new AiError('storage-unavailable')}finally{this.busy=false}
     this.prepared.delete(input.authorizationId)
     this.activeOperationId=input.operationId
-    const runtime=new CodexRuntime(this.storage);this.runtime=runtime
+    const runtime=PROVIDER_RUNTIMES[AI_PROVIDER].create(this.storage);this.runtime=runtime
     this.emit({kind:'operation',operation:item.view})
     this.running=this.run(item,runtime,account).finally(()=>{this.running=null;this.runtime=null;this.activeOperationId=null;this.publish()})
     return structuredClone(item.view)

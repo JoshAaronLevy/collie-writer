@@ -1,7 +1,7 @@
 import { TextInput } from '@mantine/core'
 import { AppButton, SelectField } from '../../components/ui/Controls'
 import './HistoryPanel.css'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
 import { effectiveState, type HistoryView, type OutlineChange, type RetainedDocument, type AnchorTarget } from '../../../../shared/outline'
 
@@ -43,6 +43,7 @@ function placement(doc: RetainedDocument, docs: RetainedDocument[]): string {
 export default function HistoryPanel({ project, history, disabled, readOnly, change, read, navigate }: { project: OpenProject; history: HistoryView | null; disabled: boolean; readOnly:boolean; change: (c: OutlineChange) => void; read: (id: string | null) => void; navigate: (doc: string, anchor?: string) => void }): React.JSX.Element {
   const [title,setTitle] = useState(''), [selected,setSelected] = useState(''), [confirm,setConfirm] = useState<'restore' | 'prune' | null>(null)
   const [repair,setRepair] = useState<AnchorTarget | null>(null), [target,setTarget] = useState(''), [page,setPage] = useState(0), [issuePage,setIssuePage] = useState(0)
+  useEffect(()=>{setSelected(history?.checkpointId??'');setConfirm(null);setPage(0)},[history?.checkpointId])
   const fresh = history?.headCommitId === project.headCommitId
   const issues = history?.anchors.filter(a => a.state !== 'active') ?? []
   const oldDocs = history?.snapshot?.documents ?? [], currentDocs = history?.currentSnapshot.documents ?? []

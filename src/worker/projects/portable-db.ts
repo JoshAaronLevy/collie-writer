@@ -1,3 +1,4 @@
+import { validatePortableProofreading } from './proofreading'
 import { validatePortableConversations } from './conversations'
 import { readProjectDetails } from './details'
 import { validatePortableCitations } from './citation-occurrences'
@@ -91,6 +92,7 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
   if (version >= 7) try { validatePortableEvidence(db,projectId) } catch { return invalid() }
   if (version >= 8) try { validatePortableCitations(db,projectId) } catch { return invalid() }
   if (version >= 9) try { validatePortableInterchange(db,projectId) } catch { return invalid() }
+  if (version >= 12) try { validatePortableProofreading(db,projectId) } catch { return invalid() }
   if (version >= 11) try { validatePortableConversations(db,projectId) } catch { return invalid() }
   let commits = 0
   for (const raw of db.prepare('SELECT * FROM commits').iterate()) {

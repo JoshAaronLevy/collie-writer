@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core'
-import type { CaptureSource } from '../../../../../shared/conversations'
-import { CONVERSATION_LIMITS } from '../../../../../shared/conversations'
-import { editorIsComposing } from '../../../editor/adapter'
+import type { CaptureSource } from '../../../../shared/conversations'
+import { CONVERSATION_LIMITS } from '../../../../shared/conversations'
+import { editorIsComposing } from '../../editor/adapter'
 /** Capture positions in the exact retained editor. The worker resolves text from its protected revision. */
 export function selectedRanges(editor:Editor):Extract<CaptureSource,{kind:'passage'}>['ranges']|null {
   if(editor.isDestroyed||editorIsComposing(editor)||editor.state.selection.empty)return null

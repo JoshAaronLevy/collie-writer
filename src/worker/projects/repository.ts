@@ -1,3 +1,5 @@
+import { proofreadingCommand, interruptUnboundProofreading, validatePortableProofreading } from './proofreading'
+import type { ProofreadWorkerInput, ProofreadValue } from '../../shared/proofreading'
 import { conversationCommand, interruptUnboundConversations, validatePortableConversations } from './conversations'
 import type { ConversationWorkerInput, ConversationValue } from '../../shared/conversations'
 import { readProjectDetails } from './details'
@@ -98,6 +100,14 @@ async function selectedImage(path: string): Promise<Buffer> {
 
 export class ProjectRepository {
   private readonly exports: ExportJobs
+  proofreading(input:ProofreadWorkerInput):Promise<ProofreadValue>{return this.serial(async()=>{
+    this.fileContext(input)
+    const mutating=['append','bind','settle','decide'].includes(input.action)
+    if(mutating&&this.fileBusy)throw new ProjectError('PROJECT_LOCKED')
+    const owned=this.active!,value=await proofreadingCommand(owned,input)
+    if(mutating)await this.discovery(owned)
+    return value
+  })}
   conversation(input:ConversationWorkerInput):Promise<ConversationValue>{return this.serial(async()=>{
     this.fileContext(input)
     const mutating=['change','append','bind','settle'].includes(input.action)
@@ -438,6 +448,8 @@ export class ProjectRepository {
       operations.prepare("UPDATE jobs SET state='interrupted' WHERE state IN ('queued','running','cancelling')").run()
       const owned: Owned = { ...input, workspace, db, operations, search:search??null, lock, archived: await this.readArchived(workspace), destination: await readDestination(this.root, workspace) }
       manuscript(db,input.projectId)
+      validatePortableProofreading(db,input.projectId)
+      interruptUnboundProofreading(db,operations,input.projectId)
       validatePortableConversations(db,input.projectId)
       interruptUnboundConversations(db,operations,input.projectId)
       this.read(owned)

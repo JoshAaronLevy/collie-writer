@@ -29,3 +29,11 @@ These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience a
 [I11 — AI connections](improvement-I11.md) covers the actual third setup step, shared Settings/writing account state, unavailable reasons, local continuation and conditional later real browser/account actions. Its [record](../validation/improvement-I11.md) separates implemented UI from I10's unavailable access/funding/isolation/runtime and pending user observations.
 
 - [I12 — durable conversation foundation](improvement-I12.md): implementation complete — awaiting user testing. Local conversation lifecycle, reviewed context, not-sent requests, transcript export and schema 11 copies; live provider observations remain conditional on I10 activation.
+
+## App improvement I13
+
+[Mechanics proofreading foundation](improvement-I13.md): exact scope/coverage, local unsent review history, portable copies, and conditional real findings, Ignore/Undo ignore, checkpointed Apply and editor reconciliation. Implementation complete — awaiting user testing; inference remains gated by I10. No assistant checks or launches occurred.
+
+## App improvement I14
+
+[Second-provider partial engineering](improvement-I14.md): document review and existing local UI continuity. Grok ACP transport code is delivered, but protected authentication, funding/isolation, account routing/UI and distribution are unfinished. There is no working Grok connection; see the [partial record](../validation/improvement-I14.md).

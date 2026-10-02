@@ -1,0 +1,63 @@
+# I14 Grok Build integration runbook
+
+October 2, 2026. **Engineering partial — transport component delivered; no connectable second provider.** Commercial approval alone is not a prerequisite for engineering. This record separates implemented protocol handling from missing protected authentication, funding, isolation, account integration and distribution. No runtime was installed, launched or used; no account was accessed.
+
+## Route and source evidence
+
+Grok Build is selected for this pass. Its official [overview](https://docs.x.ai/build/overview) supports browser login and embedding via ACP. The [headless integration](https://docs.x.ai/build/cli/headless-scripting) documents `grok agent stdio`, JSON-RPC, `cached_token` authentication, session creation and streamed assistant text. These establish a concrete transport route; they do not establish Collie's complete account lifecycle or funding guarantee.
+
+The public [runtime source](https://github.com/xai-org/grok-build/tree/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8), [README](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/README.md) and [Apache-2.0 license](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/LICENSE) establish a basis for local engineering. Third-party notices remain separate. This revision is a source/protocol reference, **not** an installed version, approved binary, distribution artifact or subscription permission. No upstream implementation code or binary was vendored.
+
+The [ACP agent implementation](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/agent/mvp_agent/acp_agent.rs) also shows why process startup itself needs protection: initialization can renew cached credentials and initialize integrations. Refusing only `session/prompt` would be too late to enforce the full boundary. The [credential resolver](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-login/src/grok_auth_credentials.rs) includes runtime-owned renewal; it is not a host credential-storage contract.
+
+The [settings reference](https://docs.x.ai/build/settings/reference) documents `GROK_HOME`, updater controls and compatibility scanners. The [CLI reference](https://docs.x.ai/build/cli/reference) documents login/logout and tool/memory restrictions. Those are useful engineering inputs. Moving a profile directory alone does not establish encrypted credentials or prevent system policy, sync, hooks and diagnostics from broadening a request.
+
+The [enterprise guide](https://docs.x.ai/build/enterprise) distinguishes OAuth/inference hosts, optional remote sync, managed policy precedence and API-key restrictions. Its policy controls are not an included-only spending control, nor proof that a consumer account exposes every enterprise option. Collie must not modify the user's system-wide policies to make its own integration work.
+
+The [usage FAQ](https://docs.x.ai/grok/faq#usage--limits) documents that purchased Extra Usage Credits can fund work after the included allowance and Auto Top Up can replenish credits. No binding included-only selector was established in the reviewed material. Disabling API-key auth does not exclude subscription-account credit fallback. No settings screenshot, zero balance, spending cap or successful sign-in substitutes for that control.
+
+## Delivered code
+
+| Owner | Implemented responsibility |
+| --- | --- |
+| `src/main/ai/runtime.ts` | Common text-runtime contract and sanitized updates, shared with Codex; no auth-token abstraction pretending credentials are interchangeable |
+| `src/main/ai/registry.ts` | Internal constructors for exactly Codex and Grok Build; existing service creates Codex through this registry; this is not a public connectable-provider catalog |
+| `src/main/ai/grok-runtime.ts` | Real ACP initialization, cached-session authentication call, fresh session, actual session model catalog, one prompt, incremental text, terminal response, cancellation notification, bounded parsing and child teardown |
+| `src/main/ai/grok-deployment.ts` | Source reference and an explicit pre-spawn refusal documenting missing launch engineering; it does not implement authentication/funding or accept bypass flags |
+
+The transport follows [ACP session setup](https://agentclientprotocol.com/protocol/v1/session-setup) and [prompt/cancellation](https://agentclientprotocol.com/protocol/v1/prompt-turn). It requests no client filesystem or terminal capabilities and supplies no MCP servers. Unexpected reverse requests/tool activity refuse and stop the child. Only `agent_message_chunk` text enters updates; thought chunks, attachments, provider diagnostics and opaque session handles are not output.
+
+Each instance accepts one fresh session and at most one prompt; there is no load/resume, hidden retry or automatic provider fallback. Only an actual advertised current model is returned, still labeled unverified. Other model selection is unfinished; no model IDs or output capabilities are fabricated. Missing catalog means no eligible choice. A future service must authorize the exact account, model, capability, context and funding before launch and again before prompt dispatch, including any internal calls.
+
+Transport bounds: 1 MiB outbound frame/queued-write limit, 2 MiB input-buffer limit, existing 128,000-unit text-output cap, 20-second setup calls, five-minute prompt deadline, 15-second cancellation deadline and five-second forced child-exit fallback. The normal captured request still uses I10's prompt/context bounds. Cancellation is a notification; only the prompt response can confirm cancelled. Missing/malformed replies, transport loss or timeouts after dispatch preserve partial text with unknown outcome. Generic provider errors are sanitized; quota/session-specific mapping needs the pinned release's authoritative error contract. No provider prose is interpreted as billing proof.
+
+These are unobserved source behaviors. The refusal currently happens before spawn and before profile preparation. There is no new renderer command, account, model picker, Grok button, credential record or portable Grok provenance. The existing I10 journal and I12/I13 content coordinator have not been connected to Grok.
+
+## Remaining component checklist
+
+| Component | Current status | Concrete continuation |
+| --- | --- | --- |
+| ACP text transport | Implemented, awaiting user observation after activation | Reconcile against the exact chosen binary, including session-model metadata, errors and terminal ordering |
+| Protected browser sign-in/session owner | Technically incomplete: supported encrypted host/runtime handoff not established | Establish permitted auth-attempt/status/cancel, stable account identity, encrypted credential storage, refresh/revocation and isolated profile contract; do not copy a default Grok token file or write tokens temporarily in plaintext |
+| Included-only funding | Technically blocked: no binding control established | Obtain the provider-specific request/account/client policy and implement enforcement across internal calls, concurrent use and setting changes; fail closed at limits |
+| Text-only launch | Incomplete | Pin controls for every tool, memory, automatic retry/compaction, plugin/MCP/hook, ambient/system configuration, content log and sync path; reject incompatible host policy without modifying it; do not equate ACP capability flags with runtime isolation |
+| Channel access/commercial terms | Not established for the final Collie route | Record actual development/beta/production terms and any applicable provider permission; no invented registration/approval reference and no blanket commercial veto on engineering |
+| Account/operation routing | Not implemented | Add provider-discriminated protected accounts/operations, per-provider authorization, status and selection; preserve current credentials and exact existing operation hashes/receipts with versioned local migration |
+| Portable provenance and UI switching | Not implemented | Extend strict attempt/provider validators and every portable consumer together using an allocated format version; never silently broaden schema 12. Explicit provider/account switch starts fresh runtime context and requires reviewed history; no automatic failover |
+| Model/capability selection | Partial transport catalog only | Establish real eligible models and supported selection; advertise conversation/proofreading separately only after their required output/authorization contracts exist |
+| Product execution/recovery | Not wired for Grok | Connect the actual adapter to the single I10 journal and I12/I13 coordinator after protected launch/auth contracts exist; preserve intent-before-dispatch, binding/digest/sequence, exact replay, disk-only recovery and close/access guards |
+| User observations | None | Use real production UI and synthetic content after the route is eligible; no probes, simulated accounts or charge-incurring limit experiment |
+
+The refusal in `prepareGrokLaunch` is missing engineering made explicit. Replacing it with a binary path, boolean or existing user profile would not complete this stage. The rest of I14 remains authorized in scope when resumed; it does not require reimplementing I01–I13. Additional published/provider contracts are needed to implement those exact methods, not merely an approval label.
+
+## Distribution, privacy and notices
+
+No Grok package/binary is installed or shipped. No PATH discovery, downloader, installer script, updater or runtime invocation was added. Before packaging, select exact macOS arm64/x64 and Windows x64 artifacts, establish correspondence to the reviewed source/protocol, record hashes and licenses/notices, and add explicit resource/signing entries. Direct macOS requires nested executable signing/notarization; Windows requires signed packaged resources. The Microsoft Store route continues using the same approved direct artifact; MAS remains blocked by its independent native/sandbox requirements. No channel is asserted supported from upstream's general platform list.
+
+Shipping the runtime will require its complete applicable Apache and third-party notices, not just the root license. Preserve existing citeproc attribution and notices. The current change ships only Collie's authored protocol implementation and introduces no third-party package or asset requiring a bundled notice update.
+
+Future OAuth/inference would use the selected provider under the writer's account; it is remote processing. Its documented hosts include `auth.x.ai` and `cli-chat-proxy.grok.com`; these are **researched future flows, not activated allowlisted origins**. Remote session sync (`code.grok.com`), content-bearing diagnostics, avatars and self-updates require exclusion before activation. Do not claim consumer requests have the enterprise ZDR policy. Credentials/runtime sessions stay device-local; approved human-readable text belongs in portable history. Current renderer CSP and network allowlists are unchanged.
+
+## Why Claude was not selected
+
+The [Claude Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview) still requires prior approval for third-party subscription login. [Legal guidance](https://code.claude.com/docs/en/legal-and-compliance) distinguishes custom credential routing from hosting an unmodified runtime, whose built-in authentication methods cannot simply be restricted. The [June 15 usage update](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan) pauses the previously announced credit change; it does not supply Collie's custom sign-in and included-only contract. This does not establish that independent SDK engineering is forbidden; Grok is the one documented transport selected for this pass, and no Claude adapter was added.

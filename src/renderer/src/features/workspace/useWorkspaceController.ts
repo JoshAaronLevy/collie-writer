@@ -1,3 +1,6 @@
+import { closeHistory } from '@tiptap/pm/history'
+import { replaceMechanicsFinding } from '../../../../domain/ai/proofreading'
+import type { ProofreadCapture, ProofreadFinding, ProofreadDecision } from '../../../../shared/proofreading'
 import { manuscriptAnchor, payloadHasAnchor } from '../../editor/anchors'
 import { useWritingPreferences } from './useWritingPreferences'
 import { captureSelection, restoreSelection } from '../../editor/selection'
@@ -16,7 +19,7 @@ import type { AnnotationCapture } from '../projects/NotesPanel'
 import type { CitationsView } from '../../../../shared/citations'
 import type { SourceRecord } from '../../../../shared/sources'
 import type { SearchHit } from '../../../../shared/search'
-import { editorIsComposing, serializeEditor } from '../../editor/adapter'
+import { editorIsComposing, serializeEditor, hydrateDocument, lockEditorMutation, dispatchProtectedCorrection } from '../../editor/adapter'
 import { canEditProject, sameProject, type AccessView } from '../../../../shared/access'
 import { writingDestination, type AppDestination, type ResearchTarget } from '../../app/navigation'
 import { DraftRegistry, type DraftBlocker, type DraftHandle, type FlushMode } from './drafts'
@@ -27,6 +30,9 @@ export function useWorkspaceController(storage: StorageStatus) {
   const exportOperations = useExportOperations()
   const writingView = useWritingPreferences()
   const composition = useRef(false)
+  const [proofreadingLocked,setProofreadingLocked]=useState(false)
+  const proofreadingBusy=useRef(false)
+  const proofreadingApplication=useRef<{input:ProofreadDecision;capture:ProofreadCapture;finding:ProofreadFinding;before:Editor['state']['doc'];after:DocumentPayload}|null>(null)
   const [drafts] = useState(() => new DraftRegistry())
   const draftRevision = useSyncExternalStore(drafts.subscribe, drafts.version)
   const [destination, setDestination] = useState<AppDestination>({ kind: 'setup' })
@@ -375,6 +381,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     return saved
   }
   async function flushManuscript(): Promise<OpenProject | null> {
+    if(proofreadingApplication.current){setError('Reconcile the proofreading correction before saving or navigating. Its exact operation is retained.');return null}
     if (!current.current) return null
     const editor = editorRef.current
     if (!editor) { setError('This document could not be opened safely for editing. Its stored copy is retained.'); return null }
@@ -620,6 +627,55 @@ export function useWorkspaceController(storage: StorageStatus) {
     showDestination({ kind: 'workspace', scope: scopeOf(saved), view: 'research', target: { kind: 'notes' } })
     setNotice('Selected passage ready in Passage annotations.')
   }
+  async function applyProofreading(capture?:ProofreadCapture,finding?:ProofreadFinding):Promise<boolean> {
+    if(proofreadingBusy.current||closingRef.current||composition.current)return false
+    proofreadingBusy.current=true;setBusy(true)
+    try {
+      if(!proofreadingApplication.current){
+        if(!capture||!finding||finding.decision!=='pending'||accessReadOnly||accessTransition)return false
+        const saved=await flush(false,'save',['proofreading'])
+        const editor=editorRef.current
+        if(!saved||!editor||editorIsComposing(editor)||saved.documentId!==capture.source.documentId||saved.revisionId!==capture.source.revisionId||!editor.state.doc.eq(editor.schema.nodeFromJSON(hydrateDocument(saved.payload)))){setError('This finding no longer matches the protected writing. Review the current passage again.');return false}
+        const suggestion={targetId:finding.targetId,from:finding.from,to:finding.to,before:finding.before,replacement:finding.replacement,reason:finding.reason,kind:finding.kind}
+        const after=replaceMechanicsFinding(saved.payload,capture,suggestion)
+        proofreadingApplication.current={input:{...scopeOf(saved),action:'decide',operationId:crypto.randomUUID(),attemptId:finding.runId,findingId:finding.id,expectedRevision:finding.revisionId,expectedHead:saved.headCommitId,decision:'apply'},capture,finding,before:editor.state.doc,after}
+        lockEditorMutation(editor,true);editor.setEditable(false);setProofreadingLocked(true);drafts.changed()
+      }
+      const pending=proofreadingApplication.current
+      if(!pending)return false
+      const result=await window.collie.proofreading(pending.input)
+      if(!result.ok){
+        if(!['UNAVAILABLE','DISK_FULL','PROJECT_LOCKED'].includes(result.error.code)){if(editorRef.current)lockEditorMutation(editorRef.current,false);proofreadingApplication.current=null;setProofreadingLocked(false)}
+        setError(result.error.code==='STALE_REVISION'?'The protected target changed. This correction was refused; review the current passage again.':result.error.message)
+        return false
+      }
+      if(result.value.type!=='decision'){setError('The correction acknowledgment could not be read. Retry the exact correction.');return false}
+      const stored=await window.collie.openSection({...scopeOf(pending.input),documentId:pending.capture.source.documentId})
+      const editor=editorRef.current,p=current.current
+      if(!stored.ok||!p||!sameScope(p,pending.input)||p.documentId!==pending.capture.source.documentId||!editor||editorIsComposing(editor)||(!editor.state.doc.eq(pending.before)&&!editor.state.doc.eq(editor.schema.nodeFromJSON(hydrateDocument(pending.after))))||stored.value.revisionId!==result.value.revisionId||!editor.schema.nodeFromJSON(hydrateDocument(stored.value.payload)).eq(editor.schema.nodeFromJSON(hydrateDocument(pending.after)))){
+        setError('The correction is retained, but the editor could not safely adopt its acknowledgment. Keep this window open and retry the same correction.');return false
+      }
+      if(editor.state.doc.eq(pending.before)){
+        const target=pending.capture.targets.find(t=>t.id===pending.finding.targetId)!
+        let position:number|null=null
+        editor.state.doc.descendants((node,pos)=>{if(node.attrs.blockId===target.blockId)position=pos+1})
+        if(position===null){setError('The exact correction target is unavailable. Retry local reconciliation.');return false}
+        const start=position+target.from+pending.finding.from,end=position+target.from+pending.finding.to
+        const marks=target.marks.map(mark=>editor.schema.marks[mark.type].create(mark.type==='link'?mark.attrs:undefined))
+        const transaction=pending.finding.replacement?editor.state.tr.replaceWith(start,end,editor.schema.text(pending.finding.replacement,marks)):editor.state.tr.delete(start,end)
+        if(!transaction.doc.eq(editor.schema.nodeFromJSON(hydrateDocument(pending.after)))){setError('The editor cannot apply this exact correction without changing other content. The stored checkpoint is retained.');return false}
+        // One normal ProseMirror history event; preserve the mounted editor, selection mapping and older undo.
+        dispatchProtectedCorrection(editor,closeHistory(transaction))
+        editor.view.dispatch(closeHistory(editor.state.tr))
+      }
+      updateHead(stored.value)
+      protectedVersionRef.current=editVersionRef.current;setProtectedVersion(editVersionRef.current)
+      lockEditorMutation(editor,false);proofreadingApplication.current=null;setProofreadingLocked(false);setHistory(null);setError('')
+      setNotice('Correction protected locally. Other findings for the previous revision are stale. The pre-correction manuscript is retained in History.')
+      return true
+    } catch {setError('The correction could not be confirmed. Your writing and exact pending operation are retained.');return false}
+    finally {proofreadingBusy.current=false;setBusy(false);drafts.changed()}
+  }
   async function refreshConversationHead(scope: OpenInput): Promise<void> {
     // Transcript commits advance the project head, never the retained manuscript buffer or selection.
     for (let tries=0;tries<3;tries++) {
@@ -730,7 +786,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     setBackTrail(trail=>trail.slice(0,-1));return true
   }
   function navigate(next: AppDestination, remember=true): Promise<boolean> {
-    if (navigationTask.current || closingRef.current) return Promise.resolve(false)
+    if (navigationTask.current || closingRef.current || proofreadingBusy.current || proofreadingApplication.current) return Promise.resolve(false)
     const task = (async (): Promise<boolean> => {
       if (outlinePending.current) { setError('Reconcile the pending outline/history operation before navigating.'); return false }
       if (busy && !fileBusy(fileState.current.job)) { setError('Wait for the current project action before navigating.'); return false }
@@ -807,6 +863,11 @@ export function useWorkspaceController(storage: StorageStatus) {
     const owner=project
     return drafts.register('image-import', {read:()=>({scope:scopeOf(owner),kind:'image-import',entityId:pendingImage.current?.documentId??owner.documentId,label:'image import',dirty:false,composing:false,busy:false,pendingOperation:pendingImage.current,policy:'operation',target:writingDestination(owner,pendingImage.current?.documentId??owner.documentId)})})
   }, [drafts,project?.projectId,project?.workspaceId])
+  useLayoutEffect(() => {
+    if(!project)return
+    const owner=project
+    return drafts.register('proofreading-application',{read:()=>({scope:scopeOf(owner),kind:'proofreading-application',entityId:proofreadingApplication.current?.input.findingId??null,label:'proofreading correction',dirty:!!proofreadingApplication.current,composing:false,busy:proofreadingBusy.current,pendingOperation:proofreadingApplication.current?.input??null,policy:'explicit',target:writingDestination(owner,owner.documentId)})})
+  },[drafts,project?.projectId,project?.workspaceId])
   useLayoutEffect(() => { drafts.changed() })
   async function prepareSetupCreation(): Promise<boolean> {
     if (!available || closingRef.current) { setError('Choose a safe local working folder before creating a project.'); return false }
@@ -847,10 +908,10 @@ export function useWorkspaceController(storage: StorageStatus) {
     await openLocal(scope,after)
   }
 
-  return { refreshConversationHead, backDestination, backLabel, goBack, referenceAnchor, writingView, ...exportOperations, acceptProjectDetails, composition, actionTask, renamePending, storage, drafts, destination, focusRevision, focusRequest, navigating, blocker, navigate, returnToDraft, showAccess, workspace, research, returnToWork,
+  return { manuscriptDirty:editVersion!==protectedVersion||sectionDirty||retry!==null||committing, applyProofreading, proofreadingLocked, refreshConversationHead, backDestination, backLabel, goBack, referenceAnchor, writingView, ...exportOperations, acceptProjectDetails, composition, actionTask, renamePending, storage, drafts, destination, focusRevision, focusRequest, navigating, blocker, navigate, returnToDraft, showAccess, workspace, research, returnToWork,
 startupPending, libraryIssue, setLibraryIssue, libraryView, setLibraryView,
 editorEpoch, setData, setList, location, setLocation, list, project, access, sectionTitle, setSectionTitle, sectionStatus, setSectionStatus, sectionSynopsis, setSectionSynopsis,
-sectionFields, busy, setBusy, acting, working, closing, committing, retry, error, setError, notice, setNotice, history, annotationCapture, noteDirty,
+sectionFields, busy:busy||proofreadingLocked, setBusy, acting, working, closing, committing, retry, error, setError, notice, setNotice, history, annotationCapture, noteDirty,
 sourceDirty,
 inspectionTarget, setInspectionTarget, citationContext, setCitationContext, outlineRetry, conflict, files, data,
 metaPending, current, editorRef, imageUrls, anchorToFocus, selectedSection, sectionReadOnly, sectionDirty, dirty, fileActive, accessReadOnly, accessTransition, available,
