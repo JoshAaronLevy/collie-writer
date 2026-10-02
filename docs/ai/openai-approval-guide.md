@@ -1,14 +1,14 @@
 # OpenAI approval steps for Collie Writer
 
-October 2, 2026. **Draft for Josh; nothing submitted or approved.** I10 remains blocked. Josh confirmed that approval has not been obtained and asked what is needed. This guide provides the current application route and prepared wording; it cannot promise admission or a response date.
+October 2, 2026. **Draft for Josh; nothing submitted or approved.** I10's local engineering can proceed under the revised plan; commercial activation and eligible inference remain pending. Josh confirmed that approval has not been obtained and asked what is needed. This guide provides the current application route and prepared wording; it cannot promise admission or a response date.
 
 ## Start here
 
 1. Open the official [Sign in with ChatGPT interest form](https://openai.com/form/sign-in-with-chatgpt-interest/), which OpenAI's [Request a client ID](https://developers.openai.com/siwc/request-client-id) page identifies as the commercial waitlist.
 2. Select **Sign in and ChatGPT plan use for AI requests**. Collie needs permission to perform inference against the user's plan; identity-only sign-in is insufficient.
-3. Supply your real contact name, work email, company/business name and website. The form currently requires those fields; job title is optional. Use the product description below. If you do not yet have a suitable business name or website, leave the draft pending until you can supply accurate details; this repository does not establish a legal seller identity or a public website. No registration or website publication is part of I10.
+3. Supply your real contact name, work email, company/business name and website. The form currently requires those fields; job title is optional. Use the product description below. If you do not yet have a suitable business name or website, leave the draft pending until you can supply accurate details; this repository does not establish a legal seller identity or a public website. No account creation, external registration submission or website publication is authorized by a stage request; I10 owns the code/configuration consuming authentic registration inputs when supplied.
 4. Ask for the desktop integration and funding details below, either in the description field if space permits or in follow-up with the program contact. Keep a private copy of any submission and reply. Joining the waitlist is not approval.
-5. Bring back a non-secret approval reference and the technical documentation OpenAI supplies. We can then determine whether I10's entry requirements are satisfied and implement the supported route. Do not paste access/refresh tokens, authorization codes, client secrets or private account files into the repository or chat.
+5. Bring back a non-secret approval reference and the technical documentation OpenAI supplies. We can then reconcile its access/activation conditions and finish route-dependent configuration/code within I10. Independent supported engineering can be requested before this evidence arrives; I01–I09 do not need to be repeated. Do not paste access/refresh tokens, authorization codes, client secrets or private account files into the repository or chat.
 
 The field names and choices above come from the [current form](https://openai.com/form/sign-in-with-chatgpt-interest/). The public [quickstart](https://developers.openai.com/siwc/quickstart) describes limited commercial availability; neither the form nor the client-ID page promises acceptance or a timetable.
 
@@ -37,14 +37,16 @@ OpenAI's [user controls](https://learn.chatgpt.com/docs/sign-in-with-chatgpt) in
 
 Collie's accepted plan requires this guarantee. A successful sign-in, zero current credit balance, disabled toggle observed once, or account model list does not satisfy it. An applicable, documented provider policy may satisfy it without a special request field; we should use the actual supported mechanism rather than invent one.
 
-## Evidence needed to resume I10
+## Evidence for live access and commercial activation
+
+These inputs enable dependent real actions; they are not a universal prerequisite to request I10 engineering. Development access is evaluated under the actual route's permission/configuration rules, and inference always needs binding included-only funding. This guide does not establish a publicly available provider OAuth sandbox.
 
 | Item | Current state | Useful evidence to return |
 | --- | --- | --- |
 | Application/submission | Not reported; nothing submitted by the assistant | Non-secret submission reference/date if you apply; this tracks progress but does not grant permission |
 | Commercial plan-use approval (A-OPENAI) | **Not obtained**, confirmed by Josh October 2 | Approval scope/reference and supported desktop auth/execution documentation; production vs development/channel conditions |
 | Included-only funding (F-OPENAI) | **Not established** by reviewed public material | Exact provider-enforced control, its scope and failure/change semantics, covering the complete operation |
-| Runtime engineering (R-PROVIDER) | Pending eligible route | Exact permitted version, distribution/license basis, isolation and lifecycle documentation; implementation belongs to resumed I10 |
+| Runtime engineering (R-PROVIDER) | Not delivered; supported independent engineering may proceed | Documented methods/version/license/isolation/lifecycle, delivered component map and exact remaining gaps; later configuration/activation remains within I10 |
 | User observations (U-PROVIDER) | Pending implementation and I11/I12 UI | Later user-reported native sign-in, disconnect, cancellation and refusal outcomes; no charge-incurring experiments |
 
-If OpenAI cannot admit Collie or cannot provide the funding guarantee, record that answer and keep I10 blocked under the current product contract. Do not silently switch to API keys, a hosted proxy or another provider. Later-provider work remains a separately requested I14 increment.
+If OpenAI cannot admit Collie or cannot provide the funding guarantee, record the exact denied/unavailable route and keep its commercial activation or inference unavailable as applicable. Preserve independent engineering and local work, with unresolved methods explicitly marked incomplete; do not report usable AI as delivered. Do not silently switch to API keys, a hosted proxy or another provider. Later-provider work remains a separately requested I14 increment.

@@ -1,6 +1,18 @@
 # I10 status and evidence
 
-October 2, 2026. **Blocked — provider implementation not complete.** Entry review and owner preparation are documented. No runtime or user acceptance is claimed.
+October 2, 2026. **Current status: revised plan ready for local engineering; provider implementation not yet delivered.** The previous all-code entry veto is superseded at Josh's request. Live access, included-only funding and commercial activation remain unresolved. No runtime or user acceptance is claimed.
+
+## Current plan revision — October 2, 2026
+
+Josh approved developing the supported integration locally before commercial approval and requested that the correction live in I10 and subsequent stages. The revised plan makes I10 own engineering now and later provider configuration/activation. I01–I09 require no reimplementation; their existing contracts and unreported acceptance remain intact. I11–I13 may develop their local production features against actual delivered code contracts while live access is pending; I14 applies the same distinction only when separately requested. I15 and the ledger distinguish engineering, usable AI, commercial activation and user acceptance.
+
+Commercial permission is not a universal code-writing gate. Actual sign-in still requires a supported permitted route and configuration, and all inference still requires binding included-only funding, including development. An isolated Collie development profile is not a claim of a provider OAuth sandbox. Missing methods remain explicit partial-engineering gaps; mocks/placeholders cannot satisfy delivery.
+
+Changed documentation: `app-improvement-plan.md`, `AGENTS.md`, this record, the I10 decision/manual guide, manual guide index, provider eligibility record and approval guide. The approval guide now supports activation without blocking independent code development. No production source, dependency, format or account change was made. I10 is not implemented by revising its brief; implementation awaits a subsequent explicit request. No tests/checks/builds/launches, SDK invocation, sign-in, inference, submission or outreach were performed. Release remains NO-GO.
+
+## Historical entry review — superseded engineering restriction
+
+The following initial findings and repeated-request notes preserve the earlier disposition. Their statements that approval blocks all implementation are historical, not current instructions. The current authority is the revised I10 brief and decision above.
 
 ## Scope and findings
 
@@ -37,6 +49,6 @@ No tests, test code, fixtures, harnesses, checks, typecheck, lint, formatting, b
 
 I10 stays blocked until the required provider evidence exists and its implementation is completed. Approval alone does not resolve funding; neither resolves all engineering or user acceptance work automatically. I01–I09 acceptance remains unreported, I11–I15 were not advanced, and release remains **NO-GO**. The [manual review guide](../manual-testing/improvement-I10.md) is the current handoff.
 
-## Repeated I10 request — October 2, 2026
+## Historical repeated I10 request — October 2, 2026 (before the plan revision)
 
 The full plan and existing I10 decision/evidence were reviewed again after Josh repeated the implementation request. The earlier uncommitted I10 documentation was preserved. No new approval or included-only funding evidence was supplied, and the explicit entry rule is unchanged. The Purpose and status summary and I09's forward reference still described I10 as not started; both now agree with its detailed blocked status. This follow-up changes only the plan and this record. It does not repeat the earlier public-document research or claim new provider evidence, production implementation, testing or acceptance. The existing owner guide remains the next actionable handoff.

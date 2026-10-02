@@ -24,4 +24,4 @@ These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience a
 
 [I09 — complete local journey](improvement-I09.md) covers export, Save options, settings/help and the optional nonfiction sample. Its [record](../validation/improvement-I09.md) distinguishes implementation from pending user/native/output observations.
 
-[I10 — blocked provider entry review](improvement-I10.md) covers the owner application guide and unresolved commercial/funding prerequisites. Its [record](../validation/improvement-I10.md) explicitly leaves provider implementation incomplete. No new application behavior or provider probing is part of this document-review handoff.
+[I10 — revised development/activation plan](improvement-I10.md) covers local engineering before commercial approval, separately gated live access/funding/commercial activation and continuation without rerunning I01–I09. Its [record](../validation/improvement-I10.md) preserves the superseded entry review and explicitly leaves provider code undelivered. No new application behavior or provider probing is part of this document-review handoff.
