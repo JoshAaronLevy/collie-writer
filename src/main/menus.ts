@@ -19,6 +19,17 @@ export async function confirmExternalLink(raw: unknown, testMode: boolean): Prom
   })
   if (choice.response === 1) await shell.openExternal(url)
 }
+export async function showLicenses(): Promise<void> {
+  await dialog.showMessageBox({
+              type: 'info',
+              title: 'Third-party licenses',
+              message: 'citeproc-js implements the Citation Style Language',
+              detail: '© Frank Bennett\nhttps://citationstyles.org/\n\nThe citation processor is used under CPAL 1.0. Its unmodified source and license, CSL style/locale notices, font licenses and editor/export notices are bundled with this app.',
+              buttons: ['Close', 'Show bundled licenses'], defaultId: 0, cancelId: 0, noLink: true
+            }).then(result => {
+              if (result.response === 1) shell.showItemInFolder(join(bundledResources(), 'licenses/NOTICE.txt'))
+            })
+}
 export function installMenu(testMode: boolean, channel: ReleaseChannel, fileAction: (kind: 'save' | 'save-as' | 'open') => void, editorAction: (kind: 'undo' | 'redo' | 'find' | 'paste-plain') => void, checkUpdates: () => void, installUpdate: () => void): void {
   const about = (): void => {
     void dialog.showMessageBox({
@@ -87,17 +98,7 @@ export function installMenu(testMode: boolean, channel: ReleaseChannel, fileActi
         { type: 'separator' },
         {
           label: 'Third-party licenses',
-          click: () => {
-            void dialog.showMessageBox({
-              type: 'info',
-              title: 'Third-party licenses',
-              message: 'citeproc-js implements the Citation Style Language',
-              detail: '© Frank Bennett\nhttps://citationstyles.org/\n\nThe citation processor is used under CPAL 1.0. Its unmodified source and license, CSL style/locale notices, font licenses and editor/export notices are bundled with this app.',
-              buttons: ['Close', 'Show bundled licenses'], defaultId: 0, cancelId: 0, noLink: true
-            }).then(result => {
-              if (result.response === 1) shell.showItemInFolder(join(bundledResources(), 'licenses/NOTICE.txt'))
-            })
-          }
+          click: () => { void showLicenses() }
         },
         {
           label: 'Privacy and data',

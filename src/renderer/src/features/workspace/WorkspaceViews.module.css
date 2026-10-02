@@ -1,0 +1,5 @@
+.workspace-utility-views { min-width: 0; }
+.workspace-utility-views h1 { font: 400 clamp(1.75rem,4vw,2.5rem)/1.2 var(--collie-font-manuscript); }
+.working-location { padding: var(--collie-space-4); border: 1px solid var(--collie-border); border-radius: var(--collie-radius-control); background: var(--collie-surface); }
+.working-location summary { cursor: pointer; min-height: var(--collie-control-height); align-content: center; }
+.location-path { overflow-wrap: anywhere; }

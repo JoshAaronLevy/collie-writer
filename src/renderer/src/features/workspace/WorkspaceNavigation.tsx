@@ -19,9 +19,10 @@ export function WorkspaceNavigation(): React.JSX.Element {
       <AppButton variant={destination.target.kind === 'evidence' ? 'default' : 'subtle'} onClick={() => research({kind:'evidence'})}>Questions and claims</AppButton>
       {inspectionTarget ? <AppButton variant={destination.target.kind === 'inspector' ? 'default' : 'subtle'} onClick={() => research({kind:'inspector',sourceId:inspectionTarget.sourceId})}>Source inspector</AppButton> : null}
     </nav> : null}
-    {destination.kind === 'settings' ? <nav aria-label="Settings sections" className={styles['settings-navigation']}>
-      {(['appearance', 'data', 'access'] as const).map(page => <AppButton key={page} variant={destination.page === page ? 'default' : 'subtle'}
-        onClick={() => { void navigate({kind:'settings',page}) }}>{page === 'appearance' ? 'Display and privacy' : page === 'data' ? 'Data and recovery' : 'Collie access'}</AppButton>)}
+    {destination.kind === 'settings' || destination.kind==='help'&&destination.page==='about' ? <nav aria-label="Settings sections" className={styles['settings-navigation']}>
+      {(['appearance', 'ai', 'access', 'data', 'updates'] as const).map(page => <AppButton key={page} variant={destination.kind==='settings'&&destination.page === page ? 'default' : 'subtle'}
+        onClick={() => { void navigate({kind:'settings',page}) }}>{{appearance:'Appearance & accessibility',ai:'AI connections',access:'Collie access',data:'Data & recovery',updates:'Updates'}[page]}</AppButton>)}
+      <AppButton variant={destination.kind==='help'?'default':'subtle'} onClick={()=>void navigate({kind:'help',page:'about'})}>About, licenses & support</AppButton>
     </nav> : null}
   </>
 }

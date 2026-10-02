@@ -1,0 +1,11 @@
+.writing-guide, .writing-orientation { padding: var(--collie-space-6); border: 1px solid var(--collie-border); border-radius: var(--collie-radius-surface); background: var(--collie-surface); margin-block: var(--collie-space-4); }
+.writing-guide { max-width: 65rem; margin-inline: auto; }
+.writing-guide h1 { font: 400 2rem/1.2 var(--collie-font-manuscript); margin-block: 0 var(--collie-space-4); }
+.writing-orientation h2 { font-size: 1.1rem; margin-top: 0; }
+.orientation-points { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--collie-space-6); padding-inline-start: var(--collie-space-6); }
+.guide-actions { display: flex; flex-wrap: wrap; gap: var(--collie-space-2); margin-block: var(--collie-space-4); }
+.guide-steps { padding-inline-start: var(--collie-space-6); }
+.guide-steps li { padding-block: var(--collie-space-4); border-bottom: 1px solid var(--collie-border); }
+.guide-disclosure { margin-top: var(--collie-space-6); }
+.guide-disclosure summary { cursor: pointer; min-height: var(--collie-control-height); align-content: center; }
+@media (max-width: 55rem) { .orientation-points { grid-template-columns: minmax(0,1fr); gap: var(--collie-space-3); } }

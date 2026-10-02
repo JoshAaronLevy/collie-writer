@@ -1,0 +1,7 @@
+.collie-access { max-width: 65rem; margin: auto; padding: var(--collie-space-6); background: var(--collie-surface); border: 1px solid var(--collie-border); border-radius: var(--collie-radius-surface); }
+.collie-access h2 { margin-top: 0; }
+.collie-access p { max-width: 75ch; }
+.collie-access details { border-top: 1px solid var(--collie-border); margin-top: var(--collie-space-4); padding-top: var(--collie-space-4); }
+.collie-access summary { cursor: pointer; min-height: var(--collie-control-height); align-content: center; }
+.access-actions { display: flex; flex-wrap: wrap; gap: var(--collie-space-2); margin-block: var(--collie-space-4); }
+.purchase-connection { overflow-wrap: anywhere; }

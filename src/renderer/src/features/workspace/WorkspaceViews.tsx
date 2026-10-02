@@ -1,3 +1,8 @@
+import ConnectionSettings from '../settings/ConnectionSettings'
+import UpdateSettings from '../settings/UpdateSettings'
+import { AppButton } from '../../components/ui/Controls'
+import styles from './WorkspaceViews.module.css'
+import exportStyles from '../export/ExportWorkspace.module.css'
 import OnboardingWizard from '../onboarding/OnboardingWizard'
 import ProjectDetailsForm from '../project-details/ProjectDetailsForm'
 import ProjectLibrary from '../library/ProjectLibrary'
@@ -62,10 +67,12 @@ export default function WorkspaceViews(): React.JSX.Element {
 {project ? <SearchPanel key={project.projectId} project={project} navigate={navigateSearch} /> : null}
 </RetainedRegion>
 </div></div>
-<div className="projects"><div inert={navigating || closing} onCompositionStartCapture={() => { composition.current = true; drafts.changed() }} onCompositionEndCapture={() => { composition.current = false; drafts.changed() }}>
+<div className={styles['workspace-utility-views']}><div inert={navigating || closing} onCompositionStartCapture={() => { composition.current = true; drafts.changed() }} onCompositionEndCapture={() => { composition.current = false; drafts.changed() }}>
 <RetainedRegion name="export" label="Export">
-{project ? <CitationsPanel readOnly={accessReadOnly||accessTransition} key={project.projectId} project={project} dirty={dirty} disabled={busy||closing||acting||fileActive||storage.state!=='ready'} flush={flush} onCommitted={afterNoteCommit} onContext={(sources,view)=>setCitationContext({projectId:project.projectId,sources,view})} navigate={navigateSection} source={sourceId=>research({kind:'sources',sourceId})} /> : null}
 {project ? <DocxExportPanel paid={access?.paid??false} key={project.projectId} project={project} disabled={busy||closing||acting||fileActive||storage.state!=='ready'} flush={flush} onProject={updateProject} /> : null}
+<details className={exportStyles['export-reference-tools']}><summary>Citation style and bibliography preview</summary>
+{project ? <CitationsPanel readOnly={accessReadOnly||accessTransition} key={project.projectId} project={project} dirty={dirty} disabled={busy||closing||acting||fileActive||storage.state!=='ready'} flush={flush} onCommitted={afterNoteCommit} onContext={(sources,view)=>setCitationContext({projectId:project.projectId,sources,view})} navigate={navigateSection} source={sourceId=>research({kind:'sources',sourceId})} /> : null}
+</details>
 </RetainedRegion>
 
 <RetainedRegion name="details" label="Project actions">
@@ -75,16 +82,19 @@ export default function WorkspaceViews(): React.JSX.Element {
 {project ? <ProjectManagement key={`${project.projectId}-${project.title}`} project={project} disabled={!available || acting || fileActive || closing} archive={() => run(() => manage())} backup={() => run(() => lifecycleFile('backup'))} move={() => run(() => lifecycleFile('move'))} duplicate={() => run(() => lifecycleFile('duplicate'))} restore={() => run(() => lifecycleFile('restore'))} /> : null}
 {project ? <InterchangeImportPanel key={`import-${project.projectId}`} project={project} disabled={busy||closing||acting||fileActive||accessReadOnly||accessTransition||storage.state!=='ready'} flush={flush} onProject={updateProject} /> : null}
 </RetainedRegion>
-<RetainedRegion name="settings-appearance" label="Appearance and privacy">
+<RetainedRegion name="settings-appearance" label="Appearance and accessibility">
 <SettingsPanel />
 </RetainedRegion>
+<RetainedRegion name="settings-ai" label="AI connections"><ConnectionSettings /></RetainedRegion>
+<RetainedRegion name="settings-updates" label="Updates"><UpdateSettings /></RetainedRegion>
 <RetainedRegion name="settings-access" label="Collie access">
 <AccessPanel access={access} project={project} list={list} disabled={!available||busy||acting||fileActive||closing} designate={()=>run(()=>changeAccess('designate'))} finish={()=>run(()=>changeAccess('finish'))} importGrant={()=>run(()=>changeAccess('import'))}/>
 </RetainedRegion>
 <RetainedRegion name="settings-data" label="Data and recovery">
-    {!location ? <p role="status">Finding the local working folder…</p> : <details className="working-location" open={location.state === 'required'}>
+<h1>Data and recovery</h1><p>Local protection, selected project files and separate backups are different copies. Recovery material stays retained until you explicitly manage it; clearing picker history removes no content.</p>
+    {!location ? <p role="status">Finding the local working folder…</p> : <details className={styles['working-location']} open={location.state === 'required'}>
       <summary>Working-data location</summary><p>{location.message}</p>
-      {location.path ? <p className="location-path">{location.path}</p> : <button disabled={acting} onClick={() => run(async () => { const result = await window.collie.chooseWorkingLocation(); if (result.ok) setLocation(result.value); else setError(result.error.message) })}>Choose local working folder…</button>}
+      {location.path ? <p className={styles['location-path']}>{location.path}</p> : <AppButton variant="default" disabled={acting} onClick={() => run(async () => { const result = await window.collie.chooseWorkingLocation(); if (result.ok) setLocation(result.value); else setError(result.error.message) })}>Choose local working folder…</AppButton>}
       <p>Keep this folder outside sync or mirroring tools. Portable files can go in your chosen local cloud folders.</p>
     </details>}
     {storage.state === 'unavailable' ? <p role="alert">The storage process is unavailable. Keep this window open and copy any unprotected text before quitting.</p> : null}

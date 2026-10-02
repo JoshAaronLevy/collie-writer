@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, protocol, session } from 'electron'
 import { join } from 'node:path'
 import { EDITOR_ACTION, STORAGE_STATUS_CHANGED, type AppInfo } from '../shared/commands'
-import { registerAppIpc, registerStorageIpc } from './ipc'
+import { registerAppIpc, registerStorageIpc, registerHelpIpc } from './ipc'
 import { denyTestNetwork } from './test-network'
 import { installMenu } from './menus'
 import { configureProfile } from './profile'
@@ -121,6 +121,7 @@ app
       }),
       devOrigin
     )
+    registerHelpIpc(() => window?.webContents, updater, devOrigin)
     registerStorageIpc(() => window?.webContents, () => storage.current(), devOrigin)
     access.register()
     directAccess.register()

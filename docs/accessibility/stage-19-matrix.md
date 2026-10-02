@@ -47,3 +47,10 @@ Write now has labeled project switching and chapter/section navigation, outline 
 | Search and indexing | Focused results with labels, retained query/page/scroll, pagination summary focus, disclosed coverage and global job status | Return from writing/research, live status clarity, index cancellation and real long-result performance |
 
 No assistant accessibility, browser, screenshot, app launch or other validation was performed. All results remain awaiting Josh’s [I08 manual observations](../manual-testing/improvement-I08.md); implementation does not establish accessibility acceptance.
+
+
+## Improvement I09 pending observations
+
+Export now has labeled step navigation and heading focus, section checkboxes, single-format radios/free or multi-format checkboxes/paid, disclosed ordering/recipes/reference tools, adjacent filename errors, per-revision metadata acknowledgment and per-file results. Global result links focus the matching scoped result; completed notices collapse while urgent outcomes remain visible. Save options and Settings use named Mantine controls. The three-point orientation has explicit dismissal, and the tutorial uses typed navigation rather than hidden DOM targets. About retains the labeled, content-free support dialog; license/update actions reuse native dialogs. Feature styles are scoped, and the initial citeproc notice remains visible.
+
+Keyboard/focus/IME, VoiceOver/NVDA, native-dialog return, wrapping at narrow/200% zoom, radio/group semantics, dark/high contrast/reduced motion, result announcements and orientation dismissal are **unobserved**. All prior matrix rows and release gates remain pending. Follow the [I09 manual guide](../manual-testing/improvement-I09.md); no assistant checks, launches, screenshots or accessibility tools were used.

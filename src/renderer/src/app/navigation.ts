@@ -10,10 +10,10 @@ export type WorkspaceView = 'write' | 'research' | 'search' | 'export' | 'histor
 export type AppDestination =
   | { kind: 'setup' }
   | { kind: 'library' }
-  | { kind: 'settings'; page: 'appearance' | 'data' | 'access' }
+  | { kind: 'settings'; page: 'appearance' | 'data' | 'access' | 'ai' | 'updates' }
   | { kind: 'help'; page: 'about' | 'tutorial' }
   | { kind: 'workspace'; scope: OpenInput; view: 'research'; target: ResearchTarget }
-  | { kind: 'workspace'; scope: OpenInput; view: Exclude<WorkspaceView, 'research'>; documentId?: string; anchorId?: string }
+  | { kind: 'workspace'; scope: OpenInput; view: Exclude<WorkspaceView, 'research'>; documentId?: string; anchorId?: string; exportResultId?: string }
 
 // These keys identify presentation regions, never filesystem authority or domain entities.
 export function destinationRegion(destination: AppDestination): string {

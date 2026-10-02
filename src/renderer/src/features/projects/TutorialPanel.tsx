@@ -1,29 +1,25 @@
 import { useState } from 'react'
-
-function go(id:string):void{
-  const target=document.getElementById(id)
-  if(!target)return
-  target.closest('details')?.setAttribute('open','')
-  target.focus();target.scrollIntoView({block:'start'})
-}
+import { AppButton, ChoiceField } from '../../components/ui/Controls'
+import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import styles from '../help/WritingGuide.module.css'
 
 export default function TutorialPanel({ready,active,disabled,start,reset}:{ready:boolean;active:boolean;disabled:boolean;start:()=>void;reset:()=>void}):React.JSX.Element{
   const [acknowledged,setAcknowledged]=useState(false)
-  return <section className="tutorial-panel" aria-labelledby="tutorial-title" id="tutorial">
-    <h2 id="tutorial-title" tabIndex={-1}>A first writing path</h2>
-    <p>Work through a fictional reading-room story, or follow the same path in a personal project. Everything stays local. The sample is editable alongside your one free personal project.</p>
-    <div className="project-actions">
-      <button type="button" disabled={disabled} onClick={start}>{ready?'Open tutorial sample':'Create tutorial sample'}</button>
-      {ready?<button type="button" disabled={disabled||!acknowledged} onClick={()=>{setAcknowledged(false);reset()}}>Create a fresh sample</button>:null}
-    </div>
-    {ready?<label><input type="checkbox" checked={acknowledged} onChange={event=>setAcknowledged(event.target.checked)}/> I understand a fresh sample keeps the previous sample as a separate local project, including my edits. I can Save or Back up the current sample first.</label>:null}
-    <ol className="tutorial-steps">
-      <li><strong>Choose a template and an idea.</strong> For personal work, select a template and Create project. The sample starts with an open question about an imaginary reading room. <button type="button" onClick={()=>go('new-project')}>Go to projects</button></li>
-      <li><strong>Save deliberately.</strong> Edit a sentence, Protect locally, then choose Save. The first Save asks for a file location; canceling keeps the local recovery copy without assigning a destination. <button type="button" disabled={!active} onClick={()=>go('project-file')}>Go to Save</button></li>
-      <li><strong>Inspect evidence.</strong> In the sample, open the fictional source, inspect its retained plain-text original, extract its text and select a short exact excerpt. It is an invented story, not a claim about a real town. <button type="button" disabled={!active} onClick={()=>go('sources-title')}>Go to sources</button></li>
-      <li><strong>Connect and write.</strong> Create a research question or claim, link the excerpt as support or challenge, and revise the draft. An evidence link is your assessment, not a citation. <button type="button" disabled={!active} onClick={()=>go('evidence-title')}>Go to evidence</button></li>
-      <li><strong>Cite and export.</strong> The sample draft has a citation to its fictional source. Inspect the citation preview, add or revise a citation in your writing, then export a copy. Export is separate from saving a project file. <button type="button" disabled={!active} onClick={()=>go('citations-heading')}>Go to citations</button> <button type="button" disabled={!active} onClick={()=>go('docx-export-heading')}>Go to exports</button></li>
-      <li><strong>Choose free editing.</strong> Opening a personal project does not designate it. Use the Access panel to choose one personal project, and switch after protecting drafts. The sample has its own allowance. <button type="button" onClick={()=>go('access-title')}>Go to access</button></li>
+  const {navigate,workspace,research,project}=useWorkspaceSession()
+  function go(view:'write'|'details'|'export'):void {const next=workspace(view);if(next)void navigate(next)}
+  return <section className={styles['writing-guide']} aria-labelledby="tutorial-title">
+    <h1 id="tutorial-title">A first writing path</h1>
+    <p>Start with your own nonfiction idea, or explore a separate sample about evaluating a research claim. Its study and data are synthetic teaching material, not real findings. Everything in the sample stays local until you choose Save or export.</p>
+    <div className={styles['guide-actions']}><AppButton disabled={disabled} onClick={start}>{ready?'Open tutorial sample':'Create optional tutorial sample'}</AppButton><AppButton variant="default" onClick={()=>void navigate({kind:'library'})}>Open Projects</AppButton></div>
+    <p>{active?'The tutorial sample is open.':project?'Guide actions below apply to your currently open project. Open the sample above to practice separately.':'Create or open a project to follow the guide.'} The current trusted sample has a separate editing allowance alongside your free personal project.</p>
+    <ol className={styles['guide-steps']}>
+      <li><strong>Choose a project and make it yours.</strong><p>Projects → New project starts with a nonfiction type, title and author. Description is optional. AI connection is unavailable in this build; continue to writing.</p><AppButton variant="subtle" disabled={disabled} onClick={()=>void navigate({kind:'setup'})}>Create a personal project</AppButton></li>
+      <li><strong>Write, then Save deliberately.</strong><p>Choose a section in Write and edit a sentence. Local protection keeps changes on this device. Save opens a native picker the first time; cancelling keeps local recovery and assigns no file. Save options contains Save As and a separate backup.</p><AppButton variant="subtle" disabled={!project||disabled} onClick={()=>go('write')}>Open Write</AppButton></li>
+      <li><strong>Inspect the evidence.</strong><p>Research → Sources holds originals, citation details and Usage and context. In a fresh sample, inspect the synthetic study’s retained text, extract it and select an exact excerpt. The before/after numbers do not establish causation.</p><AppButton variant="subtle" disabled={!project||disabled} onClick={()=>research({kind:'sources'})}>Open Sources</AppButton></li>
+      <li><strong>Connect and revise.</strong><p>Research → Questions and claims lets you link excerpts as support or challenge. These assessments are distinct from citations inserted in Write. Notes and annotations keep your own observations separate from exact quotations.</p><AppButton variant="subtle" disabled={!project||disabled} onClick={()=>research({kind:'evidence'})}>Open Questions and claims</AppButton></li>
+      <li><strong>Review, then export a reading copy.</strong><p>Export asks for sections and format, then preflight review, then a native destination. Bibliography and citation style tools are below the export flow. Review source metadata or explicitly acknowledge omissions for that captured revision. Each result reports output and format losses.</p><AppButton variant="subtle" disabled={!project||disabled} onClick={()=>go('export')}>Open Export</AppButton></li>
+      <li><strong>Return with confidence.</strong><p>Projects lists local work; opening an eligible recent project restores its section. Project actions holds details, import, history-related file controls, copies and archive. Settings → Data and recovery holds retained versions. Export never replaces a project backup.</p><div className={styles['guide-actions']}><AppButton variant="subtle" disabled={!project||disabled} onClick={()=>go('details')}>Project actions</AppButton><AppButton variant="subtle" onClick={()=>void navigate({kind:'settings',page:'access'})}>Collie access</AppButton><AppButton variant="subtle" onClick={()=>void navigate({kind:'settings',page:'data'})}>Data and recovery</AppButton></div></li>
     </ol>
+    {ready?<details className={styles['guide-disclosure']}><summary>Create a fresh tutorial sample</summary><p>Older tutorial copies remain in Projects with your edits and selected files intact. Only the fresh sample receives the sample editing allowance; older copies remain readable and exportable.</p><ChoiceField label="Keep the previous sample as a separate project and create a fresh sample" checked={acknowledged} disabled={disabled} onChange={event=>setAcknowledged(event.currentTarget.checked)}/><AppButton variant="default" disabled={disabled||!acknowledged} onClick={()=>{setAcknowledged(false);reset()}}>Create a fresh sample</AppButton></details>:null}
   </section>
 }

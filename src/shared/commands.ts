@@ -1,4 +1,5 @@
 import type { StorageStatus } from './storage'
+import type { ProjectResult } from './projects'
 import type { ProjectAPI } from './projects'
 import type { LifecycleAPI } from './project-lifecycle'
 import type { FileAPI } from './project-files'
@@ -6,6 +7,8 @@ import type { AccessAPI } from './access'
 import type { SupportAPI } from './support'
 import type { DirectAPI } from './direct-access'
 
+export const HELP_ACTION = 'app.helpAction'
+export type HelpAction = 'licenses' | 'check-updates' | 'install-update'
 export const GET_INFO = 'app.getInfo'
 export const GET_STORAGE_STATUS = 'storage.getStatus'
 export const STORAGE_STATUS_CHANGED = 'storage.statusChanged'
@@ -26,6 +29,7 @@ export type Result<T> =
       error: { code: AppErrorCode; message: string; retryable: boolean }
     }
 export type CollieAPI = ProjectAPI & FileAPI & LifecycleAPI & AccessAPI & SupportAPI & DirectAPI & {
+  helpAction: (action: HelpAction) => Promise<ProjectResult<boolean>>
   onEditorAction: (callback: (action: 'undo' | 'redo' | 'find' | 'paste-plain') => void) => () => void
   getInfo: () => Promise<Result<AppInfo>>
   getStorageStatus: () => Promise<Result<StorageStatus>>

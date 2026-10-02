@@ -9,6 +9,7 @@ import { isDataLocations, type DataLocations } from '../shared/project-lifecycle
 import { contextBridge, ipcRenderer } from 'electron'
 import {
   GET_INFO,
+  HELP_ACTION,
   EDITOR_ACTION,
   GET_STORAGE_STATUS,
   STORAGE_STATUS_CHANGED,
@@ -43,6 +44,7 @@ ipcRenderer.on(FILE_ACTION, (_event, value: unknown) => {
   else if (pendingFileActions.length < 16) pendingFileActions.push(value)
 })
 const api: CollieAPI = {
+  helpAction: input => projectCall<boolean>(HELP_ACTION, value => value === true, input),
   readDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.read, isDirectView),
   beginDirectAccess: input => projectCall<DirectView>(DIRECT_CHANNELS.begin, isDirectView, input),
   resumeDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.resume, isDirectView),

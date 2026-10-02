@@ -5,6 +5,7 @@ import { ActionMenu } from '../../components/ui/ActionMenu'
 import { manuscriptAnchor } from '../../editor/anchors'
 import RichDraft from '../../editor/RichDraft'
 import { editorIsComposing } from '../../editor/adapter'
+import SaveMenu from './SaveMenu'
 import OutlinePanel from '../outline/OutlinePanel'
 import { useWorkspaceSession } from './WorkspaceSession'
 import { scopeOf } from './useWorkspaceController'
@@ -19,7 +20,7 @@ export default function WritingWorkspace(): React.JSX.Element {
   const {project,list,writingView,sectionTitle,setSectionTitle,sectionStatus,setSectionStatus,sectionSynopsis,setSectionSynopsis,sectionFields,
     busy,acting,closing,committing,retry,outlineRetry,sectionReadOnly,accessReadOnly,accessTransition,storage,metaPending,editorRef,
     anchorToFocus,citationContext,dirty,editorEpoch,setError,changed,isDirty,actionTask,flushManuscript,imageUrls,importImage,
-    run,performOutline,navigateSection,saveSectionMeta,files,fileActive,available,save,workspace,navigate,captureAnnotation,chooseProject,flush,refresh,conflict}=session
+    run,performOutline,navigateSection,saveSectionMeta,files,fileActive,available,workspace,navigate,captureAnnotation,chooseProject,flush,refresh,conflict}=session
   const {preferences,update,issue}=writingView
   const [narrow,setNarrow]=useState(()=>window.matchMedia('(max-width: 78rem)').matches)
   const [mobilePane,setMobilePane]=useState<'editor'|'outline'|'panel'>('editor')
@@ -49,7 +50,7 @@ export default function WritingWorkspace(): React.JSX.Element {
       <div className={styles['writing-project-heading']}><p className={styles['writing-eyebrow']}>Manuscript</p><h1>{project.title}</h1><details className={styles['writing-save-state']}><summary><span role="status">{status} · {fileStatus}</span></summary><p>Local protection keeps writing on this device. Save writes the selected project file; your cloud provider manages any upload separately.</p>{session.notice?<p>{session.notice}</p>:null}<AppButton variant="subtle" disabled={!available||blocked||!dirty} onClick={()=>run(async()=>{await flush();await refresh()})}>{retry?'Retry local protection':'Protect pending drafts'}</AppButton></details></div>
       <div className={styles['writing-header-actions']}>
         {session.backDestination?<AppButton variant="subtle" onClick={()=>void session.goBack()}>Back to {session.backLabel}</AppButton>:null}
-        <AppButton variant="default" disabled={!available||blocked||fileActive} onClick={()=>run(()=>save(false))}>Save</AppButton>
+        <SaveMenu />
         <AppButton variant="subtle" onClick={()=>session.research({kind:'sources'})}>Research</AppButton><AppButton variant="subtle" onClick={()=>go('search')}>Search</AppButton><AppButton variant="subtle" onClick={()=>go('export')}>Export</AppButton>
         <ActionMenu label="Project" actions={[
           {id:'details',label:'Project and file actions',onSelect:()=>go('details')},

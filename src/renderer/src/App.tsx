@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { BookOpen, FolderOpen, PenLine, Settings } from 'lucide-react'
 import type { AppInfo } from '../../shared/commands'
 import type { StorageStatus } from '../../shared/storage'
+import SaveMenu from './features/workspace/SaveMenu'
+import AboutPanel from './features/settings/AboutPanel'
+import Orientation from './features/help/Orientation'
 import Projects from './features/projects/Projects'
 import { WorkspaceSessionProvider, useWorkspaceSession } from './features/workspace/WorkspaceSession'
 import { WorkspaceStatus } from './features/workspace/WorkspaceStatus'
@@ -54,6 +57,7 @@ function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; faile
           {channel && channel !== 'Direct' ? <span className={styles['build-label']}>{channel}</span> : null}
         </div>
         <nav aria-label="App sections" className={styles['app-navigation']}>
+          {project&&destination.kind!=='workspace'&&destination.kind!=='setup'?<SaveMenu />:null}
           <AppButton variant="subtle" disabled={navigating} onClick={() => { void navigate({kind:'library'}) }}>Projects</AppButton>
           {project ? <AppButton variant="subtle" disabled={navigating} onClick={returnToWork}>Return to work</AppButton> : null}
           <AppButton variant="subtle" leftSection={<Settings size={18} aria-hidden="true" />}
@@ -80,21 +84,10 @@ function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; faile
           </StatusBanner>
         </div> : null}
         <WorkspaceStatus />
+        <Orientation />
         <Projects />
         <RetainedRegion name="help-about" label="About and help">
-        <h1>About Collie Writer</h1>
-        <p>Use the native Help menu for bundled third-party licenses and explicit update actions. Review a content-free support preview in Settings.</p>
-        <details className={styles['storage-details']}>
-          <summary>Local storage details</summary>
-          <h2>SQLite engine</h2>
-          <p role="status">
-            {storageStatus.state === 'starting'
-              ? 'Waiting for a local working folder or starting storage…'
-              : storageStatus.state === 'ready'
-                ? `Loaded · SQLite ${storageStatus.runtime.sqliteVersion} · Node ${storageStatus.runtime.nodeVersion} · Node-API ${storageStatus.runtime.napiVersion}`
-                : 'Storage is unavailable. Keep this window open and copy any unprotected text before quitting.'}
-          </p>
-        </details>
+        <AboutPanel info={info} storage={storageStatus} />
         </RetainedRegion>
       </main>
       <footer className={styles['app-footer']}>

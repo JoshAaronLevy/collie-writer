@@ -1,4 +1,6 @@
-.settings-panel { margin-top: var(--collie-space-8); }
+.settings-panel { margin: var(--collie-space-6) auto; max-width: 65rem; }
+.native-help-actions { display: flex; flex-wrap: wrap; gap: var(--collie-space-3); margin-block: var(--collie-space-4); }
+.native-help-actions p { flex-basis: 100%; }
 .settings-heading { display: flex; align-items: center; gap: var(--collie-space-3); color: var(--collie-accent); }
 .settings-heading h2 { color: var(--collie-text); margin: 0; font-size: 1.25rem; }
 .settings-introduction { color: var(--collie-text-secondary); margin: var(--collie-space-2) 0 var(--collie-space-6); max-width: 65ch; }

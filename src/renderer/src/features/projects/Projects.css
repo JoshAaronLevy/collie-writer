@@ -9,12 +9,7 @@
   input:not([type='checkbox']), select { min-height: var(--collie-control-height); }
   summary { min-height: var(--collie-control-height); cursor: pointer; }
   label:has(input[type='checkbox']) { display: inline-flex; align-items: center; min-height: var(--collie-control-height); gap: var(--collie-space-2); }
-  .tutorial-panel { margin-block: var(--collie-space-6); padding: var(--collie-space-4); border: 1px solid var(--collie-border); border-radius: var(--collie-radius-surface); background: var(--collie-surface); }
-  .tutorial-steps li { margin-block: var(--collie-space-4); }
-  .tutorial-steps button { margin-inline-start: var(--collie-space-2); }
 .project-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1rem 0; }
-.working-location { border: 1px solid var(--collie-border); padding: 1rem; border-radius: 0.5rem; }
-.location-path { overflow-wrap: anywhere; }
 .project-error { border-left: 4px solid var(--collie-error); padding: 0.75rem; background: var(--collie-error-surface); }
 button:not([data-collie-button]):disabled { opacity: 1; cursor: not-allowed; color: var(--collie-text-secondary); background: var(--collie-surface-muted); border-color: var(--collie-border); }
 
@@ -22,10 +17,6 @@ form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
 input:not([type='checkbox']) { font: inherit; padding: 0.5rem; max-width: 100%; min-width: 0; border: 1px solid var(--collie-text-secondary); border-radius: 0.3rem; }
 form input { flex: 1 1 14rem; }
 
-.citations-panel { margin-block: 1rem; padding: 1rem; border: 1px solid var(--collie-border); border-radius: .4rem; }
-.citations-panel button { margin: .25rem; }
-.citation-note-preview p, .bibliography-preview p { white-space: pre-wrap; overflow-wrap: anywhere; }
-.bibliography-preview.hanging p { padding-inline-start: 2rem; text-indent: -2rem; }
 
 
 
