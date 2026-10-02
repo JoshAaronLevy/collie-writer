@@ -7,6 +7,7 @@ import { isSearchView, isSearchActivity, type SearchView, type SearchActivity } 
 import { isNotesView, type NotesView } from '../shared/notes'
 import { isDataLocations, type DataLocations } from '../shared/project-lifecycle'
 import { contextBridge, ipcRenderer } from 'electron'
+import { aiApi } from './ai'
 import {
   GET_INFO,
   HELP_ACTION,
@@ -44,6 +45,7 @@ ipcRenderer.on(FILE_ACTION, (_event, value: unknown) => {
   else if (pendingFileActions.length < 16) pendingFileActions.push(value)
 })
 const api: CollieAPI = {
+  ...aiApi,
   helpAction: input => projectCall<boolean>(HELP_ACTION, value => value === true, input),
   readDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.read, isDirectView),
   beginDirectAccess: input => projectCall<DirectView>(DIRECT_CHANNELS.begin, isDirectView, input),

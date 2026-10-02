@@ -74,3 +74,9 @@ PDF export metadata uses pdf-lib 1.17.1 (MIT) locally, with @pdf-lib/standard-fo
 1.0.0 and @pdf-lib/upng 1.0.1 (MIT), pako 1.0.11 (MIT and Zlib), and tslib
 1.14.1 (0BSD). Complete distributed notices are in dependencies/. No PDF or
 project details are sent to a conversion or metadata service.
+
+The optional provider connection boundary verifies signed OpenAI tokens with
+jose 6.2.12 (MIT). Its complete notice is in dependencies/. The development
+Codex CLI 0.160.0 dependency is not redistributed in application packages.
+Its Apache-2.0 package metadata does not confer provider account, funding or
+commercial integration permission. Runtime distribution remains pending.

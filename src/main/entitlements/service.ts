@@ -39,6 +39,7 @@ export class AccessService {
   private root=''
   private initialized=false
   private initializing=false
+  private externalWorkPending:()=>boolean=()=>false
   constructor(private readonly owner:()=>WebContents|undefined,private readonly storage:StorageWorker,private readonly dirty:()=>boolean,private readonly workingRoot:()=>string|undefined,private readonly devOrigin?:string){}
   private async readLocal(name:string):Promise<unknown|null>{
     const path=join(this.root,name)
@@ -150,8 +151,19 @@ export class AccessService {
     this.drainOperations.set(slot,{operationId,digest});return true
   }
   authorizeFileChange():void{if(this.transition)throw new ProjectError('ACCESS_TRANSITION');if(this.changing||this.sampleBusy)throw new ProjectError('ACCESS_BUSY')}
+  /** Inference is new work, never an access-drain operation. Scope comes from
+   * the project that main observed the trusted storage worker open. */
+  authorizeAi(scope:OpenInput,editing:boolean):void{
+    if(!this.root||!this.initialized)throw new ProjectError('STORAGE_LOCATION_REQUIRED')
+    if(!editing)return
+    if(!sameProject(this.active,scope))throw new ProjectError('DENIED')
+    const view=this.view()
+    if(this.changing||this.sampleBusy||view.transition)throw new ProjectError('ACCESS_BUSY')
+    if(!canEditProject(view,scope))throw new ProjectError('READ_ONLY_PROJECT')
+  }
+  setExternalWorkGuard(pending:()=>boolean):void{this.externalWorkPending=pending}
   releaseWindow():void{this.active=null;this.activeWasEditable=false;this.transition=null;this.drainOperations.clear();this.lastView=''}
-  private requireSettled(keepActive=false):void{if(!this.root)throw new ProjectError('STORAGE_LOCATION_REQUIRED');if(!this.initialized||(!keepActive&&this.dirty())||!this.storage.idle()||this.changing||this.sampleBusy)throw new ProjectError('ACCESS_BUSY')}
+  private requireSettled(keepActive=false):void{if(!this.root)throw new ProjectError('STORAGE_LOCATION_REQUIRED');if(!this.initialized||(!keepActive&&this.dirty())||!this.storage.idle()||this.changing||this.sampleBusy||this.externalWorkPending())throw new ProjectError('ACCESS_BUSY')}
   private async tutorial(reset:boolean):Promise<OpenProject>{
     this.requireSettled()
     if(this.settingsBroken)throw new ProjectError('ACCESS_SETTINGS')

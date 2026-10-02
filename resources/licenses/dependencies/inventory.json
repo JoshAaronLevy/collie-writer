@@ -807,5 +807,13 @@
       "tslib-1.14.1-LICENSE.txt",
       "tslib-1.14.1-CopyrightNotice.txt"
     ]
+  },
+  {
+    "package": "jose",
+    "version": "6.2.12",
+    "license": "MIT",
+    "notices": [
+      "jose-6.2.12-LICENSE.md"
+    ]
   }
 ]

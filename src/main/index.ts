@@ -19,6 +19,8 @@ import { SupportService } from './support'
 import { DirectAccessService } from './entitlements/direct/service'
 import { RELEASE } from './release'
 import { DirectUpdater } from './updates/direct'
+import { AiService } from './ai/service'
+import { registerAiIpc } from './ai/ipc'
 
 app.setName('Collie Writer')
 app.setAppUserModelId(RELEASE.appId)
@@ -56,6 +58,8 @@ const storage = new StorageWorker((status) => {
     window.webContents.send(STORAGE_STATUS_CHANGED, status)
 })
 const access = new AccessService(() => window?.webContents,storage,() => unprotected,() => location.path(),devOrigin)
+const ai = new AiService(() => location.path(), access)
+access.setExternalWorkGuard(() => ai.hasPendingWork())
 const directAccess = new DirectAccessService(() => window?.webContents, access, devOrigin)
 const support = new SupportService(() => window?.webContents,()=>storage.current(),devOrigin)
 storage.onErrorCode(code=>support.recordError(code))
@@ -63,7 +67,7 @@ storage.setAccessPolicy(command=>access.authorize(command),command=>{
   if(['open','restore','recover','duplicate','locate','inspect'].includes(command.kind)||command.kind==='answer'&&command.choice!=='cancel')access.authorizeFileChange()
 },(command,value)=>access.observe(command,value))
 const files = new ProjectFileIpc(() => window?.webContents, location, storage, devOrigin)
-const lifecycle = new ProjectLifecycle(() => window?.webContents, files, () => unprotected, devOrigin)
+const lifecycle = new ProjectLifecycle(() => window?.webContents, files, () => unprotected, devOrigin, ai)
 const prepareUpdateRestart = async (): Promise<boolean> => {
   if (shutdownStarted || shutdownFinished) return false
   shutdownStarted = true
@@ -75,14 +79,16 @@ const prepareUpdateRestart = async (): Promise<boolean> => {
     closeApproved = true
     shutdownFinished = true
     return true
-  } catch { shutdownStarted = false; files.action('close-cancelled'); return false }
+  } catch { shutdownStarted = false; ai.resume(); files.action('close-cancelled'); return false }
 }
 let updater: DirectUpdater
 let closeApproved = false
 function openWindow(): void {
   closeApproved = false
+  ai.resume()
   window = createWindow(devOrigin)
   const opened = window
+  opened.webContents.on('render-process-gone', () => ai.suspend())
   opened.webContents.once('did-finish-load', () => {
     if (shellOpenQueue.length) files.offerShellPath(shellOpenQueue.shift()!)
     else files.nudgeShellOpen()
@@ -93,6 +99,7 @@ function openWindow(): void {
     void lifecycle.close().then(allowed => { if (allowed && !opened.isDestroyed()) { closeApproved = true; opened.close() } }).catch(() => { /* Keep the window and buffer on an unavailable native dialog. */ })
   })
   window.on('closed', () => {
+    ai.suspend()
     window = undefined
     files.revoke()
     sourceAssets.revoke()
@@ -124,6 +131,7 @@ app
     registerHelpIpc(() => window?.webContents, updater, devOrigin)
     registerStorageIpc(() => window?.webContents, () => storage.current(), devOrigin)
     access.register()
+    registerAiIpc(() => window?.webContents, ai, devOrigin)
     directAccess.register()
     support.register()
     registerProjectIpc(() => window?.webContents, location, storage, value => { unprotected = value }, devOrigin, sourceAssets)
@@ -167,5 +175,5 @@ app.on('before-quit', (event) => {
       void (window && !window.isDestroyed() ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options))
     })
     shutdownFinished = true; app.quit()
-  }).catch(() => { shutdownStarted = false; closeApproved = false; files.action('close-cancelled'); void dialog.showMessageBox({ type: 'warning', title: 'Closing paused', message: 'Storage has not confirmed shutdown. Keep the app open and preserve any visible writing.', buttons: ['Keep open'] }) })
+  }).catch(() => { shutdownStarted = false; closeApproved = false; ai.resume(); files.action('close-cancelled'); void dialog.showMessageBox({ type: 'warning', title: 'Closing paused', message: 'Storage has not confirmed shutdown. Keep the app open and preserve any visible writing.', buttons: ['Keep open'] }) })
 })

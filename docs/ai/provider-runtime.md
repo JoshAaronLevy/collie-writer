@@ -1,0 +1,69 @@
+# I10 provider boundary and activation runbook
+
+October 2, 2026. **Independent local implementation delivered — awaiting user testing. I10 overall remains partial.** This describes actual code plus exact missing integration work. No sign-in, runtime process, inference or native behavior has been observed. I11 connection UI and I12 conversations are separate stages; the current Settings screen still says connections are unavailable.
+
+## Delivered components
+
+| Component | Implementation and current limit |
+| --- | --- |
+| `src/shared/ai.ts`, `src/preload/ai.ts`, `src/main/ai/ipc.ts` | Named, exact validated requests/results/events; trusted main-frame sender and request correlation. No generic HTTP/URL, shell, token, provider config or runtime RPC input. |
+| `src/main/ai/deployment.ts` | Source-owned per-channel registration configuration. All three registrations are null. Funding and complete runtime isolation have explicit refusing functions, not developer bypass flags. |
+| `src/main/ai/openai-auth.ts`, `openai-http.ts` | Real registered-public-client browser OAuth, loopback callback, PKCE/state/nonce, signed JWT issuer/audience/identity checks, token exchange, refresh and revocation. Exact commercial registration/callback compatibility awaits supplied route documentation. No dynamic registration request is implemented or automatically submitted. |
+| `src/main/ai/storage.ts` | OS-encrypted account records and operation journals under the verified working root; atomic writes and retained failed candidates. Unsupported/unavailable encryption closes the connection. |
+| `src/main/ai/codex-runtime.ts` | Real newline-delimited app-server transport: initialize, model catalog, fresh thread, start, agent-text stream and final status, interrupt and process teardown. No raw RPC or runtime identity escapes to the renderer. Complete text-only/tool isolation remains unresolved, so no runtime launch is enabled. |
+| `src/main/ai/service.ts` | Persistent main owner, serialized account changes, immutable bounded context authorization, exact operation replay, partial/unknown outcomes, retained recovery, disk-only protection retry, close/access/suspend integration. |
+| Access/lifecycle/main integration | Editing authorization uses the project main observed from storage and never uses buffer-drain rights. Existing renderer draft/flush checks remain. Account changes, active AI jobs and unprotected AI output participate in main settlement. |
+| Dependencies/notices | Codex CLI **0.160.0** is pinned as a development dependency. `jose` **6.2.12** is pinned for token validation with its MIT notice bundled. The CLI package records Apache-2.0; no Codex runtime is included in distributable packages yet. |
+
+These are production source paths, not mocks or a simulated provider. There are no canned account/model responses, test harnesses, forced states or special testing controls. The refusal paths are real product behavior while capabilities are unavailable. Missing provider-specific enforcement is still missing engineering; the presence of a refusal function does not complete that component.
+
+## Runtime and documentation selection
+
+The [Codex SDK guidance](https://learn.chatgpt.com/docs/codex-sdk) directs clients handling authentication and streamed events to app-server. The [subscription OAuth adapter](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server) documents token transport through the child environment, a Responses provider and host-owned refresh. No supported bridge to the preferred TypeScript SDK was established, so this increment implements app-server directly and does not add an unused SDK.
+
+The installed npm package's README, package metadata and launcher source were read without invocation. Its platform layout resolves an exact binary beneath the pinned optional platform package, not an executable on PATH. The adapter's method/event implementation follows the [app-server protocol](https://learn.chatgpt.com/docs/app-server). Configuration follows the [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference). These documentation reads do not establish native compatibility of version 0.160.0 with every referenced method or isolation guarantee.
+
+Authentication follows [registration/sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in), [accounts/sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions), [token reference](https://developers.openai.com/siwc/token-sharing-open-source/token-reference) and [signature validation](https://developers.openai.com/siwc/website). The published local/open-source protocol is engineering evidence; it does not authorize paid Collie to use dynamic registration or establish that a future commercial client uses the identical contract.
+
+## Connection lifecycle and configuration
+
+`OPENAI_REGISTRATIONS` in main is keyed by the existing `development`, `beta` and `production` release identities. Each entry needs a real issued public-client ID, applicable permission reference, exact loopback callback contract and, for production, commercial approval reference. Private development and beta rights are evaluated for their actual route; merely packaging a development build does not turn them into commercial permission. No environment flag, project, renderer setting or credential file changes this configuration.
+
+The implemented route uses fixed `auth.openai.com` authorize/token/JWKS/discovery endpoints. A discovered revocation URL must remain on the same HTTPS origin, without credentials, query, fragment or redirects. HTTP responses are bounded to 256 KiB and 20 seconds; the callback attempt expires after five minutes. Browser callbacks require the exact host/path, one value per allowed parameter, matching state and client, and the original redirect for exchange. An invalid callback does not authenticate anyone. No token or unvalidated provider error is rendered in the callback page.
+
+New connection attempts remain separate from the active account until signature, nonce, subject/client, scopes and persistence succeed. Reauthorization checks the selected identity. Account labels are bounded verified email labels or a generic label; provider subjects, issued client IDs and host IDs remain in main. Repeated attempt IDs do not reopen a browser during the current process. Cancelled, expired or replaced attempts cannot publish an active connection. Credentials include the stable host ID and per-account registration mapping; sign-out clears tokens while retaining that mapping. No developer Codex home, browser cookies, native app tokens or API key is read.
+
+Refresh is serialized. Before sending a rotating refresh token, the encrypted record marks renewal pending. An interrupted/uncertain refresh requires reauthorization; it does not replay the old token. Sign-out also persists an intent before remote revocation. Unconfirmed revocation is reported separately from local token removal. The current auth implementation expects a registered public client with the documented RS256 identity/access-token and numeric expiry contracts; a differing approved contract requires a bounded I10 adaptation.
+
+The status contract distinguishes configured/allowed channel, current auth action, account state, funding, runtime presence and unavailable reasons. It never reports ready. Authentication can later be enabled independently if its supplied route permits it, while funding/isolation continue refusing generation. No login, token refresh, model lookup or inference runs automatically on app startup or from status reads.
+
+## Requests, recovery and downstream ownership
+
+Before preparation, main requires current editing rights in its trusted active project and an eligible selected session, funding and isolation. Inputs contain a purpose, a chosen model, prompt and explicitly selected context; they accept no provider parameters or filesystem paths. Bounds are 16,000 UTF-16 units for the prompt, 64,000 aggregate context units across at most 32 chunks, and 128,000 output units. These bounds are content limits, not a billing guarantee.
+
+`prepareAiOperation` captures an immutable payload and SHA-256 digest with a five-minute authorization ID. `startAiOperation` requires that exact ID, operation and digest, rechecks eligibility and records the intent before dispatch. Repeating a dispatched operation returns its retained outcome; it never repeats inference. A deliberate new inference retry needs a fresh operation ID and context authorization. A refused preparation sends nothing and is not queued for later activation.
+
+Every operation gets a new private runtime profile, empty working directory and thread. No prior runtime thread is resumed, so approved history must be explicitly included in the new payload. Child environment inheritance excludes API keys, alternate endpoints, proxies, user config and hooks; only isolated runtime paths, the OAuth token and necessary Windows OS paths are supplied. Documented settings disable shell/unified execution, web search, apps, hooks, subagents, transcript-history indexing and analytics/feedback/OTel; retries are zero. Unexpected tool requests/config warnings stop the process. These controls are implemented but do **not** yet establish that every tool, plugin, system-config and content-log path is disabled; the isolation refusal remains mandatory.
+
+Model catalog entries are labeled unverified, not subscription entitlement proof. Only agent-message text is surfaced. Hidden reasoning, provider stderr, diagnostic text and runtime thread/turn handles are never IPC output. An interrupt request is separate from a terminal cancelled state. Lost/failed transport, timeouts and forced child termination may produce an unknown outcome, never proof of rollback or refunded usage. The five-minute operation deadline and cancellation deadline bound the isolated provider process; they never terminate the storage worker.
+
+Encrypted local journals retain the original capture and partial/final output, coalescing snapshots with one pending disk write. Startup changes interrupted active states to unknown without resending. A failed journal write keeps visible memory and blocks close; `retryAiProtection` only repeats the local write and requires no provider session. The failure retains its exact operation ID: protecting a different older operation cannot clear it. Main offers bounded operation read/status APIs for recovery. Retention currently caps at 64 jobs and never deletes old jobs automatically. I12 must add its durable transcript handoff and explicit retention decisions before unrestricted ongoing use; reaching the cap refuses new work without deleting content.
+
+I11 can now consume the real connection/status methods and unavailable reasons. I12 owns portable conversations, durable context/transcript import from `readAiOperation`, job presentation and renderer draft registration. I13 owns proposals/apply/reversal. Nothing in I10 changes manuscript or project SQL. Connection IDs and operational authorization IDs remain device-local and must not be serialized as portable provider authority.
+
+## Exact remaining work
+
+| Requirement | Status and next I10 action |
+| --- | --- |
+| Development registration/access | Not supplied. Reconcile actual supported public-client/callback/identity contract and channel permission; populate authentic source configuration. Browser sign-in remains unavailable until then. |
+| Included-only funding | No binding enforcement method established. Implement the real policy in place of `requireIncludedFunding`, bound to account/client/model and all internal requests/settings/concurrency. A checkbox or successful OAuth is insufficient. No API-key/credit/top-up fallback even in development. |
+| Complete runtime isolation | Exact no-tools/no-ambient-config/no-content-diagnostics guarantee not established for 0.160.0. Establish supported controls and finish `requireTextOnlyRuntime` with enforceable prerequisites. A prompt or read-only sandbox alone is insufficient. |
+| Model eligibility | Catalog is implemented but unverified. The eventual authorization/funding contract must cover the selected model and capability before each dispatch; catalog availability alone is insufficient. |
+| SDK preference | No documented TypeScript SDK bridge for the selected OAuth route found. App-server is the selected supported protocol; reconsider only if the actual approved route documents a suitable SDK bridge. |
+| Desktop distribution | Development resolves macOS arm64/x64 and Windows x64 optional-package binaries. Packaged apps deliberately refuse runtime resolution. Record all resources/notices, native signatures, isolation/retention and permitted distribution before adding explicit resources/signing entries. Never borrow PATH or silently download. MAS remains blocked separately. |
+| Commercial activation | A-OPENAI remains unresolved. Record actual approval and production registration/branding; use this same I10, not a repeat of I01–I09. |
+| User observation | All native login/secure-store/refresh/stream/cancel/recovery/package behavior unobserved. Real UI and eligible access are required; no mock UI or charge-incurring experiment. |
+
+## Owner handoff
+
+No account or runtime setup is needed to review the delivered code/design. Use the [I10 manual guide](../manual-testing/improvement-I10.md) for current visible behavior. The [approval guide](openai-approval-guide.md) remains available for owner-led provider contact; applying is not a condition for developing I11's local UI. Do not fill a permission reference with sample text or change refusal functions merely to try the app. Subsequent authentic route inputs and bounded corrections belong to a resumed I10. Commercial, signing, store, output-fidelity and release NO-GO requirements remain independent.

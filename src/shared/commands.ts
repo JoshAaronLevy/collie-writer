@@ -6,6 +6,7 @@ import type { FileAPI } from './project-files'
 import type { AccessAPI } from './access'
 import type { SupportAPI } from './support'
 import type { DirectAPI } from './direct-access'
+import type { AiAPI } from './ai'
 
 export const HELP_ACTION = 'app.helpAction'
 export type HelpAction = 'licenses' | 'check-updates' | 'install-update'
@@ -28,7 +29,7 @@ export type Result<T> =
       requestId: string
       error: { code: AppErrorCode; message: string; retryable: boolean }
     }
-export type CollieAPI = ProjectAPI & FileAPI & LifecycleAPI & AccessAPI & SupportAPI & DirectAPI & {
+export type CollieAPI = ProjectAPI & FileAPI & LifecycleAPI & AccessAPI & SupportAPI & DirectAPI & AiAPI & {
   helpAction: (action: HelpAction) => Promise<ProjectResult<boolean>>
   onEditorAction: (callback: (action: 'undo' | 'redo' | 'find' | 'paste-plain') => void) => () => void
   getInfo: () => Promise<Result<AppInfo>>

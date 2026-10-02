@@ -5,31 +5,38 @@ import { exact, record } from '../shared/projects'
 import { CLOSE_REPLY, fileBusy } from '../shared/project-files'
 import { isTrustedSender } from './ipc'
 import type { ProjectFileIpc } from './project-files-ipc'
+import type { AiService } from './ai/service'
 
 /** Close never races a buffer flush, file replacement, or a still-pending local acknowledgment. */
 export class ProjectLifecycle {
   private request: Promise<boolean> | undefined
   private pending: { id: string; resolve: (outcome: string) => void } | undefined
-  constructor(private readonly owner: () => WebContents | undefined, private readonly files: ProjectFileIpc, private readonly dirty: () => boolean, private readonly devOrigin?: string) {}
+  constructor(private readonly owner: () => WebContents | undefined, private readonly files: ProjectFileIpc, private readonly dirty: () => boolean, private readonly devOrigin?: string, private readonly ai?: AiService) {}
   register(): void {
     ipcMain.on(CLOSE_REPLY, (event, value: unknown) => {
       const pending = this.pending
       if (!pending || !isTrustedSender(event, this.owner(), this.devOrigin) || !record(value) || !exact(value, ['id','outcome']) || !isId(value.id) || !['saved','local','failed','cancel'].includes(String(value.outcome)) || value.id !== pending.id) return
       pending.resolve(String(value.outcome))
     })
-    powerMonitor.on('suspend', () => this.files.action('suspend'))
-    powerMonitor.on('resume', () => { void this.files.recheck(); this.files.action('resume') })
+    powerMonitor.on('suspend', () => { this.ai?.suspend(); this.files.action('suspend') })
+    powerMonitor.on('resume', () => { this.ai?.resume(); void this.files.recheck(); this.files.action('resume') })
   }
   close(): Promise<boolean> {
     if (this.request) return this.request
     this.request = this.closeOnce().then(allowed => {
-      if (!allowed) this.files.action('close-cancelled')
+      if (!allowed) { this.ai?.resume(); this.files.action('close-cancelled') }
       return allowed
-    }, error => { this.files.action('close-cancelled'); throw error }).finally(() => { this.request = undefined })
+    }, error => { this.ai?.resume(); this.files.action('close-cancelled'); throw error }).finally(() => { this.request = undefined })
     return this.request
   }
   private async closeOnce(): Promise<boolean> {
     const owner = this.owner(), window = owner ? BrowserWindow.fromWebContents(owner) : null
+    if (this.ai && !await this.ai.prepareClose()) {
+      const options = { type: 'warning' as const, title: 'Finishing AI work', message: 'Closing has been paused while AI work is being protected.', detail: 'Finish or cancel the active request and resolve any local storage problem before closing. Writing remains open.', buttons: ['Keep window open'], noLink: true }
+      if (window && !window.isDestroyed()) await dialog.showMessageBox(window, options)
+      else await dialog.showMessageBox(options)
+      return false
+    }
     if (!owner || !window) return !this.dirty() && (!fileBusy(this.files.current().job) || this.files.current().job?.kind === 'check')
     const id = randomUUID()
     let timer: ReturnType<typeof setTimeout> | undefined

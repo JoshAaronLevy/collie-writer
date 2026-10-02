@@ -1,8 +1,42 @@
 # I10 status and evidence
 
-October 2, 2026. **Current status: revised plan ready for local engineering; provider implementation not yet delivered.** The previous all-code entry veto is superseded at Josh's request. Live access, included-only funding and commercial activation remain unresolved. No runtime or user acceptance is claimed.
+October 2, 2026. **Independent local implementation delivered — awaiting user testing; I10 overall remains partial.** Funding enforcement, complete runtime isolation, authentic route configuration and packaged distribution remain incomplete/unavailable. No working-provider, runtime or user acceptance is claimed.
 
-## Current plan revision — October 2, 2026
+## Engineering implementation — October 2, 2026
+
+The latest request explicitly authorized I10 implementation under the revised development-first brief. The working tree began clean. Shared plan contracts, I10, prerequisite I03/I09 records, applicable repository guidance and main/preload/storage/access/security boundaries were read. Josh's I07/I08 notes and all model/effort recommendations remain intact. I01–I09 were not reimplemented.
+
+| Delivered code/documentation | Responsibility |
+| --- | --- |
+| `src/shared/ai.ts`, `src/preload/ai.ts`, preload/commands integration, `src/main/ai/ipc.ts` | Exact typed and validated connection, model, captured-operation, recovery/protection and sanitized event contracts; trusted-frame authorization |
+| `src/main/ai/deployment.ts`, `errors.ts` | Per-channel source-owned registration, explicit funding/isolation refusals and bounded non-secret errors |
+| `src/main/ai/openai-auth.ts`, `openai-http.ts` | Browser/public-client OAuth callback, PKCE/state/nonce, signed identity/access-token checks, bounded provider requests, refresh and revocation |
+| `src/main/ai/storage.ts` | Encrypted credential/operation formats, stable host/account mapping, pending rotation/sign-out intent, retained atomic-write candidates |
+| `src/main/ai/codex-runtime.ts` | Pinned development binary resolution, isolated process/profile, real JSON-RPC methods and streaming/cancel/terminal-event handling; no inference activated |
+| `src/main/ai/service.ts` | Main-owned connection/operation lifetime, context digest, exact replay, coalesced local protection, interrupted/unknown recovery and disk-only retry |
+| `src/main/entitlements/service.ts`, `src/main/lifecycle.ts`, `src/main/index.ts` | Main editing authorization, pending-work access guard, existing close/update/suspend/renderer-loss settlement |
+| `package.json`, `package-lock.json`, bundled jose notice/inventory/NOTICE | Exact `jose` 6.2.12 production dependency and Codex CLI 0.160.0 development dependency |
+| [Runtime runbook](../ai/provider-runtime.md), decision, manual guide/index, provider/approval records, privacy inventory, plan and AGENTS | Delivered component map, remaining methods/configuration, downstream ownership and honest partial handoff |
+
+There is now real provider code; this is not an empty registry or another approval-only handoff. No registration has been populated, no funding policy invented, and no complete text-only runtime guarantee asserted. `requireIncludedFunding` and `requireTextOnlyRuntime` deliberately refuse. Their provider-specific enforcement is still missing engineering and must be completed in I10 using actual documented controls. Native/packaged runtime delivery is also pending. The [runbook component matrix and remaining-work list](../ai/provider-runtime.md) are authoritative for what is implemented versus pending.
+
+I11 can consume the actual status/connect/cancel/refresh/disconnect contract and unavailable reasons without a live account. I12 can use the delivered operation/capture/recovery contract for its local persistence/UI work. Neither stage was implemented here. Existing Settings/onboarding continue to report AI unavailable; no special testing UI was added.
+
+### Sources and execution limits
+
+The OpenAI Docs skill was used to search/open official documentation and read the protocol/sign-in/session/token/configuration pages linked in the runbook. The actual installed CLI package README, launcher and package metadata were read without running it. Official evidence still does not establish Collie's approval, authoritative included-only funding, or complete no-tool/config/diagnostic isolation for this pinned release.
+
+Dependencies were installed with exact versions and lifecycle scripts, audit and funding output disabled. npm reported the already recorded engine mismatch: install shell Node 22.22.3/npm 10.9.8 versus repository Node 24.21.0/npm 11.19.0. This is install output, not runtime/build acceptance. No package script or Codex binary was invoked.
+
+No tests/test code, fixtures, harnesses, checks, typecheck, lint, formatting, audit, build/package validation, app/dev-server/browser launch, screenshot, SDK/runtime execution, sign-in, inference, external submission, outreach or CI was performed. Source and Git reads are not passed tests. No private profile or saved user project was inspected.
+
+### Persistence and pending observations
+
+Portable SQL/minimum reader **10**, editor AST **1**, archive container **1** and compilation **3** remain unchanged. I10 adds device-local encrypted `ai/credentials-v1.json` and per-operation journal envelopes under the verified working root, plus private runtime directories only when a permitted operation actually starts. These never enter project snapshots/exports. No existing data migration or cleanup runs, and no AI files were created in normal app data during implementation.
+
+All native credential/callback, OAuth/refresh/revocation, model/funding, streaming/cancel/recovery, close/update, deployment and content-isolation behavior remains unobserved. The current user guide covers document review and existing local UI continuity; live-path observations must await authentic inputs and the real I11/I12 screens. User results: **none supplied**. Release remains **NO-GO**.
+
+## Earlier plan revision — October 2, 2026 (before implementation)
 
 Josh approved developing the supported integration locally before commercial approval and requested that the correction live in I10 and subsequent stages. The revised plan makes I10 own engineering now and later provider configuration/activation. I01–I09 require no reimplementation; their existing contracts and unreported acceptance remain intact. I11–I13 may develop their local production features against actual delivered code contracts while live access is pending; I14 applies the same distinction only when separately requested. I15 and the ledger distinguish engineering, usable AI, commercial activation and user acceptance.
 
