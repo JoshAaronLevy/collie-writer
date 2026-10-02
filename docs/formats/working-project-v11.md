@@ -1,0 +1,42 @@
+# Working project schema 11 — conversations
+
+October 2, 2026. Implementation complete — awaiting user testing. This supersedes schema 10 for new/current working projects. SQL schema and minimum reader are **11**. AST/editor and archive container remain **1**; frozen manuscript compilation remains **3**. No prior schema definition is rewritten.
+
+## Migration and ownership
+
+The existing retained-backup/candidate migration chain gains 10→11. It creates four empty app-owned STRICT tables; it invents no conversation or AI response. Existing projects, originals, failed candidates and backups remain retained. `validateProjectSchema` retains exact schema sets for versions 1–10 and adds 11. Archives supported previously remain readable and are migrated locally through the existing copy path.
+
+| Table | Ownership and contents |
+| --- | --- |
+| `conversations` | Composite project/UUID identity; independently mutable title, active/archived state, revision and UTC timestamps |
+| `ai_captures` | Immutable versioned capture: conversation identity, template `conversation-v1`, prompt, saved head/source revision, passage block offsets or section reference, explicitly selected history IDs, exact text projections, labels and canonical SHA-256 digest |
+| `conversation_attempts` | One versioned attempt per immutable capture, linked to user/optional assistant message, revision, outcome, actual known provider/model, sanitized reason, sequence, timestamps and idempotent submission digest |
+| `conversation_messages` | Stable ID/revision, conversation/attempt ownership, ordered user or assistant text and UTC timestamp; an assistant row exists only for nonempty genuine output |
+
+All content mutations advance the existing project commit chain, so selected-file Save status becomes pending. Conversation revisions advance for metadata and transcript changes. No manuscript document revision, payload, undo history, outline, research record or compilation selection is changed by a conversation mutation.
+
+Two ordinal slots are reserved per attempt: user followed by optional assistant. Gaps are valid. Partial output replaces the same assistant message under increasing provider sequence, retaining its identity. The portable sequence is the provider sequence plus one; zero means no provider observation. Exact/repeated or older sequence delivery does not create another commit or response. Captures are never edited when titles, source documents or outcomes change.
+
+`validatePortableConversations` checks ownership, bounded records, exact JSON keys/versions, IDs, table/body relationships, message/attempt/capture correspondence, capture digests, saved heads, source identities, prior-message order and frozen history text/revisions. It rejects unsupported data rather than dropping it. Titles are 1–160 UTF-16 units; prompts up to 16,000; aggregate attached text up to 64,000; output up to 128,000. There are at most 12 selected history messages and 128 selected text-block ranges. The foundational project limits are 10,000 conversations and 100,000 stored messages (one final assistant row may complete the last accepted intent). These are refusals, not automatic truncation or deletion.
+
+## Execution is device-local
+
+The existing `operations.sqlite` `jobs` table stores validated `conversation-binding` rows with state `bound`. Each relates a portable attempt/capture digest to a device-local provider operation, connection and authorization digest. Its schema is unchanged. Tokens, account labels, connection IDs, workspace IDs, authorization grants, runtime handles and thread IDs are absent from the four portable tables. A hash of the exact original submission provides idempotence; it is not executable authority.
+
+The main AI service retains its existing encrypted operation input/output journal separately. Bindings are not included in `.collie` archives. Independent copies rekey all four tables' `project_id`; inner conversation/message/capture/attempt IDs remain stable within the new project. Captures embed no project/workspace identity requiring JSON rewriting. A copied in-progress attempt without a local binding becomes `unknown` during owned local acquisition, with its text preserved and a new local commit. It cannot attach to or resume the original provider operation. A matching original workspace can reconcile only its actual retained I10 records; reopening never dispatches inference.
+
+## Consumer matrix
+
+| Consumer | Schema 11 handling |
+| --- | --- |
+| New-project creation and working open | Current schema, retained-copy migration, conversation graph validation and unbound-interruption reconciliation |
+| Shared commands / capability policy / main / preload / worker | Named conversation envelope with exact action/result validators; public callers cannot bind or settle output |
+| Snapshot / Save / Save As / Backup | Existing whole-database snapshot includes conversations; portable validation now includes schema 11 |
+| Archive manifest / extraction / incoming validation | Reader accepts schema/minimum reader 11 plus prior supported pairs; archive format remains 1 |
+| Duplicate / Restore / independent Open copy | Rekeys all four table owners; excludes operations database and provider grants |
+| Recovery / project discovery | Conversation commits update the local project head/catalog through the existing repository owner |
+| Transcript export | Separate native UTF-8 `.txt` output, ordered roles/dates/outcomes/provenance, optional reviewed-context appendix; exclusive creation, 64 MiB cap, existing file preserved |
+| Manuscript exports / frozen compilation / history restore | Existing selection and compilation 3; no chat transcript is compiled into DOCX/PDF/Markdown |
+| I13 extension | `shared/ai-content.ts`, `domain/ai/context.ts` and `worker/ai/capture.ts` provide action-neutral capture/attempt fields, deterministic text projection and hashing; I13 owns its proposal storage/UI and later migration |
+
+No migration, round trip, copy, export, native filesystem or scale acceptance is claimed. See the [I12 manual guide](../manual-testing/improvement-I12.md).

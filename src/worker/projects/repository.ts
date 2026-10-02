@@ -1,3 +1,5 @@
+import { conversationCommand, interruptUnboundConversations, validatePortableConversations } from './conversations'
+import type { ConversationWorkerInput, ConversationValue } from '../../shared/conversations'
 import { readProjectDetails } from './details'
 import { kindForTemplate, templateForKind } from '../../domain/projects/templates'
 import { requiredProjectName, storedProjectTitle } from '../../domain/projects/details'
@@ -96,6 +98,14 @@ async function selectedImage(path: string): Promise<Buffer> {
 
 export class ProjectRepository {
   private readonly exports: ExportJobs
+  conversation(input:ConversationWorkerInput):Promise<ConversationValue>{return this.serial(async()=>{
+    this.fileContext(input)
+    const mutating=['change','append','bind','settle'].includes(input.action)
+    if(mutating&&this.fileBusy)throw new ProjectError('PROJECT_LOCKED')
+    const owned=this.active!,value=await conversationCommand(owned,input)
+    if(mutating)await this.discovery(owned)
+    return value
+  })}
   exportPreview(input:ExportOptions):Promise<ExportPreview>{return this.serial(async()=>{this.fileContext(input);return (await prepareExport(this.active!.db,this.active!.workspace,this.resources,input)).preview})}
   exportStart(input:WorkerExportStart):Promise<ExportJob>{return this.serial(async()=>{this.fileContext(input);const owned=this.active!,prepared=await prepareExport(owned.db,owned.workspace,this.resources,input);return this.exports.start(owned.workspace,input,prepared)})}
   exportBatchStart(input:WorkerExportBatchStart):Promise<ExportJob>{return this.serial(async()=>{this.fileContext(input);const owned=this.active!,prepared=await prepareExport(owned.db,owned.workspace,this.resources,input);return this.exports.startBatch(owned.workspace,input,prepared)})}
@@ -428,6 +438,8 @@ export class ProjectRepository {
       operations.prepare("UPDATE jobs SET state='interrupted' WHERE state IN ('queued','running','cancelling')").run()
       const owned: Owned = { ...input, workspace, db, operations, search:search??null, lock, archived: await this.readArchived(workspace), destination: await readDestination(this.root, workspace) }
       manuscript(db,input.projectId)
+      validatePortableConversations(db,input.projectId)
+      interruptUnboundConversations(db,operations,input.projectId)
       this.read(owned)
       this.catalog.prepare('INSERT OR IGNORE INTO destinations VALUES (?,NULL,NULL,NULL)').run(input.projectId)
       await this.discovery(owned)

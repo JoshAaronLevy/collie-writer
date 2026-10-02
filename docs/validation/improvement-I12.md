@@ -1,0 +1,41 @@
+# I12 implementation record
+
+October 2, 2026. **Implementation complete — awaiting user testing.** The requested durable conversation foundation is delivered. I10 remains partial and AI generation remains unavailable. Working tree was clean at the start of this I12 turn. No user acceptance results for I12 have been supplied.
+
+## Delivered implementation
+
+| Owner / changed paths | Result |
+| --- | --- |
+| `src/shared/ai-content.ts`, `conversations.ts`; `src/domain/ai/context.ts`; `src/worker/ai/capture.ts` | Action-neutral text target/capture/attempt fields, strict conversation contracts, deterministic local writing projection and immutable digest |
+| `src/worker/projects/conversations.ts` | Versioned conversations, captures, attempts and messages; 20-item title lists, five-request transcript pages, exact metadata/append retries, sequence-protected genuine partial output, read-only protection/reconciliation and UTF-8 transcript export |
+| `src/worker/storage/schema.ts`, `migrations.ts`; project `manifest.ts`, `portable-db.ts`, `incoming.ts`, `repository.ts`; `src/worker/index.ts` | SQL/minimum reader 11, retained 10→11 copy migration, all portable graph/manifest/copy consumers, validated device-local bindings and unbound-copy interruption recovery |
+| `src/main/conversations/service.ts`, `ipc.ts`; `src/main/index.ts`, `lifecycle.ts`; `src/domain/capabilities.ts` | Main-owned real I10 dispatch/recovery adapter, precise scope/attempt binding, coalesced output commits, project/access/close/update guards, trusted native transcript destination and explicit edit/read capability split |
+| `src/preload/conversations.ts`, preload index; shared `projects.ts`, `commands.ts` | Named validated public conversation API/events, separate internal-only bind/settle worker operations; no generic database/filesystem/RPC authority |
+| `src/renderer/src/features/ai/conversations/ConversationProvider.tsx`, `ConversationPanel.tsx`, `selection.ts`, `Conversations.module.css` | Session-owned local conversation controller, retained semantic Mantine UI, title search/archive/restore, explicit context/history review, actual unavailable state, local save, stop/protection actions, export and global discoverability |
+| Renderer `App.tsx`; workspace `WritingSidePanel.tsx`, `WritingWorkspace.tsx`, `useWritingPreferences.ts`, `drafts.ts`, `useWorkspaceController.ts` | Persistent owner above destinations, always-retained conversation panel, guarded narrow-pane reveal, close/access protection for unsent drafts, manuscript-preserving project-head refresh |
+| Plan/AGENTS/conversation baseline, format/decision/manual guide, runtime runbook/navigation/privacy/accessibility/manual index | Current implementation status and pending observations, downstream extension owners and manual handoff |
+
+No dependency, lockfile, credentials/registration, network origin, account API, build pipeline or test file changed. No localStorage key was added. Existing stylesheet/CSP, bundled notices and citeproc attribution remain owned by their prior implementation.
+
+## Persistence and safety decisions
+
+- SQL/minimum reader **11**; AST/archive **1**, frozen compilation **3** unchanged. [Format 11](../formats/working-project-v11.md) names all consumers. Prior exact schemas remain readable. Existing copy migration retains originals/backups/candidates; independent copies rekey portable owners and do not copy execution mappings.
+- User text/capture/attempt intent is committed before provider preparation/start. Unknown acknowledgments replay the same request, not a new inference. Main alone creates local bindings and writes provider-derived outcomes. Sequence zero means no observed provider update; delivered sequences are shifted by one for idempotence.
+- Context defaults to none. The exact saved passage/section and selected earlier messages are reviewed and hashed. Current selection is captured against the same retained editor document after protection. Stale/oversized context is refused. No silent automatic history, chunking, summarizing or research fetching.
+- Main reuses I10's existing methods and encrypted journals. The separate operations database stores only execution identifiers/digests. Portable history contains no tokens/account/workspace IDs/grants. Copies retain real partial text and uncertain outcomes without inheriting a live operation.
+- Up to 20 unsent composer drafts stay in memory through navigation; the registry protects them at close/project/access transitions. Locally saved requests survive reopening. Process-crash survival is claimed only for durable receipts, not unsaved renderer text.
+- Transcript export uses one native grant, rechecks the conversation revision, enforces a 64 MiB bound and creates exclusively. Existing files are retained; overwrite is not part of I12. Optional context is explicit and absent by default. Manuscript export stays separate.
+
+## Actual limits and outstanding gates
+
+I10's registrations remain null; authoritative included-only funding/text isolation, eligible-model readiness and packaged distribution remain unresolved. No model/ready state or assistant response is fabricated. Local creation/review/save/history/export is independent of provider activation. The real dispatch/cancellation/recovery code is present; live behavior requires later I10 activation and user observations.
+
+I10 still retains at most **64 provider operations globally**. Capacity/busy refusals are visible; no cleanup, expiration or raised cap hides this limit. C07 owns long-term handoff/retention. Portable limits, page sizes and sharing bounds are recorded in format 11 and the guide. C organization, source discovery/promotion to Research, richer conversation polish, I13 proofreading and TE preview/export remain unimplemented and require separate requests.
+
+## Review basis and execution policy
+
+The improvement plan, I12 requirements and preserved user notes, conversation-plan boundaries, repository instructions, I03/I04/I07/I08/I10/I11 ownership/storage/provider contracts and production consumers guided implementation. React best-practices skill guidance informed persistent event/state ownership and async handling. Ordinary source/Git reads are not passed tests.
+
+No automated tests, test maintenance, fixtures/mocks, harnesses, checks, typecheck, lint, formatter, audit, builds/packages, app/dev server/browser launch, screenshots, probes, provider runtime/SDK invocation, login, inference, account registration, outreach or publishing occurred. No private project/profile data was inspected. Manual observations are required for migration, saves/copies/recovery, editor selection/IME, keyboard/focus/zoom/screen reader, CSP/native dialogs/output and eventual live provider behavior. Release remains **NO-GO**.
+
+Follow [the I12 manual guide](../manual-testing/improvement-I12.md). User-reported results: **none**. Stop after I12.

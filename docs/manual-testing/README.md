@@ -27,3 +27,5 @@ These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience a
 [I10 — provider foundation](improvement-I10.md) covers delivered internal code/document review and existing local UI continuity. Its [record](../validation/improvement-I10.md) distinguishes delivered independent engineering from incomplete funding/isolation methods, missing registration and packaged runtime, and pending native observations. I11/I12 own the real provider screens; there is no testing-only UI or probe.
 
 [I11 — AI connections](improvement-I11.md) covers the actual third setup step, shared Settings/writing account state, unavailable reasons, local continuation and conditional later real browser/account actions. Its [record](../validation/improvement-I11.md) separates implemented UI from I10's unavailable access/funding/isolation/runtime and pending user observations.
+
+- [I12 — durable conversation foundation](improvement-I12.md): implementation complete — awaiting user testing. Local conversation lifecycle, reviewed context, not-sent requests, transcript export and schema 11 copies; live provider observations remain conditional on I10 activation.

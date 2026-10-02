@@ -20,6 +20,7 @@ function read(): WritingPreferences {
 export function useWritingPreferences() {
   const [preferences, setPreferences] = useState(read)
   const [issue, setIssue] = useState('')
+  const [revealRevision,setRevealRevision]=useState(0)
   useEffect(() => {
     try { localStorage.setItem(key, JSON.stringify(preferences)); setIssue('') }
     catch { setIssue('This layout works for this session, but could not be remembered on this device.') }
@@ -27,5 +28,6 @@ export function useWritingPreferences() {
   function update(patch: Partial<Omit<WritingPreferences, 'version'>>): void {
     setPreferences(value => ({ ...value, ...patch }))
   }
-  return { preferences, update, issue }
+  function revealPanel(panel:SecondaryPanel):void {update({panel,focus:false});setRevealRevision(value=>value+1)}
+  return { preferences, update, issue, revealPanel, revealRevision }
 }

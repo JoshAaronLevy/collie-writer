@@ -1,3 +1,6 @@
+import { ConversationService } from './conversations/service'
+import { registerConversationIpc } from './conversations/ipc'
+import { ProjectError } from '../domain/projects/errors'
 import { app, BrowserWindow, dialog, protocol, session } from 'electron'
 import { join } from 'node:path'
 import { EDITOR_ACTION, STORAGE_STATUS_CHANGED, type AppInfo } from '../shared/commands'
@@ -59,15 +62,20 @@ const storage = new StorageWorker((status) => {
 })
 const access = new AccessService(() => window?.webContents,storage,() => unprotected,() => location.path(),devOrigin)
 const ai = new AiService(() => location.path(), access)
-access.setExternalWorkGuard(() => ai.hasPendingWork())
+const conversations = new ConversationService(storage, ai)
+access.setExternalWorkGuard(() => ai.hasPendingWork() || conversations.hasPendingWork())
 const directAccess = new DirectAccessService(() => window?.webContents, access, devOrigin)
 const support = new SupportService(() => window?.webContents,()=>storage.current(),devOrigin)
 storage.onErrorCode(code=>support.recordError(code))
-storage.setAccessPolicy(command=>access.authorize(command),command=>{
+storage.setAccessPolicy(command=>{
+  if(['open','create','reset','recoverReset'].includes(command.kind)&&(ai.hasPendingWork()||conversations.hasPendingWork()))throw new ProjectError('ACCESS_BUSY')
+  access.authorize(command)
+},command=>{
+  if((['open','restore','recover','duplicate','locate','inspect'].includes(command.kind)||command.kind==='answer'&&command.choice!=='cancel')&&(ai.hasPendingWork()||conversations.hasPendingWork()))throw new ProjectError('ACCESS_BUSY')
   if(['open','restore','recover','duplicate','locate','inspect'].includes(command.kind)||command.kind==='answer'&&command.choice!=='cancel')access.authorizeFileChange()
 },(command,value)=>access.observe(command,value))
 const files = new ProjectFileIpc(() => window?.webContents, location, storage, devOrigin)
-const lifecycle = new ProjectLifecycle(() => window?.webContents, files, () => unprotected, devOrigin, ai)
+const lifecycle = new ProjectLifecycle(() => window?.webContents, files, () => unprotected, devOrigin, ai, () => conversations.hasPendingWork())
 const prepareUpdateRestart = async (): Promise<boolean> => {
   if (shutdownStarted || shutdownFinished) return false
   shutdownStarted = true
@@ -131,6 +139,7 @@ app
     registerHelpIpc(() => window?.webContents, updater, devOrigin)
     registerStorageIpc(() => window?.webContents, () => storage.current(), devOrigin)
     access.register()
+    registerConversationIpc(() => window?.webContents, conversations, devOrigin)
     registerAiIpc(() => window?.webContents, ai, devOrigin)
     directAccess.register()
     support.register()

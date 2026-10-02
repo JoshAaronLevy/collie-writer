@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 
 export const PROJECT_APPLICATION_ID = 1129270359
-export const PROJECT_SCHEMA_VERSION = 10
+export const PROJECT_SCHEMA_VERSION = 11
 // Persisted schema is app-owned; never execute DDL or migrations supplied by a project.
 export const projectTablesV1 = [
   `CREATE TABLE format (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, minimum_reader INTEGER NOT NULL, editor_version INTEGER NOT NULL) STRICT`,
@@ -68,7 +68,14 @@ export const interchangeTables = [
 ] as const
 export const projectTablesV9 = [...projectTablesV8, ...interchangeTables] as const
 export const projectDetailsTable = `CREATE TABLE project_details (project_id TEXT PRIMARY KEY, byline TEXT NOT NULL, description TEXT NOT NULL, kind TEXT NOT NULL, revision_id TEXT NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id)) STRICT`
-export const projectTables = [...projectTablesV9, projectDetailsTable] as const
+export const projectTablesV10 = [...projectTablesV9, projectDetailsTable] as const
+export const conversationTables = [
+  `CREATE TABLE conversations (project_id TEXT NOT NULL, id TEXT NOT NULL, revision_id TEXT NOT NULL, title TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('active','archived')), created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id)) STRICT`,
+  `CREATE TABLE ai_captures (project_id TEXT NOT NULL, id TEXT NOT NULL, conversation_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id,conversation_id) REFERENCES conversations(project_id,id)) STRICT`,
+  `CREATE TABLE conversation_attempts (project_id TEXT NOT NULL, id TEXT NOT NULL, conversation_id TEXT NOT NULL, capture_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,id), UNIQUE(project_id,capture_id), FOREIGN KEY(project_id,conversation_id) REFERENCES conversations(project_id,id), FOREIGN KEY(project_id,capture_id) REFERENCES ai_captures(project_id,id)) STRICT`,
+  `CREATE TABLE conversation_messages (project_id TEXT NOT NULL, id TEXT NOT NULL, conversation_id TEXT NOT NULL, attempt_id TEXT NOT NULL, ordinal INTEGER NOT NULL CHECK(ordinal>=0), role TEXT NOT NULL CHECK(role IN ('user','assistant')), revision_id TEXT NOT NULL, text TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(project_id,id), UNIQUE(project_id,conversation_id,ordinal), UNIQUE(project_id,attempt_id,role), FOREIGN KEY(project_id,conversation_id) REFERENCES conversations(project_id,id), FOREIGN KEY(project_id,attempt_id) REFERENCES conversation_attempts(project_id,id)) STRICT`
+] as const
+export const projectTables = [...projectTablesV10, ...conversationTables] as const
 const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export function createProjectSchema(db: Database.Database): void {
@@ -89,7 +96,7 @@ export function validateProjectSchema(db: Database.Database, expectedVersion = P
   const version = inspectVersion(db)
   if (version !== expectedVersion) throw new ProjectError('MIGRATION_FAILED')
   const objects = db.prepare("SELECT sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all() as { sql: string | null }[]
-  const expected = new Set((expectedVersion === 1 ? projectTablesV1 : expectedVersion === 2 ? projectTablesV2 : expectedVersion === 3 ? projectTablesV3 : expectedVersion === 4 ? projectTablesV4 : expectedVersion === 5 ? projectTablesV5 : expectedVersion === 6 ? projectTablesV6 : expectedVersion === 7 ? projectTablesV7 : expectedVersion === 8 ? projectTablesV8 : expectedVersion === 9 ? projectTablesV9 : projectTables).map(sqlKey))
+  const expected = new Set((expectedVersion === 1 ? projectTablesV1 : expectedVersion === 2 ? projectTablesV2 : expectedVersion === 3 ? projectTablesV3 : expectedVersion === 4 ? projectTablesV4 : expectedVersion === 5 ? projectTablesV5 : expectedVersion === 6 ? projectTablesV6 : expectedVersion === 7 ? projectTablesV7 : expectedVersion === 8 ? projectTablesV8 : expectedVersion === 9 ? projectTablesV9 : expectedVersion === 10 ? projectTablesV10 : projectTables).map(sqlKey))
   if (objects.length !== expected.size || objects.some(o => !o.sql || !expected.has(sqlKey(o.sql)))) throw new ProjectError('CORRUPT_PROJECT')
   const format = db.prepare('SELECT * FROM format').all() as { schema_version: number; minimum_reader: number; editor_version: number }[]
   if (format.length !== 1 || format[0].minimum_reader > PROJECT_SCHEMA_VERSION || format[0].editor_version > 1) throw new ProjectError('FORMAT_TOO_NEW')

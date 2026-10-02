@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { backupStorageDatabase, inWriteTransaction, openStorageDatabase } from './driver'
-import { PROJECT_SCHEMA_VERSION, assetTable, outlineTables, noteTables, sourceTables, inspectionTables, evidenceTables, citationTables, interchangeTables, projectDetailsTable, inspectVersion, validateProjectSchema } from './schema'
+import { PROJECT_SCHEMA_VERSION, assetTable, outlineTables, noteTables, sourceTables, inspectionTables, evidenceTables, citationTables, interchangeTables, projectDetailsTable, conversationTables, inspectVersion, validateProjectSchema } from './schema'
 import { contained, directory, syncFile, syncDirectory, writeJson } from './files'
 import { ProjectError } from '../../domain/projects/errors'
 
@@ -81,6 +81,13 @@ const migrations: readonly Migration[] = [{
       readProjectDetails(db, row.id)
     }
     db.prepare('UPDATE format SET schema_version=10,minimum_reader=10').run()
+  }
+}, {
+  from: 10, to: 11,
+  validateSource: db => validateProjectSchema(db, 10),
+  apply: db => {
+    for (const sql of conversationTables) db.exec(sql)
+    db.prepare('UPDATE format SET schema_version=11,minimum_reader=11').run()
   }
 }]
 

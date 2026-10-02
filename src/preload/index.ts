@@ -1,3 +1,4 @@
+import { conversationApi } from './conversations'
 import { isCitationsView, type CitationsView } from '../shared/citations'
 import type { HistoryView } from '../shared/outline'
 import { isSourcesView, isSourcePreview, isSourceProgress, SOURCE_PROGRESS, type SourcesView, type SourceImportPreview, type SourcePick, type SourceExportReceipt } from '../shared/sources'
@@ -46,6 +47,7 @@ ipcRenderer.on(FILE_ACTION, (_event, value: unknown) => {
 })
 const api: CollieAPI = {
   ...aiApi,
+  ...conversationApi,
   helpAction: input => projectCall<boolean>(HELP_ACTION, value => value === true, input),
   readDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.read, isDirectView),
   beginDirectAccess: input => projectCall<DirectView>(DIRECT_CHANNELS.begin, isDirectView, input),

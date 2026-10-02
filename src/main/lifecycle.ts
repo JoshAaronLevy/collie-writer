@@ -11,7 +11,7 @@ import type { AiService } from './ai/service'
 export class ProjectLifecycle {
   private request: Promise<boolean> | undefined
   private pending: { id: string; resolve: (outcome: string) => void } | undefined
-  constructor(private readonly owner: () => WebContents | undefined, private readonly files: ProjectFileIpc, private readonly dirty: () => boolean, private readonly devOrigin?: string, private readonly ai?: AiService) {}
+  constructor(private readonly owner: () => WebContents | undefined, private readonly files: ProjectFileIpc, private readonly dirty: () => boolean, private readonly devOrigin?: string, private readonly ai?: AiService, private readonly conversationPending:()=>boolean=()=>false) {}
   register(): void {
     ipcMain.on(CLOSE_REPLY, (event, value: unknown) => {
       const pending = this.pending
@@ -31,7 +31,7 @@ export class ProjectLifecycle {
   }
   private async closeOnce(): Promise<boolean> {
     const owner = this.owner(), window = owner ? BrowserWindow.fromWebContents(owner) : null
-    if (this.ai && !await this.ai.prepareClose()) {
+    if (this.conversationPending() || this.ai && !await this.ai.prepareClose()) {
       const options = { type: 'warning' as const, title: 'Finishing AI work', message: 'Closing has been paused while AI work is being protected.', detail: 'Finish or cancel the active request and resolve any local storage problem before closing. Writing remains open.', buttons: ['Keep window open'], noLink: true }
       if (window && !window.isDestroyed()) await dialog.showMessageBox(window, options)
       else await dialog.showMessageBox(options)

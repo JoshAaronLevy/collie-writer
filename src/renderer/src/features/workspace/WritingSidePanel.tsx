@@ -6,7 +6,7 @@ import type { InspectionView } from '../../../../shared/inspection'
 import { SectionSources } from '../research/SourceUsage'
 import { useResearchData } from '../research/ResearchData'
 import { useWorkspaceSession } from './WorkspaceSession'
-import { AiConnectionPanel } from '../ai-connections/AiConnectionPanel'
+import { ConversationPanel } from '../ai/conversations/ConversationPanel'
 import { scopeOf } from './useWorkspaceController'
 import type { SecondaryPanel } from './useWritingPreferences'
 import styles from './WritingWorkspace.module.css'
@@ -19,7 +19,7 @@ export function readableWriting(value: unknown): string {
   return ''
 }
 export function WritingSidePanel({ mode, active }: { mode: SecondaryPanel; active: boolean }): React.JSX.Element {
-  const { project, research, navigate } = useWorkspaceSession()
+  const { project, research } = useWorkspaceSession()
   const researchData = useResearchData()
   const [notes,setNotes]=useState<Note[]>([]),[sources,setSources]=useState<SourceRecord[]>([])
   const [noteId,setNoteId]=useState(''),[sourceId,setSourceId]=useState(''),[inspection,setInspection]=useState<InspectionView|null>(null)
@@ -48,7 +48,8 @@ export function WritingSidePanel({ mode, active }: { mode: SecondaryPanel; activ
   const note=notes.find(item=>item.id===noteId),source=sources.find(item=>item.id===sourceId)
   return <div className={styles['writing-side-content']}>
     <h2>{mode==='notes'?'Notes':mode==='source'?'Sources':'AI assistance'}</h2>
-    {mode==='ai'?<><AiConnectionPanel compact /><p>Conversations and proofreading are not available yet. Connecting alone cannot send writing or change your manuscript.</p><AppButton variant="subtle" onClick={()=>void navigate({kind:'settings',page:'ai'})}>Manage AI accounts in Settings</AppButton></>:<>
+    <div hidden={mode!=='ai'} inert={mode!=='ai'}><ConversationPanel /></div>
+    {mode!=='ai'?<>
       <p>Saved content alongside your manuscript. Open Research to edit or inspect the original.</p>
       {loading?<p role="status">Loading saved {mode==='notes'?'notes':'sources'}…</p>:null}
       {issue?<p role="alert">{issue}</p>:null}
@@ -70,6 +71,6 @@ export function WritingSidePanel({ mode, active }: { mode: SecondaryPanel; activ
         <AppButton variant="subtle" onClick={()=>research({kind:'sources'})}>Open Sources</AppButton>
       </>}
       <AppButton variant="subtle" onClick={()=>setRevision(value=>value+1)}>Refresh saved content</AppButton>
-    </>}
+    </>:null}
   </div>
 }

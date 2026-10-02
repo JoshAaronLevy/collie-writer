@@ -26,10 +26,12 @@ export default function WritingWorkspace(): React.JSX.Element {
   const [narrow,setNarrow]=useState(()=>window.matchMedia('(max-width: 78rem)').matches)
   const [mobilePane,setMobilePane]=useState<'editor'|'outline'|'panel'>('editor')
   const [metadataOpen,setMetadataOpen]=useState(false)
+  const handledReveal=useRef(0)
   const editorPane=useRef<HTMLElement>(null),outlinePane=useRef<HTMLElement>(null),sidePane=useRef<HTMLElement>(null)
   const visible=session.destination.kind==='workspace'&&session.destination.view==='write'
   useEffect(()=>{const media=window.matchMedia('(max-width: 78rem)');const change=():void=>{if(media.matches){const active=document.activeElement;setMobilePane(active&&outlinePane.current?.contains(active)?'outline':active&&sidePane.current?.contains(active)?'panel':'editor')}setNarrow(media.matches)};media.addEventListener('change',change);return()=>media.removeEventListener('change',change)},[])
   useEffect(()=>{if(visible){setMobilePane('editor')}},[visible,project?.documentId])
+  useEffect(()=>{if(visible&&writingView.revealRevision!==handledReveal.current&&!session.composition.current){handledReveal.current=writingView.revealRevision;if(preferences.panel==='closed')return;setMobilePane('panel');requestAnimationFrame(()=>{if(sidePane.current&&!sidePane.current.closest('[hidden],[inert]'))sidePane.current.focus({preventScroll:true})})}},[visible,writingView.revealRevision])
   useEffect(()=>{if(!visible||!narrow||session.composition.current||editorRef.current&&editorIsComposing(editorRef.current))return;if(mobilePane==='editor'){editorRef.current?.commands.focus();return}const pane=mobilePane==='outline'?outlinePane.current:sidePane.current;pane?.focus({preventScroll:true})},[mobilePane,narrow,visible])
   if(!project)return <p>Open a project from Projects to begin writing.</p>
   const blocked=busy||acting||closing||session.navigating

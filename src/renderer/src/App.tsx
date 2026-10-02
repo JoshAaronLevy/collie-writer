@@ -1,3 +1,5 @@
+import { ConversationProvider } from './features/ai/conversations/ConversationProvider'
+import { ConversationNotice } from './features/ai/conversations/ConversationPanel'
 import { useEffect, useRef, useState } from 'react'
 import { BookOpen, FolderOpen, PenLine, Settings } from 'lucide-react'
 import type { AppInfo } from '../../shared/commands'
@@ -37,7 +39,7 @@ export default function App(): React.JSX.Element {
     }).catch(() => { if (active) setFailed(true) })
     return () => { active = false; unsubscribe() }
   }, [])
-  return <WorkspaceSessionProvider storage={storageStatus}><AiConnectionsProvider><AppShell info={info} failed={failed} storageStatus={storageStatus} /></AiConnectionsProvider></WorkspaceSessionProvider>
+  return <WorkspaceSessionProvider storage={storageStatus}><AiConnectionsProvider><ConversationProvider><AppShell info={info} failed={failed} storageStatus={storageStatus} /></ConversationProvider></AiConnectionsProvider></WorkspaceSessionProvider>
 }
 
 function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; failed: boolean; storageStatus: StorageStatus }): React.JSX.Element {
@@ -87,6 +89,7 @@ function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; faile
         </div> : null}
         <WorkspaceStatus />
         <AiConnectionNotice />
+        <ConversationNotice />
         <Orientation />
         <Projects />
         <RetainedRegion name="help-about" label="About and help">

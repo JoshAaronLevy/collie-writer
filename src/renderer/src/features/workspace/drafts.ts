@@ -45,7 +45,7 @@ export class DraftRegistry {
     return [...this.entries].map(([id, handle]) => ({ ...handle.read(), id, outcome: this.outcomes.get(id) ?? 'untouched' }))
   }
   hasUnprotected(): boolean {
-    return this.states().some(state => state.composing || state.dirty && state.policy !== 'retain' || state.pendingOperation !== null)
+    return this.states().some(state => state.composing || state.dirty || state.pendingOperation !== null)
   }
   changed = (): void => {
     // Only lightweight state enters the notification key. Exact payloads stay with their owners.
@@ -70,8 +70,8 @@ export class DraftRegistry {
       if (s.busy && s.policy === 'explicit') return this.blocker(id, handle, `Wait for ${s.label} to finish, then try again.`)
       if (s.policy === 'operation' && (s.busy || s.pendingOperation) && ['replace', 'close', 'access'].includes(mode))
         return this.blocker(id, handle, `Finish or reconcile ${s.label} before changing projects or closing.`)
-      if (s.policy === 'retain' && s.dirty && mode === 'replace')
-        return this.blocker(id, handle, `Save or clear ${s.label} before changing projects.`)
+      if (s.policy === 'retain' && (s.dirty || s.pendingOperation || s.busy) && ['replace','close','access'].includes(mode))
+        return this.blocker(id, handle, `Save or clear ${s.label} before changing projects, closing, or changing access.`)
       if (s.dirty && (s.policy === 'explicit' || s.explicitSave && mode !== 'access'))
         return this.blocker(id, handle, `Save or explicitly clear ${s.label} before continuing.`)
       if (s.policy === 'flush' && s.busy && (s.dirty || s.pendingOperation))

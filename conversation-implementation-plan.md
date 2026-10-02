@@ -2,7 +2,7 @@
 
 ## Status, purpose and relationship to the improvement plan
 
-**October 2, 2026 — planning only, awaiting Josh's review. No C stage is implemented or authorized by this document.** Implement this plan after the app improvement plan and any additional refinements Josh requests. I12 is still unimplemented at this planning checkpoint. I01–I11 are not instructions to repeat earlier work; I10 remains partial with live access, funding/isolation, eligibility and distribution requirements unresolved.
+**October 2, 2026 — planning only, awaiting Josh's review. No C stage is implemented or authorized by this document.** Implement this plan after the app improvement plan and any additional refinements Josh requests. I12 is now implementation complete — awaiting user testing: see its [decision](docs/decisions/improvement-12-conversation-foundation.md), [record](docs/validation/improvement-I12.md), [schema 11 matrix](docs/formats/working-project-v11.md) and [manual guide](docs/manual-testing/improvement-I12.md). This later plan remains planning only. I01–I11 are not instructions to repeat earlier work; I10 remains partial with live access, funding/isolation, eligibility and distribution requirements unresolved.
 
 Josh wants meaningful conversations about research and writing that remain easy to find and organize. A conversation can belong to multiple categories and relate to multiple research items/sources and chapters. AI can help propose these assignments, with the author deciding what to retain. This plan develops that vision from the bounded I12 foundation into a polished project feature.
 
@@ -11,6 +11,14 @@ Josh wants meaningful conversations about research and writing that remain easy 
 This revision inserts **C04A** and **C04B** between C04 and C05 so each implementation pass remains focused. Existing C01–C08 IDs, including C07's shared retention dependency in the proofreading plan, remain stable. The authoritative index below now contains ten implementation stages. No code, provider activation or earlier-stage implementation is part of this planning revision.
 
 The original **Important note** remains verbatim in [app-improvement-plan.md](app-improvement-plan.md). This plan supplies implementation contracts, not a replacement or narrowing of that goal. It does not add autonomous web research, specialized Study critique intake, manuscript rewriting, shared cloud history or imported provider-account history.
+
+## Delivered I12 baseline — October 2, 2026
+
+I12 supplies the retained AI writing companion, title search/Active–Archived pages, new/rename/archive/restore, durable plain-text requests/responses, exact passage OR section captures, opt-in prior messages, real I10 dispatch/stop/local-recovery wiring and native UTF-8 transcript export. SQL/minimum reader is **11**; AST/archive **1**, frozen compilation **3**. `src/shared/ai-content.ts`, `src/domain/ai/context.ts` and `src/worker/ai/capture.ts` own action-neutral capture/attempt fields, projection and hashing. `src/shared/conversations.ts`, `src/worker/projects/conversations.ts`, `src/main/conversations/` and `features/ai/conversations/` own the concrete conversation implementation. Inspect these owners before extending them; do not recreate the foundation.
+
+The existing operations database stores local execution bindings separately from portable messages/captures/attempts. Copies retain history without provider authority. Lists page by 20 and transcripts by five requests; up to 20 unsent composer drafts are retained in memory with close/project/access guards. Prompts allow 16,000 characters and aggregate attached context 64,000; up to 12 prior messages are explicit. Unsent drafts need a local request receipt for crash durability. Transcript export is separate from manuscript export and preserves existing destinations. C07 still owns I10's global **64 retained operation** ceiling; I12 did not increase it or delete journals.
+
+Provider registration/funding/isolation/model readiness/distribution remain unresolved; actual live generation and every manual observation remain pending. C01–C08 and C04A/C04B are unimplemented. In particular, I12 does not yet collect assistant-suggested source candidates or add them to Research; that important requirement remains explicitly assigned below.
 
 ## Division of work
 

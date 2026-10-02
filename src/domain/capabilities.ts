@@ -4,6 +4,7 @@ export type Capability = 'read' | 'edit' | 'recipes' | 'batch' | 'create'
 /** Exhaustive classification: new commands must make an explicit policy decision. */
 export function commandCapability(command: ProjectCommand): Capability {
   switch (command.kind) {
+    case 'conversation': return ['change','append'].includes(command.input.action) ? 'edit' : 'read'
     case 'create': return 'create'
     case 'recipeChange': return 'recipes'
     case 'exportBatchStart': return command.input.formats.length>1 ? 'batch' : 'read'

@@ -620,6 +620,20 @@ export function useWorkspaceController(storage: StorageStatus) {
     showDestination({ kind: 'workspace', scope: scopeOf(saved), view: 'research', target: { kind: 'notes' } })
     setNotice('Selected passage ready in Passage annotations.')
   }
+  async function refreshConversationHead(scope: OpenInput): Promise<void> {
+    // Transcript commits advance the project head, never the retained manuscript buffer or selection.
+    for (let tries=0;tries<3;tries++) {
+      const before=current.current
+      if(!before||!sameScope(before,scope))return
+      const result=await window.collie.openSection({...scope,documentId:before.documentId})
+      const live=current.current
+      if(!live||!sameScope(live,scope))return
+      if(!result.ok){setError(result.error.message);return}
+      if(live.headCommitId!==before.headCommitId||live.documentId!==before.documentId)continue
+      updateHead({...live,headCommitId:result.value.headCommitId,updatedAt:result.value.updatedAt})
+      return
+    }
+  }
   async function afterNoteCommit(): Promise<void> {
     const p = current.current
     if (!p) return
@@ -833,7 +847,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     await openLocal(scope,after)
   }
 
-  return { backDestination, backLabel, goBack, referenceAnchor, writingView, ...exportOperations, acceptProjectDetails, composition, actionTask, renamePending, storage, drafts, destination, focusRevision, focusRequest, navigating, blocker, navigate, returnToDraft, showAccess, workspace, research, returnToWork,
+  return { refreshConversationHead, backDestination, backLabel, goBack, referenceAnchor, writingView, ...exportOperations, acceptProjectDetails, composition, actionTask, renamePending, storage, drafts, destination, focusRevision, focusRequest, navigating, blocker, navigate, returnToDraft, showAccess, workspace, research, returnToWork,
 startupPending, libraryIssue, setLibraryIssue, libraryView, setLibraryView,
 editorEpoch, setData, setList, location, setLocation, list, project, access, sectionTitle, setSectionTitle, sectionStatus, setSectionStatus, sectionSynopsis, setSectionSynopsis,
 sectionFields, busy, setBusy, acting, working, closing, committing, retry, error, setError, notice, setNotice, history, annotationCapture, noteDirty,
