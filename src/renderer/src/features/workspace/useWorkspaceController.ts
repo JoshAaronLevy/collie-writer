@@ -1,4 +1,3 @@
-import { requiredProjectName, projectText } from '../../../../domain/projects/details'
 import { useExportOperations } from './useExportOperations'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { effectiveState, type OutlineInput, type OutlineChange, type HistoryView } from '../../../../shared/outline'
@@ -8,7 +7,7 @@ import { projectMessages, type CommitInput, type CreateInput, type LocationStatu
 import { fileBusy, sameScope, type FileAction, type FileJobView, type FileStatus, type SaveInput } from '../../../../shared/project-files'
 import type { DocumentPayload } from '../../../../domain/editor/schema'
 import type { Editor } from '@tiptap/core'
-import type { ProjectTemplate } from '../../../../domain/projects/templates'
+import { hasResumableSetup } from '../onboarding/setup-draft'
 import type { AnnotationCapture } from '../projects/NotesPanel'
 import type { CitationsView } from '../../../../shared/citations'
 import type { SourceRecord } from '../../../../shared/sources'
@@ -25,8 +24,9 @@ export function useWorkspaceController(storage: StorageStatus) {
   const composition = useRef(false)
   const [drafts] = useState(() => new DraftRegistry())
   const draftRevision = useSyncExternalStore(drafts.subscribe, drafts.version)
-  const [destination, setDestination] = useState<AppDestination>({ kind: 'library' })
+  const [destination, setDestination] = useState<AppDestination>({ kind: 'setup' })
   const destinationRef = useRef(destination); destinationRef.current = destination
+  const initialDestinationResolved = useRef(false)
   const [focusRevision, setFocusRevision] = useState(0)
   const [navigating, setNavigating] = useState(false)
   const navigationTask = useRef<Promise<boolean> | null>(null)
@@ -39,8 +39,6 @@ export function useWorkspaceController(storage: StorageStatus) {
   const [access,setAccess]=useState<AccessView|null>(null)
   function applyAccess(next:AccessView):void { setAccess(next) }
   const [editVersion, setEditVersion] = useState(0), [protectedVersion, setProtectedVersion] = useState(0), [editorEpoch, setEditorEpoch] = useState(0)
-  const [newDetails,setNewDetails] = useState({title:'',byline:'',description:''})
-  const [newTemplate, setNewTemplate] = useState<ProjectTemplate>('blank')
   const [sectionTitle, setSectionTitle] = useState(''), [sectionStatus, setSectionStatus] = useState<'draft' | 'review' | 'complete'>('draft'), [sectionSynopsis, setSectionSynopsis] = useState('')
   const sectionFields = useRef({ title: '', status: 'draft' as 'draft' | 'review' | 'complete', synopsis: '' })
   const [busy, setBusy] = useState(false), [working, setActing] = useState(false), [closing, setClosing] = useState(false)
@@ -64,7 +62,7 @@ export function useWorkspaceController(storage: StorageStatus) {
   const imageUrls = useRef(new Map<string, string>())
   const editVersionRef = useRef(0), protectedVersionRef = useRef(0), retryVersion = useRef(0)
   const retryCommit = useRef<CommitInput | null>(null), committingTask = useRef<Promise<OpenProject | null> | null>(null)
-  const pendingCreate = useRef<CreateInput | null>(null), pendingSave = useRef<SaveInput | null>(null)
+  const pendingSave = useRef<SaveInput | null>(null)
   const pendingImage = useRef<{ projectId: string; workspaceId: string; documentId: string; operationId: string; token: string; alt: string; caption: string } | null>(null)
   const actionTask = useRef<Promise<unknown> | null>(null), closingRef = useRef(false)
   const fileState = useRef<FileStatus>(emptyFiles), alive = useRef(true)
@@ -142,21 +140,30 @@ export function useWorkspaceController(storage: StorageStatus) {
     const timer = setInterval(() => { if (isDirty() && !retryCommit.current && !metaPending.current && !actionTask.current && !closingRef.current) void flushManuscript() }, 5000)
     return () => clearInterval(timer)
   }, [project?.documentId, storage.state])
+  function resolveInitialDestination(projectCount: number): void {
+    if (initialDestinationResolved.current) return
+    initialDestinationResolved.current = true
+    if (destinationRef.current.kind === 'setup' && projectCount > 0 && !hasResumableSetup()) showDestination({kind:'library'})
+  }
   async function refresh(): Promise<void> {
     const result = await window.collie.listProjects()
     if (!alive.current) return
-    if (result.ok) setList(result.value); else setError(result.error.message)
+    if (result.ok) { setList(result.value); resolveInitialDestination(result.value.projects.length) }
+    else setError(result.error.message)
   }
   async function refreshData(): Promise<void> {
     const result = await window.collie.getDataLocations()
     if (!alive.current) return
-    if (result.ok) { setData(result.value); setList(result.value.projects) } else { setError(result.error.message); await refresh() }
+    if (result.ok) {
+      setData(result.value); setList(result.value.projects)
+      resolveInitialDestination(result.value.projects.projects.length)
+    } else { setError(result.error.message); await refresh() }
   }
   async function refreshFiles(): Promise<void> {
     const result = await window.collie.getProjectFileStatus(current.current ? scopeOf(current.current) : null)
     if (result.ok) applyFiles(result.value); else setError(result.error.message)
   }
-  async function select(next: OpenProject): Promise<void> {
+  async function select(next: OpenProject, after: 'write' | 'setup' = 'write'): Promise<void> {
     const referenced = new Set<string>()
     const visit = (node: unknown): void => { if (!node || typeof node !== 'object') return; for (const [key, value] of Object.entries(node)) { if (key === 'assetId' && typeof value === 'string') referenced.add(value); else visit(value) } }
     visit(next.payload.ast)
@@ -182,7 +189,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     editVersionRef.current = 0; protectedVersionRef.current = 0; setEditVersion(0); setProtectedVersion(0)
     retryCommit.current = null; setRetry(null); pendingSave.current = null
     window.collie.setUnprotectedChanges(drafts.hasUnprotected()); setError(imageIssue); setNotice('Draft protected locally.')
-    showDestination(writingDestination(next, next.documentId))
+    showDestination(after === 'setup' ? {kind:'setup'} : writingDestination(next, next.documentId))
     await refreshFiles()
   }
   async function importImage(): Promise<void> {
@@ -478,7 +485,7 @@ export function useWorkspaceController(storage: StorageStatus) {
       return
     }
     showDestination({ kind: 'library' }); updateProject(null); editVersionRef.current = 0; protectedVersionRef.current = 0; setEditVersion(0); setProtectedVersion(0)
-    retryCommit.current = null; setRetry(null); pendingSave.current = null; pendingCreate.current = null; renamePending.current = null
+    retryCommit.current = null; setRetry(null); pendingSave.current = null; renamePending.current = null
     applyFiles(emptyFiles); window.collie.setUnprotectedChanges(false)
     setData(result.value); setList(result.value.projects); setNotice('Local list reset. Recover the retained projects in Reset recovery.')
   }
@@ -683,14 +690,32 @@ export function useWorkspaceController(storage: StorageStatus) {
     return drafts.register('image-import', {read:()=>({scope:scopeOf(owner),kind:'image-import',entityId:pendingImage.current?.documentId??owner.documentId,label:'image import',dirty:false,composing:false,busy:false,pendingOperation:pendingImage.current,policy:'operation',target:writingDestination(owner,pendingImage.current?.documentId??owner.documentId)})})
   }, [drafts,project?.projectId,project?.workspaceId])
   useLayoutEffect(() => { drafts.changed() })
-  async function createProject(): Promise<void> {
+  async function prepareSetupCreation(): Promise<boolean> {
+    if (!available || closingRef.current) { setError('Choose a safe local working folder before creating a project.'); return false }
+    if (!await waitActive()) return false
     setBusy(true)
-    if (current.current && !await flush(false, 'replace')) return
-    if (!pendingCreate.current && (!requiredProjectName(newDetails.title.trim()) || !requiredProjectName(newDetails.byline.trim()) || !projectText(newDetails.description,10000))) { setError('Enter a valid title, author and optional description.');return }
-    pendingCreate.current ??= { operationId: crypto.randomUUID(), template: newTemplate, title:newDetails.title.trim(),byline:newDetails.byline.trim(),description:newDetails.description }
-    const result = await window.collie.createProject(pendingCreate.current)
-    if (result.ok) { pendingCreate.current = null; setNewDetails({title:'',byline:'',description:''}); await select(result.value); await refresh() }
+    return !current.current || !!await flush(false,'replace')
+  }
+  async function createSetupProject(input: CreateInput): Promise<ProjectResult<OpenProject>> {
+    const result=await window.collie.createProject(input)
+    if (result.ok) { await select(result.value,'setup'); await refresh() }
     else setError(result.error.message)
+    return result
+  }
+  async function resumeSetupProject(receipt: {projectId:string;workspaceId:string;documentId:string}, target: 'write'|'details'|'setup'): Promise<boolean> {
+    const scope=scopeOf(receipt)
+    if (current.current && !sameScope(current.current,scope) && !await flush(false,'replace')) return false
+    if (!sameScope(current.current,scope)) {
+      const result=await window.collie.openSection({...scope,documentId:receipt.documentId})
+      if (!result.ok) {setError(result.error.message);return false}
+      await select(result.value,target==='setup'?'setup':'write')
+      if (target==='details') showDestination({kind:'workspace',scope,view:'details'})
+      return true
+    }
+    if (target==='details') return await navigate({kind:'workspace',scope,view:'details'})
+    else if (target==='write') return await navigate(writingDestination(scope,receipt.documentId))
+    else showDestination({kind:'setup'})
+    return true
   }
   async function chooseProject(scope: OpenInput): Promise<void> {
     if (current.current && !await flush(false, 'replace')) return
@@ -699,12 +724,12 @@ export function useWorkspaceController(storage: StorageStatus) {
     await openLocal(scope)
   }
 
-  return { ...exportOperations, newDetails, setNewDetails, acceptProjectDetails, composition, actionTask, renamePending, storage, drafts, destination, focusRevision, focusRequest, navigating, blocker, navigate, returnToDraft, showAccess, workspace, research, returnToWork,
-editorEpoch, setData, setList, location, setLocation, list, project, access, newTemplate, setNewTemplate, sectionTitle, setSectionTitle, sectionStatus, setSectionStatus, sectionSynopsis, setSectionSynopsis,
+  return { ...exportOperations, acceptProjectDetails, composition, actionTask, renamePending, storage, drafts, destination, focusRevision, focusRequest, navigating, blocker, navigate, returnToDraft, showAccess, workspace, research, returnToWork,
+editorEpoch, setData, setList, location, setLocation, list, project, access, sectionTitle, setSectionTitle, sectionStatus, setSectionStatus, sectionSynopsis, setSectionSynopsis,
 sectionFields, busy, setBusy, acting, working, closing, committing, retry, error, setError, notice, setNotice, history, annotationCapture, noteDirty,
 sourceDirty,
 inspectionTarget, setInspectionTarget, citationContext, setCitationContext, outlineRetry, conflict, files, data, showArchived, setShowArchived,
-metaPending, current, editorRef, imageUrls, anchorToFocus, pendingCreate, selectedSection, sectionReadOnly, sectionDirty, dirty, fileActive, accessReadOnly, accessTransition, available,
+metaPending, current, editorRef, imageUrls, anchorToFocus, selectedSection, sectionReadOnly, sectionDirty, dirty, fileActive, accessReadOnly, accessTransition, available,
 updateProject, isDirty, changed, refresh, refreshData, importImage, navigateSection, navigateSearch, loadHistory, performOutline, saveSectionMeta, flush, flushManuscript,
-run, waitActive, save, openLocal, openFile, lifecycleFile, manage, resetLocal, captureAnnotation, afterNoteCommit, changeAccess, openTutorial, createProject, chooseProject }
+run, waitActive, save, openLocal, openFile, lifecycleFile, manage, resetLocal, captureAnnotation, afterNoteCommit, changeAccess, openTutorial, prepareSetupCreation, createSetupProject, resumeSetupProject, chooseProject }
 }

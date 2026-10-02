@@ -1,4 +1,4 @@
-import NewProjectForm from '../project-details/NewProjectForm'
+import OnboardingWizard from '../onboarding/OnboardingWizard'
 import ProjectDetailsForm from '../project-details/ProjectDetailsForm'
 import '../projects/Projects.css'
 import { templateNames, templateForKind } from '../../../../domain/projects/templates'
@@ -45,17 +45,13 @@ inspectionTarget, citationContext, setCitationContext, outlineRetry, conflict, d
 metaPending, current, editorRef, imageUrls, anchorToFocus, sectionReadOnly, dirty, fileActive, accessReadOnly, accessTransition, available,
 updateProject, isDirty, changed, refresh, refreshData, importImage, navigateSection, navigateSearch, loadHistory, performOutline, saveSectionMeta, flush, flushManuscript,
 run, waitActive, openFile, lifecycleFile, manage, resetLocal, captureAnnotation, afterNoteCommit, changeAccess, openTutorial, chooseProject, research, navigate, navigating, editorEpoch, setData, setList } = useWorkspaceSession()
-  return <div className="projects">
+  return <>
+<RetainedRegion name="setup" label="New project">
+  <OnboardingWizard />
+</RetainedRegion>
+<div className="projects">
 <WorkspaceNavigation />
 <div inert={navigating || closing} onCompositionStartCapture={() => { composition.current = true; drafts.changed() }} onCompositionEndCapture={() => { composition.current = false; drafts.changed() }}>
-<RetainedRegion name="setup" label="New project">
-<h1>New project</h1><NewProjectForm />    <div className="project-actions" id="new-project" tabIndex={-1}>
-      <button disabled={!available || acting || fileActive || closing} onClick={() => run(() => openFile())}>Open project file…</button>
-      <button disabled={!available || acting || fileActive || closing} onClick={() => run(() => lifecycleFile('restore'))}>Restore backup…</button>
-      <button disabled={!available || acting || fileActive || closing} onClick={() => run(refreshData)}>Refresh projects</button>
-    </div>
-
-</RetainedRegion>
 <RetainedRegion name="library" label="Projects">
 <h1>Your projects</h1><div className="project-actions">
 <AppButton onClick={() => { void navigate({kind:'setup'}) }}>New project</AppButton>
@@ -149,4 +145,5 @@ run, waitActive, openFile, lifecycleFile, manage, resetLocal, captureAnnotation,
 </RetainedRegion>
 </div>
 </div>
+  </>
 }

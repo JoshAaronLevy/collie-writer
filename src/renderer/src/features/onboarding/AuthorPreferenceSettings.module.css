@@ -1,0 +1,19 @@
+.author-preference-settings {
+  border-top: 1px solid var(--collie-border);
+  padding-block: var(--collie-space-6);
+  max-width: 35rem;
+}
+.author-preference-settings h3 {
+  margin: 0 0 var(--collie-space-2);
+  font-size: 1.125rem;
+}
+.author-preference-settings p {
+  margin: 0 0 var(--collie-space-4);
+  color: var(--collie-text-secondary);
+}
+.author-preference-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--collie-space-3);
+}

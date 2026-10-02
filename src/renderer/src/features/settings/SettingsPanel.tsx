@@ -6,6 +6,7 @@ import { useVisualPreferences } from '../../theme/VisualPreferencesProvider'
 import { AppButton, ChoiceField, SelectField, TextareaField } from '../../components/ui/Controls'
 import { AppDialog } from '../../components/ui/AppDialog'
 import { ContentSurface, EmptyState, StatusBanner } from '../../components/ui/Feedback'
+import AuthorPreferenceSettings from '../onboarding/AuthorPreferenceSettings'
 import styles from './SettingsPanel.module.css'
 
 export default function SettingsPanel(): React.JSX.Element {
@@ -72,10 +73,11 @@ export default function SettingsPanel(): React.JSX.Element {
         <ChoiceField label="Reduce motion" description="Remove nonessential animation. Your system’s reduced-motion preference is also respected."
           checked={preferences.reducedMotion} onChange={event => updatePreferences({ reducedMotion: event.currentTarget.checked })} />
       </div>
+      <AuthorPreferenceSettings />
       <details className={styles['privacy-disclosure']}>
         <summary>Where your data lives</summary>
         <p>Working projects, unsaved recovery and retained file operations stay in the local working folder shown under Data Locations. Search indexes are rebuildable; source originals, excerpts, backups and recovery are not disposable caches. A project file exists separately only after Save; a backup is another chosen file.</p>
-        <p>The display choices here stay in the app profile. Signed access documents and the free project choice live separately under the local working folder. When configured, optional purchase connections use OS-protected credentials in the app profile and contact the purchase service only for actions you request. Connection tokens never enter project files or support previews. Direct-build updates connect only when you choose Help → Check for updates; there are no automatic update checks, content analytics or crash uploads. Your own cloud provider may sync a selected project file; Collie Writer cannot confirm when that upload finishes.</p>
+        <p>Display choices, an optional remembered author, and unfinished new-project setup stay in the local app profile. The setup draft can contain a title and description; cancelling before creation or finishing clears it, while an uncertain creation request stays for safe retry. Signed access documents and the free project choice live separately under the local working folder. When configured, optional purchase connections use OS-protected credentials in the app profile and contact the purchase service only for actions you request. Connection tokens never enter project files or support previews. Direct-build updates connect only when you choose Help → Check for updates; there are no automatic update checks, content analytics or crash uploads. Your own cloud provider may sync a selected project file; Collie Writer cannot confirm when that upload finishes.</p>
         <p>Clear picker history only forgets a folder hint. Reset local work retains a recovery batch, but deleting app data outside Collie Writer can remove the only local copy. Save or back up each project before any reset.</p>
         <AppButton variant="default" onClick={() => { void navigate({kind:'settings',page:'data'}) }}>Open Data Locations and recovery</AppButton>
       </details>

@@ -13,3 +13,5 @@ These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience a
 [I03 — persistent session and navigation](improvement-I03.md) covers retained drafts, explicit-save guards, typed destinations, focus, global jobs and close/access behavior. Its [record](../validation/improvement-I03.md) contains no claimed runtime acceptance.
 
 [I04 — project details and nonfiction templates](improvement-I04.md) covers the seven starting structures, details fields and guards, legacy copy migration, Save/duplicate/backup/restore, and frozen export properties/title-page choices. Its [record](../validation/improvement-I04.md) tracks implementation separately from user results.
+
+[I05 — guided project creation](improvement-I05.md) covers first-run selection, resumable details/create/connection steps, optional author preference, explicit free editing choice, honest no-AI continuation and native first Save. Its [record](../validation/improvement-I05.md) keeps source implementation separate from still-pending user observations.
