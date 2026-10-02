@@ -1,6 +1,6 @@
-# AI provider eligibility — I01 evidence and route decision
+# AI provider eligibility — I01 route decision and I10 entry review
 
-**Read October 1, 2026. Specification complete; no provider approved or enabled for Collie.** This is a dated reading of official documentation, not legal certification, a provider approval, an account inspection, or native/funding acceptance. No SDK was installed/invoked, no account was registered or signed in, no inference was sent, and no provider was contacted.
+**Initial reading October 1, 2026; OpenAI entry evidence refreshed October 2 for I10. Specification complete; I10 blocked; no provider approved or enabled for Collie.** This is a dated reading of official documentation, not legal certification, a provider approval, an account inspection, or native/funding acceptance. No SDK was installed/invoked, no account was registered or signed in, no inference was sent, and no provider was contacted.
 
 The [improvement plan](../../app-improvement-plan.md) requires the writer's own eligible subscription, browser sign-in, no copied API key, and no purchased-credit/top-up fallback. This record preserves that product requirement. A coding-oriented runtime is acceptable for writing; usefulness remains a future user assessment. The [experience specification](../design/app-experience.md#s03--optional-ai-connection) defines the UI without asserting that any connection works today.
 
@@ -12,7 +12,7 @@ I01 is complete with these dispositions. I10 cannot be called an implemented pro
 
 ## Dated evidence matrix
 
-All links in this record were read on the date above. Statements labeled **Collie decision** are our interpretation against the accepted product constraints. “Not established” means the reviewed material did not establish the requirement; it is not a claim that no private program or future control exists.
+The original matrix was read October 1. The OpenAI subset refreshed October 2 is identified below; other providers retain their October 1 evidence date. Statements labeled **Collie decision** are our interpretation against the accepted product constraints. “Not established” means the reviewed material did not establish the requirement; it is not a claim that no private program or future control exists.
 
 | Provider / route | SDK or execution evidence | Authentication / permission evidence | Funding evidence | Collie disposition |
 | --- | --- | --- | --- | --- |
@@ -23,6 +23,20 @@ All links in this record were read on the date above. Statements labeled **Colli
 | Google consumer CLI / Antigravity SDK | Consumer Gemini CLI requests ended June 18, 2026; Antigravity CLI is the successor with browser sign-in. SDK quickstart uses a Gemini API key. [Transition](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/), [CLI auth](https://antigravity.google/docs/cli/install/), [SDK](https://antigravity.google/docs/sdk/overview/) | Antigravity terms section 6 restrict third-party software use of that consumer service. [Terms](https://antigravity.google/terms) | No eligible consumer subscription path meeting Collie's funding contract established. | **Deferred/unavailable under reviewed consumer route**. API-key/enterprise alternatives do not satisfy this requested consumer experience by default. |
 
 No consumer plan name alone is an eligibility predicate. No “available” card, signup marketing, or nominal disabled adapter should be installed merely because a provider appears in this research table.
+
+## I10 OpenAI refresh — October 2, 2026
+
+**Owner evidence:** Josh confirmed that he has not obtained approval and needs guidance on the process. A-OPENAI is now explicitly owner-confirmed as unresolved. No submission or registered client is assumed. The [approval guide](openai-approval-guide.md) gives the official application route, prepared product wording and exact questions; nothing was submitted by the assistant.
+
+| Refreshed official source | Finding and consequence for I10 |
+| --- | --- |
+| [Commercial client-ID request](https://developers.openai.com/siwc/request-client-id), [quickstart](https://developers.openai.com/siwc/quickstart) | Commercial participation remains selective. Identity-only sign-in and ChatGPT plan inference have different permissions; request the latter. |
+| [Plan-use overview](https://developers.openai.com/siwc/token-sharing-open-source), [app-server authentication](https://learn.chatgpt.com/docs/app-server#auth-endpoints) | Paid apps are directed to the commercial process. Built-in app-server auth is excluded for commercial/hosted use; invoking that same login through an SDK/CLI is not the approved route. |
+| [Codex SDK](https://learn.chatgpt.com/docs/codex-sdk), [OAuth app-server adapter](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server) | Local execution and the authorized-token adapter are documented. These establish a technical path, not Collie's participation or a particular SDK/auth bridge. |
+| [User usage controls](https://learn.chatgpt.com/docs/sign-in-with-chatgpt), [errors and recovery](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery) | Users can permit credit use after limits. Errors stop plan inference without silently switching billing paths; this does not establish that allowed credits are excluded before such an error. F-OPENAI remains open. |
+| [Models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference), [token reference](https://developers.openai.com/siwc/token-sharing-open-source/token-reference), [preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations) | The reviewed request, token and runtime contracts did not establish a binding included-only selector/policy. Model availability and opaque auth metadata are not readable funding guarantees. Runtime tools/history also require explicit isolation. |
+
+**Collie decision:** I10 is blocked at its stated entry gate. This is not a finding that the intended sign-in experience is technically impossible. No provider package, placeholder service or testing UI was added. The [I10 decision](../decisions/improvement-10-provider-boundary.md) maps the existing source boundaries and work to resume once the missing evidence is supplied. A documented provider-enforced policy can resolve F-OPENAI; no particular invented API field is required.
 
 ## OpenAI: execution versus sign-in
 
@@ -87,11 +101,11 @@ Disable runtime self-update/background downloads through supported configuration
 
 ## Exact gate register and next steps
 
-Every entry below is open as of October 1, 2026. Owner actions describe needed evidence; they are not requests sent, registrations submitted, or permission to contact anyone.
+Every entry below remains open. A-OPENAI and F-OPENAI were revisited October 2, 2026; other-provider entries retain their October 1 review date. Owner actions describe needed evidence; they are not requests sent, registrations submitted, or permission to contact anyone.
 
 | Gate | Missing evidence / resolution | Responsible party / affected work |
 | --- | --- | --- |
-| A-OPENAI | Applicable commercial participation and registered supported auth route for paid Collie, including local desktop execution and any SDK bridge | Owner/provider agreement, then engineering record; blocks I10 OpenAI enablement |
+| A-OPENAI | Approval not obtained, confirmed by Josh October 2. Need applicable commercial participation and registered supported auth route for paid Collie, including local desktop execution and any SDK bridge | Owner/provider agreement, then engineering record; blocks I10 implementation; [application guide](openai-approval-guide.md) |
 | F-OPENAI | Provider-enforced included-only control covering concurrent requests, settings changes, continuations and selected model | Provider contract/documentation plus implementation; blocks I10 inference |
 | A-CLAUDE | Written applicable permission reconciling custom subscription login, SDK use, credential handling, and unmodified-runtime hosting rules | Owner/Anthropic, if later requested; blocks Claude I14 |
 | F-CLAUDE | Authoritative included-only semantics for that approved route | Provider evidence; blocks Claude I14 |
@@ -101,6 +115,6 @@ Every entry below is open as of October 1, 2026. Owner actions describe needed e
 | R-PROVIDER | For the chosen provider: pinned notices/binaries, supported OS/architectures, tool/config isolation, bounded execution and cancellation/refresh contract | Engineering during explicitly requested I10/I14 after dependent gates; native outcomes remain user-owned |
 | U-PROVIDER | User-reported sign-in, offline, expiry, cancellation, context, supported native packaging and funding outcomes | Later I11/I12/I14 production flows; no assistant probes or charge-incurring experiments |
 
-No approval/reference number, owner correspondence, registered client, artifact, or included-only guarantee has been supplied. Keep these fields **not supplied**, rather than substituting example credentials or dates. When evidence arrives, record provider, exact route/release, approval scope/reference, effective date, channels, funding contract, and remaining observations. User reports can establish observed behavior but cannot by themselves replace a missing provider funding/permission contract.
+No approval/reference number, owner correspondence granting permission, registered client, artifact, or included-only guarantee has been supplied. Josh has explicitly confirmed the absence of approval; application status is not reported. Keep remaining evidence fields **not supplied**, rather than substituting example credentials or dates. When evidence arrives, record provider, exact route/release, approval scope/reference, effective date, channels, funding contract, and remaining observations. User reports can establish observed behavior but cannot by themselves replace a missing provider funding/permission contract.
 
 Until then the build's usable-provider registry remains empty. The local experience can be implemented, including S03's truthful Continue without AI path. The original MVP release NO-GO and the improvement plan's AI milestone remain separate.

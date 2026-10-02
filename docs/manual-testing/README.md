@@ -2,7 +2,7 @@
 
 The user performs all testing. The assistant writes plain-language guides only and stops for feedback. Do not add test scripts, code snippets that assert results, automated suites, fixture generators, test-only controls or browser automation here or elsewhere.
 
-Each guide starts with `Stage X complete. As a user:` and a numbered action/expected-outcome list. Include only implemented behavior and relevant user-owned setup steps. Implementation complete does not mean user acceptance or release gates passed; record those separately in the plan and stage record. If a feature cannot yet be observed, identify it as unverified instead of inventing a testing interface.
+For a fully implemented stage, start its guide with `Stage X complete. As a user:` and a numbered action/expected-outcome list. A blocked or incomplete stage must say so instead. Include only implemented behavior and relevant user-owned setup steps. Implementation complete does not mean user acceptance or release gates passed; record those separately in the plan and stage record. If a feature cannot yet be observed, identify it as unverified instead of inventing a testing interface.
 
 ## App improvement stages
 
@@ -21,3 +21,7 @@ These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience a
 [I07 — focused writing workspace](improvement-I07.md) covers project/outline navigation, retained panes and focus mode, width/keyboard/narrow layouts, selection dialogs, citations/footnotes, images, history and distinct protection/file status. Its [record](../validation/improvement-I07.md) keeps runtime and user acceptance pending.
 
 [I08 — research and source context](improvement-I08.md) covers focused lists/details, source usage in both directions including chapters and footnote citations, version/excerpt provenance, reversible evidence decisions, retained notes/annotations/forms and search/Back navigation. Its [record](../validation/improvement-I08.md) leaves runtime, native and user acceptance pending.
+
+[I09 — complete local journey](improvement-I09.md) covers export, Save options, settings/help and the optional nonfiction sample. Its [record](../validation/improvement-I09.md) distinguishes implementation from pending user/native/output observations.
+
+[I10 — blocked provider entry review](improvement-I10.md) covers the owner application guide and unresolved commercial/funding prerequisites. Its [record](../validation/improvement-I10.md) explicitly leaves provider implementation incomplete. No new application behavior or provider probing is part of this document-review handoff.

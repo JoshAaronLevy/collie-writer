@@ -82,6 +82,10 @@ Shared Save options reuses existing Save As/Backup/Locate and detailed project a
 
 `collie.orientation.v1` stores only the exact device-local dismissed flag. Fresh optional samples use clearly synthetic nonfiction study material; trusted sample reset retains previous projects/edits/files, and interrupted legacy tutorials retain their old resource/seed path. Never overwrite existing samples or trust portable metadata for sample rights. SQL/minimum reader 10, AST/archive 1 and compilation 3 are unchanged. No provider/merchant/feed was configured; all runtime/native/accessibility/output evidence remains pending and release remains NO-GO. Stop before I10 without its explicit request and provider prerequisites. No assistant tests/checks/launches are authorized.
 
+### App improvement I10 checkpoint
+
+I10 was explicitly requested and is **blocked at entry — provider implementation not complete**. Read the [entry decision](docs/decisions/improvement-10-provider-boundary.md), [October 2 provider refresh](docs/ai/provider-eligibility.md#i10-openai-refresh--october-2-2026), [owner application guide](docs/ai/openai-approval-guide.md), [evidence](docs/validation/improvement-I10.md) and [manual document review](docs/manual-testing/improvement-I10.md). Josh confirmed commercial approval has not been obtained. A-OPENAI and F-OPENAI remain unresolved; the official interest form and prepared wording are owner next steps, not a submitted application or granted permission. No SDK/runtime, provider service, credential store, IPC, dependency or format change was added. Do not mark a placeholder complete, use built-in Codex login as a commercial workaround, or treat error refusal/account credit settings alone as binding included-only funding. Resume I10 only with its authentic entry evidence and implement its actual protected boundary; I11/I12 remain separate requests. No assistant testing, sign-in, inference, external submission or outreach is authorized. Existing local work and release NO-GO remain unchanged.
+
 ### Requested-stage workflow
 
 A request such as “Please implement Stage 4 of the MVP implementation plan” means:
