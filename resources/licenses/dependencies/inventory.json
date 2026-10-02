@@ -19,31 +19,43 @@
     "package": "@citation-js/core",
     "version": "0.9.0",
     "license": "MIT",
-    "notices": ["@citation-js-core-0.9.0-LICENSE.md"]
+    "notices": [
+      "@citation-js-core-0.9.0-LICENSE.md"
+    ]
   },
   {
     "package": "@citation-js/date",
     "version": "0.5.1",
     "license": "MIT",
-    "notices": ["@citation-js-date-0.5.1-NOTICE.txt", "@citation-js-core-0.9.0-LICENSE.md"]
+    "notices": [
+      "@citation-js-date-0.5.1-NOTICE.txt",
+      "@citation-js-core-0.9.0-LICENSE.md"
+    ]
   },
   {
     "package": "@citation-js/name",
     "version": "0.4.2",
     "license": "MIT",
-    "notices": ["@citation-js-name-0.4.2-NOTICE.txt", "@citation-js-core-0.9.0-LICENSE.md"]
+    "notices": [
+      "@citation-js-name-0.4.2-NOTICE.txt",
+      "@citation-js-core-0.9.0-LICENSE.md"
+    ]
   },
   {
     "package": "@citation-js/plugin-bibtex",
     "version": "0.9.0",
     "license": "MIT",
-    "notices": ["@citation-js-plugin-bibtex-0.9.0-LICENSE.md"]
+    "notices": [
+      "@citation-js-plugin-bibtex-0.9.0-LICENSE.md"
+    ]
   },
   {
     "package": "@citation-js/plugin-ris",
     "version": "0.9.0",
     "license": "MIT",
-    "notices": ["@citation-js-plugin-ris-0.9.0-LICENSE.md"]
+    "notices": [
+      "@citation-js-plugin-ris-0.9.0-LICENSE.md"
+    ]
   },
   {
     "package": "@tiptap/core",
@@ -240,7 +252,9 @@
     "package": "moo",
     "version": "0.5.3",
     "license": "BSD-3-Clause",
-    "notices": ["moo-0.5.3-LICENSE"]
+    "notices": [
+      "moo-0.5.3-LICENSE"
+    ]
   },
   {
     "package": "nanoid",
@@ -488,7 +502,9 @@
     "package": "sync-fetch-undici",
     "version": "0.7.1",
     "license": "MIT",
-    "notices": ["sync-fetch-undici-0.7.1-LICENSE"]
+    "notices": [
+      "sync-fetch-undici-0.7.1-LICENSE"
+    ]
   },
   {
     "package": "type",
@@ -526,7 +542,9 @@
     "package": "whatwg-mimetype",
     "version": "5.0.0",
     "license": "MIT",
-    "notices": ["whatwg-mimetype-5.0.0-LICENSE.txt"]
+    "notices": [
+      "whatwg-mimetype-5.0.0-LICENSE.txt"
+    ]
   },
   {
     "package": "xml",
@@ -548,12 +566,213 @@
     "package": "electron-updater",
     "version": "6.6.2",
     "license": "MIT",
-    "notices": ["electron-updater-6.6.2-LICENSE"]
+    "notices": [
+      "electron-updater-6.6.2-LICENSE"
+    ]
   },
   {
     "package": "js-yaml",
     "version": "4.3.2",
     "license": "MIT",
-    "notices": ["js-yaml-4.3.2-LICENSE"]
+    "notices": [
+      "js-yaml-4.3.2-LICENSE"
+    ]
+  },
+  {
+    "package": "@mantine/core",
+    "version": "9.6.3",
+    "license": "MIT",
+    "notices": [
+      "@mantine-core-9.6.3-LICENSE"
+    ]
+  },
+  {
+    "package": "@mantine/hooks",
+    "version": "9.6.3",
+    "license": "MIT",
+    "notices": [
+      "@mantine-hooks-9.6.3-LICENSE"
+    ]
+  },
+  {
+    "package": "lucide-react",
+    "version": "1.49.0",
+    "license": "ISC",
+    "notices": [
+      "lucide-react-1.49.0-LICENSE"
+    ]
+  },
+  {
+    "package": "@floating-ui/core",
+    "version": "1.8.0",
+    "license": "MIT",
+    "notices": [
+      "@floating-ui-core-1.8.0-LICENSE"
+    ]
+  },
+  {
+    "package": "@floating-ui/dom",
+    "version": "1.8.0",
+    "license": "MIT",
+    "notices": [
+      "@floating-ui-dom-1.8.0-LICENSE"
+    ]
+  },
+  {
+    "package": "@floating-ui/react",
+    "version": "0.27.20",
+    "license": "MIT",
+    "notices": [
+      "@floating-ui-react-0.27.20-LICENSE"
+    ]
+  },
+  {
+    "package": "@floating-ui/react-dom",
+    "version": "2.1.9",
+    "license": "MIT",
+    "notices": [
+      "@floating-ui-react-dom-2.1.9-LICENSE"
+    ]
+  },
+  {
+    "package": "@floating-ui/utils",
+    "version": "0.2.12",
+    "license": "MIT",
+    "notices": [
+      "@floating-ui-utils-0.2.12-LICENSE"
+    ]
+  },
+  {
+    "package": "clsx",
+    "version": "2.1.1",
+    "license": "MIT",
+    "notices": [
+      "clsx-2.1.1-license"
+    ]
+  },
+  {
+    "package": "react-number-format",
+    "version": "5.4.5",
+    "license": "MIT",
+    "notices": [
+      "react-number-format-5.4.5-LICENSE"
+    ]
+  },
+  {
+    "package": "react-remove-scroll",
+    "version": "2.7.2",
+    "license": "MIT",
+    "notices": [
+      "react-remove-scroll-2.7.2-LICENSE"
+    ]
+  },
+  {
+    "package": "react-remove-scroll-bar",
+    "version": "2.3.8",
+    "license": "MIT",
+    "notices": [
+      "react-remove-scroll-bar-2.3.8-LICENSE"
+    ],
+    "noticeSource": "https://raw.githubusercontent.com/theKashey/react-remove-scroll-bar/master/LICENSE",
+    "noticeRetrieved": "2026-10-01",
+    "note": "The npm artifact and its gitHead omit LICENSE. Retain the current upstream MIT license; npm metadata declares MIT."
+  },
+  {
+    "package": "react-style-singleton",
+    "version": "2.2.3",
+    "license": "MIT",
+    "notices": [
+      "react-style-singleton-2.2.3-LICENSE"
+    ]
+  },
+  {
+    "package": "get-nonce",
+    "version": "1.0.1",
+    "license": "MIT",
+    "notices": [
+      "get-nonce-1.0.1-LICENSE"
+    ]
+  },
+  {
+    "package": "use-callback-ref",
+    "version": "1.3.3",
+    "license": "MIT",
+    "notices": [
+      "use-callback-ref-1.3.3-LICENSE"
+    ]
+  },
+  {
+    "package": "use-sidecar",
+    "version": "1.1.3",
+    "license": "MIT",
+    "notices": [
+      "use-sidecar-1.1.3-LICENSE"
+    ]
+  },
+  {
+    "package": "detect-node-es",
+    "version": "1.1.0",
+    "license": "MIT",
+    "notices": [
+      "detect-node-es-1.1.0-LICENSE"
+    ]
+  },
+  {
+    "package": "tabbable",
+    "version": "6.5.0",
+    "license": "MIT",
+    "notices": [
+      "tabbable-6.5.0-LICENSE"
+    ]
+  },
+  {
+    "package": "tslib",
+    "version": "2.8.1",
+    "license": "0BSD",
+    "notices": [
+      "tslib-2.8.1-CopyrightNotice.txt",
+      "tslib-2.8.1-LICENSE.txt"
+    ]
+  },
+  {
+    "package": "tagged-tag",
+    "version": "1.0.0",
+    "license": "MIT",
+    "notices": [
+      "tagged-tag-1.0.0-license"
+    ]
+  },
+  {
+    "package": "type-fest",
+    "version": "5.10.0",
+    "license": "(MIT OR CC0-1.0)",
+    "notices": [
+      "type-fest-5.10.0-license-cc0",
+      "type-fest-5.10.0-license-mit"
+    ]
+  },
+  {
+    "package": "react",
+    "version": "19.3.0",
+    "license": "MIT",
+    "notices": [
+      "react-19.3.0-LICENSE"
+    ]
+  },
+  {
+    "package": "react-dom",
+    "version": "19.3.0",
+    "license": "MIT",
+    "notices": [
+      "react-dom-19.3.0-LICENSE"
+    ]
+  },
+  {
+    "package": "scheduler",
+    "version": "0.28.0",
+    "license": "MIT",
+    "notices": [
+      "scheduler-0.28.0-LICENSE"
+    ]
   }
 ]

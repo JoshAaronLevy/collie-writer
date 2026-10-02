@@ -1,0 +1,220 @@
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('../../../../resources/fonts/SourceSerif4-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('../../../../resources/fonts/SourceSerif4-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('../../../../resources/fonts/SourceSerif4-It.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('../../../../resources/fonts/SourceSerif4-BoldIt.ttf') format('truetype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  --collie-font-interface: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --collie-font-manuscript: 'Source Serif 4', Georgia, serif;
+  --collie-font-code: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --collie-space-1: 0.25rem;
+  --collie-space-2: 0.5rem;
+  --collie-space-3: 0.75rem;
+  --collie-space-4: 1rem;
+  --collie-space-6: 1.5rem;
+  --collie-space-8: 2rem;
+  --collie-space-12: 3rem;
+  --collie-radius-control: 0.5rem;
+  --collie-radius-surface: 0.75rem;
+  --collie-control-height: 2.75rem;
+  --collie-focus-width: 3px;
+  --collie-motion-duration: 120ms;
+  --collie-shadow-overlay: 0 12px 40px rgb(0 0 0 / 16%);
+  --collie-overlay: rgb(15 24 19 / 48%);
+
+  --mantine-font-family: var(--collie-font-interface);
+  --mantine-font-family-headings: var(--collie-font-interface);
+  --mantine-font-family-monospace: var(--collie-font-code);
+  --mantine-font-size-xs: 0.8125rem;
+  --mantine-font-size-sm: 0.875rem;
+  --mantine-font-size-md: 1rem;
+  --mantine-font-size-lg: 1.125rem;
+  --mantine-font-size-xl: 1.25rem;
+  --mantine-line-height-xs: 1.4;
+  --mantine-line-height-sm: 1.5;
+  --mantine-line-height-md: 1.6;
+  --mantine-line-height-lg: 1.6;
+  --mantine-line-height-xl: 1.6;
+  --mantine-line-height: 1.6;
+  --mantine-spacing-xs: var(--collie-space-1);
+  --mantine-spacing-sm: var(--collie-space-2);
+  --mantine-spacing-md: var(--collie-space-4);
+  --mantine-spacing-lg: var(--collie-space-6);
+  --mantine-spacing-xl: var(--collie-space-8);
+  --mantine-radius-xs: 0.25rem;
+  --mantine-radius-sm: var(--collie-radius-control);
+  --mantine-radius-md: var(--collie-radius-surface);
+  --mantine-radius-lg: 1rem;
+  --mantine-radius-xl: 1.5rem;
+  --mantine-radius-default: var(--collie-radius-control);
+  --mantine-heading-font-weight: 600;
+  --mantine-color-green-0: #f2f7f3;
+  --mantine-color-green-1: #e7f0e9;
+  --mantine-color-green-2: #c8e2d2;
+  --mantine-color-green-3: #a7d7bd;
+  --mantine-color-green-4: #7cb49a;
+  --mantine-color-green-5: #559278;
+  --mantine-color-green-6: #397b62;
+  --mantine-color-green-7: #2f6757;
+  --mantine-color-green-8: #285547;
+  --mantine-color-green-9: #204438;
+  --mantine-primary-color-0: var(--mantine-color-green-0);
+  --mantine-primary-color-1: var(--mantine-color-green-1);
+  --mantine-primary-color-2: var(--mantine-color-green-2);
+  --mantine-primary-color-3: var(--mantine-color-green-3);
+  --mantine-primary-color-4: var(--mantine-color-green-4);
+  --mantine-primary-color-5: var(--mantine-color-green-5);
+  --mantine-primary-color-6: var(--mantine-color-green-6);
+  --mantine-primary-color-7: var(--mantine-color-green-7);
+  --mantine-primary-color-8: var(--mantine-color-green-8);
+  --mantine-primary-color-9: var(--mantine-color-green-9);
+}
+
+:root, :root[data-mantine-color-scheme='light'] {
+  color-scheme: light;
+  --collie-background: #f5f4f0;
+  --collie-surface: #fff;
+  --collie-surface-muted: #eeefea;
+  --collie-text: #252d2b;
+  --collie-text-secondary: #5d6964;
+  --collie-accent: #2f6757;
+  --collie-accent-hover: #285547;
+  --collie-on-accent: #fff;
+  --collie-selected: #e8f0ea;
+  --collie-border: #d8dfd9;
+  --collie-control-border: #7e8d85;
+  --collie-error: #a63131;
+  --collie-error-surface: #fff0ee;
+  --collie-warning: #77551a;
+  --collie-warning-surface: #faf1de;
+  --collie-focus: #2f6757;
+  --collie-highlight: #f4dc9b;
+  --collie-highlight-text: #252d2b;
+}
+
+:root[data-mantine-color-scheme='dark'] {
+  color-scheme: dark;
+  --collie-background: #171d1a;
+  --collie-surface: #202925;
+  --collie-surface-muted: #27332c;
+  --collie-text: #eef3ef;
+  --collie-text-secondary: #bbc8c0;
+  --collie-accent: #a7d7bd;
+  --collie-accent-hover: #c8e2d2;
+  --collie-on-accent: #171d1a;
+  --collie-selected: #2c4438;
+  --collie-border: #4a5a51;
+  --collie-control-border: #859c8f;
+  --collie-error: #ffb6af;
+  --collie-error-surface: #412927;
+  --collie-warning: #ebcb85;
+  --collie-warning-surface: #393121;
+  --collie-focus: #a7d7bd;
+  --collie-highlight: #6d541e;
+  --collie-highlight-text: #fff5db;
+  --collie-shadow-overlay: 0 12px 40px rgb(0 0 0 / 40%);
+}
+
+:root[data-contrast='high'] {
+  --collie-background: #fff;
+  --collie-surface: #fff;
+  --collie-surface-muted: #f3f3f3;
+  --collie-text: #000;
+  --collie-text-secondary: #222;
+  --collie-accent: #164d39;
+  --collie-accent-hover: #0e3526;
+  --collie-on-accent: #fff;
+  --collie-border: #444;
+  --collie-control-border: #000;
+  --collie-focus: #000;
+  --collie-focus-width: 4px;
+}
+:root[data-contrast='high'][data-mantine-color-scheme='dark'] {
+  --collie-background: #080b09;
+  --collie-surface: #111713;
+  --collie-surface-muted: #1b251e;
+  --collie-text: #fff;
+  --collie-text-secondary: #f1f5f2;
+  --collie-accent: #c5f5d8;
+  --collie-accent-hover: #e0ffeb;
+  --collie-on-accent: #080b09;
+  --collie-border: #d1ddd5;
+  --collie-control-border: #fff;
+  --collie-focus: #fff;
+}
+
+/* This is the static Mantine bridge, including effective-color aliases for portals. */
+:root[data-mantine-color-scheme] {
+  --mantine-color-body: var(--collie-background);
+  --mantine-color-text: var(--collie-text);
+  --mantine-color-dimmed: var(--collie-text-secondary);
+  --mantine-color-bright: var(--collie-text);
+  --mantine-color-anchor: var(--collie-accent);
+  --mantine-color-error: var(--collie-error);
+  --mantine-color-placeholder: var(--collie-text-secondary);
+  --mantine-color-default: var(--collie-surface);
+  --mantine-color-default-hover: var(--collie-selected);
+  --mantine-color-default-color: var(--collie-text);
+  --mantine-color-default-border: var(--collie-control-border);
+  --mantine-color-disabled: var(--collie-surface-muted);
+  --mantine-color-disabled-color: var(--collie-text-secondary);
+  --mantine-color-disabled-border: var(--collie-border);
+  --mantine-color-green-filled: var(--collie-accent);
+  --mantine-color-green-filled-hover: var(--collie-accent-hover);
+  --mantine-color-green-light: var(--collie-selected);
+  --mantine-color-green-light-hover: var(--collie-surface-muted);
+  --mantine-color-green-light-color: var(--collie-accent);
+  --mantine-color-green-outline: var(--collie-accent);
+  --mantine-color-green-outline-hover: var(--collie-selected);
+  --mantine-color-green-text: var(--collie-accent);
+  --mantine-primary-color-filled: var(--collie-accent);
+  --mantine-primary-color-filled-hover: var(--collie-accent-hover);
+  --mantine-primary-color-light: var(--collie-selected);
+  --mantine-primary-color-light-hover: var(--collie-surface-muted);
+  --mantine-primary-color-light-color: var(--collie-accent);
+  --mantine-primary-color-contrast: var(--collie-on-accent);
+  --mantine-color-green-contrast: var(--collie-on-accent);
+  --mantine-shadow-md: var(--collie-shadow-overlay);
+}
+
+:root[data-motion='reduced'] { --collie-motion-duration: 0ms; }
+
+@media (forced-colors: active) {
+  :root[data-mantine-color-scheme] {
+    --collie-background: Canvas;
+    --collie-surface: Canvas;
+    --collie-surface-muted: Canvas;
+    --collie-text: CanvasText;
+    --collie-text-secondary: CanvasText;
+    --collie-border: CanvasText;
+    --collie-control-border: ButtonText;
+    --collie-accent: Highlight;
+    --collie-on-accent: HighlightText;
+    --collie-selected: Canvas;
+    --collie-focus: Highlight;
+  }
+}

@@ -1,3 +1,4 @@
+import './Projects.css'
 import OutlinePanel from '../outline/OutlinePanel'
 import HistoryPanel from '../outline/HistoryPanel'
 import { effectiveState, type OutlineInput, type OutlineChange, type HistoryView } from '../../../../shared/outline'

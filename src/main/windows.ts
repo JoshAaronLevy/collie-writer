@@ -34,7 +34,7 @@ export function createWindow(devOrigin?: string): BrowserWindow {
     minWidth: 420,
     minHeight: 400,
     show: false,
-    backgroundColor: '#f6f4ee',
+    backgroundColor: '#f5f4f0',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,

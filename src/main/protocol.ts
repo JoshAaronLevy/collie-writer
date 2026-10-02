@@ -28,7 +28,8 @@ export async function createAssetHandler(
   for (const folder of ['cmaps','iccs','standard_fonts','wasm'] as const)
     for (const name of await readdir(join(base,'pdfjs',folder))) paths.push(`pdfjs/${folder}/${name}`)
   for (const name of paths) {
-    if (name !== 'index.html' && !/^assets\/[A-Za-z0-9_.-]+\.(js|mjs|css)$/.test(name) && !/^pdfjs\/cmaps\/[A-Za-z0-9_-]+\.bcmap$/.test(name) && !/^pdfjs\/iccs\/[A-Za-z0-9_-]+\.icc$/.test(name) && !/^pdfjs\/standard_fonts\/[A-Za-z0-9_-]+\.(pfb|ttf)$/.test(name) && !/^pdfjs\/wasm\/[A-Za-z0-9_-]+\.wasm$/.test(name)) continue
+    // Include only emitted local assets, now including the bundled Source Serif TTFs.
+    if (name !== 'index.html' && !/^assets\/[A-Za-z0-9_.-]+\.(js|mjs|css|ttf)$/.test(name) && !/^pdfjs\/cmaps\/[A-Za-z0-9_-]+\.bcmap$/.test(name) && !/^pdfjs\/iccs\/[A-Za-z0-9_-]+\.icc$/.test(name) && !/^pdfjs\/standard_fonts\/[A-Za-z0-9_-]+\.(pfb|ttf)$/.test(name) && !/^pdfjs\/wasm\/[A-Za-z0-9_-]+\.wasm$/.test(name)) continue
     const path = join(base, name)
     const info = await lstat(path)
     const resolved = await realpath(path)

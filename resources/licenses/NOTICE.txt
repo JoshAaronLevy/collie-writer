@@ -60,3 +60,12 @@ Direct installer updates use electron-updater 6.6.2 and parse locally bundled
 update configuration with js-yaml 4.3.2 (both MIT). Their license texts are in
 dependencies/. Update checks use a configured release feed only after the
 user chooses Check for updates; no manuscript or project metadata is sent.
+
+The local interface uses @mantine/core and @mantine/hooks 9.6.3 (MIT),
+with lucide-react 1.49.0 icons (ISC and retained Feather MIT notices).
+Their complete distributed licenses and dependency notices are bundled in
+dependencies/ and listed in dependencies/inventory.json. Floating UI and
+the other UI dependencies run locally; no hosted fonts, icon service,
+analytics, advertising, or component-gallery content is loaded by the app.
+Source Serif 4's four existing Latin font faces also supply the renderer's
+manuscript typography, with the same unmodified OFL assets listed above.

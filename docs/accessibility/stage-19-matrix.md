@@ -13,3 +13,9 @@ Implementation review only; no app, browser, screen reader, platform package or 
 | File and recovery | Named Save/Backup/Locate/Show controls, accessible Data Locations section | Native dialog focus, screen-reader distinctions among local recovery, selected file and cloud upload | High release gate |
 
 No WCAG or screen-reader certification is claimed. Record a concrete defect, affected platform/screen reader, severity, and release effect when Josh supplies findings. Until then the high-severity rows remain open gates, not known failures.
+
+## Improvement I02 addendum — October 1, 2026
+
+The [I02 guide](../manual-testing/improvement-I02.md) now covers the implemented header menu, Mantine fields/buttons, light/dark/system preferences, high contrast, OS motion/contrast changes, and the titled support-preview dialog. The root owns preferences independently of Settings. Menu selection targets existing section headings; dialog dismissal returns focus and keeps preview text selectable. I02 supplies shared focus/error/status styles and local font assets; it does not establish acceptance of these or the earlier matrix rows.
+
+Keyboard/arrow/Escape/outside-click behavior, dialog scroll containment, screen-reader labels/live errors, Windows forced colors, narrow-window/200% zoom and packaged font/style behavior are all **awaiting user observation**. The existing workspace remains mounted; navigation/editor/research layout refinement is later staged work. No accessibility tool, app, browser, screen reader or automated check was run.

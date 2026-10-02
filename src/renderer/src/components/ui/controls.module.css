@@ -1,0 +1,70 @@
+.action-button {
+  min-height: var(--collie-control-height);
+  height: auto;
+  max-width: 100%;
+  padding: var(--collie-space-2) var(--collie-space-4);
+  border: 1px solid var(--collie-accent);
+  border-radius: var(--collie-radius-control);
+  background: var(--collie-accent);
+  color: var(--collie-on-accent);
+  font-weight: 600;
+  line-height: 1.4;
+  transition: background-color var(--collie-motion-duration) ease;
+}
+.action-button[data-variant='default'], .action-button[data-variant='subtle'] {
+  color: var(--collie-text);
+  background: var(--collie-surface);
+  border-color: var(--collie-control-border);
+}
+.action-button[data-variant='subtle'] { background: transparent; border-color: transparent; }
+.action-button:not(:disabled):hover { background: var(--collie-accent-hover); }
+.action-button[data-variant='default']:not(:disabled):hover,
+.action-button[data-variant='subtle']:not(:disabled):hover { background: var(--collie-selected); }
+.action-button:disabled { opacity: 1; color: var(--collie-text-secondary); background: var(--collie-surface-muted); border-color: var(--collie-border); cursor: not-allowed; }
+.action-button-content { gap: var(--collie-space-2); }
+.action-button-label { white-space: normal; text-align: start; overflow: visible; }
+.field-container { min-width: 0; }
+.field-label { color: var(--collie-text); font-size: 1rem; font-weight: 600; margin-bottom: var(--collie-space-1); }
+.field-input {
+  min-height: var(--collie-control-height);
+  height: auto;
+  font-size: 1rem;
+  color: var(--collie-text);
+  background: var(--collie-surface);
+  border-color: var(--collie-control-border);
+  border-radius: var(--collie-radius-control);
+}
+.field-input[data-error] { border-color: var(--collie-error); color: var(--collie-text); }
+.field-input:disabled { opacity: 1; color: var(--collie-text-secondary); background: var(--collie-surface-muted); }
+.field-input:focus { border-color: var(--collie-focus); }
+.field-adornment { color: var(--collie-text-secondary); }
+.field-description, .choice-description { color: var(--collie-text-secondary); font-size: 0.875rem; line-height: 1.5; }
+.field-error { color: var(--collie-error); font-size: 0.875rem; line-height: 1.5; margin-top: var(--collie-space-1); }
+.choice-field { padding-block: var(--collie-space-2); }
+.choice-input { border-color: var(--collie-control-border); background: var(--collie-surface); cursor: pointer; }
+.choice-input:checked { background: var(--collie-accent); border-color: var(--collie-accent); }
+.choice-icon { color: var(--collie-on-accent); }
+.choice-label { color: var(--collie-text); font-size: 1rem; line-height: 1.5; cursor: pointer; }
+.action-menu { padding: var(--collie-space-1); max-width: calc(100vw - 1rem); background: var(--collie-surface); border-color: var(--collie-border); box-shadow: var(--collie-shadow-overlay); }
+.action-menu-item { min-height: var(--collie-control-height); color: var(--collie-text); font-size: 1rem; padding: var(--collie-space-2) var(--collie-space-3); }
+.action-menu-item[data-hovered] { background: var(--collie-selected); }
+.action-menu-label { white-space: normal; overflow-wrap: anywhere; }
+.dialog-content { background: var(--collie-surface); color: var(--collie-text); border: 1px solid var(--collie-border); border-radius: var(--collie-radius-surface); box-shadow: var(--collie-shadow-overlay); }
+.dialog-header { background: var(--collie-surface); padding: var(--collie-space-4); gap: var(--collie-space-2); }
+.dialog-title { font-size: 1.25rem; font-weight: 600; overflow-wrap: anywhere; }
+.dialog-body { padding: 0 var(--collie-space-4) var(--collie-space-4); }
+.dialog-close { color: var(--collie-text); min-width: var(--collie-control-height); min-height: var(--collie-control-height); }
+.dialog-close:hover { background: var(--collie-selected); }
+.dialog-overlay { background: var(--collie-overlay); }
+.dialog-position { padding: var(--collie-space-3); }
+.content-surface { background: var(--collie-surface); color: var(--collie-text); border-color: var(--collie-border); }
+
+/* Static replacement for react-remove-scroll's generated stylesheet. The class belongs to AppDialog. */
+:global(html):has(.dialog-content) { overflow: hidden; }
+.dialog-content { overscroll-behavior: contain; max-height: calc(100dvh - 1.5rem); }
+
+.action-button:focus-visible, .field-input:focus-visible, .choice-input:focus-visible,
+.dialog-close:focus-visible, .action-menu-item:focus-visible {
+  outline: var(--collie-focus-width) solid var(--collie-focus);
+  outline-offset: 3px;
+}

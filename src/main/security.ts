@@ -1,7 +1,9 @@
 export const APP_ORIGIN = 'collie://app'
 export const APP_URL = `${APP_ORIGIN}/index.html`
+// Mantine uses bundled static CSS. React's individual CSSOM property assignments
+// handle measured menu/transition values; inline style text and style tags stay denied.
 export const PRODUCTION_CSP =
-  "default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src 'self' blob:; font-src 'self'; connect-src 'self' collie-source:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'"
+  "default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; style-src-elem 'self'; style-src-attr 'none'; img-src 'self' blob:; font-src 'self'; connect-src 'self' collie-source:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'"
 
 export function developmentOrigin(raw: string | undefined, packaged: boolean): string | undefined {
   if (!raw || packaged) return undefined

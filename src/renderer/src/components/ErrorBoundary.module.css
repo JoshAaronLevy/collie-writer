@@ -1,0 +1,3 @@
+.window-error { max-width: 40rem; padding: var(--collie-space-6); margin: var(--collie-space-12) auto; }
+.window-error h1 { font-size: 1.5rem; }
+.window-error button { min-height: var(--collie-control-height); padding: var(--collie-space-2) var(--collie-space-4); border: 1px solid var(--collie-control-border); border-radius: var(--collie-radius-control); color: var(--collie-text); background: var(--collie-surface); cursor: pointer; }
