@@ -4,10 +4,8 @@ import ProjectLibrary from '../library/ProjectLibrary'
 import '../projects/Projects.css'
 import { sameProject } from '../../../../shared/access'
 import { sameScope } from '../../../../shared/project-files'
-import type { DocumentPayload } from '../../../../domain/editor/schema'
-import OutlinePanel from '../outline/OutlinePanel'
 import HistoryPanel from '../outline/HistoryPanel'
-import RichDraft from '../../editor/RichDraft'
+import WritingWorkspace from './WritingWorkspace'
 import NotesPanel from '../projects/NotesPanel'
 import SourcesPanel from '../projects/SourcesPanel'
 import SourceInspector from '../projects/SourceInspector'
@@ -24,27 +22,14 @@ import SettingsPanel from '../settings/SettingsPanel'
 import { useWorkspaceSession } from './WorkspaceSession'
 import { RetainedRegion } from './RetainedRegion'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
-import { AppButton } from '../../components/ui/Controls'
-function readableDocument(payload: DocumentPayload): string {
-  const pieces: string[] = []
-  const visit = (value: unknown): void => {
-    if (!value || typeof value !== 'object') return
-    if ('type' in value && value.type === 'text' && 'text' in value && typeof value.text === 'string') { pieces.push(value.text); return }
-    if ('type' in value && value.type === 'hardBreak') { pieces.push('\n'); return }
-    if ('content' in value && Array.isArray(value.content)) { for (const child of value.content) visit(child); if ('type' in value && ['paragraph','heading','tableRow'].includes(String(value.type))) pieces.push('\n') }
-  }
-  visit(payload.ast)
-  return pieces.join('')
-}
-
 export default function WorkspaceViews(): React.JSX.Element {
-  const { composition, drafts, actionTask, destination, storage, location, setLocation, list, project, access, sectionTitle, setSectionTitle, sectionStatus, setSectionStatus, sectionSynopsis, setSectionSynopsis,
-sectionFields, busy, setBusy, acting, closing, committing, retry, setError, notice, setNotice, history, annotationCapture, noteDirty,
-sourceDirty,
-inspectionTarget, citationContext, setCitationContext, outlineRetry, conflict, data, startupPending,
-metaPending, current, editorRef, imageUrls, anchorToFocus, sectionReadOnly, dirty, files, fileActive, accessReadOnly, accessTransition, available,
-updateProject, isDirty, changed, refresh, refreshData, importImage, navigateSection, navigateSearch, loadHistory, performOutline, saveSectionMeta, flush, flushManuscript,
-run, waitActive, lifecycleFile, manage, resetLocal, captureAnnotation, afterNoteCommit, changeAccess, openTutorial, chooseProject, research, navigate, navigating, editorEpoch, setData, setList } = useWorkspaceSession()
+  const { composition, drafts, destination, storage, location, setLocation, list, project, access,
+    busy, setBusy, acting, closing, committing, setError, setNotice, history, annotationCapture, noteDirty,
+    sourceDirty, inspectionTarget, setCitationContext, outlineRetry, data, startupPending, current,
+    dirty, files, fileActive, accessReadOnly, accessTransition, available, updateProject, refreshData,
+    navigateSection, navigateSearch, loadHistory, performOutline, flush, run, waitActive, lifecycleFile,
+    manage, resetLocal, afterNoteCommit, changeAccess, openTutorial, chooseProject, research, navigating,
+    setData, setList } = useWorkspaceSession()
   return <>
 <RetainedRegion name="setup" label="New project">
   {startupPending && storage.state !== 'unavailable' && location?.state !== 'required' ? <p role="status">Opening local projects…</p> : <OnboardingWizard />}
@@ -52,29 +37,15 @@ run, waitActive, lifecycleFile, manage, resetLocal, captureAnnotation, afterNote
 <RetainedRegion name="library" label="Projects">
   <ProjectLibrary />
 </RetainedRegion>
-<div className="projects">
-<WorkspaceNavigation />
+<div className="projects"><WorkspaceNavigation /></div>
 <div inert={navigating || closing} onCompositionStartCapture={() => { composition.current = true; drafts.changed() }} onCompositionEndCapture={() => { composition.current = false; drafts.changed() }}>
-<RetainedRegion name="write" label="Writing">
-    {project ? <div className="writing-inspection-layout"><div className="draft-panel">
-      <h2>{project.title} · {project.projectId.slice(0, 8)}</h2>
-      <OutlinePanel key={project.projectId} project={project} readOnly={accessReadOnly||accessTransition} disabled={busy || acting || closing || committing || fileActive} change={change => run(() => performOutline(change))} select={id => run(() => navigateSection(id))} />
-      {sectionReadOnly ? <p role="status">This section is archived or in trash. Restore its outline item and any removed parent to edit it.</p> : null}
-      <form className="section-details" onSubmit={event => { event.preventDefault(); run(saveSectionMeta) }}>
-        <label>Section title <input value={sectionTitle} maxLength={500} required disabled={busy || closing || outlineRetry || sectionReadOnly || accessReadOnly || accessTransition || !!metaPending.current} onChange={event => { sectionFields.current.title = event.target.value; setSectionTitle(event.target.value); metaPending.current = null }} /></label>
-        <label>Status <select value={sectionStatus} disabled={busy || closing || outlineRetry || sectionReadOnly || accessReadOnly || accessTransition || !!metaPending.current} onChange={event => { sectionFields.current.status = event.target.value as 'draft' | 'review' | 'complete'; setSectionStatus(sectionFields.current.status); metaPending.current = null }}><option value="draft">Draft</option><option value="review">Review</option><option value="complete">Complete</option></select></label>
-        <label>Synopsis <textarea value={sectionSynopsis} maxLength={10000} disabled={busy || closing || outlineRetry || sectionReadOnly || accessReadOnly || accessTransition || !!metaPending.current} onChange={event => { sectionFields.current.synopsis = event.target.value; setSectionSynopsis(event.target.value); metaPending.current = null }} /></label>
-        <button type="submit" disabled={busy || acting || closing || sectionReadOnly || accessReadOnly || accessTransition}>{metaPending.current ? 'Retry section details' : 'Save section details'}</button>
-      </form>
-      <RichDraft key={`${project.projectId}-${project.documentId}-${editorEpoch}`} payload={project.payload} references={{focusAnchor:anchorToFocus.current,projectId:project.projectId,sources:citationContext?.projectId===project.projectId?citationContext.sources:[],labels:new Map(!dirty&&citationContext?.projectId===project.projectId&&citationContext.view?.headCommitId===project.headCommitId?citationContext.view.labels.map(label=>[label.id,label.text]):[])}} disabled={busy || closing || outlineRetry || sectionReadOnly || accessReadOnly || accessTransition || storage.state !== 'ready'} onReady={editor => { editorRef.current = editor; if (editor && anchorToFocus.current) { const id = anchorToFocus.current; anchorToFocus.current = null; let target: number | null = null; editor.state.doc.descendants((node,position) => { if (node.attrs.blockId === id || node.attrs.citationId === id || node.attrs.footnoteId === id) { target = position; return false }; return true }); if (target !== null) { editor.commands.setTextSelection(Math.min(target+1,editor.state.doc.content.size)); editor.commands.focus(); editor.view.dispatch(editor.state.tr.scrollIntoView()) } else setError('The exact passage is no longer present in this section.') } }} onChange={changed} onIssue={setError} onBlur={() => { if (isDirty() && !actionTask.current) void flushManuscript() }} imageUrl={assetId => imageUrls.current.get(assetId)} importImage={() => run(importImage)} />
-        <button type="button" disabled={busy || closing || sectionReadOnly || accessReadOnly || accessTransition} onMouseDown={event => event.preventDefault()} onClick={() => { void captureAnnotation() }}>Annotate selection</button>
-        <div className="project-actions"><button disabled={busy || committing || closing || outlineRetry || sectionReadOnly || (!accessTransition && accessReadOnly) || !dirty || storage.state !== 'ready'} onClick={() => { void flush().then(() => refresh()) }}>{committing ? 'Protecting…' : retry ? 'Retry local commit' : 'Protect locally'}</button>
-        <button onClick={() => { editorRef.current?.commands.focus(); editorRef.current?.commands.selectAll() }}>Select all for copying</button></div>
-        <p>For an emergency copy, select this section and use your system Copy command, then paste into another local document.</p>
-      <p role="status">{notice}</p>
-      {conflict ? <details className="conflict-panel" open><summary>Stored version differs from this visible draft</summary><p>Keep this draft open for copying. The stored section below is a separate read-only copy; Collie Writer has not overwritten either version.</p><textarea readOnly aria-label="Stored section text for copying" value={readableDocument(conflict.payload)} /></details> : null}
-    </div></div> : <p>Open a project from Projects to begin writing.</p>}
+<RetainedRegion name="write" label="Writing"><WritingWorkspace /></RetainedRegion>
+<RetainedRegion name="history" label="Manuscript history">
+{project ? <HistoryPanel key={project.projectId} project={project} readOnly={accessReadOnly||accessTransition} history={history} disabled={busy || acting || closing || committing || fileActive} change={change => run(() => performOutline(change))} read={id => run(() => loadHistory(id))} navigate={(doc,anchor) => run(() => navigateSection(doc,anchor))} /> : null}
 </RetainedRegion>
+</div>
+<div className="projects">
+<div inert={navigating || closing} onCompositionStartCapture={() => { composition.current = true; drafts.changed() }} onCompositionEndCapture={() => { composition.current = false; drafts.changed() }}>
 <RetainedRegion name="research-inspector" label="Source inspector">
 {project && inspectionTarget ?<SourceInspector readOnly={accessReadOnly||accessTransition} key={`${project.projectId}-${inspectionTarget.sourceId}`} project={project} sourceId={inspectionTarget.sourceId} focusExcerptId={inspectionTarget.excerptId} focusVersionId={inspectionTarget.versionId} focusPageIndex={inspectionTarget.pageIndex} disabled={busy||closing||outlineRetry||sourceDirty||storage.state!=='ready'} onCommitted={afterNoteCommit} close={() => research({ kind: 'sources' })} />:null}
 </RetainedRegion>
@@ -94,9 +65,7 @@ run, waitActive, lifecycleFile, manage, resetLocal, captureAnnotation, afterNote
 {project ? <CitationsPanel readOnly={accessReadOnly||accessTransition} key={project.projectId} project={project} dirty={dirty} disabled={busy||closing||acting||fileActive||storage.state!=='ready'} flush={flush} onCommitted={afterNoteCommit} onContext={(sources,view)=>setCitationContext({projectId:project.projectId,sources,view})} navigate={navigateSection} source={sourceId=>research({kind:'sources',sourceId})} /> : null}
 {project ? <DocxExportPanel paid={access?.paid??false} key={project.projectId} project={project} disabled={busy||closing||acting||fileActive||storage.state!=='ready'} flush={flush} onProject={updateProject} /> : null}
 </RetainedRegion>
-<RetainedRegion name="history" label="Manuscript history">
-{project ? <HistoryPanel key={project.projectId} project={project} readOnly={accessReadOnly||accessTransition} history={history} disabled={busy || acting || closing || committing || fileActive} change={change => run(() => performOutline(change))} read={id => run(() => loadHistory(id))} navigate={(doc,anchor) => run(() => navigateSection(doc,anchor))} /> : null}
-</RetainedRegion>
+
 <RetainedRegion name="details" label="Project actions">
 {project ? <><h1>Project actions</h1><p>Manage details, the selected project file, separate copies, and local organization for “{project.title}”.</p></> : null}
 {project?<ProjectDetailsForm key={project.projectId} project={project} disabled={busy||acting||closing||fileActive||storage.state!=='ready'} readOnly={accessReadOnly||accessTransition}/>:null}

@@ -1,0 +1,40 @@
+.writing-workspace { min-width: 0; }
+.writing-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--collie-space-4); margin-bottom: var(--collie-space-4); }
+.writing-project-heading { min-width: 0; flex: 1 1 18rem; }
+.writing-project-heading h1 { font: 400 clamp(1.5rem, 3vw, 2rem)/1.2 var(--collie-font-manuscript); margin: 0; overflow-wrap: anywhere; }
+.writing-eyebrow { color: var(--collie-text-secondary); font-size: .75rem; letter-spacing: .1em; text-transform: uppercase; margin: 0 0 .35rem; }
+.writing-header-actions, .writing-view-actions, .writing-panel-options, .writing-section-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--collie-space-2); }
+.writing-view-actions { justify-content: space-between; margin-bottom: var(--collie-space-4); }
+.writing-panel-options { margin-left: auto; }
+.writing-save-state { color: var(--collie-text-secondary); font-size: .875rem; margin-top: var(--collie-space-2); }
+.writing-save-state summary { cursor: pointer; }
+.writing-save-state p { max-width: 50rem; }
+.writing-layout { display: grid; grid-template-columns: var(--writing-outline-width) .75rem minmax(0, 1fr) .75rem var(--writing-panel-width); align-items: start; min-width: 0; }
+.writing-workspace[data-panel='closed'] .writing-layout { grid-template-columns: var(--writing-outline-width) .75rem minmax(0, 1fr); }
+.writing-workspace[data-focus='true'] .writing-layout { grid-template-columns: minmax(0, 1fr); }
+.writing-outline-pane, .writing-companion-pane { min-width: 0; padding: var(--collie-space-3); border-top: 1px solid var(--collie-border); overflow-wrap: anywhere; }
+.workspace-pane-resizer:focus-visible { outline: 2px solid var(--collie-focus); outline-offset: -2px; }
+.workspace-pane-resizer { min-height: 28rem; align-self: stretch; cursor: col-resize; touch-action: none; background: linear-gradient(var(--collie-border),var(--collie-border)) center / 1px 100% no-repeat; }
+.workspace-pane-resizer:hover { background-color: var(--collie-selected); }
+.writing-manuscript-pane { min-width: 0; width: 100%; max-width: 56rem; margin-inline: auto; padding: clamp(1rem, 2vw, 2.5rem); background: var(--collie-surface); border: 1px solid var(--collie-border); border-radius: var(--collie-radius-surface); }
+.writing-section-heading { display: flex; justify-content: space-between; align-items: start; gap: var(--collie-space-3); margin-bottom: var(--collie-space-4); }
+.writing-section-heading h2 { margin: 0; font: 400 clamp(1.5rem, 2.5vw, 2rem)/1.25 var(--collie-font-manuscript); overflow-wrap: anywhere; }
+.writing-section-heading p { color: var(--collie-text-secondary); font-size: .875rem; margin: .4rem 0 0; }
+.writing-section-details { display: grid; gap: var(--collie-space-3); border-block: 1px solid var(--collie-border); padding-block: var(--collie-space-4); margin-bottom: var(--collie-space-4); }
+.writing-section-details button { justify-self: start; }
+.writing-section-actions { padding-top: var(--collie-space-3); border-top: 1px solid var(--collie-border); }
+.writing-conflict { padding: var(--collie-space-4); border: 1px solid var(--collie-error); margin-top: var(--collie-space-4); }
+.writing-conflict textarea { min-height: 12rem; }
+.writing-side-content { display: grid; gap: var(--collie-space-3); }
+.writing-side-content h2 { font-size: 1.125rem; margin: 0; }
+.writing-side-content h3 { font-size: 1rem; margin: 0; }
+.writing-side-content p { margin: 0; color: var(--collie-text-secondary); }
+.writing-reference-text { white-space: pre-wrap; font-family: var(--collie-font-manuscript); line-height: 1.6; }
+.writing-source-excerpt { margin: 0; padding-left: var(--collie-space-3); border-left: 2px solid var(--collie-accent); white-space: pre-wrap; }
+.writing-workspace [hidden] { display: none; }
+.writing-workspace[data-narrow='true'] .writing-layout { display: block; }
+.writing-workspace[data-narrow='true'] .writing-outline-pane, .writing-workspace[data-narrow='true'] .writing-companion-pane { max-width: 48rem; margin-inline: auto; }
+@media (max-width: 38rem) { .writing-section-heading { flex-direction: column; } .writing-manuscript-pane { padding: var(--collie-space-3); } }
+@media (forced-colors: active) { .workspace-pane-resizer { border-inline-start: 1px solid ButtonText; } }
+
+.writing-source-excerpt .writing-excerpt-origin { font-size: .75rem; margin-top: .5rem; }

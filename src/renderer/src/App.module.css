@@ -18,3 +18,6 @@
 .skip-link { position: absolute; z-index: 1000; top: -10rem; left: var(--collie-space-4); max-width: calc(100% - 2rem); padding: var(--collie-space-3) var(--collie-space-4); background: var(--collie-surface); color: var(--collie-text); border-radius: var(--collie-radius-control); }
 .skip-link:focus { top: var(--collie-space-2); }
 @media (max-width: 32rem) { .app-header { align-items: start; } .workspace-content { padding-top: var(--collie-space-4); } }
+.app-shell[data-writing='true'] .workspace-content { max-width: 112rem; padding-inline: clamp(.75rem, 2vw, 2rem); }
+.app-shell[data-writing='true'] .citation-attribution { margin-bottom: var(--collie-space-4); padding-bottom: var(--collie-space-4); }
+.app-shell[data-focus='true'] .app-header, .app-shell[data-focus='true'] .app-footer { display: none; }

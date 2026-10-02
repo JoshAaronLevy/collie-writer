@@ -9,12 +9,13 @@ export function WorkspaceStatus(): React.JSX.Element {
   const { destination, project, fileActive, files, dirty, available, acting, working, closing, storage, location, drafts, blocker, notice, error, setError,
     run, save, current, outlineRetry, performOutline, returnToDraft, showAccess, accessTransition, accessReadOnly, navigate, flush, refresh,
     exports, chooseProject, trackExport } = useWorkspaceSession()
+  const writing = destination.kind === 'workspace' && destination.view === 'write'
   const operations = drafts.states().filter(s => s.policy === 'operation' && (s.status || s.issue) || s.pendingOperation && !s.busy)
   const fileStateReady = !!project && sameScope(project,files.scope)
   const fileNeedsAttention = fileActive || fileStateReady && ['checking','external-change','unavailable','interrupted'].includes(files.state)
   return <div className={`projects ${styles['session-status']}`}>
-    {project && destination.kind === 'workspace' ? <p className={styles['current-project']}>{project.title} · {dirty ? 'Changes need local protection' : 'Protected on this device'}</p> : null}
-    {notice ? <p role="status">{notice}</p> : null}
+    {project && destination.kind === 'workspace' && !writing ? <p className={styles['current-project']}>{project.title} · {dirty ? 'Changes need local protection' : 'Protected on this device'}</p> : null}
+    {notice && !writing ? <p role="status">{notice}</p> : null}
     {storage.state === 'unavailable' ? <StatusBanner tone="error" title="Storage unavailable">Keep this window open and copy any unprotected writing.</StatusBanner> : null}
     {location?.state === 'required' ? <StatusBanner tone="warning" title="Choose a local working folder"><AppButton variant="default" onClick={() => { void navigate({kind:'settings',page:'data'}) }}>Open Data and recovery</AppButton></StatusBanner> : null}
     {error ? <StatusBanner tone="error" title="Your attention is needed">{error}</StatusBanner> : null}
@@ -41,7 +42,7 @@ export function WorkspaceStatus(): React.JSX.Element {
     </div>)}
     {closing ? <p role="status">Protecting writing and finishing file work before closing…</p> : null}
     {project && !fileStateReady ? <p role="status">Checking project-file status…</p> : null}
-    {project && destination.kind === 'workspace' && destination.view !== 'details' && fileStateReady && !fileNeedsAttention ? <div className={styles['file-summary']}>
+    {project && destination.kind === 'workspace' && destination.view !== 'details' && !writing && fileStateReady && !fileNeedsAttention ? <div className={styles['file-summary']}>
       <p>{!project.destination ? 'Protected locally · no project file selected' : files.state === 'pending' ? 'Newer writing protected locally · selected file is older' : 'Selected project file saved on this device'}</p>
       <AppButton variant="default" disabled={!available || acting || closing} onClick={() => run(() => save(false))}>Save project file</AppButton>
       <AppButton variant="subtle" onClick={() => { void navigate({kind:'workspace',scope:{projectId:project.projectId,workspaceId:project.workspaceId},view:'details'}) }}>Project file actions</AppButton>
@@ -49,6 +50,6 @@ export function WorkspaceStatus(): React.JSX.Element {
     {fileNeedsAttention ? <details open>
       <summary>Project file needs attention</summary><ProjectFileActions />
     </details> : null}
-    {project && dirty ? <AppButton variant="default" disabled={acting || closing} onClick={() => run(async () => { await flush(); await refresh() })}>Protect pending drafts</AppButton> : null}
+    {project && dirty && !writing ? <AppButton variant="default" disabled={acting || closing} onClick={() => run(async () => { await flush(); await refresh() })}>Protect pending drafts</AppButton> : null}
   </div>
 }

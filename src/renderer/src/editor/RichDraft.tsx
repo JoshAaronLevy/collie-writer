@@ -1,4 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import { TextInput, Textarea } from '@mantine/core'
+import { AppButton } from '../components/ui/Controls'
+import { ActionMenu } from '../components/ui/ActionMenu'
+import { AppDialog } from '../components/ui/AppDialog'
+import { captureSelection, restoreSelection, type CapturedSelection } from './selection'
+import { useEditorFormDraft } from './useEditorFormDraft'
+import './RichDraft.css'
 import type { Editor } from '@tiptap/core'
 import { setBlockType } from '@tiptap/pm/commands'
 import { wrapInList } from '@tiptap/pm/schema-list'
@@ -21,7 +28,7 @@ type Props = {
   onIssue: (message: string) => void
   onBlur: () => void
   imageUrl: (assetId: string) => string | undefined
-  importImage: () => void
+  importImage: (details: { alt: string; caption: string }) => void
 }
 
 export default function RichDraft({ payload, disabled, onReady, onChange, onIssue, onBlur, imageUrl, importImage, noteMode = false, references }: Props): React.JSX.Element {
@@ -37,6 +44,42 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
   const [words, setWords] = useState(0)
   const [query, setQuery] = useState(''), [replacement, setReplacement] = useState('')
   const [match, setMatch] = useState('')
+  const [findOpen, setFindOpen] = useState(false), [referencesOpen, setReferencesOpen] = useState(false)
+  const [dialog, setDialog] = useState<'link' | 'image' | 'image-details' | null>(null)
+  const [href, setHref] = useState(''), [alt, setAlt] = useState(''), [caption, setCaption] = useState(''), [dialogIssue, setDialogIssue] = useState('')
+  const toolsSelection = useRef<CapturedSelection | null>(null), dialogSelection = useRef<CapturedSelection | null>(null)
+  const afterDialog = useRef<(() => void) | null>(null)
+  const formDraft = useEditorFormDraft('Link or image details', dialog !== null, noteMode)
+  useEffect(() => { if (findOpen) findField.current?.focus() }, [findOpen])
+  useEffect(() => { if (references?.focusAnchor) setReferencesOpen(true) }, [references?.focusAnchor])
+  function openFind(): void { setFindOpen(true); findField.current?.focus() }
+  function captureTools(): void { toolsSelection.current = captureSelection(editor.current) }
+  function menuAction(action: () => void): void {
+    if (!restoreSelection(toolsSelection.current, editor.current)) { onIssue('Select the current writing again before using this action.'); return }
+    action()
+  }
+  function openDialog(kind: 'link' | 'image' | 'image-details'): void {
+    const saved = captureSelection(editor.current)
+    if (!saved || disabled) { onIssue('Finish composing text before opening this dialog.'); return }
+    dialogSelection.current = saved; setDialogIssue(''); setDialog(kind)
+  }
+  function closeDialog(): void {
+    if (!formDraft.canClose()) return
+    restoreSelection(dialogSelection.current, editor.current); setDialog(null)
+  }
+  function applyDialog(): void {
+    if (disabled || !formDraft.canClose()) return
+    if (dialog === 'link' && !safeLink(href.trim())) { setDialogIssue('Enter an http or https address without account credentials.'); return }
+    if (alt.length > 2000 || caption.length > 10000) { setDialogIssue('Shorten the image description or caption.'); return }
+    if (!restoreSelection(dialogSelection.current, editor.current)) { setDialogIssue('The writing changed while this dialog was open. Cancel and select the current passage again.'); return }
+    if (dialog === 'link') command(e => { e.chain().setMark('link', {href:href.trim()}).run() })
+    else if (dialog === 'image-details') command(e => { e.commands.updateAttributes('image', {alt,caption}) })
+    else afterDialog.current = () => {
+      if (!restoreSelection(dialogSelection.current, editor.current)) { onIssue('Select the image location again. The writing changed.'); return }
+      importImage({alt,caption})
+    }
+    setDialog(null)
+  }
   useEffect(() => {
     if (!host.current) return
     try {
@@ -46,16 +89,20 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
         if (countTimer.current) clearTimeout(countTimer.current)
         countTimer.current = setTimeout(() => { if (editor.current) setWords((editor.current.state.doc.textContent.match(/\S+/gu) ?? []).length) }, 450)
       }, onIssue })
+      const updateSelection = (): void => setRevision(value => value + 1)
+      next.on('selectionUpdate', updateSelection)
       editor.current = next; onReady(next); setWords((next.state.doc.textContent.match(/\S+/gu) ?? []).length); setRevision(value => value + 1)
-      return () => { if (countTimer.current) clearTimeout(countTimer.current); onReady(null); editor.current = null; next.destroy() }
+      return () => { if (countTimer.current) clearTimeout(countTimer.current); next.off('selectionUpdate', updateSelection); onReady(null); editor.current = null; next.destroy() }
     } catch { onIssue('The stored document cannot be opened for editing without loss. Keep its original file and local recovery for repair.') }
   }, [])
   useEffect(() => { editor.current?.setEditable(!disabled, false) }, [disabled])
   useEffect(() => window.collie.onEditorAction(action => {
-    if (noteMode) return
+    if (noteMode || !host.current || host.current.closest('[hidden], [inert]') || host.current.closest('[data-writing-dialog-open="true"]')) return
+    const active=document.activeElement
+    if(active instanceof HTMLElement&&(active.closest('[role="dialog"]')||['INPUT','TEXTAREA','SELECT'].includes(active.tagName)))return
     const instance = editor.current ? focusedManuscriptEditor(editor.current) : null
     if (!instance) return
-    if (action === 'find') { findField.current?.focus(); return }
+    if (action === 'find') { openFind(); return }
     if (disabledRef.current || editorIsComposing(instance)) return
     if (action === 'undo') undo(instance.state, tr => instance.view.dispatch(tr))
     else if (action === 'redo') redo(instance.state, tr => instance.view.dispatch(tr))
@@ -63,7 +110,7 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
   }), [])
   useEffect(() => { if (editor.current) refreshCitationLabels(editor.current, references?.labels ?? new Map()) }, [references?.labels])
   const current = editor.current
-  function command(run: (editor: Editor) => void): void { if (editor.current && !disabled) { run(editor.current); editor.current.commands.focus(); setRevision(value => value + 1) } }
+  function command(run: (editor: Editor) => void): void { if (editor.current && !disabledRef.current && !editorIsComposing(editor.current)) { run(editor.current); editor.current.commands.focus(); setRevision(value => value + 1) } }
   function inCell(instance: Editor): boolean {
     for (const edge of [instance.state.selection.$from, instance.state.selection.$to]) for (let depth = edge.depth; depth > 0; depth--) if (['tableCell','tableHeader'].includes(edge.node(depth).type.name)) return true
     return false
@@ -87,12 +134,13 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
   }
   function selectFound(): void {
     const instance = editor.current, found = find()
+    if (instance && editorIsComposing(instance)) return
     if (!instance || !found) { setMatch('No match in this section.'); return }
     instance.chain().focus().setTextSelection(found).run(); setMatch('Match selected in this section.')
   }
   function replace(all: boolean): void {
     const instance = editor.current
-    if (!instance || disabled || !query) return
+    if (!instance || disabled || !query || editorIsComposing(instance)) return
     const doc = instance.state.doc, hits: { from: number; to: number }[] = []
     doc.descendants((node, pos) => {
       if (!node.isText || !node.text) return
@@ -110,10 +158,7 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
     const instance = editor.current
     if (!instance || disabled || instance.state.selection.empty) { onIssue('Select text before adding a link.'); return }
     if (inCell(instance)) { onIssue('Table cells accept plain text only.'); return }
-    const href = window.prompt('Web address (https:// or http://)')
-    if (href === null) return
-    if (!safeLink(href)) { onIssue('Use a safe http or https address without credentials.'); return }
-    command(e => { e.chain().focus().setMark('link', { href }).run() })
+    setHref(String(instance.getAttributes('link').href ?? '')); openDialog('link')
   }
   function table(): void {
     command(e => {
@@ -144,60 +189,76 @@ export default function RichDraft({ payload, disabled, onReady, onChange, onIssu
     const instance = editor.current
     const selected = instance?.state.selection as { node?: { type: { name: string }; attrs: Record<string, unknown> } } | undefined
     if (!instance || selected?.node?.type.name !== 'image') { onIssue('Select an image first.'); return }
-    const alt = window.prompt('Image description for assistive technology', String(selected.node.attrs.alt ?? ''))
-    if (alt === null) return
-    const caption = window.prompt('Caption', String(selected.node.attrs.caption ?? ''))
-    if (caption === null) return
-    if (alt.length > 2000 || caption.length > 10000) { onIssue('Image description or caption is too long.'); return }
-    command(e => { e.commands.updateAttributes('image', { alt, caption }) })
+    setAlt(String(selected.node.attrs.alt ?? '')); setCaption(String(selected.node.attrs.caption ?? '')); openDialog('image-details')
   }
   async function pastePlain(target?: Editor): Promise<void> {
     if (disabledRef.current) return
+    const original = target ?? editor.current, saved = captureSelection(original)
     const result = await window.collie.readPlainClipboard()
     if (!result.ok) { onIssue(result.error.message); return }
     const instance = target ?? editor.current
-    if (!instance || instance.isDestroyed || !result.value) return
+    if (!instance || disabledRef.current || !result.value || !restoreSelection(saved, instance)) return
     instance.view.dispatch(instance.state.tr.insertText(result.value.replace(/\r\n?/g, '\n')))
     instance.commands.focus()
   }
   function insertBlock(type: 'horizontalRule' | 'pageBreak'): void { command(e => { e.commands.insertContent({ type, attrs: { blockId: crypto.randomUUID() } }) }) }
-  return <div className="rich-draft">
-    <div className="editor-toolbar" role="toolbar" aria-label="Writing tools">
-      {(['bold','italic','underline','strike'] as const).map(name => <button key={name} type="button" disabled={disabled} aria-label={name} aria-pressed={!!current?.isActive(name)} onMouseDown={event => event.preventDefault()} onClick={() => mark(name)}>{name[0].toUpperCase() + name.slice(1)}</button>)}
-      <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => command(e => { setBlockType(e.state.schema.nodes.paragraph)(e.state, tr => e.view.dispatch(tr)) })}>Paragraph</button>
-      {([1,2,3] as const).map(level => <button key={level} type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => command(e => { setBlockType(e.state.schema.nodes.heading, { level })(e.state, tr => e.view.dispatch(tr)) })}>Heading {level}</button>)}
-      <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => command(e => { e.chain().focus().toggleWrap('blockquote').run() })}>Quote</button>
-      <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => command(e => { wrapInList(e.state.schema.nodes.bulletList)(e.state, tr => e.view.dispatch(tr)) })}>Bullets</button>
-      <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => command(e => { wrapInList(e.state.schema.nodes.orderedList, { start: 1 })(e.state, tr => e.view.dispatch(tr)) })}>Numbers</button>
-      <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={link}>Link</button>
-      <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => command(e => { e.chain().focus().unsetMark('link').run() })}>Remove link</button>
-      <button type="button" disabled={disabled} onClick={() => insertBlock('horizontalRule')}>Rule</button>
-      {!noteMode ? <><button type="button" disabled={disabled} onClick={() => insertBlock('pageBreak')}>Page break</button>
-      <button type="button" disabled={disabled} onClick={table}>Table 2×2</button>
-      <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => growTable('row')}>Add row</button>
-      <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => growTable('column')}>Add column</button>
-      <button type="button" disabled={disabled} onClick={importImage}>Image…</button>
-      <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={imageDetails}>Image details</button></> : null}
-      <button type="button" disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => { void pastePlain() }}>Paste plain text</button>
-      <button type="button" disabled={disabled} onClick={() => command(e => { undo(e.state, tr => e.view.dispatch(tr)) })}>Undo</button>
-      <button type="button" disabled={disabled} onClick={() => command(e => { redo(e.state, tr => e.view.dispatch(tr)) })}>Redo</button>
+  const imageSelected = current?.isActive('image') ?? false
+  const tableSelected = !!current && inCell(current)
+  return <div className="rich-draft" data-writing-dialog-open={dialog!==null}>
+    <div className="editor-toolbar" role="group" aria-label="Writing tools">
+      {(['bold','italic','underline','strike'] as const).map(name => <AppButton key={name} variant="subtle" disabled={disabled} aria-label={name} aria-pressed={!!current?.isActive(name)} onMouseDown={event => event.preventDefault()} onClick={() => mark(name)}>{name[0].toUpperCase() + name.slice(1)}</AppButton>)}
+      <ActionMenu label="Style" onOpen={captureTools} actions={[
+        {id:'paragraph',label:'Paragraph',disabled,onSelect:()=>menuAction(()=>command(e=>{setBlockType(e.state.schema.nodes.paragraph)(e.state,tr=>e.view.dispatch(tr))}))},
+        ...([1,2,3] as const).map(level=>({id:`heading-${level}`,label:`Heading ${level}`,disabled:disabled||tableSelected,onSelect:()=>menuAction(()=>command(e=>{setBlockType(e.state.schema.nodes.heading,{level})(e.state,tr=>e.view.dispatch(tr))}))})),
+        {id:'quote',label:'Block quotation',disabled:disabled||tableSelected,onSelect:()=>menuAction(()=>command(e=>{e.chain().toggleWrap('blockquote').run()}))},
+        {id:'bullets',label:'Bulleted list',disabled:disabled||tableSelected,onSelect:()=>menuAction(()=>command(e=>{wrapInList(e.state.schema.nodes.bulletList)(e.state,tr=>e.view.dispatch(tr))}))},
+        {id:'numbers',label:'Numbered list',disabled:disabled||tableSelected,onSelect:()=>menuAction(()=>command(e=>{wrapInList(e.state.schema.nodes.orderedList,{start:1})(e.state,tr=>e.view.dispatch(tr))}))}
+      ]}/>
+      <ActionMenu label="Insert" onOpen={captureTools} actions={[
+        {id:'link',label:'Link…',disabled:disabled||tableSelected,onSelect:()=>menuAction(link)},
+        {id:'unlink',label:'Remove link',disabled:disabled||!current?.isActive('link'),onSelect:()=>menuAction(()=>command(e=>{e.commands.unsetMark('link')}))},
+        {id:'rule',label:'Horizontal rule',disabled:disabled||tableSelected,onSelect:()=>menuAction(()=>insertBlock('horizontalRule'))},
+        ...(!noteMode ? [
+          {id:'page',label:'Page break',disabled:disabled||tableSelected,onSelect:()=>menuAction(()=>insertBlock('pageBreak'))},
+          {id:'table',label:'Table (2 × 2)',disabled:disabled||tableSelected,onSelect:()=>menuAction(table)},
+          {id:'image',label:'Image…',disabled:disabled||tableSelected,onSelect:()=>menuAction(()=>{setAlt('');setCaption('');openDialog('image')})}
+        ] : []),
+        ...(references ? [{id:'references',label:'Citations and footnotes',disabled:false,onSelect:()=>menuAction(()=>setReferencesOpen(true))}] : [])
+      ]}/>
+      <AppButton variant="subtle" disabled={disabled} onMouseDown={e=>e.preventDefault()} onClick={()=>command(e=>{undo(e.state,tr=>e.view.dispatch(tr))})}>Undo</AppButton>
+      <AppButton variant="subtle" disabled={disabled} onMouseDown={e=>e.preventDefault()} onClick={()=>command(e=>{redo(e.state,tr=>e.view.dispatch(tr))})}>Redo</AppButton>
+      <ActionMenu label="More tools" onOpen={captureTools} actions={[
+        {id:'find',label:'Find and replace…',onSelect:openFind},
+        {id:'paste',label:'Paste plain text',disabled,onSelect:()=>menuAction(()=>{void pastePlain()})},
+        {id:'copy',label:'Select all for copying',onSelect:()=>{if(current&&!editorIsComposing(current)){current.commands.selectAll();current.commands.focus()}}}
+      ]}/>
     </div>
-    {current && references ? <ReferenceTools editor={current} context={references} disabled={disabled} issue={onIssue} /> : null}
+    {tableSelected && !noteMode ? <div className="editor-context-tools" role="group" aria-label="Table actions"><span>Table</span><AppButton variant="subtle" disabled={disabled} onMouseDown={e=>e.preventDefault()} onClick={()=>growTable('row')}>Add row</AppButton><AppButton variant="subtle" disabled={disabled} onMouseDown={e=>e.preventDefault()} onClick={()=>growTable('column')}>Add column</AppButton></div> : null}
+    {imageSelected && !noteMode ? <div className="editor-context-tools"><span>Selected image</span><AppButton variant="subtle" disabled={disabled} onMouseDown={e=>e.preventDefault()} onClick={imageDetails}>Image details…</AppButton></div> : null}
+    <div className="editor-reference-region" hidden={!referencesOpen} inert={!referencesOpen}>
+      <AppButton variant="subtle" onClick={()=>{if(current&&!editorIsComposing(current)){setReferencesOpen(false);current.commands.focus()}}}>Close reference tools</AppButton>
+      {current && references ? <ReferenceTools editor={current} context={references} disabled={disabled} issue={onIssue} /> : null}
+    </div>
     <div ref={host} className="editor-host" onCompositionEnd={() => { setTimeout(onBlur, 0) }} onKeyDown={event => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); findField.current?.focus() }
-      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'v') {
-        event.preventDefault()
-        void pastePlain()
-      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); openFind() }
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'v') { event.preventDefault(); void pastePlain() }
     }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) onBlur() }} />
     <p className="word-count" aria-live="off">{words.toLocaleString()} words in this section</p>
-    <div className="editor-find" role="search" aria-label="Case-sensitive find and replace in this section">
-      <label>Find <input ref={findField} value={query} onChange={event => { setQuery(event.target.value); setMatch('') }} /></label>
-      <label>Replace with <input value={replacement} onChange={event => setReplacement(event.target.value)} /></label>
-      <button type="button" onClick={selectFound}>Find next</button>
-      <button type="button" disabled={disabled} onClick={() => replace(false)}>Replace</button>
-      <button type="button" disabled={disabled} onClick={() => replace(true)}>Replace all</button>
-      {match ? <span role="status">{match}</span> : null}
+    <div className="editor-find" hidden={!findOpen} inert={!findOpen} role="search" aria-label="Case-sensitive find and replace in this section">
+      <TextInput label="Find (case-sensitive)" ref={findField} value={query} onChange={event => { setQuery(event.target.value); setMatch('') }} />
+      <TextInput label="Replace with" value={replacement} onChange={event => setReplacement(event.target.value)} />
+      <div className="editor-dialog-actions"><AppButton variant="default" onClick={selectFound}>Find next</AppButton><AppButton variant="default" disabled={disabled} onClick={()=>replace(false)}>Replace</AppButton><AppButton variant="default" disabled={disabled} onClick={()=>replace(true)}>Replace all</AppButton><AppButton variant="subtle" onClick={()=>{setFindOpen(false);current?.commands.focus()}}>Close find</AppButton></div>
+      {match ? <p role="status">{match}</p> : null}
     </div>
+    <AppDialog opened={dialog!==null} title={dialog==='link'?'Link':dialog==='image-details'?'Image details':'Insert image'} onClose={closeDialog} returnFocus={false} onExited={()=>{const action=afterDialog.current;afterDialog.current=null;if(action)action();else if(editor.current&&!editor.current.isDestroyed)editor.current.commands.focus()}}>
+      <form className="editor-dialog-form" {...formDraft.events} onSubmit={event=>{event.preventDefault();applyDialog()}}>
+        {dialog==='link' ? <TextInput label="Web address" description="Use an http or https address." value={href} onChange={event=>setHref(event.currentTarget.value)} required data-autofocus /> : <>
+          <Textarea label="Image description" description="Describe the image for assistive technology. Leave empty only for a decorative image." value={alt} maxLength={2000} onChange={event=>setAlt(event.currentTarget.value)} data-autofocus />
+          <Textarea label="Caption (optional)" value={caption} maxLength={10000} onChange={event=>setCaption(event.currentTarget.value)} />
+        </>}
+        {dialogIssue?<p role="alert">{dialogIssue}</p>:null}
+        <div className="editor-dialog-actions"><AppButton type="submit" disabled={disabled}>{dialog==='image'?'Choose image file…':'Apply'}</AppButton><AppButton variant="default" onClick={closeDialog}>Cancel</AppButton></div>
+      </form>
+    </AppDialog>
   </div>
 }

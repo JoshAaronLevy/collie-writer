@@ -1,0 +1,11 @@
+.reference-tools { display: grid; gap: .75rem; }
+.reference-tools .citation-controls, .reference-tools .reference-actions, .citation-dialog .reference-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.citation-dialog fieldset { padding: 0; border: 0; min-width: 0; }
+.citation-dialog .citation-form { display: grid; gap: .75rem; }
+.citation-dialog .citation-item-list { display: grid; gap: 1rem; padding-left: 1.5rem; }
+.citation-dialog .citation-item-list li { display: grid; gap: .75rem; border-bottom: 1px solid var(--collie-border); padding-bottom: 1rem; }
+.reference-tools .footnote-editor { padding: 1rem; border-left: 3px solid var(--collie-accent); background: var(--collie-surface-muted); }
+.reference-tools .footnote-editor h4 { margin: 0 0 .5rem; }
+.reference-tools .footnote-editor .editor-host .tiptap { min-height: 8rem; }
+.reference-tools > label { display: grid; gap: .4rem; }
+.reference-tools > label select { width: 100%; font: inherit; padding: .5rem; color: var(--collie-text); background: var(--collie-surface); border: 1px solid var(--collie-control-border); border-radius: var(--collie-radius-control); }

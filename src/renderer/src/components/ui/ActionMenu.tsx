@@ -6,7 +6,7 @@ import { AppButton } from './Controls'
 
 type MenuAction = { id: string; label: string; icon?: ReactNode; onSelect: () => void; disabled?: boolean }
 
-export function ActionMenu({ label, accessibleLabel, actions }: { label: string; accessibleLabel?: string; actions: MenuAction[] }): React.JSX.Element {
+export function ActionMenu({ label, accessibleLabel, actions, onOpen }: { label: string; accessibleLabel?: string; actions: MenuAction[]; onOpen?: () => void }): React.JSX.Element {
   const [opened, setOpened] = useState(false)
   const selectedAction = useRef<(() => void) | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -23,7 +23,7 @@ export function ActionMenu({ label, accessibleLabel, actions }: { label: string;
   }, [opened])
 
   return (
-    <Menu opened={opened} onChange={setOpened} withinPortal position="bottom-end" loop
+    <Menu opened={opened} onChange={next => { if (next) onOpen?.(); setOpened(next) }} withinPortal position="bottom-end" loop
       returnFocus={selectedAction.current === null} withInitialFocusPlaceholder={false}
       transitionProps={{ transition: 'fade', duration: reducedMotion ? 0 : 120 }}>
       <Menu.Target>

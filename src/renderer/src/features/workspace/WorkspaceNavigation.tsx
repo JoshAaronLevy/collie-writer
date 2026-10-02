@@ -5,7 +5,7 @@ import styles from './WorkspaceNavigation.module.css'
 export function WorkspaceNavigation(): React.JSX.Element {
   const { destination, project, workspace, navigate, research, inspectionTarget } = useWorkspaceSession()
   return <>
-    {project && destination.kind === 'workspace' ? <nav aria-label="Project sections" className={styles['workspace-navigation']}>
+    {project && destination.kind === 'workspace' && destination.view !== 'write' ? <nav aria-label="Project sections" className={styles['workspace-navigation']}>
       {(['write', 'research', 'search', 'export', 'history', 'details'] as const).map(view => <AppButton key={view}
         variant={destination.view === view ? 'filled' : 'subtle'} aria-current={destination.view === view ? 'page' : undefined}
         onClick={() => {

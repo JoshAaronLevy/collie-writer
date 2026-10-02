@@ -17,3 +17,5 @@ These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience a
 [I05 — guided project creation](improvement-I05.md) covers first-run selection, resumable details/create/connection steps, optional author preference, explicit free editing choice, honest no-AI continuation and native first Save. Its [record](../validation/improvement-I05.md) keeps source implementation separate from still-pending user observations.
 
 [I06 — returning library and project lifecycle](improvement-I06.md) covers safe last-section return, recent/active/archived views, contextual project/file actions, independent copies and recovery access. Its [record](../validation/improvement-I06.md) leaves native and user acceptance pending.
+
+[I07 — focused writing workspace](improvement-I07.md) covers project/outline navigation, retained panes and focus mode, width/keyboard/narrow layouts, selection dialogs, citations/footnotes, images, history and distinct protection/file status. Its [record](../validation/improvement-I07.md) keeps runtime and user acceptance pending.

@@ -37,12 +37,12 @@ export default function App(): React.JSX.Element {
 
 function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; failed: boolean; storageStatus: StorageStatus }): React.JSX.Element {
   const { persistenceIssue, zoomIssue } = useVisualPreferences()
-  const { navigate, returnToWork, project, navigating } = useWorkspaceSession()
+  const { navigate, returnToWork, project, navigating, destination, writingView } = useWorkspaceSession()
   const content = useRef<HTMLElement>(null)
   const channel = info ? info.channel === 'production' ? 'Direct' : info.channel === 'beta' ? 'Beta' : 'Development' : null
 
   return (
-    <div className={styles['app-shell']}>
+    <div className={styles['app-shell']} data-writing={destination.kind==='workspace'&&destination.view==='write'} data-focus={destination.kind==='workspace'&&destination.view==='write'&&writingView.preferences.focus}>
       <a className={styles['skip-link']} href="#workspace" onClick={event => {
         event.preventDefault()
         content.current?.focus()

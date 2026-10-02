@@ -487,7 +487,7 @@ Work:
 
 ### Stage I08 — Organize research, notes, and evidence around tasks
 
-#### Model: Sol | Effort: High
+#### Model: Astra | Effort: Extra High
 
 **Why this recommendation:** Composes established research tools with shared draft ownership and typed navigation.
 
@@ -506,6 +506,8 @@ Work:
 - Give search a focused results view with useful labels and reliable target navigation. Protect every form draft during view changes.
 
 **Implementation contract and deliverables:** Provide focused list/detail views and typed targets for source/version/page/excerpt, note, question/claim, and manuscript anchor. Missing, archived, revised, or orphaned targets display their actual state and do not silently resolve to a different entity. Research and writing-side inspectors use the same draft/content owner; there cannot be two unsynchronized note/source editors. Retain bibliography import preview/report, original attachment/version provenance, exact excerpt text, and annotation mapping rules. Search uses I03 transition guards, preserves query/result position, and supports return to origin. Study critique uses these normal source tools; its label does not imply a new automatic PDF/link ingestion feature. Deliver sensible no-source/no-note/no-results states and contextual errors with existing domain formats unchanged.
+
+**Additional very important note:** This part is critical to keep in mind. It needs to be easy for a user to be able to see if and where sources are being used in their research and writing from the research view, including clear indicators and navigation aids, and quick access to the relevant context, as well as which sources are being used by a particular section or chapter from the writing screen/view. Don't agonize over perfecting this right now. Stay cognizant that this is still MVP, and we'll likely be fine-tuning a lot of features like this before final release. But it is a critical part of the app, and why I updated the recommended model and effort from Sol High to Astra Extra High.
 
 **Likely paths:** `SourcesPanel.tsx`, `SourceInspector.tsx`, `NotesPanel.tsx`, `EvidencePanel.tsx`, `SearchPanel.tsx`, and new research navigation/layout modules.
 

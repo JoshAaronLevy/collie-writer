@@ -1,3 +1,5 @@
+import { useWritingPreferences } from './useWritingPreferences'
+import { captureSelection, restoreSelection } from '../../editor/selection'
 import { useExportOperations } from './useExportOperations'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { effectiveState, type OutlineInput, type OutlineChange, type HistoryView } from '../../../../shared/outline'
@@ -22,6 +24,7 @@ const emptyFiles: FileStatus = { scope: null, destination: null, state: 'unsaved
 
 export function useWorkspaceController(storage: StorageStatus) {
   const exportOperations = useExportOperations()
+  const writingView = useWritingPreferences()
   const composition = useRef(false)
   const [drafts] = useState(() => new DraftRegistry())
   const draftRevision = useSyncExternalStore(drafts.subscribe, drafts.version)
@@ -253,7 +256,10 @@ export function useWorkspaceController(storage: StorageStatus) {
     showDestination(after === 'setup' ? {kind:'setup'} : after === 'details' ? {kind:'workspace',scope:scopeOf(next),view:'details'} : writingDestination(next, next.documentId))
     await refreshFiles()
   }
-  async function importImage(): Promise<void> {
+  async function importImage(details: {alt:string;caption:string}): Promise<void> {
+    const captured=captureSelection(editorRef.current)
+    if(!captured){setError('Finish composing and select the image location again.');return}
+    setBusy(true)
     const p = await flush()
     if (!p) return
     if (pendingImage.current && !sameScope(scopeOf(p), pendingImage.current)) { setError('Reopen the project with the pending image import before retrying it.'); return }
@@ -261,10 +267,7 @@ export function useWorkspaceController(storage: StorageStatus) {
       const chosen = await window.collie.pickImage(scopeOf(p))
       if (!chosen.ok) { setError(chosen.error.message); return }
       if (!chosen.value) return
-      const alt = window.prompt('Describe the image for readers using assistive technology. Leave empty only for a decorative image.', '')
-      if (alt === null) return
-      const caption = window.prompt('Caption (optional)', '')
-      if (caption === null) return
+      const {alt,caption}=details
       if (alt.length > 2000 || caption.length > 10000) { setError('Image description or caption is too long. The image was not imported.'); return }
       pendingImage.current = { ...scopeOf(p), documentId:p.documentId, operationId: crypto.randomUUID(), token: chosen.value.token, alt, caption }
     }
@@ -280,6 +283,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     const latest = await window.collie.openSection({ ...scopeOf(p), documentId: p.documentId })
     if (latest.ok) updateHead(latest.value)
     const scale = Math.min(1, 800 / imported.value.width, 1600 / imported.value.height)
+    if(!restoreSelection(captured,editorRef.current)||!current.current||!sameScope(p,current.current)||current.current.documentId!==p.documentId){setError('The image is retained in the project, but its writing location changed. Select the intended location and insert it again.');return}
     editorRef.current?.commands.insertContent({ type: 'image', attrs: { blockId: crypto.randomUUID(), assetId: imported.value.assetId, alt: input.alt, caption: input.caption, width: Math.max(1, Math.round(imported.value.width * scale)), height: Math.max(1, Math.round(imported.value.height * scale)) } })
     setNotice('Image copied into the project. Its placement is waiting for a local document commit.')
   }
@@ -596,6 +600,8 @@ export function useWorkspaceController(storage: StorageStatus) {
   async function captureAnnotation(): Promise<void> {
     const p = current.current, e = editorRef.current
     if (!p || !e) return
+    const captured=captureSelection(e)
+    if(!captured){setError('Finish composing text before annotating a passage.');return}
     const selection = e.state.selection
     if (selection.empty || !selection.$from.sameParent(selection.$to) || !['paragraph','heading'].includes(selection.$from.parent.type.name)) { setError('Select text within one paragraph or heading to annotate.'); return }
     const blockId = selection.$from.parent.attrs.blockId as string | undefined
@@ -604,6 +610,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     if (!blockId || !quote || quote.length !== endOffset-startOffset || quote.length > 10000) { setError('Select plain text within one paragraph or heading.'); return }
     const saved = await flush()
     if (!saved) return
+    if(!sameScope(p,saved)||saved.documentId!==p.documentId||!restoreSelection(captured,editorRef.current)){setError('The passage changed while protecting your writing. Select it again before annotating.');return}
     setAnnotationCapture({ documentId:saved.documentId,expectedRevisionId:saved.revisionId,blockId,startOffset,endOffset,quote })
     showDestination({ kind: 'workspace', scope: scopeOf(saved), view: 'research', target: { kind: 'notes' } })
     setNotice('Selected passage ready in Passage annotations.')
@@ -793,7 +800,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     await openLocal(scope,after)
   }
 
-  return { ...exportOperations, acceptProjectDetails, composition, actionTask, renamePending, storage, drafts, destination, focusRevision, focusRequest, navigating, blocker, navigate, returnToDraft, showAccess, workspace, research, returnToWork,
+  return { writingView, ...exportOperations, acceptProjectDetails, composition, actionTask, renamePending, storage, drafts, destination, focusRevision, focusRequest, navigating, blocker, navigate, returnToDraft, showAccess, workspace, research, returnToWork,
 startupPending, libraryIssue, setLibraryIssue, libraryView, setLibraryView,
 editorEpoch, setData, setList, location, setLocation, list, project, access, sectionTitle, setSectionTitle, sectionStatus, setSectionStatus, sectionSynopsis, setSectionSynopsis,
 sectionFields, busy, setBusy, acting, working, closing, committing, retry, error, setError, notice, setNotice, history, annotationCapture, noteDirty,
