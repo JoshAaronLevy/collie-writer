@@ -2,7 +2,7 @@
 
 ## Confirmed decisions
 
-**Recorded October 1, 2026.** Josh selected Mantine, required semantic class names and properly scoped CSS, added Study critique as a primary project type, and accepted the remaining recommendations from the initial plan. These are the implementation baseline; do not reopen them as unanswered questions. I01–I05 were subsequently explicitly requested. I01 specifications and I02–I05 implementation are complete — awaiting user testing. I06 and later stages have not begun; no runtime acceptance is implied.
+**Recorded October 1, 2026; status updated October 2, 2026.** Josh selected Mantine, required semantic class names and properly scoped CSS, added Study critique as a primary project type, and accepted the remaining recommendations from the initial plan. These are the implementation baseline; do not reopen them as unanswered questions. I01–I06 were subsequently explicitly requested. I01 specifications and I02–I06 implementation are complete — awaiting user testing. I07 and later stages have not begun; no runtime acceptance is implied.
 
 | Area | Confirmed direction |
 | --- | --- |
@@ -35,7 +35,7 @@ For this improvement plan, include the category, its clear description, and its 
 
 ## Purpose and status
 
-**Prepared and revised October 1, 2026. Status: I01 specifications and I02–I05 implementation complete — awaiting user testing; I06–I15 implementation not started.** All 15 stage briefs retain model/effort recommendations and execution contracts. I01's [experience specification](docs/design/app-experience.md), [architecture decision](docs/decisions/improvement-01-experience.md), [provider evidence](docs/ai/provider-eligibility.md), [completion record](docs/validation/improvement-I01.md), and [manual review guide](docs/manual-testing/improvement-I01.md) are delivered. I02's [implementation record](docs/validation/improvement-I02.md) and [manual guide](docs/manual-testing/improvement-I02.md) document the delivered theme, shared controls and startup preferences; runtime, visual and accessibility acceptance remains pending. I03's [session/navigation record](docs/validation/improvement-I03.md), I04's [project-details record](docs/validation/improvement-I04.md), and I05's [guided-setup record](docs/validation/improvement-I05.md) document delivered code and pending manual acceptance. I04 advances working SQL/minimum reader to 10 and frozen compilation to 3; AST/archive remain 1. I05 changes no project format. I01's provider prerequisites remain unresolved for I10; that does not block the local design sequence. The existing local-feature commercial matrix and AI access assignments remain unchanged. No provider account action, inference, purchase, or publication occurred in I05.
+**Prepared October 1 and updated October 2, 2026. Status: I01 specifications and I02–I06 implementation complete — awaiting user testing; I07–I15 implementation not started.** All 15 stage briefs retain model/effort recommendations and execution contracts. I01's [experience specification](docs/design/app-experience.md), [architecture decision](docs/decisions/improvement-01-experience.md), [provider evidence](docs/ai/provider-eligibility.md), [completion record](docs/validation/improvement-I01.md), and [manual review guide](docs/manual-testing/improvement-I01.md) are delivered. I02's [implementation record](docs/validation/improvement-I02.md) and [manual guide](docs/manual-testing/improvement-I02.md) document the delivered theme, shared controls and startup preferences; runtime, visual and accessibility acceptance remains pending. I03's [session/navigation record](docs/validation/improvement-I03.md), I04's [project-details record](docs/validation/improvement-I04.md), I05's [guided-setup record](docs/validation/improvement-I05.md), and I06's [returning-library record](docs/validation/improvement-I06.md) document delivered code and pending manual acceptance. I04 advances working SQL/minimum reader to 10 and frozen compilation to 3; AST/archive remain 1. I05/I06 change no project format. I01's provider prerequisites remain unresolved for I10; that does not block the local design sequence. The existing local-feature commercial matrix and AI access assignments remain unchanged. No provider account action, inference, purchase, or publication occurred in I06.
 
 The goal is to make Collie Writer feel considered from its first screen: modern, calm, professional, and inviting. A new writer should understand the next action immediately, create a nonfiction project through a short guided flow, optionally connect their own eligible AI account, and arrive in a workspace organized around writing and research.
 
@@ -257,7 +257,7 @@ The model families and effort controls are documented in [OpenAI's model-selecti
 | I03 | Persistent session/draft ownership and app navigation | I02 | Implementation complete — awaiting user testing; [record](docs/validation/improvement-I03.md) |
 | I04 | Portable project metadata and nonfiction starting structures, including Study critique | Confirmed metadata/category decisions, I03 | Implementation complete — awaiting user testing; [record](docs/validation/improvement-I04.md) |
 | I05 | Guided project creation | I02–I04 | Implementation complete — awaiting user testing; [record](docs/validation/improvement-I05.md) |
-| I06 | Returning-user library and project lifecycle surfaces | I03–I05 | Not started |
+| I06 | Returning-user library and project lifecycle surfaces | I03–I05 | Implementation complete — awaiting user testing; [record](docs/validation/improvement-I06.md) |
 | I07 | Focused writing workspace | I03, I04, I06 | Not started |
 | I08 | Research, notes, and evidence workspace | I03, I07 | Not started |
 | I09 | Export, saving, settings, help, and onboarding integration | I06–I08 | Not started |
@@ -397,7 +397,7 @@ Implement the retained-copy format change and complete consumer matrix in a new 
 
 #### Model: Sol | Effort: High
 
-**Status, October 1, 2026:** implementation complete — awaiting user testing. Delivered the five primary and two secondary Mantine selection cards, retained details form, bounded device-local resumable setup, exact create-operation retry/receipt reconciliation, explicit free-project designation, and a truthful no-AI continuation into writing. See the [decision](docs/decisions/improvement-05-guided-setup.md), [evidence](docs/validation/improvement-I05.md), and [manual guide](docs/manual-testing/improvement-I05.md). Working SQL/minimum reader 10, editor AST 1, archive container 1 and compilation 3 are unchanged. Runtime, restart, keyboard, native Save and accessibility outcomes await Josh's observations; I06 is not started.
+**Status, October 1, 2026:** implementation complete — awaiting user testing. Delivered the five primary and two secondary Mantine selection cards, retained details form, bounded device-local resumable setup, exact create-operation retry/receipt reconciliation, explicit free-project designation, and a truthful no-AI continuation into writing. See the [decision](docs/decisions/improvement-05-guided-setup.md), [evidence](docs/validation/improvement-I05.md), and [manual guide](docs/manual-testing/improvement-I05.md). Working SQL/minimum reader 10, editor AST 1, archive container 1 and compilation 3 are unchanged. Runtime, restart, keyboard, native Save and accessibility outcomes await Josh's observations. I06 was subsequently implemented; its acceptance is also pending.
 
 **Why this recommendation:** Implements a bounded wizard on the session, metadata, and design contracts already established.
 
@@ -427,6 +427,8 @@ Work:
 ### Stage I06 — Make returning projects and lifecycle actions clear
 
 #### Model: Sol | Effort: High
+
+**Status, October 2, 2026:** implementation complete — awaiting user testing. Delivered the strict device-local last-project/section hint and safe trusted reopen/fallback, recent/active/archived library with readable rows and separate actions, contextual Project actions and recovery entry points, and preserved global file-job responses. An already selected project reopened from Projects now explicitly rechecks its selected file through the existing status command. See the [decision](docs/decisions/improvement-06-library-and-lifecycle.md), [evidence](docs/validation/improvement-I06.md), and [manual guide](docs/manual-testing/improvement-I06.md). No new worker command, archive, destination grant or retention policy changed; SQL/minimum reader 10, AST/archive 1, compilation 3 remain. Native, restart and accessibility results await Josh; I07 is not started.
 
 **Why this recommendation:** Reorganizes library and lifecycle surfaces around existing durable commands.
 
@@ -751,10 +753,10 @@ For each explicitly requested improvement stage:
 | Milestone | Required implementation | Acceptance/release condition | Status |
 | --- | --- | --- | --- |
 | Agreed plan and I01 specifications | Confirmed decisions, screen specifications, architecture decision, provider evidence | Product choices settled; detailed document review awaits Josh | I01 implementation complete — awaiting user testing (document review); provider enablement gates remain open |
-| Calm local experience | I02–I09 | User-reported new/returning/offline writing and research outcomes | I02–I05 implementation complete — awaiting user testing; I06–I09 not started |
+| Calm local experience | I02–I09 | User-reported new/returning/offline writing and research outcomes | I02–I06 implementation complete — awaiting user testing; I07–I09 not started |
 | First working AI experience | I10–I12 | Provider eligibility/funding evidence plus user-reported native behavior | Not implemented; external gates unresolved |
 | Proofreading | I13 | User-reviewed correction/stale-target/reversal outcomes | Scope confirmed; not implemented, provider-dependent |
 | Provider choice | I14, later increment | Second provider independently eligible and usable | Deferred until independently eligible; not a first-provider release dependency |
 | Complete improvement experience | I15 and all selected scope | User acceptance recorded; remaining release gates explicit | Not implemented |
 
-Current handoff: follow the [I05 manual guide](docs/manual-testing/improvement-I05.md), with [I03 navigation scenarios](docs/manual-testing/improvement-I03.md) for the prerequisite. I01–I05 have no user-reported acceptance results. I05 is implementation complete — awaiting user testing; the creation/restart, keyboard and native behaviors are unobserved. Stop for Josh's observations. I06 needs a separate explicit request. No AI route was enabled and the independent release status remains NO-GO.
+Current handoff: follow the [I06 manual guide](docs/manual-testing/improvement-I06.md), with [I03 navigation](docs/manual-testing/improvement-I03.md) and [I05 setup](docs/manual-testing/improvement-I05.md) as prerequisites. I01–I06 have no user-reported acceptance results. I06 is implementation complete — awaiting user testing; returning launch, file lifecycle, recovery, keyboard and native outcomes are unobserved. Stop for Josh's observations. I07 needs a separate explicit request. No AI route was enabled and the independent release status remains NO-GO.

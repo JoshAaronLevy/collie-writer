@@ -27,3 +27,7 @@ Typed destinations use labeled controls; retained hidden regions are hidden/iner
 ## Improvement I05 pending observations
 
 The guided setup uses Mantine radio cards in a labeled type group, semantic selected/focus styles, heading focus on each step, adjacent details errors with first-invalid-field focus, and retained hidden regions. Primary/secondary DOM order stays consistent when the grid becomes one column; reduced-motion and forced-colors selectors are scoped to the wizard. Manual keyboard, screen-reader, narrow-window, 200% zoom, light/dark/high-contrast and restart observations remain **unobserved**; the [I05 guide](../manual-testing/improvement-I05.md) records the expected user path without assistant-run checks.
+
+## Improvement I06 pending observations
+
+Projects now offers separate Open and labeled Actions controls per row, Recent/All active/Archived view buttons, a labeled title/type filter, readable state text, and a recovery link. The normal library hides UUIDs and full file paths; detailed paths remain in deliberate file/recovery surfaces. A retained file job or conflict stays globally actionable. Lifecycle and recovery controls use Mantine buttons and scoped styles while the older writing/research surfaces keep their existing owner. Keyboard menu/focus behavior, screen-reader distinction of row actions, narrow/200% layout, contrast, native picker return and recovery status announcements are **unobserved**; see the [I06 guide](../manual-testing/improvement-I06.md).

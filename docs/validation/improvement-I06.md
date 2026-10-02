@@ -1,0 +1,20 @@
+# Improvement I06 — Returning library and project lifecycle
+
+October 2, 2026. **Implementation complete — awaiting user testing.** I03–I05 implementation records and Stage 6/7 lifecycle boundaries were reviewed. No I06 user result has been supplied, and source inspection is not runtime/native acceptance.
+
+| Paths | Delivered change |
+| --- | --- |
+| `features/library/last-project.ts`, `features/workspace/useWorkspaceController.ts` | Strict device-local last project/section hint; trusted inventory resolution, active-section fallback, guarded normal reopen, actionable library fallback |
+| `features/library/ProjectLibrary.tsx`, `ProjectLibrary.module.css`, `features/workspace/WorkspaceViews.tsx` | Recent/active/archived library, filter, readable row state, distinct actions, recovery route, first-install/returning handoff |
+| `features/projects/ProjectFileActions.tsx`, `FilePanel.tsx`, `FilePanel.module.css`, `features/workspace/WorkspaceStatus.tsx`, `shared/project-files.ts`, `preload/index.ts`, `main/project-files-ipc.ts` | Ordinary file actions in Project actions; compact global Save/status and globally visible file jobs/conflicts; opt-in recheck for an already selected project opened from Projects |
+| `features/projects/LifecyclePanel.tsx`, `ProjectManagement.module.css`, `RecoveryPanel.module.css`, `Projects.css` | Purposeful backup/duplicate/move/archive/restore groups, contextual recovery presentation, scoped styles |
+| `components/ui/ActionMenu.tsx`, `Controls.tsx`, `features/workspace/WorkspaceNavigation.module.css` | Contextual menu labels and Mantine button styling within older workspace areas |
+| [Decision](../decisions/improvement-06-library-and-lifecycle.md), [manual guide](../manual-testing/improvement-I06.md), plan, AGENTS, privacy/accessibility/index | Stage contract and user-owned handoff |
+
+No new worker command, path grant, schema migration, archive format, provider integration or deletion/expiry policy was added. The existing status IPC request now carries an explicit boolean recheck option for same-scope library reopening. SQL/minimum reader **10**, editor AST/archive **1** and compilation **3** remain. The existing main/worker file checker, save intent, backup journal, independent-copy promotion, reset review and access service retain authority. Full paths and artifact identifiers remain only in advanced recovery/file surfaces where the user needs them.
+
+**No test code, fixtures, mocks, verification scripts or testing-only UI was added or maintained. No tests, typecheck, lint, audit, formatting check, build/package command, app/server/browser launch, screenshot, benchmark, CI check or delegated equivalent was run.** Only source/configuration/documentation and Git state were read and edited.
+
+Pending user observations: first-install versus returning choice; last active section and missing/inactive/archived/locked fallback; local work opening while a selected file is missing; readable filtered/archived rows; project-action focus and read-only behavior; duplicate/restore identities; backup versus Save acknowledgment; Move's retained original; recovery inspection and reset recovery; macOS/Windows native pickers, cloud hydration, migration, close/interrupt, narrow window, keyboard, screen readers and 200% zoom. No failure was induced. Earlier store, commerce, signing, MAS/MSIX and provider gates remain unresolved; release remains **NO-GO**.
+
+Record actual platform/action/outcome here only when Josh supplies it. Stop after the [I06 manual guide](../manual-testing/improvement-I06.md); I07 requires a separate request.

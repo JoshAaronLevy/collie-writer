@@ -1,18 +1,19 @@
 import { useWorkspaceSession } from './WorkspaceSession'
-import FilePanel from '../projects/FilePanel'
+import ProjectFileActions from '../projects/ProjectFileActions'
 import { sameScope } from '../../../../shared/project-files'
-import { scopeOf } from './useWorkspaceController'
 import { AppButton } from '../../components/ui/Controls'
 import { StatusBanner } from '../../components/ui/Feedback'
 import styles from './WorkspaceNavigation.module.css'
 
 export function WorkspaceStatus(): React.JSX.Element {
-  const { project, fileActive, files, dirty, available, acting, working, closing, storage, location, drafts, blocker, notice, error, setError,
-    run, save, current, openFile, outlineRetry, performOutline, returnToDraft, showAccess, accessTransition, accessReadOnly, navigate, flush, refresh,
+  const { destination, project, fileActive, files, dirty, available, acting, working, closing, storage, location, drafts, blocker, notice, error, setError,
+    run, save, current, outlineRetry, performOutline, returnToDraft, showAccess, accessTransition, accessReadOnly, navigate, flush, refresh,
     exports, chooseProject, trackExport } = useWorkspaceSession()
   const operations = drafts.states().filter(s => s.policy === 'operation' && (s.status || s.issue) || s.pendingOperation && !s.busy)
+  const fileStateReady = !!project && sameScope(project,files.scope)
+  const fileNeedsAttention = fileActive || fileStateReady && ['checking','external-change','unavailable','interrupted'].includes(files.state)
   return <div className={`projects ${styles['session-status']}`}>
-    {project ? <p className={styles['current-project']}>{project.title} · {dirty ? 'Changes need local protection' : 'Protected on this device'}</p> : null}
+    {project && destination.kind === 'workspace' ? <p className={styles['current-project']}>{project.title} · {dirty ? 'Changes need local protection' : 'Protected on this device'}</p> : null}
     {notice ? <p role="status">{notice}</p> : null}
     {storage.state === 'unavailable' ? <StatusBanner tone="error" title="Storage unavailable">Keep this window open and copy any unprotected writing.</StatusBanner> : null}
     {location?.state === 'required' ? <StatusBanner tone="warning" title="Choose a local working folder"><AppButton variant="default" onClick={() => { void navigate({kind:'settings',page:'data'}) }}>Open Data and recovery</AppButton></StatusBanner> : null}
@@ -39,9 +40,14 @@ export function WorkspaceStatus(): React.JSX.Element {
       }}>Cancel export</AppButton> : null}
     </div>)}
     {closing ? <p role="status">Protecting writing and finishing file work before closing…</p> : null}
-    {project || fileActive ? <details open={fileActive || ['external-change','unavailable','interrupted'].includes(files.state)}>
-      <summary>Project file and save actions</summary>
-{project || fileActive ? <FilePanel status={files} dirty={dirty} disabled={!project || !available || acting || closing} save={as => run(() => save(as))} reveal={()=>run(async()=>{if(!current.current)return;const result=await window.collie.revealProjectFile(scopeOf(current.current));if(!result.ok)setError(result.error.message)})} locate={() => run(() => openFile(false, true))} inspect={() => run(() => openFile(true))} answer={(id, choice) => { void window.collie.answerFileJob({ id, choice }).then(result => { if (!result.ok) setError(result.error.message) }) }} cancel={id => { void window.collie.cancelFileJob(id).then(result => { if (!result.ok) setError(result.error.message) }) }} consent={id => { void window.collie.confirmFileOverwrite(id).then(result => { if (!result.ok) setError(result.error.message) }) }} /> : null}
+    {project && !fileStateReady ? <p role="status">Checking project-file status…</p> : null}
+    {project && destination.kind === 'workspace' && destination.view !== 'details' && fileStateReady && !fileNeedsAttention ? <div className={styles['file-summary']}>
+      <p>{!project.destination ? 'Protected locally · no project file selected' : files.state === 'pending' ? 'Newer writing protected locally · selected file is older' : 'Selected project file saved on this device'}</p>
+      <AppButton variant="default" disabled={!available || acting || closing} onClick={() => run(() => save(false))}>Save project file</AppButton>
+      <AppButton variant="subtle" onClick={() => { void navigate({kind:'workspace',scope:{projectId:project.projectId,workspaceId:project.workspaceId},view:'details'}) }}>Project file actions</AppButton>
+    </div> : null}
+    {fileNeedsAttention ? <details open>
+      <summary>Project file needs attention</summary><ProjectFileActions />
     </details> : null}
     {project && dirty ? <AppButton variant="default" disabled={acting || closing} onClick={() => run(async () => { await flush(); await refresh() })}>Protect pending drafts</AppButton> : null}
   </div>

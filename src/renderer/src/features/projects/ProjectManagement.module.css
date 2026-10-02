@@ -1,0 +1,10 @@
+.project-management-container { margin-block: var(--collie-space-8); }
+.project-management-container > h2 { font-size: 1.25rem; margin-bottom: var(--collie-space-2); }
+.project-management-container > p { color: var(--collie-text-secondary); max-width: 46rem; }
+.project-management-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--collie-space-4); }
+.project-management-action { border: 1px solid var(--collie-border); border-radius: var(--collie-radius-surface); background: var(--collie-surface); padding: var(--collie-space-6); }
+.project-management-action h3 { margin: 0 0 var(--collie-space-2); font-size: 1.125rem; }
+.project-management-action p, .project-management-restore p { color: var(--collie-text-secondary); }
+.project-management-buttons { display: flex; flex-wrap: wrap; gap: var(--collie-space-3); margin-top: var(--collie-space-4); }
+.project-management-restore { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--collie-space-3); border-top: 1px solid var(--collie-border); margin-top: var(--collie-space-6); padding-top: var(--collie-space-4); }
+@media (max-width: 48rem) { .project-management-grid { grid-template-columns: minmax(0, 1fr); } }

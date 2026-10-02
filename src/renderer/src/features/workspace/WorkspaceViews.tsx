@@ -1,9 +1,9 @@
 import OnboardingWizard from '../onboarding/OnboardingWizard'
 import ProjectDetailsForm from '../project-details/ProjectDetailsForm'
+import ProjectLibrary from '../library/ProjectLibrary'
 import '../projects/Projects.css'
-import { templateNames, templateForKind } from '../../../../domain/projects/templates'
-import { projectMessages } from '../../../../shared/projects'
 import { sameProject } from '../../../../shared/access'
+import { sameScope } from '../../../../shared/project-files'
 import type { DocumentPayload } from '../../../../domain/editor/schema'
 import OutlinePanel from '../outline/OutlinePanel'
 import HistoryPanel from '../outline/HistoryPanel'
@@ -17,11 +17,11 @@ import CitationsPanel from '../projects/CitationsPanel'
 import DocxExportPanel from '../projects/DocxExportPanel'
 import InterchangeImportPanel from '../projects/InterchangeImportPanel'
 import { ProjectManagement, RecoveryPanel } from '../projects/LifecyclePanel'
+import ProjectFileActions from '../projects/ProjectFileActions'
 import AccessPanel from '../projects/AccessPanel'
 import TutorialPanel from '../projects/TutorialPanel'
 import SettingsPanel from '../settings/SettingsPanel'
 import { useWorkspaceSession } from './WorkspaceSession'
-import { scopeOf } from './useWorkspaceController'
 import { RetainedRegion } from './RetainedRegion'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
 import { AppButton } from '../../components/ui/Controls'
@@ -41,35 +41,20 @@ export default function WorkspaceViews(): React.JSX.Element {
   const { composition, drafts, actionTask, destination, storage, location, setLocation, list, project, access, sectionTitle, setSectionTitle, sectionStatus, setSectionStatus, sectionSynopsis, setSectionSynopsis,
 sectionFields, busy, setBusy, acting, closing, committing, retry, setError, notice, setNotice, history, annotationCapture, noteDirty,
 sourceDirty,
-inspectionTarget, citationContext, setCitationContext, outlineRetry, conflict, data, showArchived, setShowArchived,
-metaPending, current, editorRef, imageUrls, anchorToFocus, sectionReadOnly, dirty, fileActive, accessReadOnly, accessTransition, available,
+inspectionTarget, citationContext, setCitationContext, outlineRetry, conflict, data, startupPending,
+metaPending, current, editorRef, imageUrls, anchorToFocus, sectionReadOnly, dirty, files, fileActive, accessReadOnly, accessTransition, available,
 updateProject, isDirty, changed, refresh, refreshData, importImage, navigateSection, navigateSearch, loadHistory, performOutline, saveSectionMeta, flush, flushManuscript,
-run, waitActive, openFile, lifecycleFile, manage, resetLocal, captureAnnotation, afterNoteCommit, changeAccess, openTutorial, chooseProject, research, navigate, navigating, editorEpoch, setData, setList } = useWorkspaceSession()
+run, waitActive, lifecycleFile, manage, resetLocal, captureAnnotation, afterNoteCommit, changeAccess, openTutorial, chooseProject, research, navigate, navigating, editorEpoch, setData, setList } = useWorkspaceSession()
   return <>
 <RetainedRegion name="setup" label="New project">
-  <OnboardingWizard />
+  {startupPending && storage.state !== 'unavailable' && location?.state !== 'required' ? <p role="status">Opening local projects…</p> : <OnboardingWizard />}
+</RetainedRegion>
+<RetainedRegion name="library" label="Projects">
+  <ProjectLibrary />
 </RetainedRegion>
 <div className="projects">
 <WorkspaceNavigation />
 <div inert={navigating || closing} onCompositionStartCapture={() => { composition.current = true; drafts.changed() }} onCompositionEndCapture={() => { composition.current = false; drafts.changed() }}>
-<RetainedRegion name="library" label="Projects">
-<h1>Your projects</h1><div className="project-actions">
-<AppButton onClick={() => { void navigate({kind:'setup'}) }}>New project</AppButton>
-<AppButton variant="default" disabled={!available || acting || fileActive || closing} onClick={() => run(() => openFile())}>Open project file…</AppButton>
-<AppButton variant="default" disabled={!available || acting || fileActive || closing} onClick={() => run(() => lifecycleFile('restore'))}>Restore backup…</AppButton>
-<AppButton variant="subtle" disabled={!available || acting || fileActive || closing} onClick={() => run(refreshData)}>Refresh projects</AppButton>
-</div>    <h2>Recent and recovered local projects</h2>
-    <p>Each entry shows its last local commit. Open it to check the selected file and reconcile an interrupted save.</p>
-    <label><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} /> Show archived projects</label>
-    <ul className="project-list">{list.projects.filter(p => showArchived || !p.archived).map(p => <li key={p.projectId}>
-      <button aria-current={project?.projectId === p.projectId ? 'true' : undefined} disabled={!available || acting || fileActive || closing} onClick={() => run(() => chooseProject(scopeOf(p)))}>
-        {p.title} · {templateNames[templateForKind(p.projectKind)]}{sameProject(p,access?.sampleProject??null)?' · tutorial sample':''}{p.archived ? ' · archived' : ''} <span className="project-id">{p.projectId.slice(0, 8)}</span>
-        <small>{p.destination ? `${p.destination.path} · availability checked on open${p.headCommitId !== p.destination.headCommitId ? ' · newer edits protected locally' : ''}` : 'Local recovery · no file destination'} · {new Date(p.updatedAt).toLocaleString()}</small>
-      </button>
-    </li>)}</ul>
-    {list.issues.map(issue => <p role="alert" key={issue.projectId}>Project {issue.projectId.slice(0, 8)}: {projectMessages[issue.code]}</p>)}
-
-</RetainedRegion>
 <RetainedRegion name="write" label="Writing">
     {project ? <div className="writing-inspection-layout"><div className="draft-panel">
       <h2>{project.title} · {project.projectId.slice(0, 8)}</h2>
@@ -113,8 +98,10 @@ run, waitActive, openFile, lifecycleFile, manage, resetLocal, captureAnnotation,
 {project ? <HistoryPanel key={project.projectId} project={project} readOnly={accessReadOnly||accessTransition} history={history} disabled={busy || acting || closing || committing || fileActive} change={change => run(() => performOutline(change))} read={id => run(() => loadHistory(id))} navigate={(doc,anchor) => run(() => navigateSection(doc,anchor))} /> : null}
 </RetainedRegion>
 <RetainedRegion name="details" label="Project actions">
+{project ? <><h1>Project actions</h1><p>Manage details, the selected project file, separate copies, and local organization for “{project.title}”.</p></> : null}
 {project?<ProjectDetailsForm key={project.projectId} project={project} disabled={busy||acting||closing||fileActive||storage.state!=='ready'} readOnly={accessReadOnly||accessTransition}/>:null}
-{project ? <ProjectManagement key={`${project.projectId}-${project.title}`} project={project} disabled={!available || acting || fileActive || closing} archive={() => run(() => manage())} backup={() => run(() => lifecycleFile('backup'))} move={() => run(() => lifecycleFile('move'))} duplicate={() => run(() => lifecycleFile('duplicate'))} /> : null}
+{project && sameScope(project,files.scope) && !fileActive && !['checking','external-change','unavailable','interrupted'].includes(files.state) ? <ProjectFileActions /> : null}
+{project ? <ProjectManagement key={`${project.projectId}-${project.title}`} project={project} disabled={!available || acting || fileActive || closing} archive={() => run(() => manage())} backup={() => run(() => lifecycleFile('backup'))} move={() => run(() => lifecycleFile('move'))} duplicate={() => run(() => lifecycleFile('duplicate'))} restore={() => run(() => lifecycleFile('restore'))} /> : null}
 {project ? <InterchangeImportPanel key={`import-${project.projectId}`} project={project} disabled={busy||closing||acting||fileActive||accessReadOnly||accessTransition||storage.state!=='ready'} flush={flush} onProject={updateProject} /> : null}
 </RetainedRegion>
 <RetainedRegion name="settings-appearance" label="Appearance and privacy">

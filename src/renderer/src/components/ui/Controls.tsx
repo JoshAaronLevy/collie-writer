@@ -9,7 +9,7 @@ type AppButtonProps = ButtonProps & Omit<ComponentPropsWithoutRef<'button'>, key
 export const AppButton = forwardRef<HTMLButtonElement, AppButtonProps>(function AppButton(
   { pending = false, disabled, type = 'button', ...props }, ref
 ) {
-  return <Button {...props} ref={ref} type={type} disabled={disabled || pending} aria-busy={pending || undefined} />
+  return <Button {...props} data-collie-button ref={ref} type={type} disabled={disabled || pending} aria-busy={pending || undefined} />
 })
 
 export function SelectField(props: Omit<NativeSelectProps, 'label'> & { label: string }): React.JSX.Element {

@@ -88,6 +88,8 @@ export class ProjectFileIpc {
         }
         let command: FileCommand
         if (kind === 'status' && (input === null || isOpenInput(input))) command = { kind: 'status', scope: input, recheck: false }
+        else if (kind === 'status' && record(input) && exact(input, ['scope','recheck']) && isOpenInput(input.scope) && input.recheck === true)
+          command = { kind: 'status', scope: input.scope, recheck: true }
         else if ((kind === 'save' || kind === 'backup' || kind === 'move') && isSaveInput(input)) command = { kind, input, grant: input.token ? this.consume(event, input.token, kind, input.scope, input.operationId) : null }
         else if ((kind === 'open' || kind === 'restore') && isSelectedInput(input)) command = { kind, operationId: input.operationId, grant: this.consume(event, input.token, kind, null, input.operationId) }
         else if (kind === 'locate' && isLocateInput(input)) command = { kind: 'locate', scope: input.scope, operationId: input.operationId, grant: this.consume(event, input.token, 'locate', input.scope, input.operationId) }

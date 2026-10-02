@@ -3,8 +3,8 @@
 .projects {
   min-width: 0;
   h1 { font: 400 clamp(1.75rem, 4vw, 2.5rem)/1.2 var(--collie-font-manuscript); margin-block: 0 var(--collie-space-3); letter-spacing: -0.02em; }
-  button { font: inherit; min-height: var(--collie-control-height); max-width: 100%; border: 1px solid var(--collie-control-border); padding: var(--collie-space-2) var(--collie-space-4); background: var(--collie-surface); color: var(--collie-text); border-radius: var(--collie-radius-control); cursor: pointer; }
-  button:hover:not(:disabled) { background: var(--collie-selected); }
+  button:not([data-collie-button]) { font: inherit; min-height: var(--collie-control-height); max-width: 100%; border: 1px solid var(--collie-control-border); padding: var(--collie-space-2) var(--collie-space-4); background: var(--collie-surface); color: var(--collie-text); border-radius: var(--collie-radius-control); cursor: pointer; }
+  button:not([data-collie-button]):hover:not(:disabled) { background: var(--collie-selected); }
   input, select, textarea { color: var(--collie-text); background: var(--collie-surface); accent-color: var(--collie-accent); max-width: 100%; border-color: var(--collie-control-border); }
   input:not([type='checkbox']), select { min-height: var(--collie-control-height); }
   summary { min-height: var(--collie-control-height); cursor: pointer; }
@@ -15,11 +15,6 @@
 .project-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1rem 0; }
 .working-location { border: 1px solid var(--collie-border); padding: 1rem; border-radius: 0.5rem; }
 .location-path { overflow-wrap: anywhere; }
-.project-list { list-style: none; padding: 0; display: grid; gap: 0.5rem; }
-.project-list button { width: 100%; text-align: left; }
-.project-list small { display: block; }
-.project-list [aria-current='true'] { border: 2px solid var(--collie-accent); background: var(--collie-selected); }
-.project-id { color: var(--collie-text-secondary); margin-left: 0.5rem; }
 .draft-panel { margin-top: 2rem; }
 .draft-panel label { display: block; font-weight: 650; margin-bottom: 0.5rem; }
 .draft-panel textarea { box-sizing: border-box; width: 100%; min-height: 320px; resize: vertical; padding: 1rem; border: 1px solid var(--collie-text-secondary); border-radius: 0.4rem; font: 1.1875rem/1.6 var(--collie-font-manuscript); color: var(--collie-text); background: var(--collie-surface); }
@@ -49,19 +44,11 @@
 .conflict-panel { border: 1px solid var(--collie-error); padding: 1rem; margin-block: 1rem; }
 .conflict-panel textarea { min-height: 8rem; width: 100%; }
 .project-error { border-left: 4px solid var(--collie-error); padding: 0.75rem; background: var(--collie-error-surface); }
-.file-panel { margin-top: 1.5rem; padding: 1rem; border: 1px solid var(--collie-border); border-radius: 0.5rem; background: var(--collie-surface); }
-.file-progress, .file-inspection { padding: 1rem; margin-block: 1rem; background: var(--collie-selected); border-radius: 0.3rem; }
-.file-inspection h3 { margin-top: 0; }
-.project-list small { overflow-wrap: anywhere; }
-button:disabled { opacity: 1; cursor: not-allowed; color: var(--collie-text-secondary); background: var(--collie-surface-muted); border-color: var(--collie-border); }
+button:not([data-collie-button]):disabled { opacity: 1; cursor: not-allowed; color: var(--collie-text-secondary); background: var(--collie-surface-muted); border-color: var(--collie-border); }
 
-.recovery-panel { margin-top: 2rem; padding: 1rem; border: 1px solid var(--collie-border); border-radius: 0.5rem; }
-.recovery-panel summary { cursor: pointer; font-weight: 650; }
 form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
 input:not([type='checkbox']) { font: inherit; padding: 0.5rem; max-width: 100%; min-width: 0; border: 1px solid var(--collie-text-secondary); border-radius: 0.3rem; }
 form input { flex: 1 1 14rem; }
-.recovery-panel label { display: block; margin-block: 0.75rem; }
-.recovery-panel li { overflow-wrap: anywhere; margin-block: 0.75rem; }
 
 .outline-panel, .history-panel { margin-block: 1.5rem; padding: 1rem; border: 1px solid var(--collie-control-border); border-radius: .5rem; }
 .outline-tree { list-style: none; padding-inline-start: 1.2rem; }

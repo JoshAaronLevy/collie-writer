@@ -118,7 +118,7 @@ const api: CollieAPI = {
   openProjectFile: input => projectCall<FileStatus>(FILE_CHANNELS.open, isFileStatus, input),
   locateProjectFile: input => projectCall<FileStatus>(FILE_CHANNELS.locate, isFileStatus, input),
   inspectProjectFile: input => projectCall<FileStatus>(FILE_CHANNELS.inspect, isFileStatus, input),
-  getProjectFileStatus: scope => projectCall<FileStatus>(FILE_CHANNELS.status, isFileStatus, scope),
+  getProjectFileStatus: (scope, recheck = false) => projectCall<FileStatus>(FILE_CHANNELS.status, isFileStatus, recheck ? { scope, recheck: true } : scope),
   cancelFileJob: id => projectCall<FileStatus>(FILE_CHANNELS.cancel, isFileStatus, id),
   answerFileJob: input => projectCall<FileStatus>(FILE_CHANNELS.answer, isFileStatus, input),
   confirmFileOverwrite: id => projectCall<FileStatus>(FILE_CHANNELS.consent, isFileStatus, id),

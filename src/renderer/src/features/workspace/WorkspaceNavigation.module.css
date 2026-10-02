@@ -14,3 +14,5 @@
 .operation-notice { border-left: 3px solid var(--collie-accent); padding: 0.5rem 0.75rem; background: var(--collie-surface); }
 .session-actions { margin-top: 0.5rem; }
 .current-project { font-weight: 600; margin-bottom: 0.5rem; overflow-wrap: anywhere; }
+.file-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--collie-space-3); }
+.file-summary p { flex: 1 1 18rem; color: var(--collie-text-secondary); }
