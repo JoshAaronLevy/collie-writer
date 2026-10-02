@@ -36,6 +36,12 @@ Stage X complete. As a user:
 
 ## Implementing a requested stage
 
+### App improvement I01 checkpoint
+
+I01 specification implementation is complete — awaiting user testing (document review). Read the [experience specification](docs/design/app-experience.md), [navigation/session/style decision](docs/decisions/improvement-01-experience.md), [provider feasibility record](docs/ai/provider-eligibility.md), [evidence](docs/validation/improvement-I01.md), and [manual guide](docs/manual-testing/improvement-I01.md) before extending the improvement work. I02's design prerequisite is delivered; later stages require an explicit request. No Mantine package, production UI, schema, or provider adapter was implemented in I01. OpenAI's conditional route is Sign in with ChatGPT plus Codex app-server, subject to applicable commercial approval; actual Collie participation and included-only funding remain unresolved. SDK use depends on documented support for the eventually approved route. Keep local redesign independent of these provider gates and preserve the existing release NO-GO.
+
+### Requested-stage workflow
+
 A request such as “Please implement Stage 4 of the MVP implementation plan” means:
 
 1. Read applicable repository guidance, the plan's current status, requested stage, prerequisite contracts and referenced completion evidence. Inspect actual code and Git state; preserve existing work and do not repeat completed setup.

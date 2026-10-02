@@ -2,7 +2,7 @@
 
 ## Confirmed decisions
 
-**Recorded October 1, 2026.** Josh selected Mantine, required semantic class names and properly scoped CSS, added Study critique as a primary project type, and accepted the remaining recommendations from the initial plan. These are the implementation baseline; do not reopen them as unanswered questions. No application stage has been implemented or authorized by this documentation update.
+**Recorded October 1, 2026.** Josh selected Mantine, required semantic class names and properly scoped CSS, added Study critique as a primary project type, and accepted the remaining recommendations from the initial plan. These are the implementation baseline; do not reopen them as unanswered questions. I01 was subsequently explicitly requested and its specification artifacts are complete; later application stages have not begun.
 
 | Area | Confirmed direction |
 | --- | --- |
@@ -35,7 +35,7 @@ For this improvement plan, include the category, its clear description, and its 
 
 ## Purpose and status
 
-**Prepared and revised October 1, 2026. Status: product/design decisions confirmed; all 15 stage briefs include model/effort and execution contracts; implementation not started.** This revision expands the agreed implementation instructions and records the clarified browser-sign-in AI flow. Previously recorded repository styling instructions remain in force. It does not authorize dependency installation, application changes, provider registration, sign-in, inference, purchases, or publication. The existing local-feature commercial matrix is preserved; the confirmed decisions above assign the new AI capabilities to the free designated editable project and paid editable projects.
+**Prepared and revised October 1, 2026. Status: I01 specification implementation complete — awaiting user testing (document review); I02–I15 application implementation not started.** All 15 stage briefs retain model/effort recommendations and execution contracts. I01's [experience specification](docs/design/app-experience.md), [architecture decision](docs/decisions/improvement-01-experience.md), [provider evidence](docs/ai/provider-eligibility.md), [completion record](docs/validation/improvement-I01.md), and [manual review guide](docs/manual-testing/improvement-I01.md) are delivered. Its provider prerequisites remain unresolved for I10; that does not block the local design sequence. The existing local-feature commercial matrix and AI access assignments remain unchanged. No dependency installation, application change, provider account action, inference, purchase, or publication occurred in I01.
 
 The goal is to make Collie Writer feel considered from its first screen: modern, calm, professional, and inviting. A new writer should understand the next action immediately, create a nonfiction project through a short guided flow, optionally connect their own eligible AI account, and arrive in a workspace organized around writing and research.
 
@@ -48,6 +48,8 @@ This plan supplements [mvp-implementation-plan.md](mvp-implementation-plan.md), 
 The review used repository guidance, the MVP plan, existing stage/decision records, package configuration, renderer source and CSS, editor code, project creation/metadata contracts, storage/archive consumers, export code, and Electron security boundaries. Git was clean at the beginning of the initial planning task; this revision updates the existing plan and repository guidance. No app, development server, browser, screenshot workflow, build, automated check, or test was run.
 
 Observations about current screens below come from source structure and Josh's reported experience. They are not claims of runtime, visual, native, or accessibility acceptance. Existing implementation remains awaiting user testing; the commerce, signing, MAS, and release-readiness gates remain unresolved as documented in the MVP plan.
+
+**I01 review:** all stage briefs and shared contracts were read alongside current source, the MVP product/AI roadmap, Stage 18/19 decisions, and release gates. The [decision record](docs/decisions/improvement-01-experience.md#full-plan-review-and-resolutions) records the resulting handoffs: persistent draft ownership before navigation, complete metadata migrations before onboarding, genuine section/chapter semantics, CSP-specific Mantine integration, and local conversation organization without a live provider dependency. This was source/document review only. No tests, checks, launches, or screenshots were performed.
 
 ## What the current implementation explains
 
@@ -185,7 +187,7 @@ The intended application flow is:
 
 ### Current provider evidence and implementation consequences
 
-Official sources were revisited October 1, 2026. This is a dated planning record; refresh the relevant provider documentation during I01 and before implementing its adapter. The existence of a runtime, a subscription, or browser OAuth is not sufficient evidence of all required commercial and funding rights.
+Official sources were revisited during I01 on October 1, 2026. The detailed [provider record](docs/ai/provider-eligibility.md) now owns the evidence, conditional route selection, and exact open gates; refresh relevant documentation before implementing an adapter. The existence of a runtime, a subscription, or browser OAuth is not sufficient evidence of all required commercial and funding rights.
 
 | Candidate/route | Current evidence | Decision for Collie |
 | --- | --- | --- |
@@ -195,7 +197,7 @@ Official sources were revisited October 1, 2026. This is a dated planning record
 | **Grok Build** | [Grok Build](https://docs.x.ai/build/overview) documents browser login and use by other apps; [headless/ACP integration](https://docs.x.ai/build/cli/headless-scripting) provides an execution surface. The [usage FAQ](https://docs.x.ai/grok/faq) says Build shares subscription usage and can continue using purchased Extra Usage Credits, with automatic top-ups available. | **Additional runtime candidate for I14.** Investigate permitted integration and a provider-enforced included-only mode. Do not call it API-only or promise a Codex-equivalent TypeScript SDK. A user-funded subscription alone does not exclude its credit fallback. |
 | **Google consumer subscription route** | Google's [transition announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/) retires consumer Gemini CLI access on June 18, 2026. [Antigravity CLI](https://antigravity.google/docs/cli/install/) has browser login, but [its terms](https://antigravity.google/terms) restrict third-party OAuth use; the [SDK documentation](https://antigravity.google/docs/sdk/overview/) describes API-key/enterprise credential paths. | **Deferred under current evidence.** Do not use the older Gemini CLI consumer-auth pages as evidence of a current supported option. Reconsider only if a supported commercial subscription integration becomes available. |
 
-**Implementation status:** the desired browser/SDK interaction is concrete; Collie's approved commercial authentication route and strict included-only enforcement are not yet established. I01 should document the precise route and outstanding evidence, not restart a general discussion about what Josh means. I10 may be blocked on those dependencies while the independent local UX stages proceed. Account login does not by itself prove that an operation cannot draw from purchased credits. If an applicable provider guarantee/control cannot be established, keep that adapter unavailable without silently weakening the no-extra-billing requirement.
+**I01 disposition:** Sign in with ChatGPT plus isolated Codex app-server execution is the documented conditional route; Codex SDK execution remains preferred only if support for the approved token/auth route is established. The published subscription route may use the public Responses endpoint with OAuth, which is distinct from ordinary API-key billing. No applicable Collie commercial participation or binding included-only guarantee has been supplied. The [provider gate register](docs/ai/provider-eligibility.md#exact-gate-register-and-next-steps) keeps I10 enablement blocked while independent local UX stages remain implementable. Provider usage settings can allow credits after plan limits; login or a settings screenshot alone does not establish Collie's required guarantee. No provider is currently approved/enabled, and no API-key fallback is permitted.
 
 ### Product rules to preserve
 
@@ -246,9 +248,9 @@ Each stage uses the same heading format as the MVP plan: `Model: … | Effort: �
 
 The model families and effort controls are documented in [OpenAI's model-selection guide](https://learn.chatgpt.com/docs/model-selection) and [reasoning guidance](https://developers.openai.com/api/docs/guides/reasoning). The per-stage assignments below are engineering judgments based on this repository's scope and risks. The standing prohibition on assistant tests/checks/launches applies regardless of model or effort.
 
-| Stage | Deliverable | Depends on | Initial status |
+| Stage | Deliverable | Depends on | Current status |
 | --- | --- | --- | --- |
-| I01 | Experience specifications and provider feasibility record | Confirmed decisions above | Decisions recorded; wireframes/provider evidence work not started |
+| I01 | Experience specifications and provider feasibility record | Confirmed decisions above | Implementation complete — awaiting user document review; [record](docs/validation/improvement-I01.md) |
 | I02 | Mantine theme, semantic scoped CSS, and reusable components | I01 experience specification; provider gate not required | Not started |
 | I03 | Persistent session/draft ownership and app navigation | I02 | Not started |
 | I04 | Portable project metadata and nonfiction starting structures, including Study critique | Confirmed metadata/category decisions, I03 | Not started |
@@ -267,6 +269,8 @@ The model families and effort controls are documented in [OpenAI's model-selecti
 ### Stage I01 — Specify the confirmed experience and provider feasibility
 
 #### Model: Astra | Effort: High
+
+**Status, October 1, 2026:** specification implementation complete — awaiting user testing (document review). Delivered: [wide/narrow screen specifications](docs/design/app-experience.md), [navigation/session/style decision](docs/decisions/improvement-01-experience.md), [dated provider feasibility and gate register](docs/ai/provider-eligibility.md), [evidence](docs/validation/improvement-I01.md), and [manual guide](docs/manual-testing/improvement-I01.md). No production changes. I10 permission/funding gates remain open; I02's specification prerequisite is delivered, without authorizing I02 execution.
 
 **Why this recommendation:** Combines the settled experience with source-backed architecture and provider decisions.
 
@@ -609,7 +613,7 @@ Work:
 
 **Implementation contract and deliverables:** Define durable conversation IDs/title/archive state, ordered user/assistant messages, immutable context captures, provider/model provenance, and visible run-attempt outcomes (`queued`, `running`, `completed`, `cancelled`, `failed`, `interrupted`). Keep tokens, account/workspace identity, opaque resume handles, runtime files, and live process state in device-local operational storage. Persist a user message and run intent before dispatch, checkpoint streaming text in bounded local writes, and reconcile completion/partial state without replaying inference on reopen. A user retry creates a visible attempt linked to the prior outcome; a storage retry reuses its exact durable operation.
 
-Capture outgoing context as stable references plus the exact approved text/revisions and necessary prior messages. Authorize the matching immutable payload digest; later manuscript/source edits cannot silently change what is sent. Explain summaries/limits before sending, rather than silently dropping context or reusing a broader hidden provider thread. Preserve readable source labels/locators in copied or older transcripts when originals change. Classify read/export as always available; generation and conversation mutations require editable project scope plus provider eligibility. Recheck rights for Save as note. Deliver conversation list/detail/composer, safe streaming content, stop/retry/archive, explicit context review, selected-context transfer to a fresh provider thread, and disconnected transcript export. Extend migration/portable/copy graphs together and document the new schema and retention behavior.
+Capture outgoing context as stable references plus the exact approved text/revisions and necessary prior messages. Authorize the matching immutable payload digest; later manuscript/source edits cannot silently change what is sent. Explain summaries/limits before sending, rather than silently dropping context or reusing a broader hidden provider thread. Preserve readable source labels/locators in copied or older transcripts when originals change. Classify read/export as always available. Local conversation mutations, including rename/archive, require editable project scope but work while disconnected; generation additionally requires provider eligibility and funding authorization. Recheck rights for Save as note without requiring a live provider connection. Deliver conversation list/detail/composer, safe streaming content, stop/retry/archive, explicit context review, selected-context transfer to a fresh provider thread, and disconnected transcript export. Extend migration/portable/copy graphs together and document the new schema and retention behavior.
 
 **Likely paths:** new `features/ai/`, AI shared contracts, worker conversation repository/schema, local operational job storage, context capture/projection, and provider adapter.
 
@@ -736,11 +740,11 @@ For each explicitly requested improvement stage:
 
 | Milestone | Required implementation | Acceptance/release condition | Status |
 | --- | --- | --- | --- |
-| Agreed plan | Confirmed decision table and repository styling rules | Josh's choices recorded October 1, 2026 | Decisions recorded; I01 design/provider artifacts still pending |
+| Agreed plan and I01 specifications | Confirmed decisions, screen specifications, architecture decision, provider evidence | Product choices settled; detailed document review awaits Josh | I01 implementation complete — awaiting user testing (document review); provider enablement gates remain open |
 | Calm local experience | I02–I09 | User-reported new/returning/offline writing and research outcomes | Not implemented |
 | First working AI experience | I10–I12 | Provider eligibility/funding evidence plus user-reported native behavior | Not implemented; external gates unresolved |
 | Proofreading | I13 | User-reviewed correction/stale-target/reversal outcomes | Scope confirmed; not implemented, provider-dependent |
 | Provider choice | I14, later increment | Second provider independently eligible and usable | Deferred until independently eligible; not a first-provider release dependency |
 | Complete improvement experience | I15 and all selected scope | User acceptance recorded; remaining release gates explicit | Not implemented |
 
-Immediate next step: implement an explicitly requested improvement stage, starting with I01's experience specifications and provider evidence. The product and styling decisions above are settled; no additional clarification round is required. This update changes documentation only and does not begin application implementation.
+Current handoff: review I01 through its [manual guide](docs/manual-testing/improvement-I01.md). No user acceptance has been reported. Stop for Josh's results; I02 is the next local implementation stage only when explicitly requested. Product and styling choices remain settled. I01 changed documentation only, left formats unchanged, and did not begin later application stages or resolve the independent release NO-GO.
