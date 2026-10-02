@@ -1,3 +1,4 @@
+import { useRetainedDraft } from '../workspace/DraftOwner'
 import { useRef, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
 import type { ImportPick, ImportPreview, ImportCommitInput } from '../../../../shared/interchange'
@@ -33,10 +34,15 @@ export default function InterchangeImportPanel({project,disabled,flush,onProject
       onProject(result.value);setPick(null);setPreview(null);pending.current=null
     }catch{setError('The import result is unknown. Leave this selection open and retry; a completed import will not be repeated.')}finally{setBusy(false)}
   }
+  useRetainedDraft('writing-import',{
+    read:()=>({scope,kind:'writing-import',entityId:pending.current?.operationId??null,label:'writing import',dirty:false,composing:false,busy,
+      pendingOperation:pending.current,policy:'operation',issue:error||undefined,status:busy?'Preparing or importing…':undefined,
+      target:{kind:'workspace',scope,view:'details'}})
+  })
   return <section aria-labelledby="interchange-import-heading">
     <h2 id="interchange-import-heading">Import writing</h2>
     <p>Import UTF-8 text or Markdown as a new section in this project. Existing drafts are never matched or replaced by filename. HTML is rejected.</p>
-    <button type="button" disabled={disabled||busy} onClick={()=>{void choose()}}>Choose text or Markdown file</button>
+    <button type="button" disabled={disabled||busy||!!pending.current} onClick={()=>{void choose()}}>Choose text or Markdown file</button>
     {preview?<div role="status"><p>{pick?.name}: {preview.blocks} blocks, {preview.bytes} bytes. New section: {preview.title}.</p>
       {preview.losses.length?<ul>{preview.losses.map((loss,i)=><li key={i}>{loss}</li>)}</ul>:<p>No mapped-structure losses reported for this file.</p>}
       <p>Preview: {preview.excerpt}</p>

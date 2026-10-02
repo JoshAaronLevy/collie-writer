@@ -1,27 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BookOpen, FolderOpen, PenLine, Settings } from 'lucide-react'
 import type { AppInfo } from '../../shared/commands'
 import type { StorageStatus } from '../../shared/storage'
 import Projects from './features/projects/Projects'
-import SettingsPanel from './features/settings/SettingsPanel'
+import { WorkspaceSessionProvider, useWorkspaceSession } from './features/workspace/WorkspaceSession'
+import { WorkspaceStatus } from './features/workspace/WorkspaceStatus'
+import { RetainedRegion } from './features/workspace/RetainedRegion'
 import { ActionMenu } from './components/ui/ActionMenu'
 import { AppButton } from './components/ui/Controls'
 import { StatusBanner } from './components/ui/Feedback'
 import { useVisualPreferences } from './theme/VisualPreferencesProvider'
 import styles from './App.module.css'
 
-function focusSection(id: string): void {
-  const target = document.getElementById(id)
-  if (target instanceof HTMLDetailsElement) target.open = true
-  target?.focus()
-  target?.scrollIntoView({ block: 'start' })
-}
-
 export default function App(): React.JSX.Element {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [failed, setFailed] = useState(false)
   const [storageStatus, setStorageStatus] = useState<StorageStatus>({ state: 'starting', sequence: 0 })
-  const { persistenceIssue, zoomIssue } = useVisualPreferences()
   useEffect(() => {
     let active = true
     const applyStorageStatus = (next: StorageStatus): void => {
@@ -38,13 +32,20 @@ export default function App(): React.JSX.Element {
     }).catch(() => { if (active) setFailed(true) })
     return () => { active = false; unsubscribe() }
   }, [])
+  return <WorkspaceSessionProvider storage={storageStatus}><AppShell info={info} failed={failed} storageStatus={storageStatus} /></WorkspaceSessionProvider>
+}
+
+function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; failed: boolean; storageStatus: StorageStatus }): React.JSX.Element {
+  const { persistenceIssue, zoomIssue } = useVisualPreferences()
+  const { navigate, returnToWork, project, navigating } = useWorkspaceSession()
+  const content = useRef<HTMLElement>(null)
   const channel = info ? info.channel === 'production' ? 'Direct' : info.channel === 'beta' ? 'Beta' : 'Development' : null
 
   return (
     <div className={styles['app-shell']}>
       <a className={styles['skip-link']} href="#workspace" onClick={event => {
         event.preventDefault()
-        focusSection('workspace')
+        content.current?.focus()
       }}>Skip to workspace</a>
       <header className={styles['app-header']}>
         <div className={styles['app-identity']}>
@@ -53,16 +54,18 @@ export default function App(): React.JSX.Element {
           {channel && channel !== 'Direct' ? <span className={styles['build-label']}>{channel}</span> : null}
         </div>
         <nav aria-label="App sections" className={styles['app-navigation']}>
+          <AppButton variant="subtle" disabled={navigating} onClick={() => { void navigate({kind:'library'}) }}>Projects</AppButton>
+          {project ? <AppButton variant="subtle" disabled={navigating} onClick={returnToWork}>Return to work</AppButton> : null}
           <AppButton variant="subtle" leftSection={<Settings size={18} aria-hidden="true" />}
-            onClick={() => focusSection('settings-title')}>Settings</AppButton>
+            onClick={() => { void navigate({kind:'settings',page:'appearance'}) }}>Settings</AppButton>
           <ActionMenu label="App menu" actions={[
-            { id: 'tutorial', label: 'Explore the tutorial', icon: <BookOpen size={18} aria-hidden="true" />, onSelect: () => focusSection('tutorial-title') },
-            { id: 'data', label: 'Data Locations and recovery', icon: <FolderOpen size={18} aria-hidden="true" />, onSelect: () => focusSection('data-locations') },
-            { id: 'settings', label: 'Display and privacy', icon: <Settings size={18} aria-hidden="true" />, onSelect: () => focusSection('settings-title') }
+            { id: 'tutorial', label: 'Explore the tutorial', icon: <BookOpen size={18} aria-hidden="true" />, onSelect: () => { void navigate({kind:'help',page:'tutorial'}) } },
+            { id: 'data', label: 'Data Locations and recovery', icon: <FolderOpen size={18} aria-hidden="true" />, onSelect: () => { void navigate({kind:'settings',page:'data'}) } },
+            { id: 'settings', label: 'About and help', icon: <Settings size={18} aria-hidden="true" />, onSelect: () => { void navigate({kind:'help',page:'about'}) } }
           ]} />
         </nav>
       </header>
-      <main id="workspace" tabIndex={-1} className={styles['workspace-content']}>
+      <main ref={content} id="workspace" tabIndex={-1} className={styles['workspace-content']}>
         <aside className={styles['citation-attribution']} aria-label="Citation software attribution">
           <p>citeproc-js implements the Citation Style Language</p>
           <p>© Frank Bennett · https://citationstyles.org/</p>
@@ -76,8 +79,11 @@ export default function App(): React.JSX.Element {
             Open Settings to retry your zoom choice. Local writing remains available.
           </StatusBanner>
         </div> : null}
-        <Projects storage={storageStatus} />
-        <SettingsPanel />
+        <WorkspaceStatus />
+        <Projects />
+        <RetainedRegion name="help-about" label="About and help">
+        <h1>About Collie Writer</h1>
+        <p>Use the native Help menu for bundled third-party licenses and explicit update actions. Review a content-free support preview in Settings.</p>
         <details className={styles['storage-details']}>
           <summary>Local storage details</summary>
           <h2>SQLite engine</h2>
@@ -89,6 +95,7 @@ export default function App(): React.JSX.Element {
                 : 'Storage is unavailable. Keep this window open and copy any unprotected text before quitting.'}
           </p>
         </details>
+        </RetainedRegion>
       </main>
       <footer className={styles['app-footer']}>
         <p role="status">{failed

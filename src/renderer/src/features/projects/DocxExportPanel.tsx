@@ -1,3 +1,5 @@
+import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useRetainedDraft } from '../workspace/DraftOwner'
 import { useEffect, useRef, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
 import { projectMessages } from '../../../../shared/projects'
@@ -18,13 +20,17 @@ function outline(documents:OutlineDocument[]):{id:string;title:string;depth:numb
   walk(null,0);return result
 }
 export default function DocxExportPanel(props:Props):React.JSX.Element{
+  const { exports, trackExport } = useWorkspaceSession()
+  const operation = exports.filter(item => item.scope.projectId === props.project.projectId && item.scope.workspaceId === props.project.workspaceId).at(-1)
+  const job = operation?.job ?? null
+  function setJob(next: ExportJob): void { trackExport({projectId:props.project.projectId,workspaceId:props.project.workspaceId},next) }
   const current=useRef(props);current.current=props
   const orderedOutline=outline(props.project.documents)
   const signature=orderedOutline.map(d=>`${d.id}:${d.depth}:${d.kind}`).join('|')
   const texts=orderedOutline.filter(d=>d.kind==='text')
   const [selected,setSelected]=useState<string[]>(()=>orderedOutline.filter(d=>d.kind==='text').map(d=>d.id))
   const [paper,setPaper]=useState<'Letter'|'A4'>('Letter'),[preview,setPreview]=useState<ExportPreview|null>(null)
-  const [ack,setAck]=useState(false),[job,setJob]=useState<ExportJob|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+  const [ack,setAck]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false)
   const [formats,setFormats]=useState<ExportFormat[]>(['docx']),[baseName,setBaseName]=useState('Collie Writer manuscript')
   const [recipes,setRecipes]=useState<RecipesView|null>(null),[recipeId,setRecipeId]=useState<string|null>(null),[recipeName,setRecipeName]=useState('')
   const pendingRecipe=useRef<{signature:string;input:RecipeChangeInput}|null>(null)
@@ -34,18 +40,6 @@ export default function DocxExportPanel(props:Props):React.JSX.Element{
   const selectionKey=selected.join('|')
   useEffect(()=>{setPreview(null);setAck(false)},[paper,selectionKey])
   useEffect(()=>{let active=true;void window.collie.readRecipes(scope).then(result=>{if(active&&result.ok)setRecipes(result.value)});return()=>{active=false}},[scope.projectId,scope.workspaceId,props.project.headCommitId])
-  useEffect(()=>{
-    if(!job||!['rendering','publishing'].includes(job.state))return
-    let stopped=false,timer:ReturnType<typeof setTimeout>
-    const poll=async():Promise<void>=>{
-      const result=await window.collie.docxStatus({projectId:props.project.projectId,workspaceId:props.project.workspaceId,jobId:job.id})
-      if(stopped)return
-      if(result.ok){setJob(result.value);if(['rendering','publishing'].includes(result.value.state))timer=setTimeout(()=>{void poll()},800)}
-      else{setError(result.error.message);timer=setTimeout(()=>{void poll()},1600)}
-    }
-    timer=setTimeout(()=>{void poll()},800)
-    return()=>{stopped=true;clearTimeout(timer)}
-  },[job?.id,job?.state,props.project.projectId,props.project.workspaceId])
   function toggle(id:string):void{
     const node=orderedOutline.find(d=>d.id===id)
     if(!node)return
@@ -122,6 +116,11 @@ export default function DocxExportPanel(props:Props):React.JSX.Element{
   async function cancel():Promise<void>{if(!job)return;const result=await window.collie.cancelDocx({...scope,jobId:job.id});if(!result.ok)setError(result.error.message);else setJob(result.value)}
   const metadata=preview?.issues.filter(i=>i.kind==='metadata')??[],blocking=preview?.issues.filter(i=>i.kind!=='metadata')??[]
   const validBaseName=/^[^\\/:*?"<>|.\u0000-\u001f][^\\/:*?"<>|\u0000-\u001f]*$/.test(baseName.trim())&&!/[. ]$/.test(baseName.trim())&&!/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(baseName.trim())
+  useRetainedDraft('export-preparation', {
+    read:()=>({scope,kind:'export-preparation',entityId:recipeId,label:'export preparation',dirty:false,composing:false,busy,
+      pendingOperation:pendingRecipe.current?.input??null,policy:'operation',issue:error||undefined,status:busy?'Preparing…':undefined,
+      target:{kind:'workspace',scope,view:'export'}})
+  })
   return <section className="docx-export-panel" aria-labelledby="docx-export-heading" tabIndex={-1}>
     <h2 id="docx-export-heading">Compile and export</h2>
     <p>Choose active writing sections in the order to publish. Export uses one protected local revision and does not save the project file.</p>
@@ -147,6 +146,7 @@ export default function DocxExportPanel(props:Props):React.JSX.Element{
       <button type="button" disabled={props.disabled||busy||!!job&&['rendering','publishing'].includes(job.state)||blocking.length>0||preview.losses.length>0||metadata.length>0&&!ack||preview.headCommitId!==props.project.headCommitId||!formats.length||!validBaseName||selected.some(id=>!texts.some(t=>t.id===id))} onClick={()=>{void startCompilation()}}>Export selected formats</button>
     </div>:null}
     {job?<div role="status"><p>{job.state}: {job.phase}. Captured revision {job.headCommitId.slice(0,8)}. {!job.files&&job.state==='complete'?`DOCX: ${job.destinationPath}`:''}</p>{job.files?<ol>{job.files.map(file=><li key={file.format}>{file.format.toUpperCase()}: {file.state} — {file.path}{file.pages?` (${file.pages} pages)`:''}{file.error?` (${fileMessage(file.error)})`:''}{file.losses.length?` — ${file.losses.join('; ')}`:''}</li>)}</ol>:null}{job.error&&!job.files?<p role="alert">{job.error in projectMessages?projectMessages[job.error as keyof typeof projectMessages]:job.error}</p>:null}{job.reportPath?<p>Local export report: {job.reportPath}</p>:null}{job.state==='rendering'?<button type="button" onClick={()=>{void cancel()}}>Cancel export</button>:null}</div>:null}
+    {operation?.issue?<p role="alert">{operation.issue}</p>:null}
     {error?<p role="alert">{error}</p>:null}
   </section>
 }
