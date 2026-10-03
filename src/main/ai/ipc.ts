@@ -1,5 +1,6 @@
 import { ipcMain, type WebContents } from 'electron'
 import { isId } from '../../domain/editor/schema'
+import { isAiSelectModel } from '../../shared/ai-catalog'
 import { AI_CHANGED, AI_CHANNELS, isAiAttempt, isAiConnect, isAiConnection, isAiEvent, isAiOperationInput,
   isAiPrepare, isAiStart, isAiChannelValue, type AiResult } from '../../shared/ai'
 import { exact, isOpenInput, record } from '../../shared/projects'
@@ -26,6 +27,8 @@ export function registerAiIpc(owner:()=>WebContents|undefined,service:AiService,
         else if(kind==='cleanupConnection')value=await service.cleanupConnection()
         else if(kind==='protectConnection')value=await service.protectConnection()
         else if(kind==='models'&&isAiConnection(input))value=await service.models(input.connectionId)
+        else if(kind==='refreshModels'&&isAiConnection(input))value=await service.refreshModels(input.connectionId)
+        else if(kind==='selectModel'&&isAiSelectModel(input))value=await service.selectModel(input)
         else if(kind==='prepare'&&isAiPrepare(input))value=await service.prepare(input)
         else if(kind==='start'&&isAiStart(input))value=await service.start(input)
         else if(kind==='cancel'&&isAiOperationInput(input))value=await service.cancel(input)

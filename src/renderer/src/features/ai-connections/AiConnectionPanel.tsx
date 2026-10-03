@@ -5,6 +5,7 @@ import { AppDialog } from '../../components/ui/AppDialog'
 import { StatusBanner } from '../../components/ui/Feedback'
 import { useWorkspaceSession } from '../workspace/WorkspaceSession'
 import { useAiConnections } from './AiConnectionsProvider'
+import { AiModelSelection } from './AiModelSelection'
 import { connectionLabel, connectionProblemReasons, connectionReason, fundingDescription, signInUnavailable } from './connection-copy'
 import styles from './AiConnections.module.css'
 
@@ -90,6 +91,7 @@ export function AiConnectionPanel({ compact = false }: { compact?: boolean }): R
         </div>)}
       </div> : null}
     </div> : null}
+    {local ? <AiModelSelection /> : null}
     <p className={styles['ai-sharing-note']}>Sign-in sends no manuscript, project title or description. Later AI requests will share only the context you approve with the selected provider under your account’s policies.</p>
     {local ? <p>Connect and Resume start Codex account services, which can refresh account and model metadata. Check connection status reads only Collie’s saved state. Credentials stay in the operating system keyring under Collie’s separate Codex profile.</p> : null}
     {status ? <p className={styles['ai-funding-note']}>{fundingDescription(status.funding)}</p> : null}
@@ -102,7 +104,7 @@ export function AiConnectionPanel({ compact = false }: { compact?: boolean }): R
         {status ? <><div><dt>Conversations</dt><dd>{connectionReason[status.features.conversation.reason]}</dd></div>
           <div><dt>Proofreading</dt><dd>{connectionReason[status.features.proofread.reason]}</dd></div></> : null}
         <div><dt>Runtime</dt><dd>{status?.runtime === 'development-installed' ? 'The development runtime is present; safe execution is not enabled.' : status?.runtime === 'not-packaged' ? 'The runtime is not included in this packaged build.' : 'The runtime is unavailable.'}</dd></div>
-        <div><dt>Models & workspace</dt><dd>No model or provider workspace is authorized for requests yet. Sign-in does not establish model eligibility.</dd></div>
+        <div><dt>Models & workspace</dt><dd>{local ? 'The model choices above come from the explicitly requested runtime catalog. Selection is not execution authority or proof of account access. Provider workspace binding is unfinished.' : 'No model or provider workspace is authorized for requests yet. Sign-in does not establish model eligibility.'}</dd></div>
       </dl>
       {status?.reasons.includes('isolation-unresolved') ? <p>{connectionReason['isolation-unresolved']}</p> : null}
       <p>Collie access and the provider account are separate. Connecting cannot change your free editable project or unlock paid Collie features.</p>

@@ -7,13 +7,15 @@ export type AiConnectionReason = 'local-login-not-implemented' | 'local-executio
   'unsupported-app-identity' | 'commercial-requirements-pending' | 'resume-required' |
   'reconnect-required' | 'secure-session-unavailable' | 'login-timeout' | 'callback-port-in-use' |
   'browser-unavailable' | 'login-denied' | 'local-config-conflict' | 'local-runtime-exited' |
-  'local-cleanup-required' | 'local-protection-required' | 'local-account-changed' | 'login-offline' | 'login-completed-before-cancel'
+  'local-cleanup-required' | 'local-protection-required' | 'local-account-changed' | 'login-offline' | 'login-completed-before-cancel' |
+  'model-catalog-unavailable' | 'model-catalog-timeout' | 'local-tool-isolation-unavailable' | 'local-content-logging-unavailable'
 const connectionReasons: readonly AiConnectionReason[] = [
   'local-login-not-implemented', 'local-execution-not-implemented', 'conversation-adapter-not-ready',
   'proofreading-adapter-not-ready', 'packaged-development-refused', 'unsupported-app-identity',
   'commercial-requirements-pending', 'resume-required', 'reconnect-required', 'secure-session-unavailable',
   'login-timeout', 'callback-port-in-use', 'browser-unavailable', 'login-denied', 'local-config-conflict',
-  'local-runtime-exited', 'local-cleanup-required', 'local-protection-required', 'local-account-changed', 'login-offline', 'login-completed-before-cancel'
+  'local-runtime-exited', 'local-cleanup-required', 'local-protection-required', 'local-account-changed', 'login-offline', 'login-completed-before-cancel',
+  'model-catalog-unavailable', 'model-catalog-timeout', 'local-tool-isolation-unavailable', 'local-content-logging-unavailable'
 ]
 export type AiRoute =
   | { kind: 'local-codex-chatgpt'; policyRevision: 1; scope: 'owner-unpackaged-development'; providerClassification: 'unresolved' }
@@ -33,7 +35,7 @@ export type AiFunding =
   | { kind: 'normal-subscription'; credits: 'account-settings'; apiKeyFallback: false; appBillingChanges: false }
   | { kind: 'included-only'; enforcement: 'unresolved'; apiKeyFallback: false; appBillingChanges: false }
   | { kind: 'unavailable'; apiKeyFallback: false; appBillingChanges: false }
-/** No ready variant until CD03 defines the actual model/policy execution grant.
+/** No ready variant while CD03 isolation and feature adapters remain unfinished.
  * Login, presence of a binary and a catalog cannot manufacture feature readiness. */
 export type AiActionAvailability = { state: 'unavailable'; reason: AiConnectionReason }
 export type AiFeatureAvailability = { conversation: AiActionAvailability; proofread: AiActionAvailability }

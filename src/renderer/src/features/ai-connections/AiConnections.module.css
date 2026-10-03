@@ -34,3 +34,18 @@
   .ai-connection-panel { padding: var(--collie-space-4); }
   .ai-account-actions { align-items: stretch; }
 }
+.ai-model-selection {
+  display: grid;
+  gap: var(--collie-space-3);
+  padding-block: var(--collie-space-4);
+  border-block: 1px solid var(--collie-border);
+}
+
+.ai-model-selection > button {
+  justify-self: start;
+}
+
+.ai-execution-availability {
+  display: grid;
+  gap: var(--collie-space-2);
+}

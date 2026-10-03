@@ -2,7 +2,7 @@
 
 October 2, 2026.
 
-**Status: CD01 and CD02 implementation complete — awaiting user testing; CD03–CD09 not started.** This document plans a real, owner-operated Codex connection for Collie Writer's unpackaged local development app. Creating or approving this plan does not implement or authorize automatically advancing through its stages. No application, runtime, sign-in, inference, build or check was run during assistant implementation. CD01's [decision](docs/decisions/codex-CD01.md), [pinned protocol map](docs/ai/codex-local-contracts.md), [compatibility record](docs/formats/codex-local-v1.md), [evidence](docs/validation/codex-CD01.md) and [manual guide](docs/manual-testing/codex-CD01.md) describe the delivered foundation. CD02's [decision](docs/decisions/codex-CD02.md), [local v2 record](docs/formats/codex-local-v2.md), [evidence](docs/validation/codex-CD02.md) and [manual guide](docs/manual-testing/codex-CD02.md) own the managed account connection milestone; runtime outcomes remain unobserved.
+**Status: CD01 and CD02 implementation complete — awaiting user testing; CD03 engineering partial; CD04–CD09 not started.** This document plans a real, owner-operated Codex connection for Collie Writer's unpackaged local development app. Creating or approving this plan does not implement or authorize automatically advancing through its stages. No application, runtime, sign-in, inference, build or check was run during assistant implementation. CD01's [decision](docs/decisions/codex-CD01.md), [pinned protocol map](docs/ai/codex-local-contracts.md), [compatibility record](docs/formats/codex-local-v1.md), [evidence](docs/validation/codex-CD01.md) and [manual guide](docs/manual-testing/codex-CD01.md) describe the delivered foundation. CD02's [decision](docs/decisions/codex-CD02.md), [local v2 record](docs/formats/codex-local-v2.md), [evidence](docs/validation/codex-CD02.md) and [manual guide](docs/manual-testing/codex-CD02.md) own the managed account connection milestone; runtime outcomes remain unobserved. CD03's [decision](docs/decisions/codex-CD03.md), [record](docs/validation/codex-CD03.md) and [manual guide](docs/manual-testing/codex-CD03.md) record delivered model controls/transport machinery and the unresolved tool/content-log isolation blockers.
 
 ## Outcome and owner decisions
 
@@ -185,7 +185,7 @@ The assignments are engineering judgments based on each stage's scope, informed 
 | --- | --- | --- | --- |
 | CD01 | Development route, pinned protocol decisions and compatible contracts | Existing I10–I13 owners | Implementation complete — awaiting user testing |
 | CD02 | Secure Codex login and real in-app connection controls | CD01 | Implementation complete — awaiting user testing |
-| CD03 | Isolated text runtime, model discovery and action readiness | CD02 | Not started |
+| CD03 | Isolated text runtime, model discovery and action readiness | CD02 | Engineering partial — model controls delivered; execution isolation unfinished |
 | CD04 | Route-bound durable dispatch shared by both features | CD03 | Not started |
 | CD05 | Working in-app conversations with real Codex responses | CD04 | Not started |
 | CD06 | Working mechanics proofreading with validated real findings | CD04; CD05 establishes the first live owner observation | Not started |
@@ -255,6 +255,8 @@ The assignments are engineering judgments based on each stage's scope, informed 
 ### CD03 — Implement the isolated execution adapter and real readiness
 
 #### Model: Astra | Effort: Extra High
+
+**Implementation checkpoint, October 2, 2026: engineering partial.** Delivered explicit same-account model discovery/selection, exact transient status/IPC, named execution blockers, and bounded managed text-turn methods with correlation, text-channel separation and uncertainty handling. Full-plan/pinned-source review identified model-driven tools outside the established disable flags and a mandatory content-capable SQLite log sink. The route-specific pre-dispatch isolation refusal remains; this is missing engineering, not a commercial-approval condition or a successful runtime observation. Feature adapters and legacy model-based Send remain unavailable. Read the [decision](docs/decisions/codex-CD03.md), [record](docs/validation/codex-CD03.md) and [manual guide](docs/manual-testing/codex-CD03.md). CD03's done condition is not met; CD04–CD09 have not started. No tests/checks/builds/launches/provider actions occurred.
 
 **Why this recommendation:** Requires careful runtime isolation, event ordering, interruption handling and consistent action eligibility.
 
@@ -458,6 +460,6 @@ This is an implementation contract, not an instruction to execute checks or auto
 
 ## Current handoff
 
-CD01 and CD02 are **implementation complete — awaiting user testing**. CD03–CD09 remain **not started**. Josh's normal-subscription development policy is settled above; no further spending-policy decision is needed to write the local adapter. Actual provider access, native credential behavior, runtime isolation and end-to-end outcomes must still be established through the stage work and Josh's manual observations.
+CD01 and CD02 are **implementation complete — awaiting user testing**. CD03 is **engineering partial**: explicit runtime model controls and bounded text transport machinery are delivered, while complete tool isolation and protected/suppressed content logging remain unimplemented. The local dispatch refusal stays in place. CD04–CD09 remain **not started**. Josh's normal-subscription development policy is settled above; no further spending-policy decision is needed. Actual provider access, native credential behavior and end-to-end outcomes remain unobserved; manual observation cannot replace missing isolation implementation.
 
-Use the [CD02 manual guide](docs/manual-testing/codex-CD02.md) and report observations before further work. CD03 requires a separate explicit request. Implementing this plan must never require starting over on I01–I09 or rebuilding the existing conversation/proofreading storage and editor foundations.
+Use the [CD03 manual guide](docs/manual-testing/codex-CD03.md) for the delivered connection/model controls and report observations. Its [decision](docs/decisions/codex-CD03.md) names the remaining CD03 engineering; no later stage was advanced. Implementing this plan must never require starting over on I01–I09 or rebuilding the existing conversation/proofreading storage and editor foundations.

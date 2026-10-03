@@ -1,6 +1,6 @@
 # Local Codex protocol selection — CD01
 
-**Current implementation note:** CD02 now supplies the [managed account owner and connection flow](../decisions/codex-CD02.md), with [separate local metadata v2](../formats/codex-local-v2.md). The dated CD01 source findings below remain the baseline. CD02 adds no inference and does not establish runtime acceptance or full execution isolation.
+**Current implementation note:** CD02 supplies the [managed account owner and connection flow](../decisions/codex-CD02.md), with [separate local metadata v2](../formats/codex-local-v2.md). CD03 is [engineering partial](../decisions/codex-CD03.md): explicit model discovery/selection and bounded turn machinery are delivered, but pinned model-driven tool exposure and content-capable SQLite logs keep text dispatch refused. The dated CD01 source findings below remain the baseline. No runtime acceptance or complete execution isolation is established.
 
 October 2, 2026. Source contract evidence, **not runtime acceptance**. Retain `@openai/codex` **0.160.0** as the existing development-only dependency. The installed package metadata and launcher were read; no binary or package script was run. The package specifies Apache-2.0 and exact optional platform packages. Collie's resolver reads the platform-package version and resolves its contained native binary directly, never PATH, the self-updating launcher or a download. Initial target is Josh's macOS development use; native architecture/store behavior and Windows remain unobserved.
 

@@ -4,6 +4,7 @@ import { AI_LIMITS, AI_PROVIDER, type AiConnectInput, type AiEvent, type AiModel
   type AiPrepareInput, type AiPrepared, type AiReason, type AiStartInput, type AiStatus } from '../../shared/ai'
 import { sameProject } from '../../shared/access'
 import type { AiSession } from '../../shared/ai-route'
+import type { AiSelectModelInput } from '../../shared/ai-catalog'
 import type { OpenInput } from '../../shared/projects'
 import type { AccessService } from '../entitlements/service'
 import { RELEASE } from '../release'
@@ -14,6 +15,7 @@ import { OPENAI_REGISTRATIONS, registration, requireIncludedFunding, requireText
   requireRegisteredRoute, routeFunding, selectAiRoute } from './deployment'
 import { operationDigestV1 } from './operation-identity'
 import { LocalCodexSession } from './local-codex-session'
+import { localExecutionReadiness, localFeatureAvailability } from './codex-local-policy'
 import { AiError, aiReason } from './errors'
 import { OpenAiSignIn, refreshOpenAi } from './openai-auth'
 import { revokeOpenAi } from './openai-http'
@@ -96,8 +98,7 @@ export class AiService {
       const snapshot=this.local.snapshot(available&&!this.closing&&!this.busy&&!this.running,
         secureAiStorage()&&!this.storageFailure&&!this.journalFailure&&!this.closing&&!this.busy&&!this.running)
       return {sequence:++this.statusSequence,provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',route,
-        funding:routeFunding(route),features:{conversation:{state:'unavailable',reason:'conversation-adapter-not-ready'},
-          proofread:{state:'unavailable',reason:'proofreading-adapter-not-ready'}},
+        funding:routeFunding(route),features:localFeatureAvailability(snapshot.session),execution:localExecutionReadiness(),
         configured:true,channelPermitted:true,commercialApproved:false,runtime:this.runtimeState,reasons,...snapshot}
     }
     if(route.kind!=='registered-openai') {
@@ -111,7 +112,7 @@ export class AiService {
         features:{conversation:{state:'unavailable',reason:route.reason},proofread:{state:'unavailable',reason:route.reason}},
         configured:false,channelPermitted:false,commercialApproved:false,runtime:this.runtimeState,state:'unavailable',
         reasons,attemptId:null,activeConnectionId:null,connections:[],remoteRevocation:'none',
-        local:null,actions:{connect:false,refresh:false,disconnect:false,select:false,resume:false,cleanup:false,protectConnection:false}}
+        catalog:null,execution:null,local:null,actions:{connect:false,refresh:false,disconnect:false,select:false,resume:false,cleanup:false,protectConnection:false,refreshModels:false,selectModel:false}}
     }
     const config=OPENAI_REGISTRATIONS[RELEASE.channel],reasons:AiReason[]=[]
     try{registration()}catch(error){reasons.push(aiReason(error))}
@@ -141,7 +142,7 @@ export class AiService {
       state:this.connectionState??(!config?'unavailable':selected?.tokens?'signed-in':'signed-out'),reasons,attemptId:this.attempt?.attemptId??null,
       activeConnectionId:this.credentials?.activeId??null,connections:this.credentials?.accounts.map(a=>({id:a.id,label:a.label,
         state:!a.tokens?'signed-out':a.refreshPending||a.tokens.expiresAt<=Date.now()?'expired':'signed-in',planConsent:!!a.tokens?.scopes.includes('chatgpt.tokens.use.direct')}))??[],remoteRevocation:this.revocation,
-      local:null,actions:{connect:settled&&permitted,refresh:settled&&permitted,disconnect:settled,select:settled&&permitted,resume:false,cleanup:false,protectConnection:false}}
+      catalog:null,execution:null,local:null,actions:{connect:settled&&permitted,refresh:settled&&permitted,disconnect:settled,select:settled&&permitted,resume:false,cleanup:false,protectConnection:false,refreshModels:false,selectModel:false}}
   }
   private requireIdle():void {if(this.closing||this.busy||this.attempt||this.running||this.local.hasPendingWork())throw new AiError('busy')}
   private account(id:string):Account {
@@ -291,12 +292,24 @@ export class AiService {
     return account
   }
   async models(id:string):Promise<AiModel[]> {
-    await this.ensure();this.requireIdle();const account=this.requireSession(id)
+    await this.ensure()
+    if(selectAiRoute().kind==='local-codex-chatgpt')return this.local.legacyModels(id)
+    this.requireIdle();const account=this.requireSession(id)
     // Catalog access sends no prompt. Isolation must still be established before launching a child.
     requireTextOnlyRuntime()
     const runtime=PROVIDER_RUNTIMES[AI_PROVIDER].create(this.storage);this.busy=true
     try{await runtime.open(account.tokens!.access);return await runtime.models()}
     finally{await runtime.close();this.busy=false}
+  }
+  async refreshModels(id:string):Promise<AiStatus> {
+    await this.ensure();this.requireIdle()
+    if(selectAiRoute().kind!=='local-codex-chatgpt')throw new AiError('development-access-unavailable')
+    this.prepared.clear();await this.local.refreshModels(id);return this.status()
+  }
+  async selectModel(input:AiSelectModelInput):Promise<AiStatus> {
+    await this.ensure();this.requireIdle()
+    if(selectAiRoute().kind!=='local-codex-chatgpt')throw new AiError('development-access-unavailable')
+    this.local.selectModel(input);this.prepared.clear();return this.status()
   }
   private authorize(input:AiPrepareInput):void {
     try{this.access.authorizeAi(input.scope,true)}catch{throw new AiError('read-only-project')}

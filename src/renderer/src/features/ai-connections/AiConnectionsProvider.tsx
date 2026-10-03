@@ -1,10 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AiReason, AiResult, AiStatus } from '../../../../shared/ai'
+import type { AiSelectModelInput } from '../../../../shared/ai-catalog'
 import type { AppDestination } from '../../app/navigation'
 import { useWorkspaceSession } from '../workspace/WorkspaceSession'
 import { connectionProblemReasons } from './connection-copy'
 
-type Action = { id: number; kind: 'connect' | 'cancel' | 'refresh' | 'disconnect' | 'select' | 'resume' | 'cleanup' | 'protectConnection'; connectionId: string | null; attemptId: string | null }
+type Action = { id: number; kind: 'connect' | 'cancel' | 'refresh' | 'disconnect' | 'select' | 'resume' | 'cleanup' | 'protectConnection' | 'refreshModels' | 'selectModel'; connectionId: string | null; attemptId: string | null }
 type Origin = { destination: AppDestination; trigger: HTMLElement | null; surface: HTMLElement | null }
 
 function useConnectionController() {
@@ -89,11 +90,11 @@ function useConnectionController() {
   const waiting = status?.state === 'signing-in' || pending?.kind === 'connect' || pending?.kind === 'cancel'
   const canCancel = status?.state === 'signing-in' ? status.local?.cancellable ?? true : pending?.kind === 'connect'
   useEffect(() => {
-    if (!waiting) return
+    if (!waiting && status?.catalog?.state!=='loading') return
     // Reconcile only sanitized local state. This never refreshes OAuth or runs a model.
     const timer = setInterval(() => { void checkStatus() }, 3000)
     return () => clearInterval(timer)
-  }, [waiting, checkStatus])
+  }, [waiting, status?.catalog?.state, checkStatus])
 
   const begin = useCallback((kind: Action['kind'], connectionId: string | null, trigger: HTMLElement | null): Action | null => {
     if (action.current || unconfirmed.current || latestSession.current.closing) return null
@@ -147,14 +148,21 @@ function useConnectionController() {
     })
   }, [finish])
 
-  const accountAction = useCallback((kind: 'refresh' | 'disconnect' | 'select' | 'resume', connectionId: string, trigger: HTMLElement | null): Promise<boolean> => {
+  const accountAction = useCallback((kind: 'refresh' | 'disconnect' | 'select' | 'resume' | 'refreshModels', connectionId: string, trigger: HTMLElement | null): Promise<boolean> => {
     if (!snapshot.current?.actions[kind]) return Promise.resolve(false)
     const next = begin(kind, connectionId, trigger)
     if (!next) return Promise.resolve(false)
     const input = { connectionId }
     return finish(next, () => kind === 'refresh' ? window.collie.refreshAiConnection(input)
+      : kind === 'refreshModels' ? window.collie.refreshAiModels(input)
       : kind === 'resume' ? window.collie.resumeAiConnection(input)
       : kind === 'disconnect' ? window.collie.disconnectAi(input) : window.collie.selectAiConnection(input))
+  }, [begin, finish])
+
+  const selectModel = useCallback((input: AiSelectModelInput, trigger: HTMLElement | null): Promise<boolean> => {
+    if (!snapshot.current?.actions.selectModel) return Promise.resolve(false)
+    const next=begin('selectModel',input.connectionId,trigger)
+    return next?finish(next,()=>window.collie.selectAiModel(input)):Promise.resolve(false)
   }, [begin, finish])
 
   const localAction = useCallback((kind: 'cleanup' | 'protectConnection', trigger: HTMLElement | null): Promise<boolean> => {
@@ -172,8 +180,8 @@ function useConnectionController() {
   }, [restoreOriginFocus])
 
   const busy = !!pending || status?.state === 'signing-in' || status?.state === 'refreshing' || status?.state === 'disconnecting'
-  return useMemo(() => ({ status, checking, issue, pending, waiting, canCancel, busy, checkStatus, connect, cancel, accountAction, localAction, showOrigin }),
-    [status, checking, issue, pending, waiting, canCancel, busy, checkStatus, connect, cancel, accountAction, localAction, showOrigin])
+  return useMemo(() => ({ status, checking, issue, pending, waiting, canCancel, busy, checkStatus, connect, cancel, accountAction, localAction, selectModel, showOrigin }),
+    [status, checking, issue, pending, waiting, canCancel, busy, checkStatus, connect, cancel, accountAction, localAction, selectModel, showOrigin])
 }
 
 type Connections = ReturnType<typeof useConnectionController>

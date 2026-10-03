@@ -23,6 +23,10 @@ export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
   'local-cleanup-required': 'Some inactive Collie Codex credentials still need local sign-out. Use Clean up inactive sessions to retry their removal.',
   'local-protection-required': 'An account metadata write is unconfirmed. Keep Collie open and retry saving connection state. This retry stays on this device.',
   'local-account-changed': 'The saved account no longer matches this Codex profile. Continue with ChatGPT to authorize the intended account again.',
+  'model-catalog-unavailable': 'Codex could not supply a supported text-model catalog. Refresh models to try again. No model or request was substituted.',
+  'model-catalog-timeout': 'Codex did not finish listing models in time. Refresh models when you want to retry; no writing was sent.',
+  'local-tool-isolation-unavailable': 'Text requests are disabled: this Codex version can expose model-provided tools that Collie cannot yet suppress.',
+  'local-content-logging-unavailable': 'Text requests are disabled: this Codex version can save response content in its local diagnostic database. Protected runtime storage is not implemented yet.',
   'configuration-required': 'Sign-in has not been configured for this build.',
   'development-access-unavailable': 'Supported development sign-in is not available in this build yet.',
   'commercial-activation-pending': 'Provider approval and configuration for this release are still pending.',
@@ -54,12 +58,14 @@ export function fundingDescription(funding: AiFunding): string {
   return 'AI spending is unavailable for this app identity.'
 }
 
-export function connectionLabel(status: AiStatus | null, checking = false, action?: 'connect' | 'cancel' | 'refresh' | 'disconnect' | 'select' | 'resume' | 'cleanup' | 'protectConnection'): string {
+export function connectionLabel(status: AiStatus | null, checking = false, action?: 'connect' | 'cancel' | 'refresh' | 'disconnect' | 'select' | 'resume' | 'cleanup' | 'protectConnection' | 'refreshModels' | 'selectModel'): string {
   if (action === 'cancel') return 'Cancelling sign-in…'
   if (action === 'select') return 'Selecting account…'
   if (action === 'resume') return 'Resuming Codex connection…'
   if (action === 'cleanup') return 'Signing out inactive Codex sessions…'
   if (action === 'protectConnection') return 'Saving connection state on this device…'
+  if (action === 'refreshModels' || status?.catalog?.state==='loading') return 'Loading Codex models…'
+  if (action === 'selectModel') return 'Selecting model…'
   if (action === 'connect' && status?.state !== 'signing-in') return 'Starting browser sign-in…'
   if (action === 'refresh') return 'Renewing account session…'
   if (action === 'disconnect') return 'Disconnecting account…'
