@@ -8,7 +8,7 @@ export type AiConnectionReason = 'local-login-not-implemented' | 'local-executio
   'unsupported-app-identity' | 'commercial-requirements-pending' | 'resume-required' |
   'reconnect-required' | 'secure-session-unavailable' | 'login-timeout' | 'callback-port-in-use' |
   'browser-unavailable' | 'login-denied' | 'local-config-conflict' | 'local-runtime-exited' |
-  'local-cleanup-required' | 'local-protection-required' | 'local-account-changed' | 'login-offline' | 'login-completed-before-cancel' |
+  'local-cleanup-required' | 'local-protection-required' | 'local-account-changed' | 'login-offline' | 'login-completed-before-cancel' | 'local-stop-pending' |
   'model-catalog-unavailable' | 'model-catalog-timeout' | 'local-tool-isolation-unavailable' | 'local-content-logging-unavailable' |
   'connect-required' | 'account-work-pending' | 'model-refresh-required' | 'model-selection-required' | 'no-text-models' |
   'ai-work-pending' | 'output-protection-required' | 'operation-capacity-full' | 'local-workspace-identity-unavailable'
@@ -17,7 +17,7 @@ const connectionReasons: readonly AiConnectionReason[] = [
   'proofreading-adapter-not-ready', 'packaged-development-refused', 'unsupported-app-identity',
   'commercial-requirements-pending', 'resume-required', 'reconnect-required', 'secure-session-unavailable',
   'login-timeout', 'callback-port-in-use', 'browser-unavailable', 'login-denied', 'local-config-conflict',
-  'local-runtime-exited', 'local-cleanup-required', 'local-protection-required', 'local-account-changed', 'login-offline', 'login-completed-before-cancel',
+  'local-runtime-exited', 'local-cleanup-required', 'local-protection-required', 'local-account-changed', 'login-offline', 'login-completed-before-cancel', 'local-stop-pending',
   'model-catalog-unavailable', 'model-catalog-timeout', 'local-tool-isolation-unavailable', 'local-content-logging-unavailable',
   'connect-required', 'account-work-pending', 'model-refresh-required', 'model-selection-required', 'no-text-models',
   'ai-work-pending', 'output-protection-required', 'operation-capacity-full', 'local-workspace-identity-unavailable'

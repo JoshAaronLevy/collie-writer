@@ -118,7 +118,11 @@ export class CodexTextTurn {
     // the returned actual snapshot and owns the local storage failure.
     try {this.emit(value)} finally {this.resolve(value)}
   }
-  fail(reason:AiReason): void {this.finish(this.dispatched?'unknown':reason==='cancelled'?'cancelled':'failed',reason)}
+  fail(reason:AiReason): void {
+    // Closing the child after possible dispatch is not provider-confirmed
+    // cancellation. Keep both its state and explanation uncertain.
+    this.finish(this.dispatched?'unknown':reason==='cancelled'?'cancelled':'failed',this.dispatched&&reason==='cancelled'?'outcome-unknown':reason)
+  }
   lost(reason:AiReason): void {try {this.fail(reason)} finally {this.terminate()}}
   interrupt(): void {
     this.stopping=true

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { AiConnectInput, AiModel, AiPrepareInput, AiStatus } from '../../shared/ai'
+import type { AiConnectInput, AiModel, AiPrepareInput, AiReason, AiStatus } from '../../shared/ai'
 import type { AiCatalog, AiSelectModelInput } from '../../shared/ai-catalog'
 import type { AiConnectionReason, AiSession } from '../../shared/ai-route'
 import { CodexAccountError, CodexAccountRuntime } from './codex-account-runtime'
@@ -38,10 +38,11 @@ export class LocalCodexSession {
     this.initialized = true
     if (this.data.lastAttempt) this.attempted.set(this.data.lastAttempt.attemptId,this.data.lastAttempt.connectionId)
   }
-  hasPendingWork(): boolean { return !!(this.work || this.pendingWrite) }
+  hasPendingWork(): boolean { return !!(this.work || this.pendingWrite || this.closeWork || this.runtime?.isStopping()) }
+  hasAccountWork():boolean {return !!this.work&&this.activity!=='protect'}
   snapshot(available: boolean, canProtect: boolean, allowActions=true): Pick<AiStatus,'session'|'state'|'attemptId'|'activeConnectionId'|'connections'|'actions'|'remoteRevocation'|'local'|'catalog'> {
     const account = this.data.active?.account
-    const idle = available && allowActions && this.initialized && !this.work && !this.pendingWrite && !this.closing
+    const idle = available && allowActions && this.initialized && !this.hasPendingWork() && !this.closing
     const session: AiSession = this.attempt ? {state:'signing-in',attemptId:this.attempt.input.attemptId} :
       this.activity === 'disconnect' && account ? {state:'disconnecting',connectionId:account.connectionId} :
       this.activity === 'resume' && account ? {state:'resuming',connectionId:account.connectionId} :
@@ -58,10 +59,10 @@ export class LocalCodexSession {
         select:false,cleanup:idle&&this.data.retired.length>0,protectConnection:canProtect&&!this.work&&!!this.pendingWrite&&!this.closing,
         refreshModels:idle&&this.connected&&!!account,selectModel:idle&&this.connected&&this.catalog.state==='loaded'&&this.catalog.models.length>0},
       remoteRevocation:this.revocation,
-      local:{issue:this.pendingWrite&&!this.work?'local-protection-required':this.issue,cleanupCount:this.data.retired.length,
+      local:{issue:this.pendingWrite&&!this.work?'local-protection-required':this.closing||this.runtime?.isStopping()?'local-stop-pending':this.issue,cleanupCount:this.data.retired.length,
         protectionPending:!!this.pendingWrite&&!this.work,cancellable:!!this.attempt&&!this.attempt.accepting&&!this.attempt.cancelled}}
   }
-  private requireIdle(): void { if (this.closing || this.work || this.pendingWrite) throw new AiError('busy') }
+  private requireIdle(): void { if (this.closing || this.hasPendingWork()) throw new AiError('busy') }
   private async save(next: LocalCodexSessionV2): Promise<void> {
     // Keep the exact desired envelope on uncertainty. Its only recovery action
     // rewrites local encrypted metadata; it cannot spawn/login/infer.
@@ -85,8 +86,11 @@ export class LocalCodexSession {
     this.changed()
   }
   private async stopRuntime(): Promise<void> {
-    const runtime=this.runtime;this.runtime=null;this.connected=false;this.epoch=null;this.catalog={state:'not-loaded'}
+    const runtime=this.runtime;this.connected=false;this.epoch=null;this.catalog={state:'not-loaded'}
+    // Retain the child owner until its real exit. A timed-out native close wait
+    // cannot permit a replacement process in the same credential namespace.
     await runtime?.close()
+    if(this.runtime===runtime)this.runtime=null
   }
   private async open(profileId: string, signal: AbortSignal): Promise<CodexAccountRuntime> {
     const runtime=new CodexAccountRuntime(this.storage,reason=>{
@@ -263,6 +267,14 @@ export class LocalCodexSession {
   }
   dispatchSession():AiDispatchSession {
     const runtime=this.runtime
+    const failed=(reason:AiReason):void=>{
+      if(!runtime||this.runtime!==runtime)return
+      if(['signed-out','session-expired','auth-failed'].includes(reason)){
+        runtime.invalidateAccount();this.connected=false;this.epoch=null;this.catalog={state:'not-loaded'};this.issue='reconnect-required';this.changed()
+      }else if(reason==='model-unavailable'&&this.catalog.state==='loaded'){
+        this.catalog={...this.catalog,selectedModelId:null};this.changed()
+      }
+    }
     const authorize=(input:AiPrepareInput,execution:LocalExecution|null):void=>{
       if(!execution||!runtime||this.runtime!==runtime)throw new AiError('context-changed')
       if((input.action==='proofread')!==isSchemaExecution(execution))throw new AiError('context-changed')
@@ -272,11 +284,17 @@ export class LocalCodexSession {
     }
     return {route:'local-codex-chatgpt',authorize,
       execute:async(input,execution,guard,update)=>{
-        authorize(input,execution)
-        // Recheck the effective account immediately before content. No token is
-        // read by Collie, and a changed identity cannot adopt the old intent.
-        await runtime!.readAccount();authorize(input,execution);await guard()
-        await runtime!.executeText({epoch:execution!.sessionGeneration,model:input.model,execution:execution!},guard,update)
+        try {
+          authorize(input,execution)
+          // Recheck the effective account immediately before content. No token is
+          // read by Collie, and a changed identity cannot adopt the old intent.
+          await runtime!.readAccount();authorize(input,execution);await guard()
+          await runtime!.executeText({epoch:execution!.sessionGeneration,model:input.model,execution:execution!},guard,value=>{
+            // Keep the outcome on its original binding even when authentication
+            // or model eligibility changes. Reconnect is never a resend.
+            update(value);if(value.state!=='running'&&value.reason)failed(value.reason)
+          })
+        }catch(error){if(error instanceof AiError)failed(error.reason);throw error}
       },interrupt:async()=>{runtime?.interruptText()}}
   }
   private async cleanRetired(signal: AbortSignal): Promise<void> {
@@ -315,5 +333,5 @@ export class LocalCodexSession {
     })().finally(()=>{this.closing=false;this.closeWork=null;this.changed()})
     return this.closeWork
   }
-  suspend(): void { void this.close() }
+  suspend(): void { void this.close().catch(()=>{this.issue='local-stop-pending';this.changed()}) }
 }

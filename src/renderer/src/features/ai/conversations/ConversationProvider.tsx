@@ -30,7 +30,7 @@ function useConversationController() {
   const project=session.project,scope=project?scopeOf(project):null,draft=selected?(drafts[selected]??emptyDraft()):emptyDraft()
   const readOnly=session.accessReadOnly||session.accessTransition,active=!!page?.turns.some(t=>activeStates.includes(t.attempt.state))
   function belongs(captured:OpenInput):boolean{return sameScope(current.current.project,captured)}
-  function show():void {
+  function show(attemptId?:string):void {
     const s=current.current;if(!s.project||composing.current||s.composition.current)return
     const captured=scopeOf(s.project)
     void (async()=>{
@@ -38,9 +38,10 @@ function useConversationController() {
       if(!belongs(captured))return
       s.writingView.setAiTool('conversation');s.writingView.revealPanel('ai')
       if(rename||pendingRef.current||locked.current)return
-      if(run?.attemptId&&(run.pending||run.issue)) {
+      const target=attemptId??(run?.pending||run?.issue?run.attemptId:null)
+      if(target) {
         const origin=state.current.selected
-        const result=await window.collie.conversation({...captured,action:'attempt',attemptId:run.attemptId})
+        const result=await window.collie.conversation({...captured,action:'attempt',attemptId:target})
         if(belongs(captured)&&state.current.selected===origin&&!state.current.rename&&!composing.current&&!locked.current&&!pendingRef.current&&result.ok&&result.value.type==='turn')choose(result.value.turn.attempt.conversationId)
       } else if(!drafts[selected??'']?.text){const unsent=Object.entries(drafts).find(([,d])=>!!d.text);if(unsent)choose(unsent[0])}
     })()
@@ -91,6 +92,16 @@ function useConversationController() {
     if(!refreshTimer.current)refreshTimer.current=setTimeout(()=>{refreshTimer.current=null;void refresh({projectId:event.projectId,workspaceId:event.workspaceId})},300)
   }),[])
   useEffect(()=>()=>{if(refreshTimer.current)clearTimeout(refreshTimer.current)},[])
+  const hadWork=useRef(false)
+  useEffect(()=>{
+    if(!scope)return
+    const work=connections.status?.work.find(item=>item.feature==='conversation'&&sameScope(item.scope,scope))
+    const refreshNeeded=!!work||hadWork.current||active
+    hadWork.current=!!work
+    if(work)setRun({...scope,attemptId:work.attemptId,pending:true,issue:work.state==='protection-required'?'AI output needs local protection.':null})
+    else setRun(previous=>previous?{...previous,pending:false}:previous)
+    if(refreshNeeded&&!refreshTimer.current)refreshTimer.current=setTimeout(()=>{refreshTimer.current=null;void refresh(scope)},300)
+  },[connections.status?.sequence,project?.projectId,project?.workspaceId])
   const selectedConnection=reviewConnection(connections.status)
   useEffect(()=>{
     if(Object.values(drafts).some(d=>d.review&&!sameReviewConnection(d.review,selectedConnection)))setNotice('The connection or model changed. Your draft and selected context are kept; review them again.')

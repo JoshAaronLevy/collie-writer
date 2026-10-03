@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { AiOperation, AiPrepareInput, AiReason } from '../../shared/ai'
+import type { AiContentWork, AiOperation, AiPrepareInput, AiReason } from '../../shared/ai'
 import { bindingVersion, isConversationValue, type ConversationBinding, type ConversationEvent, type ConversationRequest, type ConversationSubmit, type ConversationTurn, type ConversationValue, type ConversationWorkerInput } from '../../shared/conversations'
 import { isProofreadValue, isProofreadWorkerInput, type ProofreadRequest, type ProofreadSubmit, type ProofreadBundle, type ProofreadValue, type ProofreadWorkerInput } from '../../shared/proofreading'
 import { isConversationWorkerInput } from '../../shared/conversations'
@@ -30,6 +30,7 @@ export class AiContentService {
   private timer:ReturnType<typeof setTimeout>|null=null
   private writing:Promise<void>|null=null
   private commands=0
+  private commandScopes=new Map<string,number>()
   private listeners=new Set<(event:ConversationEvent)=>void>()
   private otherPending:()=>boolean=()=>false
   setOtherPending(read:()=>boolean):void {this.otherPending=read}
@@ -42,10 +43,32 @@ export class AiContentService {
   }
   subscribe(listener:(event:ConversationEvent)=>void):()=>void {this.listeners.add(listener);return()=>this.listeners.delete(listener)}
   hasPendingWork():boolean {return this.commands>0||!!this.writing||this.queued.size>0||this.failures.size>0||this.protecting.size>0}
+  workItems():AiContentWork[] {
+    const items=new Map<string,AiContentWork>()
+    const put=(scope:OpenInput,attemptId:string,state:AiContentWork['state']):void=>{items.set(attemptId,{scope:{projectId:scope.projectId,workspaceId:scope.workspaceId},feature:this.kind,attemptId,state})}
+    for(const owner of this.live.values()) {
+      const op=this.ai.protectedContentOperation(owner.binding.operationId,bindingVersion(owner.binding))
+      put(owner.scope,owner.binding.attemptId,op?.state==='cancelling'?'stopping':'running')
+    }
+    for(const [id,input] of this.queued)if(!items.has(id))put(input,id,'protecting')
+    for(const [id,input] of this.failures)put(input,id,'protection-required')
+    for(const owner of this.bound.values()) {
+      if(this.ai.needsProtection(owner.binding.operationId))put(owner.scope,owner.binding.attemptId,'protection-required')
+      else if(this.protecting.has(owner.binding.attemptId)&&!items.has(owner.binding.attemptId))put(owner.scope,owner.binding.attemptId,'protecting')
+    }
+    return [...items.values()]
+  }
+  /** Flush already queued local output only. Failed exact writes still require
+   * an explicit protection retry; this cannot prepare or dispatch inference. */
+  async settleForClose():Promise<boolean> {
+    if(this.timer){clearTimeout(this.timer);this.timer=null}
+    await this.drain()
+    return !this.hasPendingWork()
+  }
   private publish(scope:OpenInput,attemptId:string|null,issue:string|null=null):void {
     const failed=[...this.failures].find(([,input])=>same(input,scope)),running=[...this.live.values()].find(owner=>same(owner.scope,scope))
     const unprotected=[...this.bound.values()].find(owner=>same(owner.scope,scope)&&this.ai.needsProtection(owner.binding.operationId))
-    const event:ConversationEvent={projectId:scope.projectId,workspaceId:scope.workspaceId,attemptId:failed?.[0]??unprotected?.binding.attemptId??running?.binding.attemptId??attemptId,pending:this.hasPendingWork()||this.ai.hasPendingWork(),issue:issue??(failed||unprotected?'AI output needs local protection. Retry local output protection before closing.':null)}
+    const event:ConversationEvent={projectId:scope.projectId,workspaceId:scope.workspaceId,attemptId:failed?.[0]??unprotected?.binding.attemptId??running?.binding.attemptId??attemptId,pending:this.commandScopes.has(`${scope.projectId}:${scope.workspaceId}`)||this.workItems().some(item=>same(item.scope,scope)),issue:issue??(failed||unprotected?'AI output needs local protection. Retry local output protection before closing.':null)}
     for(const listener of this.listeners)try{listener(event)}catch{/* Renderer loss does not interrupt local protection. */}
   }
   async worker(input:ContentWorkerInput):Promise<ContentValue> {
@@ -173,6 +196,9 @@ export class AiContentService {
   }
   async command(input:ContentRequest):Promise<ContentValue> {
     const changes=['submit','change','decide','reconcile','cancel','protect'].includes(input.action)
+    // Read, protection and reconciliation stay available at the barrier. New
+    // intents, captures and decisions wait until native settlement is released.
+    if(this.ai.isSettling()&&['submit','change','decide','review'].includes(input.action))throw new ProjectError('ACCESS_BUSY')
     if(input.action==='submit'&&(this.hasPendingWork()||this.ai.hasPendingWork()||this.otherPending())) {
       // Lost replies can inspect the exact existing intent even while its output needs protection.
       let previous:ContentTurn
@@ -180,7 +206,8 @@ export class AiContentService {
       if(previous.attempt.requestDigest!==requestDigest(input))throw new ProjectError('OPERATION_CONFLICT')
       return this.worker({projectId:input.projectId,workspaceId:input.workspaceId,action:'get',attemptId:input.attemptId})
     }
-    if(changes){this.commands++;this.ai.contentWorkChanged()}
+    const scopeKey=`${input.projectId}:${input.workspaceId}`
+    if(changes){this.commands++;this.commandScopes.set(scopeKey,(this.commandScopes.get(scopeKey)??0)+1);this.ai.contentWorkChanged()}
     try {
       if(input.action==='decide'){
         if(this.kind!=='proofreading')throw new ProjectError('VALIDATION')
@@ -219,6 +246,6 @@ export class AiContentService {
       }
       if(!isConversationWorkerInput(input)&&!isProofreadWorkerInput(input))throw new ProjectError('VALIDATION')
       return await this.worker(input)
-    } finally {if(changes){this.commands--;this.ai.contentWorkChanged();this.publish(input,'attemptId'in input?input.attemptId:null,this.failures.size?'AI output needs local protection.':null)}}
+    } finally {if(changes){this.commands--;const count=(this.commandScopes.get(scopeKey)??1)-1;if(count)this.commandScopes.set(scopeKey,count);else this.commandScopes.delete(scopeKey);this.ai.contentWorkChanged();this.publish(input,'attemptId'in input?input.attemptId:null)}}
   }
 }

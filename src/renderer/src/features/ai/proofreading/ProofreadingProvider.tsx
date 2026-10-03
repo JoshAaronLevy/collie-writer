@@ -24,12 +24,12 @@ function useProofreadingController(){
   current.current=session;connectionRef.current=connections;state.current={selected,offset};pendingRef.current=pending
   const project=session.project,scope=project?scopeOf(project):null,readOnly=session.accessReadOnly||session.accessTransition
   function belongs(captured:OpenInput):boolean{return sameScope(current.current.project,captured)}
-  function show():void{
+  function show(attemptId?:string):void{
     const s=current.current;if(!s.project||s.composition.current)return
     const reveal=()=>{s.writingView.setAiTool('proofreading');s.writingView.revealPanel('ai');requestAnimationFrame(()=>{if(panel.current&&!panel.current.closest('[hidden],[inert]'))panel.current.focus()})}
     if(s.proofreadingLocked){reveal();return}
     const captured=scopeOf(s.project)
-    void s.navigate({kind:'workspace',scope:captured,view:'write',documentId:s.project.documentId}).then(ok=>{if(ok&&belongs(captured)){if(event?.attemptId&&(event.pending||event.issue)&&!pendingRef.current&&!locked.current)choose(event.attemptId);reveal()}})
+    void s.navigate({kind:'workspace',scope:captured,view:'write',documentId:s.project.documentId}).then(ok=>{if(ok&&belongs(captured)){const target=attemptId??(event?.pending||event?.issue?event.attemptId:null);if(target&&!pendingRef.current&&!locked.current)choose(target);reveal()}})
   }
   useRetainedDraft('proofreading',{
     read:()=>({scope:scope??{projectId:'',workspaceId:''},kind:'proofreading',entityId:selected,label:'proofreading review',dirty:!!reviewed,composing:false,busy,pendingOperation:pending??(event?.pending?event:null),policy:'retain',issue:issue||undefined,target:project?{kind:'workspace',scope:scopeOf(project),view:'write',documentId:project.documentId}:{kind:'library'}}),focus:show
@@ -66,6 +66,16 @@ function useProofreadingController(){
     if(!timer.current)timer.current=setTimeout(()=>{timer.current=null;void refresh(scopeOf(value))},300)
   }),[])
   useEffect(()=>()=>{if(timer.current)clearTimeout(timer.current)},[])
+  const hadWork=useRef(false)
+  useEffect(()=>{
+    if(!scope)return
+    const work=connections.status?.work.find(item=>item.feature==='proofreading'&&sameScope(item.scope,scope))
+    const refreshNeeded=!!work||hadWork.current||!!bundle&&['preparing','running','stopping'].includes(bundle.attempt.state)
+    hadWork.current=!!work
+    if(work)setEvent({...scope,attemptId:work.attemptId,pending:true,issue:work.state==='protection-required'?'AI output needs local protection.':null})
+    else setEvent(previous=>previous?{...previous,pending:false}:previous)
+    if(refreshNeeded&&!timer.current)timer.current=setTimeout(()=>{timer.current=null;void refresh(scope)},300)
+  },[connections.status?.sequence,project?.projectId,project?.workspaceId])
   const selectedConnection=reviewConnection(connections.status,'proofread')
   useEffect(()=>{
     if(reviewed&&!sameReviewConnection(reviewed,selectedConnection))setNotice('The connection or model changed. Your captured text is kept; review this capture again before saving or running it.')

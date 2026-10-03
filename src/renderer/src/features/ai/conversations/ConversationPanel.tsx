@@ -16,7 +16,7 @@ function requestReason(reason:AiReason):string {
   if(reason==='model-unavailable')return 'Codex refused the selected model. Refresh models and explicitly choose an available model before reviewing a new request. No model was substituted.'
   if(reason==='invalid-request')return 'Codex could not accept this request. Narrow the prompt or context and review a new request. This attempt is retained and will not resend.'
   if(reason==='storage-unavailable')return 'The request or output needs local protection. Keep Collie open and use Retry local protection. This action saves the same retained work without sending again.'
-  if(reason==='outcome-unknown')return 'The outcome is uncertain. Any retained text is shown; reopening never resends this request. A new reviewed request may consume additional usage.'
+  if(reason==='outcome-unknown')return 'The outcome is uncertain. Any retained text is shown. A missing local execution record or an independent project copy cannot resume the original request. Reopening never resends it; a new reviewed request may consume additional usage.'
   if(reason==='cancelled')return 'The provider reported cancellation. Any actual partial response remains here; cancellation does not confirm restored usage.'
   return connectionReason[reason]
 }
@@ -114,5 +114,5 @@ export function ConversationPanel():React.JSX.Element {
 export function ConversationNotice():React.JSX.Element|null {
   const c=useConversations(),drafts=Object.values(c.drafts).filter(d=>!!d.text).length
   if(!c.scope||(!c.run?.pending&&!c.run?.issue&&!c.pending&&!drafts&&!c.newTitle&&!c.rename))return null
-  return <aside className={styles['conversation-notice']} aria-label="Conversation work"><span>{c.run?.issue??(c.pending?'A conversation action needs acknowledgment.':c.run?.pending?'Protecting conversation work…':drafts?`${drafts} unsent conversation draft${drafts===1?'':'s'}.`:'A conversation title is unsaved.')}</span><AppButton variant="subtle" onClick={c.show}>Return to conversations</AppButton></aside>
+  return <aside className={styles['conversation-notice']} aria-label="Conversation work"><span>{c.run?.issue??(c.pending?'A conversation action needs acknowledgment.':c.run?.pending?'Protecting conversation work…':drafts?`${drafts} unsent conversation draft${drafts===1?'':'s'}.`:'A conversation title is unsaved.')}</span><AppButton variant="subtle" onClick={()=>c.show()}>Return to conversations</AppButton></aside>
 }

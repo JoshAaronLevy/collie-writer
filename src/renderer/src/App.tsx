@@ -11,6 +11,7 @@ import AboutPanel from './features/settings/AboutPanel'
 import Orientation from './features/help/Orientation'
 import { AiConnectionsProvider } from './features/ai-connections/AiConnectionsProvider'
 import { AiConnectionNotice } from './features/ai-connections/AiConnectionNotice'
+import { AiWorkNotice } from './features/ai/AiWorkNotice'
 import { AiProviderIndicator } from './features/ai-connections/AiProviderIndicator'
 import Projects from './features/projects/Projects'
 import { WorkspaceSessionProvider, useWorkspaceSession } from './features/workspace/WorkspaceSession'
@@ -93,6 +94,7 @@ function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; faile
         </div> : null}
         <WorkspaceStatus />
         <AiConnectionNotice />
+        <AiWorkNotice />
         <ConversationNotice />
         <ProofreadingNotice />
         <Orientation />

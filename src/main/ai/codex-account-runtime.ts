@@ -68,7 +68,9 @@ export class CodexAccountRuntime {
   private cancelText = false
   constructor(private readonly storage: AiStorage, private readonly lost: (reason: AiConnectionReason) => void = () => undefined) {}
   isAlive(): boolean { return !!this.child && !this.ended && !this.closing }
+  isStopping():boolean {return !!this.child&&this.closing&&!this.ended}
   hasCurrentAccount():boolean {return this.authenticated&&!this.accountInvalidated&&this.isAlive()}
+  invalidateAccount():void {this.accountInvalidated=true;this.generation=randomUUID()}
   accountIdentity(): {accountFingerprint:string;workspaceId:string} | null {return this.hasCurrentAccount()&&this.identity?{...this.identity}:null}
 
   async open(profileId: string, signal: AbortSignal): Promise<void> {

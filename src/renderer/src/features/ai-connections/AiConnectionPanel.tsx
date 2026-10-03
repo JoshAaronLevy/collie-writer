@@ -45,6 +45,7 @@ export function AiConnectionPanel({ compact = false }: { compact?: boolean }): R
       <div><h2 id={titleId} tabIndex={-1}>{local ? 'Codex connection' : 'ChatGPT account'}</h2><p className={styles['ai-provider-description']}>OpenAI · Codex runtime{local ? ' · Local development' : ''}</p></div>
     </header>
     <p className={styles['ai-connection-state']} role="status" aria-live="polite">{connectionLabel(status, checking, pending?.kind)}</p>
+    {status?.work.length?<StatusBanner title="Finish AI work before changing accounts">Use the global AI work notice to open the original request, stop it if needed, and finish local protection. Account changes never resend a saved request or move its result to another account.</StatusBanner>:null}
     {!session.available ? <StatusBanner title="Local storage is needed">Set up a safe local working folder before connecting an account. Your project setup remains available.
       <AppButton variant="subtle" onClick={() => void session.navigate({ kind: 'settings', page: 'data' })}>Open Data & recovery</AppButton>
     </StatusBanner> : null}

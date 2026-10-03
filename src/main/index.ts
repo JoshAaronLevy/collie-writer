@@ -69,15 +69,20 @@ const proofreading = new ProofreadingService(storage, ai)
 conversations.setOtherPending(() => proofreading.hasPendingWork())
 proofreading.setOtherPending(() => conversations.hasPendingWork())
 ai.setContentPending(() => conversations.hasPendingWork() || proofreading.hasPendingWork())
-access.setExternalWorkGuard(() => ai.hasPendingWork() || conversations.hasPendingWork() || proofreading.hasPendingWork())
+ai.setContentLifecycle(() => [...conversations.workItems(),...proofreading.workItems()],async()=>{
+  const conversationSettled=await conversations.settleForClose()
+  const proofreadingSettled=await proofreading.settleForClose()
+  return conversationSettled&&proofreadingSettled
+})
+access.setExternalWorkGuard(() => ai.isSettling() || ai.hasPendingWork() || conversations.hasPendingWork() || proofreading.hasPendingWork())
 const directAccess = new DirectAccessService(() => window?.webContents, access, devOrigin)
 const support = new SupportService(() => window?.webContents,()=>storage.current(),devOrigin)
 storage.onErrorCode(code=>support.recordError(code))
 storage.setAccessPolicy(command=>{
-  if(['open','create','reset','recoverReset'].includes(command.kind)&&(ai.hasPendingWork()||conversations.hasPendingWork()||proofreading.hasPendingWork()))throw new ProjectError('ACCESS_BUSY')
+  if(['open','create','reset','recoverReset'].includes(command.kind)&&(ai.isSettling()||ai.hasPendingWork()||conversations.hasPendingWork()||proofreading.hasPendingWork()))throw new ProjectError('ACCESS_BUSY')
   access.authorize(command)
 },command=>{
-  if((['open','restore','recover','duplicate','locate','inspect'].includes(command.kind)||command.kind==='answer'&&command.choice!=='cancel')&&(ai.hasPendingWork()||conversations.hasPendingWork()||proofreading.hasPendingWork()))throw new ProjectError('ACCESS_BUSY')
+  if((['open','restore','recover','duplicate','locate','inspect'].includes(command.kind)||command.kind==='answer'&&command.choice!=='cancel')&&(ai.isSettling()||ai.hasPendingWork()||conversations.hasPendingWork()||proofreading.hasPendingWork()))throw new ProjectError('ACCESS_BUSY')
   if(['open','restore','recover','duplicate','locate','inspect'].includes(command.kind)||command.kind==='answer'&&command.choice!=='cancel')access.authorizeFileChange()
 },(command,value)=>access.observe(command,value))
 const files = new ProjectFileIpc(() => window?.webContents, location, storage, devOrigin)
@@ -100,6 +105,7 @@ let closeApproved = false
 function openWindow(): void {
   closeApproved = false
   ai.resume()
+  ai.resumeSession()
   window = createWindow(devOrigin)
   const opened = window
   opened.webContents.on('render-process-gone', () => ai.suspend())
@@ -107,6 +113,7 @@ function openWindow(): void {
     if (shellOpenQueue.length) files.offerShellPath(shellOpenQueue.shift()!)
     else files.nudgeShellOpen()
   })
+  opened.webContents.on('did-finish-load',()=>ai.resumeSession())
   opened.on('close', event => {
     if (closeApproved || shutdownFinished) return
     event.preventDefault()

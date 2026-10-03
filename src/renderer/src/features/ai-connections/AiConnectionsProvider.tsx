@@ -3,6 +3,7 @@ import type { AiReason, AiResult, AiStatus } from '../../../../shared/ai'
 import type { AiSelectModelInput } from '../../../../shared/ai-catalog'
 import type { AppDestination } from '../../app/navigation'
 import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useRetainedDraft } from '../workspace/DraftOwner'
 import { connectionProblemReasons } from './connection-copy'
 
 type Action = { id: number; kind: 'connect' | 'cancel' | 'refresh' | 'disconnect' | 'select' | 'resume' | 'cleanup' | 'protectConnection' | 'refreshModels' | 'selectModel'; connectionId: string | null; attemptId: string | null }
@@ -17,7 +18,7 @@ function useConnectionController() {
   const snapshot = useRef<AiStatus | null>(null)
   const action = useRef<Action | null>(null)
   const ownedAttempt = useRef<string | null>(null)
-  const unconfirmed = useRef(false)
+  const unconfirmed = useRef<Action | null>(null)
   const origin = useRef<Origin | null>(null)
   const nextAction = useRef(0)
   const mounted = useRef(false)
@@ -47,10 +48,11 @@ function useConnectionController() {
     const wasSigningIn = snapshot.current?.state === 'signing-in'
     snapshot.current = next
     setStatus(next)
+    if (unconfirmed.current) setIssue('outcome-unknown')
     if (wasSigningIn && next.state !== 'signing-in') {
       ownedAttempt.current = null
       const reason = [...next.reasons].reverse().find(value => connectionProblemReasons.includes(value))
-      setIssue(reason && reason !== 'cancelled' ? reason : null)
+      if (!unconfirmed.current) setIssue(reason && reason !== 'cancelled' ? reason : null)
       restoreOriginFocus()
     }
   }, [restoreOriginFocus])
@@ -59,6 +61,7 @@ function useConnectionController() {
     if (acknowledge) acknowledgeStatusRead.current = true
     if (statusRead.current) return statusRead.current
     if (!latestSession.current.available) { acknowledgeStatusRead.current = false; return Promise.resolve() }
+    const reconciling = unconfirmed.current
     setChecking(true)
     const task = (async () => {
       try {
@@ -67,9 +70,11 @@ function useConnectionController() {
         if (result.ok) {
           apply(result.value)
           if (snapshot.current && result.value.sequence < snapshot.current.sequence) return
-          const wasUnconfirmed = unconfirmed.current
-          unconfirmed.current = false
-          if (action.current === null && (acknowledgeStatusRead.current || wasUnconfirmed)) setIssue(null)
+          // A read started before an uncertain reply cannot acknowledge it.
+          // Retain the exact action until a subsequent local snapshot returns.
+          const reconciled = !!reconciling && unconfirmed.current === reconciling && action.current === null
+          if (reconciled) unconfirmed.current = null
+          if (action.current === null && !unconfirmed.current && (acknowledgeStatusRead.current || reconciled)) setIssue(null)
           if (result.value.state !== 'signing-in' && result.value.actions.disconnect && action.current?.kind !== 'connect') ownedAttempt.current = null
         } else setIssue(result.reason)
       } catch { if (mounted.current) setIssue('outcome-unknown') }
@@ -90,14 +95,19 @@ function useConnectionController() {
   const waiting = status?.state === 'signing-in' || pending?.kind === 'connect' || pending?.kind === 'cancel'
   const canCancel = status?.state === 'signing-in' ? status.local?.cancellable ?? true : pending?.kind === 'connect'
   useEffect(() => {
-    if (!waiting && status?.catalog?.state!=='loading') return
-    // Reconcile only sanitized local state. This never refreshes OAuth or runs a model.
-    const timer = setInterval(() => { void checkStatus() }, 3000)
+    if (!session.available) return
+    // Repair missed initial/terminal events even while panels are hidden.
+    // Main's local snapshot never refreshes authentication or runs Codex.
+    const timer = setInterval(() => { void checkStatus() }, 5000)
     return () => clearInterval(timer)
-  }, [waiting, status?.catalog?.state, checkStatus])
+  }, [session.available, checkStatus])
 
   const begin = useCallback((kind: Action['kind'], connectionId: string | null, trigger: HTMLElement | null): Action | null => {
     if (action.current || unconfirmed.current || latestSession.current.closing) return null
+    if(kind!=='protectConnection'&&latestSession.current.drafts.states().some(draft=>
+      ['conversation','proofreading','proofreading-application','ai-work'].includes(draft.kind)&&(draft.busy||draft.pendingOperation!==null))){
+      setIssue('busy');return null
+    }
     origin.current = { destination: latestSession.current.destination, trigger, surface: trigger?.closest<HTMLElement>('[data-ai-connection-surface]') ?? null }
     const next: Action = { id: ++nextAction.current, kind, connectionId, attemptId: kind === 'connect' ? crypto.randomUUID() : null }
     action.current = next
@@ -118,9 +128,9 @@ function useConnectionController() {
       }
       else if (action.current?.id === current.id) {
         setIssue(result.reason)
-        if (result.reason === 'outcome-unknown') unconfirmed.current = true
+        if (result.reason === 'outcome-unknown') unconfirmed.current = current
       }
-    } catch { if (mounted.current && action.current?.id === current.id) { unconfirmed.current = true; setIssue('outcome-unknown') } }
+    } catch { if (mounted.current && action.current?.id === current.id) { unconfirmed.current = current; setIssue('outcome-unknown') } }
     finally {
       if (action.current?.id === current.id) {
         action.current = null
@@ -180,6 +190,12 @@ function useConnectionController() {
   }, [restoreOriginFocus])
 
   const busy = !!pending || status?.state === 'signing-in' || status?.state === 'refreshing' || status?.state === 'disconnecting'
+  useRetainedDraft('ai-connection-action',{
+    read:()=>({scope:session.project?{projectId:session.project.projectId,workspaceId:session.project.workspaceId}:{projectId:'',workspaceId:''},
+      kind:'ai-connection',entityId:status?.activeConnectionId??null,label:'AI connection acknowledgment',dirty:false,composing:false,busy,
+      pendingOperation:pending??unconfirmed.current,policy:'operation',
+      target:{kind:'settings',page:'ai'}}),focus:showOrigin
+  })
   return useMemo(() => ({ status, checking, issue, pending, waiting, canCancel, busy, checkStatus, connect, cancel, accountAction, localAction, selectModel, showOrigin }),
     [status, checking, issue, pending, waiting, canCancel, busy, checkStatus, connect, cancel, accountAction, localAction, selectModel, showOrigin])
 }

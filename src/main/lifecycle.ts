@@ -19,7 +19,7 @@ export class ProjectLifecycle {
       pending.resolve(String(value.outcome))
     })
     powerMonitor.on('suspend', () => { this.ai?.suspend(); this.files.action('suspend') })
-    powerMonitor.on('resume', () => { this.ai?.resume(); void this.files.recheck(); this.files.action('resume') })
+    powerMonitor.on('resume', () => { this.ai?.resumeSession(); void this.files.recheck(); this.files.action('resume') })
   }
   close(): Promise<boolean> {
     if (this.request) return this.request
@@ -31,7 +31,19 @@ export class ProjectLifecycle {
   }
   private async closeOnce(): Promise<boolean> {
     const owner = this.owner(), window = owner ? BrowserWindow.fromWebContents(owner) : null
-    if (this.conversationPending() || this.ai && !await this.ai.prepareClose()) {
+    // Establish the barrier before a native dialog can yield to other IPC.
+    // Keeping the window open must not implicitly stop an active request.
+    this.ai?.beginClose()
+    let stopProvider=false
+    if(this.ai?.hasProviderWork()) {
+      const options={type:'warning' as const,title:'AI work is still active',message:'Stop the active AI work before closing?',
+        detail:'Stopping preserves any actual output. A stop request does not guarantee cancellation or restored usage. Your writing and drafts still need local protection.',
+        buttons:['Keep window open','Stop AI work and continue closing'],defaultId:0,cancelId:0,noLink:true}
+      const answer=window&&!window.isDestroyed()?await dialog.showMessageBox(window,options):await dialog.showMessageBox(options)
+      if(answer.response!==1)return false
+      stopProvider=true
+    }
+    if ((this.ai && !await this.ai.prepareClose(stopProvider)) || this.conversationPending()) {
       const options = { type: 'warning' as const, title: 'Finishing AI work', message: 'Closing has been paused while AI work is being protected.', detail: 'Finish or cancel the active request and resolve any local storage problem before closing. Writing remains open.', buttons: ['Keep window open'], noLink: true }
       if (window && !window.isDestroyed()) await dialog.showMessageBox(window, options)
       else await dialog.showMessageBox(options)
@@ -49,7 +61,7 @@ export class ProjectLifecycle {
     if (timer) clearTimeout(timer)
     this.pending = undefined
     if (window.isDestroyed() || owner !== this.owner()) return false
-    if (outcome === 'saved' && !this.dirty() && !fileBusy(this.files.current().job)) return true
+    if (outcome === 'saved' && !this.dirty() && !fileBusy(this.files.current().job)) return !this.conversationPending()&&(!this.ai||await this.ai.prepareClose())
     if (outcome === 'cancel') return false
     if (outcome !== 'local' || this.dirty() || fileBusy(this.files.current().job)) {
       await dialog.showMessageBox(window, { type: 'warning', title: 'Keep your writing open', message: 'Closing has been paused.', detail: 'Writing or a file operation has not finished safely. Keep this window open, finish any composition, and retry or copy unprotected text. You can cancel a file operation before replacement begins.', buttons: ['Keep window open'], noLink: true })
@@ -59,6 +71,6 @@ export class ProjectLifecycle {
     if (answer.response === 1 || answer.response === 2) this.files.action('close-cancelled')
     if (answer.response === 1) this.files.action('save')
     if (answer.response === 2) this.files.action('save-as')
-    return answer.response === 3 && !this.dirty() && !fileBusy(this.files.current().job)
+    return answer.response === 3 && !this.dirty() && !fileBusy(this.files.current().job)&&!this.conversationPending()&&(!this.ai||await this.ai.prepareClose())
   }
 }

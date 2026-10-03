@@ -15,7 +15,7 @@ function proofreadReason(reason:AiReason):string {
   if(reason==='model-unavailable')return 'Codex refused the selected model. Refresh models and explicitly select one before reviewing a new request. No model was substituted.'
   if(reason==='invalid-request')return 'Codex could not accept this request or result contract. The retained outcome is unchanged. A new request requires another explicit review; there is no automatic fallback or repair.'
   if(reason==='cancelled')return 'Codex reported cancellation. Any actual partial output remains readable and cannot authorize corrections; restored usage is not guaranteed.'
-  if(reason==='outcome-unknown')return 'This review’s outcome is uncertain. Actual retained output stays readable; reopening never resends it. A new reviewed request may consume additional usage.'
+  if(reason==='outcome-unknown')return 'This review’s outcome is uncertain. Actual retained output stays readable. A missing local execution record or an independent project copy cannot resume the original request. Reopening never resends it; a new reviewed request may consume additional usage.'
   if(reason==='storage-unavailable')return 'Review output needs local protection. Keep Collie open and use Retry local output protection; it saves the same work without sending again.'
   return connectionReason[reason]
 }
@@ -81,5 +81,5 @@ export function ProofreadingPanel():React.JSX.Element {
 export function ProofreadingNotice():React.JSX.Element|null {
   const p=useProofreading()
   if(!p.scope||(!p.reviewed&&!p.pending&&!p.event?.pending&&!p.event?.issue&&!p.proofreadingLocked))return null
-  return <aside className={styles['proofreading-notice']} aria-label="Proofreading work"><span>{p.proofreadingLocked?'A proofreading correction needs reconciliation.':p.event?.issue??(p.pending?'A proofreading action needs acknowledgment.':p.event?.pending?'Protecting proofreading work…':'A proofreading capture is awaiting your decision.')}</span><AppButton variant="subtle" onClick={p.show}>Return to proofreading</AppButton></aside>
+  return <aside className={styles['proofreading-notice']} aria-label="Proofreading work"><span>{p.proofreadingLocked?'A proofreading correction needs reconciliation.':p.event?.issue??(p.pending?'A proofreading action needs acknowledgment.':p.event?.pending?'Protecting proofreading work…':'A proofreading capture is awaiting your decision.')}</span><AppButton variant="subtle" onClick={()=>p.show()}>Return to proofreading</AppButton></aside>
 }
