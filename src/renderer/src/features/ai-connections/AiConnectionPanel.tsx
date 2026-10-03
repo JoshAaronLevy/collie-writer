@@ -5,7 +5,7 @@ import { AppDialog } from '../../components/ui/AppDialog'
 import { StatusBanner } from '../../components/ui/Feedback'
 import { useWorkspaceSession } from '../workspace/WorkspaceSession'
 import { useAiConnections } from './AiConnectionsProvider'
-import { connectionLabel, connectionProblemReasons, connectionReason, signInUnavailable } from './connection-copy'
+import { connectionLabel, connectionProblemReasons, connectionReason, fundingDescription, signInUnavailable } from './connection-copy'
 import styles from './AiConnections.module.css'
 
 export function AiConnectionPanel({ compact = false }: { compact?: boolean }): React.JSX.Element {
@@ -82,13 +82,15 @@ export function AiConnectionPanel({ compact = false }: { compact?: boolean }): R
       </div> : null}
     </div> : null}
     <p className={styles['ai-sharing-note']}>Sign-in sends no manuscript, project title or description. Later AI requests will share only the context you approve with the selected provider under your account’s policies.</p>
-    {status?.funding === 'unknown' ? <p className={styles['ai-funding-note']}>{connectionReason['funding-unknown']}</p> : null}
+    {status ? <p className={styles['ai-funding-note']}>{fundingDescription(status.funding)}</p> : null}
     <details className={styles['ai-connection-details']}>
       <summary>Connection details</summary>
       <dl>
         <div><dt>Sign-in access</dt><dd>{status ? unavailable ? connectionReason[unavailable] : status.channelPermitted && status.configured ? 'Configured for this build. Account sign-in is separate from AI eligibility.' : 'Unavailable in this build.' : 'Status has not been loaded.'}</dd></div>
         <div><dt>Commercial activation</dt><dd>{status?.commercialApproved ? 'An approval reference is recorded by the app. Other AI requirements still apply.' : 'Approval is not recorded for this build. Local writing remains available.'}</dd></div>
-        <div><dt>Included subscription usage</dt><dd>{status ? connectionReason['funding-unknown'] : 'Not established.'}</dd></div>
+        <div><dt>Spending policy</dt><dd>{status ? fundingDescription(status.funding) : 'Not established.'}</dd></div>
+        {status ? <><div><dt>Conversations</dt><dd>{connectionReason[status.features.conversation.reason]}</dd></div>
+          <div><dt>Proofreading</dt><dd>{connectionReason[status.features.proofread.reason]}</dd></div></> : null}
         <div><dt>Runtime</dt><dd>{status?.runtime === 'development-installed' ? 'The development runtime is present; safe execution is not enabled.' : status?.runtime === 'not-packaged' ? 'The runtime is not included in this packaged build.' : 'The runtime is unavailable.'}</dd></div>
         <div><dt>Models & workspace</dt><dd>No model or provider workspace is authorized for requests yet. Sign-in does not establish model eligibility.</dd></div>
       </dl>

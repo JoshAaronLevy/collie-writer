@@ -2,7 +2,7 @@
 
 October 2, 2026.
 
-**Status: planning delivered; CD01–CD09 are not implemented.** This document plans a real, owner-operated Codex connection for Collie Writer's unpackaged local development app. Creating or approving this plan does not implement or authorize automatically advancing through its stages. No application, runtime, sign-in, inference, build or check was run to prepare it.
+**Status: CD01 implementation complete — awaiting user testing (document review); CD02–CD09 not started.** This document plans a real, owner-operated Codex connection for Collie Writer's unpackaged local development app. Creating or approving this plan does not implement or authorize automatically advancing through its stages. No application, runtime, sign-in, inference, build or check was run to prepare or implement CD01. Its [decision](docs/decisions/codex-CD01.md), [pinned protocol map](docs/ai/codex-local-contracts.md), [compatibility record](docs/formats/codex-local-v1.md), [evidence](docs/validation/codex-CD01.md) and [manual guide](docs/manual-testing/codex-CD01.md) describe the delivered foundation.
 
 ## Outcome and owner decisions
 
@@ -183,7 +183,7 @@ The assignments are engineering judgments based on each stage's scope, informed 
 
 | Stage | Deliverable | Depends on | Status |
 | --- | --- | --- | --- |
-| CD01 | Development route, pinned protocol decisions and compatible contracts | Existing I10–I13 owners | Not started |
+| CD01 | Development route, pinned protocol decisions and compatible contracts | Existing I10–I13 owners | Implementation complete — awaiting user testing |
 | CD02 | Secure Codex login and real in-app connection controls | CD01 | Not started |
 | CD03 | Isolated text runtime, model discovery and action readiness | CD02 | Not started |
 | CD04 | Route-bound durable dispatch shared by both features | CD03 | Not started |
@@ -198,6 +198,8 @@ The assignments are engineering judgments based on each stage's scope, informed 
 ### CD01 — Define the local route and pin its contracts
 
 #### Model: Astra | Effort: Extra High
+
+**Implementation checkpoint, October 2, 2026:** delivered the trusted unpackaged/identity selector, separate route/session/funding/feature contracts, exact shared main/preload response validation, truthful existing connection copy and explicit per-feature unavailability. Retained 0.160.0 from published source/types; recorded keyring ownership, method/network map and unresolved isolation. Froze v1 digest compatibility and declared separate future local metadata; no sign-in, new persistence or inference was activated. The [decision](docs/decisions/codex-CD01.md) includes the full-plan review findings; [evidence](docs/validation/codex-CD01.md) and [guide](docs/manual-testing/codex-CD01.md) track pending user results. CD02 is not started.
 
 **Why this recommendation:** Coordinates protocol selection, development boundaries and versioned contracts across authentication, storage and IPC.
 
@@ -452,8 +454,8 @@ This is an implementation contract, not an instruction to execute checks or auto
 - Never turn the accepted development spending policy into a production funding claim.
 - Do not advance to another stage automatically or mark unobserved behavior as accepted.
 
-## Planning handoff
+## Current handoff
 
-This file is the requested implementation plan only. All CD stages remain **not started**. Josh's normal-subscription development policy is settled above; no further spending-policy decision is needed to write the local adapter. Actual provider access, native credential behavior, runtime isolation and end-to-end outcomes must still be established through the stage work and Josh's manual observations.
+CD01 is **implementation complete — awaiting user testing**. CD02–CD09 remain **not started**. Josh's normal-subscription development policy is settled above; no further spending-policy decision is needed to write the local adapter. Actual provider access, native credential behavior, runtime isolation and end-to-end outcomes must still be established through the stage work and Josh's manual observations.
 
-To begin implementation, request **CD01** explicitly. Implementing this plan must never require starting over on I01–I09 or rebuilding the existing conversation/proofreading storage and editor foundations.
+Use the [CD01 manual guide](docs/manual-testing/codex-CD01.md) and report observations before further work. CD02 requires a separate explicit request. Implementing this plan must never require starting over on I01–I09 or rebuilding the existing conversation/proofreading storage and editor foundations.

@@ -1,6 +1,14 @@
 # I10 provider boundary and activation runbook
 
-October 2, 2026. **Independent local implementation delivered — awaiting user testing. I10 overall remains partial.** This describes actual code plus exact missing integration work. No sign-in, runtime process, inference or native behavior has been observed. I11 subsequently delivered the shared connection UI described below; I12 conversations remain a separate stage. Current UI reports real unavailable reasons while registration remains unset.
+October 2, 2026. **Independent local implementation delivered — awaiting user testing. I10 overall remains partial.** This describes actual code plus exact missing integration work. No sign-in, runtime process, inference or native behavior has been observed. I11 subsequently delivered the shared connection UI described below; I12/I13 delivered durable feature foundations. Current UI reports the route-specific unavailable state: managed local login is not yet implemented, and registered commercial configuration remains unset.
+
+## CD01 owner-only local route — current scope
+
+The [Codex development plan](../../codex-implementation-plan.md) and [CD01 decision](../decisions/codex-CD01.md) now define a separate managed-ChatGPT route for Josh's unpackaged development app. Normal subscription/account credit spending is accepted for that route only; API-key fallback and app-initiated billing changes remain prohibited. All registered commercial approval/included-only requirements below remain in force. They do not require a commercial interest form or fabricated development registration before implementing the separate local route.
+
+CD01 delivers the trusted route selector, discriminated status/funding/session/feature contracts, exact shared response validation and compatible version boundaries. The local route reports login unimplemented and each feature unavailable. Browser login is CD02; isolation/readiness CD03; route-bound dispatch CD04; working features CD05/CD06. Nothing starts a runtime or connects an account in CD01. All three registrations remain null; both commercial refusal functions and packaged refusal remain.
+
+Use the [pinned method/network map](codex-local-contracts.md) and [local compatibility record](../formats/codex-local-v1.md). The published 0.160.0 source supports managed auth and output schemas, but startup/model refresh and account routing can network, and complete isolation remains unresolved. Ordinary status reads stay local. Registered credential/journal v1 stays exact; local metadata is separately declared, not yet persisted. The I10 implementation map below describes registered OAuth unless explicitly labeled CD01. Dated I11–I14 addenda remain historical checkpoints, not a reversal of this narrow local policy.
 
 ## Delivered components
 
@@ -55,8 +63,8 @@ I11 can now consume the real connection/status methods and unavailable reasons. 
 
 | Requirement | Status and next I10 action |
 | --- | --- |
-| Development registration/access | Not supplied. Reconcile actual supported public-client/callback/identity contract and channel permission; populate authentic source configuration. Browser sign-in remains unavailable until then. |
-| Included-only funding | No binding enforcement method established. Implement the real policy in place of `requireIncludedFunding`, bound to account/client/model and all internal requests/settings/concurrency. A checkbox or successful OAuth is insufficient. No API-key/credit/top-up fallback even in development. |
+| Registered-client configuration/access | Not supplied. Reconcile the authentic client/callback contract for actual commercial channels. CD02 owns the separate managed local login; CD01 does not require a fake development registration. |
+| Included-only funding | No binding enforcement method established. Implement the real policy in place of `requireIncludedFunding`, bound to account/client/model and all internal requests/settings/concurrency. A checkbox or successful OAuth is insufficient. No API-key/credit/top-up fallback on the registered commercial route. Owner-only CD development instead follows the explicit normal-account policy above. |
 | Complete runtime isolation | Exact no-tools/no-ambient-config/no-content-diagnostics guarantee not established for 0.160.0. Establish supported controls and finish `requireTextOnlyRuntime` with enforceable prerequisites. A prompt or read-only sandbox alone is insufficient. |
 | Model eligibility | Catalog is implemented but unverified. The eventual authorization/funding contract must cover the selected model and capability before each dispatch; catalog availability alone is insufficient. |
 | SDK preference | No documented TypeScript SDK bridge for the selected OAuth route found. App-server is the selected supported protocol; reconsider only if the actual approved route documents a suitable SDK bridge. |

@@ -1,7 +1,7 @@
 import { ipcMain, type WebContents } from 'electron'
 import { isId } from '../../domain/editor/schema'
 import { AI_CHANGED, AI_CHANNELS, isAiAttempt, isAiConnect, isAiConnection, isAiEvent, isAiOperationInput,
-  isAiPrepare, isAiStart, type AiResult } from '../../shared/ai'
+  isAiPrepare, isAiStart, isAiChannelValue, type AiResult } from '../../shared/ai'
 import { exact, isOpenInput, record } from '../../shared/projects'
 import { isTrustedSender } from '../ipc'
 import { trustedDocument } from '../security'
@@ -31,6 +31,7 @@ export function registerAiIpc(owner:()=>WebContents|undefined,service:AiService,
         else if(kind==='protect'&&isAiOperationInput(input))value=await service.retryProtection(input)
         else throw new AiError('invalid-request')
         if(!isTrustedSender(event,owner(),devOrigin))throw new AiError('cancelled')
+        if(!isAiChannelValue(channel,value))throw new AiError('outcome-unknown')
         return {ok:true,requestId:id,value}
       }catch(error){return {ok:false,requestId:id,reason:aiReason(error)}}
     })

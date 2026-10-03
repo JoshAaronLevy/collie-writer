@@ -1,26 +1,24 @@
 import { app } from 'electron'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { AI_LIMITS, AI_PROVIDER, type AiConnectInput, type AiEvent, type AiModel, type AiOperation, type AiOperationInput,
   type AiPrepareInput, type AiPrepared, type AiReason, type AiStartInput, type AiStatus } from '../../shared/ai'
 import { sameProject } from '../../shared/access'
+import type { AiSession } from '../../shared/ai-route'
 import type { OpenInput } from '../../shared/projects'
 import type { AccessService } from '../entitlements/service'
 import { RELEASE } from '../release'
 import { CodexRuntime, codexExecutable } from './codex-runtime'
 import { PROVIDER_RUNTIMES } from './registry'
 import type { RuntimeUpdate } from './runtime'
-import { OPENAI_REGISTRATIONS, registration, requireIncludedFunding, requireTextOnlyRuntime } from './deployment'
+import { OPENAI_REGISTRATIONS, registration, requireIncludedFunding, requireTextOnlyRuntime,
+  requireRegisteredRoute, routeFunding, selectAiRoute } from './deployment'
+import { operationDigestV1 } from './operation-identity'
 import { AiError, aiReason } from './errors'
 import { OpenAiSignIn, refreshOpenAi } from './openai-auth'
 import { revokeOpenAi } from './openai-http'
 import { AiStorage, secureAiStorage, type Account, type Credentials, type RetainedOperation } from './storage'
 
 type Prepared = { receipt:AiPrepared; input:AiPrepareInput }
-function digest(input:AiPrepareInput):string {
-  const canonical={scope:{projectId:input.scope.projectId,workspaceId:input.scope.workspaceId},operationId:input.operationId,connectionId:input.connectionId,
-    model:input.model,action:input.action,prompt:input.prompt,context:input.context.map(c=>({kind:c.kind,id:c.id,revision:c.revision,label:c.label,text:c.text}))}
-  return createHash('sha256').update(JSON.stringify(canonical)).digest('hex')
-}
 function active(view:AiOperation):boolean { return ['starting','running','cancelling'].includes(view.state) }
 
 /** Main owns sessions and jobs independently of any mounted renderer panel. */
@@ -36,6 +34,7 @@ export class AiService {
   private authWork:Promise<void>|null=null
   private authAbort:AbortController|null=null
   private connectionState:AiStatus['state']|null=null
+  private connectionActionId:string|null=null
   private lastReason:AiReason|null=null
   private statusSequence=0
   private revocation:AiStatus['remoteRevocation']='none'
@@ -67,7 +66,7 @@ export class AiService {
         this.credentials=await this.storage.credentials()
         const operations=await this.storage.operations()
         for(const item of operations){
-          if(digest(item.input)!==item.view.digest || !sameProject(item.input.scope,item.view.scope) || item.input.connectionId!==item.view.connectionId ||
+          if(operationDigestV1(item.input)!==item.view.digest || !sameProject(item.input.scope,item.view.scope) || item.input.connectionId!==item.view.connectionId ||
             item.input.model!==item.view.model || item.input.action!==item.view.action)throw new AiError('storage-unavailable')
           if(active(item.view)){item.view={...item.view,state:'unknown',reason:'outcome-unknown',finishedAt:Date.now(),sequence:item.view.sequence+1};await this.storage.retain(item)}
           this.retained.set(item.view.operationId,item)
@@ -81,6 +80,23 @@ export class AiService {
   }
   async readStatus():Promise<AiStatus> {try{await this.ensure()}catch{/* A local connection problem never blocks writing or app startup. */}return this.status()}
   status():AiStatus {
+    const route=selectAiRoute()
+    if(route.kind!=='registered-openai') {
+      const local=route.kind==='local-codex-chatgpt'
+      const reasons:AiReason[]=['development-access-unavailable']
+      if(!secureAiStorage())reasons.push('secure-storage-unavailable')
+      if(this.storageFailure||this.journalFailure)reasons.push('storage-unavailable')
+      if(this.runtimeState!=='development-installed')reasons.push('runtime-unavailable')
+      if(local)reasons.push('isolation-unresolved')
+      if(this.lastReason&&!reasons.includes(this.lastReason))reasons.push(this.lastReason)
+      return {sequence:++this.statusSequence,provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',
+        route,session:{state:'unavailable',reason:local?'local-login-not-implemented':route.reason},funding:routeFunding(route),
+        features:{conversation:{state:'unavailable',reason:local?'conversation-adapter-not-ready':route.reason},
+          proofread:{state:'unavailable',reason:local?'proofreading-adapter-not-ready':route.reason}},
+        configured:false,channelPermitted:false,commercialApproved:false,runtime:this.runtimeState,state:'unavailable',
+        reasons,attemptId:null,activeConnectionId:null,connections:[],remoteRevocation:'none',
+        actions:{connect:false,refresh:false,disconnect:false,select:false}}
+    }
     const config=OPENAI_REGISTRATIONS[RELEASE.channel],reasons:AiReason[]=[]
     try{registration()}catch(error){reasons.push(aiReason(error))}
     if(!config)reasons.push('configuration-required')
@@ -95,8 +111,17 @@ export class AiService {
     if(this.lastReason&&!reasons.includes(this.lastReason))reasons.push(this.lastReason)
     const settled=!!this.credentials&&secureAiStorage()&&!this.storageFailure&&!this.journalFailure&&!this.busy&&!this.attempt&&!this.running&&!this.closing
     const permitted=!!config&&!reasons.some(reason=>['configuration-required','commercial-activation-pending','development-access-unavailable'].includes(reason))
+    const session:AiSession=this.attempt?{state:'signing-in',attemptId:this.attempt.attemptId}:
+      this.connectionState==='disconnecting'&&this.connectionActionId?{state:'disconnecting',connectionId:this.connectionActionId}:
+      this.connectionState==='refreshing'&&this.connectionActionId?{state:'refreshing',connectionId:this.connectionActionId}:
+      !config?{state:'unavailable',reason:'commercial-requirements-pending'}:
+      !selected?.tokens?{state:'signed-out'}:
+      selected.refreshPending||selected.tokens.expiresAt<=Date.now()?{state:'reconnect-required',connectionId:selected.id}:
+      {state:'signed-in',connectionId:selected.id}
     return {sequence:++this.statusSequence,provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',configured:!!config,
-      channelPermitted:permitted,commercialApproved:!!config?.commercialReference,funding:'unknown',runtime:this.runtimeState,
+      route,session,funding:routeFunding(route),features:{conversation:{state:'unavailable',reason:'commercial-requirements-pending'},
+        proofread:{state:'unavailable',reason:'commercial-requirements-pending'}},
+      channelPermitted:permitted,commercialApproved:!!config?.commercialReference,runtime:this.runtimeState,
       state:this.connectionState??(!config?'unavailable':selected?.tokens?'signed-in':'signed-out'),reasons,attemptId:this.attempt?.attemptId??null,
       activeConnectionId:this.credentials?.activeId??null,connections:this.credentials?.accounts.map(a=>({id:a.id,label:a.label,
         state:!a.tokens?'signed-out':a.refreshPending||a.tokens.expiresAt<=Date.now()?'expired':'signed-in',planConsent:!!a.tokens?.scopes.includes('chatgpt.tokens.use.direct')}))??[],remoteRevocation:this.revocation,
@@ -164,7 +189,7 @@ export class AiService {
     const account=this.account(id)
     if(account.clientId!==config.clientId)throw new AiError('configuration-required')
     if(!account.tokens)throw new AiError('signed-out')
-    this.busy=true;this.connectionState='refreshing';this.authAbort=new AbortController();this.prepared.clear();this.publish()
+    this.busy=true;this.connectionState='refreshing';this.connectionActionId=id;this.authAbort=new AbortController();this.prepared.clear();this.publish()
     try{
       if(account.tokens.expiresAt<=Date.now()+120000){
         account.refreshPending=true;await this.saveCredentials()
@@ -176,13 +201,14 @@ export class AiService {
       account.tokens=null;account.refreshPending=false
       try{await this.saveCredentials()}catch{this.storageFailure=true}
       this.lastReason=aiReason(error);throw error
-    }finally{this.busy=false;this.connectionState=null;this.authAbort=null;this.publish()}
+    }finally{this.busy=false;this.connectionState=null;this.connectionActionId=null;this.authAbort=null;this.publish()}
     return this.status()
   }
   async disconnect(id:string):Promise<AiStatus> {
     await this.ensure();this.requireIdle()
+    requireRegisteredRoute()
     const account=this.account(id)
-    this.busy=true;this.connectionState='disconnecting';this.prepared.clear();this.authAbort=new AbortController();this.publish()
+    this.busy=true;this.connectionState='disconnecting';this.connectionActionId=id;this.prepared.clear();this.authAbort=new AbortController();this.publish()
     try{
       let confirmed=false
       const hadTokens=!!account.tokens
@@ -196,7 +222,7 @@ export class AiService {
       account.tokens=null;account.refreshPending=false
       if(this.credentials!.activeId===id)this.credentials!.activeId=null
       this.revocation=!hadTokens?'none':confirmed?'confirmed':'unconfirmed';await this.saveCredentials();this.lastReason=null
-    }finally{this.busy=false;this.connectionState=null;this.authAbort=null;this.publish()}
+    }finally{this.busy=false;this.connectionState=null;this.connectionActionId=null;this.authAbort=null;this.publish()}
     return this.status()
   }
   /** Choosing an already protected account is a local explicit action. It never
@@ -235,6 +261,9 @@ export class AiService {
   }
   private authorize(input:AiPrepareInput):void {
     try{this.access.authorizeAi(input.scope,true)}catch{throw new AiError('read-only-project')}
+    // The route declaration supplies no execution authority. CD03/CD04 own the
+    // local session, isolation and route-bound grants; v1 is registered-only.
+    requireRegisteredRoute()
     this.requireSession(input.connectionId)
     // Applies to every request and internal continuation. No balance-preflight fallback.
     requireIncludedFunding()
@@ -243,13 +272,14 @@ export class AiService {
   async prepare(input:AiPrepareInput):Promise<AiPrepared> {
     await this.ensure();this.requireIdle()
     try{this.access.authorizeAi(input.scope,true)}catch{throw new AiError('read-only-project')}
+    requireRegisteredRoute()
     const selected=this.account(input.connectionId)
     if(selected.tokens&&selected.tokens.expiresAt<=Date.now()+120000)await this.refresh(input.connectionId)
     this.authorize(input)
     for(const [key,value]of this.prepared)if(value.receipt.expiresAt<Date.now())this.prepared.delete(key)
     if(this.retained.has(input.operationId))throw new AiError('context-changed')
     if(this.prepared.size>=8||this.retained.size>=AI_LIMITS.jobs)throw new AiError('busy')
-    const receipt:AiPrepared={authorizationId:randomUUID(),operationId:input.operationId,digest:digest(input),expiresAt:Date.now()+5*60000}
+    const receipt:AiPrepared={authorizationId:randomUUID(),operationId:input.operationId,digest:operationDigestV1(input),expiresAt:Date.now()+5*60000}
     this.prepared.set(receipt.authorizationId,{receipt,input:structuredClone(input)})
     return {...receipt}
   }

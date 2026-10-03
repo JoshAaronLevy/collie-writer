@@ -1,5 +1,7 @@
 import { isId } from '../domain/editor/schema'
 import { exact, isOpenInput, record, type OpenInput } from './projects'
+import { isAiFeatureAvailability, isAiFunding, isAiRoute, isAiSession,
+  type AiFeatureAvailability, type AiFunding, type AiRoute, type AiSession } from './ai-route'
 
 export const AI_CHANNELS = {
   status: 'ai.status', connect: 'ai.connect', cancelConnect: 'ai.cancelConnect',
@@ -28,7 +30,10 @@ export type AiStatus = {
   configured: boolean
   channelPermitted: boolean
   commercialApproved: boolean
-  funding: 'unknown'
+  route: AiRoute
+  session: AiSession
+  funding: AiFunding
+  features: AiFeatureAvailability
   runtime: 'development-installed' | 'not-packaged' | 'unavailable'
   state: 'unavailable' | 'signed-out' | 'signing-in' | 'signed-in' | 'refreshing' | 'disconnecting'
   reasons: AiReason[]
@@ -97,10 +102,13 @@ export function isAiOperation(v: unknown): v is AiOperation {
     aiText(v.text,AI_LIMITS.output) && Number.isSafeInteger(v.sequence) && Number(v.sequence) >= 0 && (v.reason === null || isAiReason(v.reason)) && time(v.startedAt) && (v.finishedAt === null || time(v.finishedAt))
 }
 export function isAiStatus(v: unknown): v is AiStatus {
-  return record(v) && exact(v,['sequence','provider','channel','implementation','configured','channelPermitted','commercialApproved','funding','runtime','state','reasons','attemptId','activeConnectionId','connections','remoteRevocation','actions']) &&
+  return record(v) && exact(v,['sequence','provider','channel','implementation','configured','channelPermitted','commercialApproved','route','session','funding','features','runtime','state','reasons','attemptId','activeConnectionId','connections','remoteRevocation','actions']) &&
     Number.isSafeInteger(v.sequence) && Number(v.sequence)>=0 &&
     v.provider === AI_PROVIDER && ['development','beta','production'].includes(String(v.channel)) && v.implementation === 'partial' &&
-    [v.configured,v.channelPermitted,v.commercialApproved].every(b=>typeof b==='boolean') && v.funding === 'unknown' &&
+    [v.configured,v.channelPermitted,v.commercialApproved].every(b=>typeof b==='boolean') &&
+    isAiRoute(v.route) && isAiSession(v.session) && isAiFunding(v.funding) && isAiFeatureAvailability(v.features) &&
+    (v.route.kind === 'local-codex-chatgpt' ? v.channel === 'development' && v.funding.kind === 'normal-subscription' && v.commercialApproved === false :
+      v.route.kind === 'registered-openai' ? v.channel !== 'development' && v.funding.kind === 'included-only' : v.funding.kind === 'unavailable') &&
     ['development-installed','not-packaged','unavailable'].includes(String(v.runtime)) && ['unavailable','signed-out','signing-in','signed-in','refreshing','disconnecting'].includes(String(v.state)) &&
     Array.isArray(v.reasons) && v.reasons.length <= reasons.length && v.reasons.every(isAiReason) && nullableId(v.attemptId) && nullableId(v.activeConnectionId) &&
     Array.isArray(v.connections) && v.connections.length <= 8 && v.connections.every(c=>record(c) && exact(c,['id','label','state','planConsent']) && isId(c.id) && aiText(c.label,200) && ['signed-in','expired','signed-out'].includes(String(c.state)) && typeof c.planConsent==='boolean') &&
@@ -112,4 +120,18 @@ export function isAiEvent(v: unknown): v is AiEvent { return record(v) && (v.kin
 export function isAiOperationRecord(v:unknown):v is AiOperationRecord {return record(v)&&exact(v,['input','operation'])&&isAiPrepare(v.input)&&isAiOperation(v.operation)&&v.input.operationId===v.operation.operationId}
 export function isAiResult<T>(v: unknown, id: string, valid: (value: unknown)=>boolean): v is AiResult<T> {
   return record(v) && v.requestId===id && (v.ok===true && exact(v,['ok','requestId','value']) && valid(v.value) || v.ok===false && exact(v,['ok','requestId','reason']) && isAiReason(v.reason))
+}
+
+/** Main replies and preload consumption use the same exact named-channel schema. */
+export function isAiChannelValue(channel: typeof AI_CHANNELS[keyof typeof AI_CHANNELS], value: unknown): boolean {
+  switch (channel) {
+    case AI_CHANNELS.status: case AI_CHANNELS.connect: case AI_CHANNELS.cancelConnect:
+    case AI_CHANNELS.refresh: case AI_CHANNELS.disconnect: case AI_CHANNELS.select:
+      return isAiStatus(value)
+    case AI_CHANNELS.models: return isAiModels(value)
+    case AI_CHANNELS.prepare: return isAiPrepared(value)
+    case AI_CHANNELS.start: case AI_CHANNELS.cancel: case AI_CHANNELS.protect: return isAiOperation(value)
+    case AI_CHANNELS.operations: return Array.isArray(value) && value.length <= AI_LIMITS.jobs && value.every(isAiOperation)
+    case AI_CHANNELS.record: return isAiOperationRecord(value)
+  }
 }

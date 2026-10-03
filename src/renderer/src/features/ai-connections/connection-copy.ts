@@ -1,6 +1,17 @@
 import type { AiReason, AiStatus } from '../../../../shared/ai'
+import type { AiConnectionReason, AiFunding } from '../../../../shared/ai-route'
 
-export const connectionReason: Record<AiReason, string> = {
+export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
+  'local-login-not-implemented': 'The local development route is defined. Browser sign-in is not implemented yet.',
+  'local-execution-not-implemented': 'Local Codex execution is not implemented yet.',
+  'conversation-adapter-not-ready': 'Codex conversations are not ready yet. You can save a request locally.',
+  'proofreading-adapter-not-ready': 'Codex proofreading is not ready yet. You can save a review locally.',
+  'packaged-development-refused': 'The local development connection is unavailable in packaged apps.',
+  'unsupported-app-identity': 'This app identity cannot use the local development connection.',
+  'commercial-requirements-pending': 'Commercial provider configuration, included-only usage and safe execution remain unresolved.',
+  'resume-required': 'Resume the saved Codex connection explicitly before requesting AI work.',
+  'reconnect-required': 'Reconnect your Codex account before requesting AI work.',
+  'secure-session-unavailable': 'A secure isolated Codex session is unavailable on this device.',
   'configuration-required': 'Sign-in has not been configured for this build.',
   'development-access-unavailable': 'Supported development sign-in is not available in this build yet.',
   'commercial-activation-pending': 'Provider approval and configuration for this release are still pending.',
@@ -19,11 +30,17 @@ export const connectionReason: Record<AiReason, string> = {
   'cancelled': 'Sign-in was cancelled. Your project and any previously connected account remain available.',
   'auth-failed': 'Sign-in could not be completed. Check status, then try again when Connect is available.',
   'offline': 'The provider could not be reached. Continue writing locally and try again when you are online.',
-  'quota-exhausted': 'The provider reported a usage limit. AI is paused; no credits, top-ups or alternate billing will be used.',
+  'quota-exhausted': 'The provider reported a usage limit. Collie will not buy credits, change spending settings or switch billing routes.',
   'provider-failed': 'The provider could not complete this action. Check status before trying again.',
   'outcome-unknown': 'The action’s result could not be confirmed. Check status before starting another sign-in or account change.',
   'output-limit': 'The request exceeded the supported content limit. Narrow its scope before a new request.',
   'context-changed': 'The approved request no longer matches this action. Review the intended context again.'
+}
+
+export function fundingDescription(funding: AiFunding): string {
+  if (funding.kind === 'normal-subscription') return 'Local development follows your normal Codex subscription and account spending settings. Available credits may be consumed. Collie will not buy credits, enable top-ups, change your plan or use API-key fallback.'
+  if (funding.kind === 'included-only') return connectionReason['funding-unknown']
+  return 'AI spending is unavailable for this app identity.'
 }
 
 export function connectionLabel(status: AiStatus | null, checking = false, action?: 'connect' | 'cancel' | 'refresh' | 'disconnect' | 'select'): string {
@@ -33,6 +50,7 @@ export function connectionLabel(status: AiStatus | null, checking = false, actio
   if (action === 'refresh') return 'Renewing account session…'
   if (action === 'disconnect') return 'Disconnecting account…'
   if (!status) return checking ? 'Checking connection…' : 'Connection status unavailable'
+  if (status.route.kind === 'local-codex-chatgpt' && status.session.state === 'unavailable') return 'Local development · connection unavailable'
   if (status.state === 'signing-in') return 'Waiting for browser sign-in'
   if (status.state === 'refreshing') return 'Renewing account session…'
   if (status.state === 'disconnecting') return 'Disconnecting account…'
@@ -42,7 +60,8 @@ export function connectionLabel(status: AiStatus | null, checking = false, actio
   return status.channelPermitted && status.configured ? 'Not connected' : 'Connection unavailable'
 }
 
-export function signInUnavailable(status: AiStatus): AiReason | null {
+export function signInUnavailable(status: AiStatus): AiReason | AiConnectionReason | null {
+  if (status.session.state === 'unavailable') return status.session.reason
   return status.reasons.find(reason => [
     'development-access-unavailable', 'commercial-activation-pending', 'configuration-required',
     'secure-storage-unavailable', 'storage-unavailable'

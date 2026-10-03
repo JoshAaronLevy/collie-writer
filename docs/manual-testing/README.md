@@ -37,3 +37,7 @@ These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience a
 ## App improvement I14
 
 [Second-provider partial engineering](improvement-I14.md): document review and existing local UI continuity. Grok ACP transport code is delivered, but protected authentication, funding/isolation, account routing/UI and distribution are unfinished. There is no working Grok connection; see the [partial record](../validation/improvement-I14.md).
+
+## Codex local development stages
+
+[CD01 — route and compatible contracts](codex-CD01.md): document review of owner-only normal subscription/credit policy, trusted unpackaged boundary, pinned protocol and unchanged portable data. The optional existing Settings observation shows unavailable login and separate feature readiness. No sign-in or inference is expected; [record](../validation/codex-CD01.md). CD02–CD09 remain not started.

@@ -10,7 +10,11 @@ import { AiError } from './errors'
 
 export type Tokens = { access: string; refresh: string; id: string; expiresAt: number; earliestRefreshAt: number; scopes: string[] }
 export type Account = { id: string; subject: string; label: string; clientId: string; tokens: Tokens | null; refreshPending: boolean }
+// Registered OAuth v1 remains exact. Codex-managed auth MUST NOT be represented
+// by a fabricated clientId or Tokens value; see local-session-metadata.ts.
 export type Credentials = { version: 1; hostId: string; activeId: string | null; accounts: Account[] }
+// Frozen v1 identity uses operationDigestV1. CD04 owns a separate route-bound v2
+// reader/writer and digest. Unknown versions continue to fail without rewriting.
 export type RetainedOperation = { version: 1; input: AiPrepareInput; view: AiOperation }
 const secret = (v: unknown): v is string => aiText(v,32768) && v.length > 0 && !/[\s\u0000-\u001f]/u.test(v)
 const finiteTime = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) >= 0

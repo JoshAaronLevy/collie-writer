@@ -179,7 +179,7 @@ function useConversationController() {
   const historyOrder=useRef(new Map<string,number>())
   const providerReason=connections.status?.reasons[0]
   // I10 currently supplies only unverified catalog eligibility. Keep the authoritative refusal visible.
-  const canSend=!!connections.status?.activeConnectionId&&!!model&&connections.status.reasons.length===0&&models.some(m=>m.id===model)&&!readOnly
+  const canSend=!!connections.status?.activeConnectionId&&connections.status.features.conversation.state!=='unavailable'&&!!model&&connections.status.reasons.length===0&&models.some(m=>m.id===model)&&!readOnly
   return {items,total,query,setQuery,view,setView,offset,setOffset,selected,page,before,setBefore,draft,update,drafts,newTitle,setNewTitle,rename,setRename,issue,notice,busy,loading,pending,readOnly,active,run,models,model,setModel,canSend,providerReason,scope,scroll,composer,choose,change,attach,review,submit,loadModels,retryAsNew,history,show,request,refresh,composing,draftEvents,
     retry:()=>pendingRef.current?void request(pendingRef.current):scope?void request({...scope,action:'reconcile'}):undefined,
     clear:()=>{if(selected&&!pending&&!busy){setDrafts(previous=>({...previous,[selected]:emptyDraft()}));setIssue('');setNotice('Unsent draft cleared. Saved history was kept.')}},

@@ -145,7 +145,7 @@ function useProofreadingController(){
   }
   const providerReason=connections.status?.reasons[0]
   // The delivered catalog is explicitly unverified. I10 owns authoritative readiness adaptation.
-  const canSend=!!connections.status?.activeConnectionId&&!connections.status.reasons.length&&!!model&&models.some(m=>m.id===model&&m.eligibility!=='unverified')&&!readOnly
+  const canSend=!!connections.status?.activeConnectionId&&connections.status.features.proofread.state!=='unavailable'&&!connections.status.reasons.length&&!!model&&models.some(m=>m.id===model&&m.eligibility!=='unverified')&&!readOnly
   const blocked=busy||!!pending||session.busy||session.closing||session.proofreadingLocked
   const validity=bundle&&(bundle.validity==='current'&&project?.documentId===bundle.capture.source.documentId&&(session.manuscriptDirty||project.revisionId!==bundle.capture.source.revisionId)?'stale':bundle.validity)
   return {targetSectionOpen:!!bundle&&project?.documentId===bundle.capture.source.documentId,scope,items,total,offset,setOffset,selected,bundle,reviewed,issue,notice,pending,event,busy,blocked,readOnly,providerReason,models,model,canSend,panel,validity,proofreadingLocked:session.proofreadingLocked,

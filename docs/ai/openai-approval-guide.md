@@ -2,7 +2,11 @@
 
 October 2, 2026. **Draft for Josh; nothing submitted or approved.** I10's local engineering can proceed under the revised plan; commercial activation and eligible inference remain pending. Josh confirmed that approval has not been obtained and asked what is needed. This guide provides the current application route and prepared wording; it cannot promise admission or a response date.
 
-## Start here
+## Scope: commercial activation only
+
+The [Codex development plan](../../codex-implementation-plan.md) and [CD01 decision](../decisions/codex-CD01.md) define Josh’s distinct owner-only unpackaged managed-Codex route. It follows his accepted normal subscription/account credit settings, without API-key fallback or app-initiated billing changes. No domain, company email, merchant setup, hosted callback or interest-form submission is a technical prerequisite to that local engineering. Provider classification of this new private POC remains unresolved; CD01 grants no approval and enables no login/inference. The steps and included-only requirement in this guide concern commercial activation, whose approval is still absent.
+
+## Commercial application steps
 
 1. Open the official [Sign in with ChatGPT interest form](https://openai.com/form/sign-in-with-chatgpt-interest/), which OpenAI's [Request a client ID](https://developers.openai.com/siwc/request-client-id) page identifies as the commercial waitlist.
 2. Select **Sign in and ChatGPT plan use for AI requests**. Collie needs permission to perform inference against the user's plan; identity-only sign-in is insufficient.
@@ -35,11 +39,11 @@ These are Collie's engineering questions, not an assertion that the program requ
 
 OpenAI's [user controls](https://learn.chatgpt.com/docs/sign-in-with-chatgpt) include a setting allowing other apps to consume credits after usage limits. Its [errors guide](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery) says plan-usage errors stop inference without silently switching billing paths. That is useful failure behavior, but does not establish a client-enforced prohibition on credits already allowed by the user's plan settings. This remaining distinction is the reason for question 2; it is not a claim that an included-only policy is impossible.
 
-Collie's accepted plan requires this guarantee. A successful sign-in, zero current credit balance, disabled toggle observed once, or account model list does not satisfy it. An applicable, documented provider policy may satisfy it without a special request field; we should use the actual supported mechanism rather than invent one.
+Collie's commercial plan requires this guarantee; the narrow CD owner-development policy above differs. A successful sign-in, zero current credit balance, disabled toggle observed once, or account model list does not satisfy it. An applicable, documented provider policy may satisfy it without a special request field; we should use the actual supported mechanism rather than invent one.
 
 ## Evidence for live access and commercial activation
 
-These inputs enable dependent real actions; they are not a universal prerequisite to request I10 engineering. Development access is evaluated under the actual route's permission/configuration rules, and inference always needs binding included-only funding. This guide does not establish a publicly available provider OAuth sandbox.
+These inputs enable dependent real actions; they are not a universal prerequisite to request I10 engineering. Access is evaluated under the actual route's permission/configuration rules. Registered commercial inference needs binding included-only funding; owner-only unpackaged CD work follows its separately recorded normal-account spending policy. This guide does not establish a publicly available provider OAuth sandbox.
 
 | Item | Current state | Useful evidence to return |
 | --- | --- | --- |
