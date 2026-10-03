@@ -2,7 +2,7 @@
 
 October 2, 2026.
 
-**Status: CD01 implementation complete — awaiting user testing (document review); CD02–CD09 not started.** This document plans a real, owner-operated Codex connection for Collie Writer's unpackaged local development app. Creating or approving this plan does not implement or authorize automatically advancing through its stages. No application, runtime, sign-in, inference, build or check was run to prepare or implement CD01. Its [decision](docs/decisions/codex-CD01.md), [pinned protocol map](docs/ai/codex-local-contracts.md), [compatibility record](docs/formats/codex-local-v1.md), [evidence](docs/validation/codex-CD01.md) and [manual guide](docs/manual-testing/codex-CD01.md) describe the delivered foundation.
+**Status: CD01 and CD02 implementation complete — awaiting user testing; CD03–CD09 not started.** This document plans a real, owner-operated Codex connection for Collie Writer's unpackaged local development app. Creating or approving this plan does not implement or authorize automatically advancing through its stages. No application, runtime, sign-in, inference, build or check was run during assistant implementation. CD01's [decision](docs/decisions/codex-CD01.md), [pinned protocol map](docs/ai/codex-local-contracts.md), [compatibility record](docs/formats/codex-local-v1.md), [evidence](docs/validation/codex-CD01.md) and [manual guide](docs/manual-testing/codex-CD01.md) describe the delivered foundation. CD02's [decision](docs/decisions/codex-CD02.md), [local v2 record](docs/formats/codex-local-v2.md), [evidence](docs/validation/codex-CD02.md) and [manual guide](docs/manual-testing/codex-CD02.md) own the managed account connection milestone; runtime outcomes remain unobserved.
 
 ## Outcome and owner decisions
 
@@ -184,7 +184,7 @@ The assignments are engineering judgments based on each stage's scope, informed 
 | Stage | Deliverable | Depends on | Status |
 | --- | --- | --- | --- |
 | CD01 | Development route, pinned protocol decisions and compatible contracts | Existing I10–I13 owners | Implementation complete — awaiting user testing |
-| CD02 | Secure Codex login and real in-app connection controls | CD01 | Not started |
+| CD02 | Secure Codex login and real in-app connection controls | CD01 | Implementation complete — awaiting user testing |
 | CD03 | Isolated text runtime, model discovery and action readiness | CD02 | Not started |
 | CD04 | Route-bound durable dispatch shared by both features | CD03 | Not started |
 | CD05 | Working in-app conversations with real Codex responses | CD04 | Not started |
@@ -223,6 +223,8 @@ The assignments are engineering judgments based on each stage's scope, informed 
 ### CD02 — Implement browser sign-in and connection UI
 
 #### Model: Astra | Effort: Extra High
+
+**Implementation checkpoint, October 2, 2026:** added main-owned managed browser login, strict isolated keyring/configuration handling, exact attempt cancellation and encrypted local v2 active/retired metadata. Existing Settings/setup/companion now expose real account actions, with global Connect Codex, Continue with ChatGPT, explicit returning Resume, single-account replacement, disconnect, visible inactive-session cleanup and disk-only metadata protection. Idle children settle through existing close/update/suspend owners. Normal status reads never spawn or call Codex. The [decision](docs/decisions/codex-CD02.md) records callback handover, configuration/network and account-identity limitations; [record](docs/validation/codex-CD02.md) and [guide](docs/manual-testing/codex-CD02.md) leave native/runtime acceptance pending. Feature Send/Run and commercial activation remain unavailable. No tests/checks/builds/launches/login/inference occurred.
 
 **Why this recommendation:** Combines secure credential ownership with browser callbacks, cancellation races and persistent session state.
 
@@ -456,6 +458,6 @@ This is an implementation contract, not an instruction to execute checks or auto
 
 ## Current handoff
 
-CD01 is **implementation complete — awaiting user testing**. CD02–CD09 remain **not started**. Josh's normal-subscription development policy is settled above; no further spending-policy decision is needed to write the local adapter. Actual provider access, native credential behavior, runtime isolation and end-to-end outcomes must still be established through the stage work and Josh's manual observations.
+CD01 and CD02 are **implementation complete — awaiting user testing**. CD03–CD09 remain **not started**. Josh's normal-subscription development policy is settled above; no further spending-policy decision is needed to write the local adapter. Actual provider access, native credential behavior, runtime isolation and end-to-end outcomes must still be established through the stage work and Josh's manual observations.
 
-Use the [CD01 manual guide](docs/manual-testing/codex-CD01.md) and report observations before further work. CD02 requires a separate explicit request. Implementing this plan must never require starting over on I01–I09 or rebuilding the existing conversation/proofreading storage and editor foundations.
+Use the [CD02 manual guide](docs/manual-testing/codex-CD02.md) and report observations before further work. CD03 requires a separate explicit request. Implementing this plan must never require starting over on I01–I09 or rebuilding the existing conversation/proofreading storage and editor foundations.

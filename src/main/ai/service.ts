@@ -13,6 +13,7 @@ import type { RuntimeUpdate } from './runtime'
 import { OPENAI_REGISTRATIONS, registration, requireIncludedFunding, requireTextOnlyRuntime,
   requireRegisteredRoute, routeFunding, selectAiRoute } from './deployment'
 import { operationDigestV1 } from './operation-identity'
+import { LocalCodexSession } from './local-codex-session'
 import { AiError, aiReason } from './errors'
 import { OpenAiSignIn, refreshOpenAi } from './openai-auth'
 import { revokeOpenAi } from './openai-http'
@@ -52,9 +53,13 @@ export class AiService {
   private publishTimer:ReturnType<typeof setTimeout>|null=null
   private listeners=new Set<(event:AiEvent)=>void>()
   readonly storage:AiStorage
-  constructor(workingRoot:()=>string|undefined,private readonly access:AccessService){this.storage=new AiStorage(workingRoot)}
+  private readonly local:LocalCodexSession
+  constructor(workingRoot:()=>string|undefined,private readonly access:AccessService){
+    this.storage=new AiStorage(workingRoot)
+    this.local=new LocalCodexSession(this.storage,()=>{this.prepared.clear();this.publish()})
+  }
   subscribe(listener:(event:AiEvent)=>void):()=>void {this.listeners.add(listener);return()=>this.listeners.delete(listener)}
-  hasPendingWork():boolean{return !!(this.busy||this.attempt||this.running||this.pendingRetention||this.retentionWriting||this.journalFailure)}
+  hasPendingWork():boolean{return !!(this.busy||this.attempt||this.running||this.pendingRetention||this.retentionWriting||this.journalFailure||this.local.hasPendingWork())}
   private emit(event:AiEvent):void {
     for(const listener of this.listeners)try{listener(structuredClone(event))}catch{/* A lost renderer cannot erase the retained operation. */}
   }
@@ -64,6 +69,7 @@ export class AiService {
       this.initialization=(async()=>{
         this.retained.clear()
         this.credentials=await this.storage.credentials()
+        if(selectAiRoute().kind==='local-codex-chatgpt')await this.local.initialize()
         const operations=await this.storage.operations()
         for(const item of operations){
           if(operationDigestV1(item.input)!==item.view.digest || !sameProject(item.input.scope,item.view.scope) || item.input.connectionId!==item.view.connectionId ||
@@ -81,21 +87,31 @@ export class AiService {
   async readStatus():Promise<AiStatus> {try{await this.ensure()}catch{/* A local connection problem never blocks writing or app startup. */}return this.status()}
   status():AiStatus {
     const route=selectAiRoute()
+    if(route.kind==='local-codex-chatgpt') {
+      const available=secureAiStorage()&&!this.storageFailure&&!this.journalFailure&&this.runtimeState==='development-installed'
+      const reasons:AiReason[]=['isolation-unresolved']
+      if(!secureAiStorage())reasons.push('secure-storage-unavailable')
+      if(this.storageFailure||this.journalFailure)reasons.push('storage-unavailable')
+      if(this.runtimeState!=='development-installed')reasons.push('runtime-unavailable')
+      const snapshot=this.local.snapshot(available&&!this.closing&&!this.busy&&!this.running,
+        secureAiStorage()&&!this.storageFailure&&!this.journalFailure&&!this.closing&&!this.busy&&!this.running)
+      return {sequence:++this.statusSequence,provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',route,
+        funding:routeFunding(route),features:{conversation:{state:'unavailable',reason:'conversation-adapter-not-ready'},
+          proofread:{state:'unavailable',reason:'proofreading-adapter-not-ready'}},
+        configured:true,channelPermitted:true,commercialApproved:false,runtime:this.runtimeState,reasons,...snapshot}
+    }
     if(route.kind!=='registered-openai') {
-      const local=route.kind==='local-codex-chatgpt'
       const reasons:AiReason[]=['development-access-unavailable']
       if(!secureAiStorage())reasons.push('secure-storage-unavailable')
       if(this.storageFailure||this.journalFailure)reasons.push('storage-unavailable')
       if(this.runtimeState!=='development-installed')reasons.push('runtime-unavailable')
-      if(local)reasons.push('isolation-unresolved')
       if(this.lastReason&&!reasons.includes(this.lastReason))reasons.push(this.lastReason)
       return {sequence:++this.statusSequence,provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',
-        route,session:{state:'unavailable',reason:local?'local-login-not-implemented':route.reason},funding:routeFunding(route),
-        features:{conversation:{state:'unavailable',reason:local?'conversation-adapter-not-ready':route.reason},
-          proofread:{state:'unavailable',reason:local?'proofreading-adapter-not-ready':route.reason}},
+        route,session:{state:'unavailable',reason:route.reason},funding:routeFunding(route),
+        features:{conversation:{state:'unavailable',reason:route.reason},proofread:{state:'unavailable',reason:route.reason}},
         configured:false,channelPermitted:false,commercialApproved:false,runtime:this.runtimeState,state:'unavailable',
         reasons,attemptId:null,activeConnectionId:null,connections:[],remoteRevocation:'none',
-        actions:{connect:false,refresh:false,disconnect:false,select:false}}
+        local:null,actions:{connect:false,refresh:false,disconnect:false,select:false,resume:false,cleanup:false,protectConnection:false}}
     }
     const config=OPENAI_REGISTRATIONS[RELEASE.channel],reasons:AiReason[]=[]
     try{registration()}catch(error){reasons.push(aiReason(error))}
@@ -125,9 +141,9 @@ export class AiService {
       state:this.connectionState??(!config?'unavailable':selected?.tokens?'signed-in':'signed-out'),reasons,attemptId:this.attempt?.attemptId??null,
       activeConnectionId:this.credentials?.activeId??null,connections:this.credentials?.accounts.map(a=>({id:a.id,label:a.label,
         state:!a.tokens?'signed-out':a.refreshPending||a.tokens.expiresAt<=Date.now()?'expired':'signed-in',planConsent:!!a.tokens?.scopes.includes('chatgpt.tokens.use.direct')}))??[],remoteRevocation:this.revocation,
-      actions:{connect:settled&&permitted,refresh:settled&&permitted,disconnect:settled,select:settled&&permitted}}
+      local:null,actions:{connect:settled&&permitted,refresh:settled&&permitted,disconnect:settled,select:settled&&permitted,resume:false,cleanup:false,protectConnection:false}}
   }
-  private requireIdle():void {if(this.closing||this.busy||this.attempt||this.running)throw new AiError('busy')}
+  private requireIdle():void {if(this.closing||this.busy||this.attempt||this.running||this.local.hasPendingWork())throw new AiError('busy')}
   private account(id:string):Account {
     const value=this.credentials?.accounts.find(a=>a.id===id)
     if(!value)throw new AiError('signed-out')
@@ -138,6 +154,11 @@ export class AiService {
   }
   async connect(input:AiConnectInput):Promise<AiStatus> {
     await this.ensure()
+    if(selectAiRoute().kind==='local-codex-chatgpt') {
+      if(this.cancelledAttempts.has(input.attemptId))return this.status()
+      if(this.closing||this.busy||this.running)throw new AiError('busy')
+      this.local.connect(input);return this.status()
+    }
     if(this.cancelledAttempts.has(input.attemptId))return this.status()
     if(this.attempted.has(input.attemptId)){
       if(this.attempted.get(input.attemptId)!==input.connectionId)throw new AiError('invalid-request')
@@ -181,6 +202,7 @@ export class AiService {
     // or protecting credentials. It must also stop that not-yet-opened browser.
     if(this.cancelledAttempts.size>=64)this.cancelledAttempts.delete(this.cancelledAttempts.values().next().value!)
     this.cancelledAttempts.add(attemptId)
+    if(selectAiRoute().kind==='local-codex-chatgpt'){await this.local.cancel(attemptId);return this.status()}
     if(this.attempt?.attemptId===attemptId){this.attempt.cancel();await this.authWork}
     return this.status()
   }
@@ -206,6 +228,7 @@ export class AiService {
   }
   async disconnect(id:string):Promise<AiStatus> {
     await this.ensure();this.requireIdle()
+    if(selectAiRoute().kind==='local-codex-chatgpt'){this.prepared.clear();await this.local.disconnect(id);return this.status()}
     requireRegisteredRoute()
     const account=this.account(id)
     this.busy=true;this.connectionState='disconnecting';this.connectionActionId=id;this.prepared.clear();this.authAbort=new AbortController();this.publish()
@@ -224,6 +247,22 @@ export class AiService {
       this.revocation=!hadTokens?'none':confirmed?'confirmed':'unconfirmed';await this.saveCredentials();this.lastReason=null
     }finally{this.busy=false;this.connectionState=null;this.connectionActionId=null;this.authAbort=null;this.publish()}
     return this.status()
+  }
+  async resumeConnection(id:string):Promise<AiStatus> {
+    await this.ensure();this.requireIdle()
+    if(selectAiRoute().kind!=='local-codex-chatgpt')throw new AiError('development-access-unavailable')
+    this.prepared.clear();await this.local.resumeAccount(id);return this.status()
+  }
+  async cleanupConnection():Promise<AiStatus> {
+    await this.ensure();this.requireIdle()
+    if(selectAiRoute().kind!=='local-codex-chatgpt')throw new AiError('development-access-unavailable')
+    this.prepared.clear();await this.local.cleanup();return this.status()
+  }
+  async protectConnection():Promise<AiStatus> {
+    await this.ensure()
+    if(selectAiRoute().kind!=='local-codex-chatgpt')throw new AiError('development-access-unavailable')
+    if(this.closing||this.busy||this.running||this.attempt)throw new AiError('busy')
+    await this.local.protect();return this.status()
   }
   /** Choosing an already protected account is a local explicit action. It never
    * reopens OAuth, refreshes a token, sends context or establishes AI eligibility. */
@@ -403,10 +442,11 @@ export class AiService {
   async prepareClose():Promise<boolean> {
     this.closing=true;this.prepared.clear()
     if(this.attempt){this.attempt.cancel();await this.authWork}
-    if(this.hasPendingWork()){this.closing=false;return false}
+    if(!await this.local.close()){this.closing=false;this.publish();return false}
+    if(this.hasPendingWork()){this.closing=false;this.publish();return false}
     await this.retention
     return !this.journalFailure
   }
-  resume():void {this.closing=false}
-  suspend():void {this.prepared.clear();this.attempt?.cancel();this.authAbort?.abort();void this.runtime?.interrupt().catch(()=>undefined)}
+  resume():void {this.closing=false;this.publish()}
+  suspend():void {this.prepared.clear();this.attempt?.cancel();this.authAbort?.abort();this.local.suspend();void this.runtime?.interrupt().catch(()=>undefined)}
 }

@@ -5,11 +5,15 @@ import { exact, record } from './projects'
 export type AiConnectionReason = 'local-login-not-implemented' | 'local-execution-not-implemented' |
   'conversation-adapter-not-ready' | 'proofreading-adapter-not-ready' | 'packaged-development-refused' |
   'unsupported-app-identity' | 'commercial-requirements-pending' | 'resume-required' |
-  'reconnect-required' | 'secure-session-unavailable'
+  'reconnect-required' | 'secure-session-unavailable' | 'login-timeout' | 'callback-port-in-use' |
+  'browser-unavailable' | 'login-denied' | 'local-config-conflict' | 'local-runtime-exited' |
+  'local-cleanup-required' | 'local-protection-required' | 'local-account-changed' | 'login-offline' | 'login-completed-before-cancel'
 const connectionReasons: readonly AiConnectionReason[] = [
   'local-login-not-implemented', 'local-execution-not-implemented', 'conversation-adapter-not-ready',
   'proofreading-adapter-not-ready', 'packaged-development-refused', 'unsupported-app-identity',
-  'commercial-requirements-pending', 'resume-required', 'reconnect-required', 'secure-session-unavailable'
+  'commercial-requirements-pending', 'resume-required', 'reconnect-required', 'secure-session-unavailable',
+  'login-timeout', 'callback-port-in-use', 'browser-unavailable', 'login-denied', 'local-config-conflict',
+  'local-runtime-exited', 'local-cleanup-required', 'local-protection-required', 'local-account-changed', 'login-offline', 'login-completed-before-cancel'
 ]
 export type AiRoute =
   | { kind: 'local-codex-chatgpt'; policyRevision: 1; scope: 'owner-unpackaged-development'; providerClassification: 'unresolved' }
@@ -23,6 +27,7 @@ export type AiSession =
   | { state: 'signed-in'; connectionId: string }
   | { state: 'reconnect-required'; connectionId: string }
   | { state: 'refreshing'; connectionId: string }
+  | { state: 'resuming'; connectionId: string }
   | { state: 'disconnecting'; connectionId: string }
 export type AiFunding =
   | { kind: 'normal-subscription'; credits: 'account-settings'; apiKeyFallback: false; appBillingChanges: false }
@@ -49,7 +54,7 @@ export function isAiSession(value: unknown): value is AiSession {
   if (value.state === 'unavailable') return exact(value, ['state', 'reason']) && isAiConnectionReason(value.reason)
   if (value.state === 'signed-out') return exact(value, ['state'])
   if (value.state === 'signing-in') return exact(value, ['state', 'attemptId']) && isId(value.attemptId)
-  return ['saved-needs-resume', 'signed-in', 'reconnect-required', 'refreshing', 'disconnecting'].includes(String(value.state)) &&
+  return ['saved-needs-resume', 'signed-in', 'reconnect-required', 'refreshing', 'resuming', 'disconnecting'].includes(String(value.state)) &&
     exact(value, ['state', 'connectionId']) && isId(value.connectionId)
 }
 export function isAiFunding(value: unknown): value is AiFunding {

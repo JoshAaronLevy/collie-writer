@@ -2,6 +2,8 @@
 
 An offline-first desktop workspace for research and writing, built with Electron, React and TypeScript. Permanently ad-free.
 
+The owner-only unpackaged Codex connection is implemented through CD02, **awaiting user testing**. Start the development app normally, then use **Connect Codex → Continue with ChatGPT**; a returning saved connection needs explicit **Resume Codex connection**. No terminal login or API key is needed. Conversations/proofreading execution remains unavailable until later CD stages. See the [CD02 manual guide](docs/manual-testing/codex-CD02.md) for cancellation, account replacement, cleanup and disconnect, and the [Codex plan](codex-implementation-plan.md) for the accepted normal subscription/credit policy and separate commercial requirements.
+
 Stages 1–19 implement local rich-writing projects, durable recovery, human notes/annotations, sources/evidence/search, citations, onboarding and portable `.collie` Save/Open. Five templates create independently owned sections, and every new project asks for its own first-save location. Save As, inspected incoming copies, Recent/Locate, conflict messages, cancellable file work and 30-second destination autosave are implemented. **Protect locally** commits recovery on this computer; **Saved to chosen location** refers to the verified file revision, never cloud-upload completion. The [implementation plan](mvp-implementation-plan.md) is authoritative; see [Stage 19 evidence](docs/validation/stage-19.md) and its [manual guide](docs/manual-testing/stage-19.md). Local implementation is complete through Stage 19; runtime, native, archive, export-fidelity and performance acceptance remain pending user testing.
 
 

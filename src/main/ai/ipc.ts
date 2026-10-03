@@ -12,7 +12,7 @@ export function registerAiIpc(owner:()=>WebContents|undefined,service:AiService,
   for(const [kind,channel]of Object.entries(AI_CHANNELS)){
     ipcMain.handle(channel,async(event,payload:unknown):Promise<AiResult<unknown>>=>{
       if(!isTrustedSender(event,owner(),devOrigin))return {ok:false,requestId:'',reason:'invalid-request'}
-      if(!record(payload)||!isId(payload.requestId)||!exact(payload,kind==='status'?['requestId']:['requestId','input']))return {ok:false,requestId:'',reason:'invalid-request'}
+      if(!record(payload)||!isId(payload.requestId)||!exact(payload,['status','cleanupConnection','protectConnection'].includes(kind)?['requestId']:['requestId','input']))return {ok:false,requestId:'',reason:'invalid-request'}
       const id=payload.requestId,input=payload.input
       try{
         let value:unknown
@@ -22,6 +22,9 @@ export function registerAiIpc(owner:()=>WebContents|undefined,service:AiService,
         else if(kind==='refresh'&&isAiConnection(input))value=await service.refresh(input.connectionId)
         else if(kind==='disconnect'&&isAiConnection(input))value=await service.disconnect(input.connectionId)
         else if(kind==='select'&&isAiConnection(input))value=await service.select(input.connectionId)
+        else if(kind==='resumeConnection'&&isAiConnection(input))value=await service.resumeConnection(input.connectionId)
+        else if(kind==='cleanupConnection')value=await service.cleanupConnection()
+        else if(kind==='protectConnection')value=await service.protectConnection()
         else if(kind==='models'&&isAiConnection(input))value=await service.models(input.connectionId)
         else if(kind==='prepare'&&isAiPrepare(input))value=await service.prepare(input)
         else if(kind==='start'&&isAiStart(input))value=await service.start(input)

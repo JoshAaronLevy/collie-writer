@@ -40,4 +40,6 @@ These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience a
 
 ## Codex local development stages
 
-[CD01 — route and compatible contracts](codex-CD01.md): document review of owner-only normal subscription/credit policy, trusted unpackaged boundary, pinned protocol and unchanged portable data. The optional existing Settings observation shows unavailable login and separate feature readiness. No sign-in or inference is expected; [record](../validation/codex-CD01.md). CD02–CD09 remain not started.
+[CD01 — route and compatible contracts](codex-CD01.md): historical document-review checkpoint for the owner-only normal subscription/credit policy, trusted unpackaged boundary, pinned protocol and unchanged portable data; [record](../validation/codex-CD01.md). CD02 now owns the connection behavior.
+
+[CD02 — managed browser login](codex-CD02.md): global Connect Codex, Continue with ChatGPT, explicit returning Resume, cancellation, single-account replacement, disconnect, retained cleanup and local metadata protection. Implementation complete — awaiting user testing; [record](../validation/codex-CD02.md). No live account outcome is claimed. CD03–CD09 remain not started.

@@ -1,5 +1,7 @@
 # Local Codex protocol selection — CD01
 
+**Current implementation note:** CD02 now supplies the [managed account owner and connection flow](../decisions/codex-CD02.md), with [separate local metadata v2](../formats/codex-local-v2.md). The dated CD01 source findings below remain the baseline. CD02 adds no inference and does not establish runtime acceptance or full execution isolation.
+
 October 2, 2026. Source contract evidence, **not runtime acceptance**. Retain `@openai/codex` **0.160.0** as the existing development-only dependency. The installed package metadata and launcher were read; no binary or package script was run. The package specifies Apache-2.0 and exact optional platform packages. Collie's resolver reads the platform-package version and resolves its contained native binary directly, never PATH, the self-updating launcher or a download. Initial target is Josh's macOS development use; native architecture/store behavior and Windows remain unobserved.
 
 Published source below is pinned to [`rust-v0.160.0`](https://github.com/openai/codex/tree/rust-v0.160.0); the tag tree returned by GitHub is `a956835d020762cb2b570053af06f643a11c0ecc`. Generated types were **read as published**, not generated locally. No upstream implementation was copied into Collie. No SDK/dependency/notices change is required by CD01; redistribution/signing remains unfinished.

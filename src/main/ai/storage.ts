@@ -7,6 +7,8 @@ import { aiText, isAiOperation, isAiPrepare, AI_LIMITS, type AiOperation, type A
 import { exact, record } from '../../shared/projects'
 import { contained, directory, writeJson } from '../../worker/storage/files'
 import { AiError } from './errors'
+import { emptyLocalSession, isLocalCodexMetadataV1, isLocalCodexSessionV2, LOCAL_CODEX_METADATA_FILE,
+  LOCAL_CODEX_SESSION_FILE, type LocalCodexSessionV2 } from './local-session-metadata'
 
 export type Tokens = { access: string; refresh: string; id: string; expiresAt: number; earliestRefreshAt: number; scopes: string[] }
 export type Account = { id: string; subject: string; label: string; clientId: string; tokens: Tokens | null; refreshPending: boolean }
@@ -50,6 +52,22 @@ export class AiStorage {
     await this.initialized
   }
   async runtimeRoot(): Promise<string> { await this.initialize(); await directory(this.root!,join(this.root!,'runtime')); return join(this.root!,'runtime') }
+  async localSession(): Promise<LocalCodexSessionV2> {
+    const value = await this.read(LOCAL_CODEX_SESSION_FILE)
+    if (value !== null) {
+      if (!isLocalCodexSessionV2(value)) throw new AiError('storage-unavailable')
+      return value
+    }
+    const legacy = await this.read(LOCAL_CODEX_METADATA_FILE)
+    if (legacy === null) return emptyLocalSession()
+    if (!isLocalCodexMetadataV1(legacy)) throw new AiError('storage-unavailable')
+    return { ...emptyLocalSession(), active: legacy.account ? { profileId: legacy.profileId, account: legacy.account } : null,
+      retired: legacy.account ? [] : [legacy.profileId] }
+  }
+  async saveLocalSession(value: LocalCodexSessionV2): Promise<void> {
+    if (!isLocalCodexSessionV2(value)) throw new AiError('storage-unavailable')
+    await this.write(LOCAL_CODEX_SESSION_FILE, value)
+  }
   private async read(name: string): Promise<unknown|null> {
     await this.initialize()
     const path = join(this.root!,name)

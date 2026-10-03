@@ -4,7 +4,7 @@ import type { AppDestination } from '../../app/navigation'
 import { useWorkspaceSession } from '../workspace/WorkspaceSession'
 import { connectionProblemReasons } from './connection-copy'
 
-type Action = { id: number; kind: 'connect' | 'cancel' | 'refresh' | 'disconnect' | 'select'; connectionId: string | null; attemptId: string | null }
+type Action = { id: number; kind: 'connect' | 'cancel' | 'refresh' | 'disconnect' | 'select' | 'resume' | 'cleanup' | 'protectConnection'; connectionId: string | null; attemptId: string | null }
 type Origin = { destination: AppDestination; trigger: HTMLElement | null; surface: HTMLElement | null }
 
 function useConnectionController() {
@@ -87,6 +87,7 @@ function useConnectionController() {
   }, [apply, checkStatus])
   useEffect(() => { if (session.available) void checkStatus() }, [session.available, checkStatus])
   const waiting = status?.state === 'signing-in' || pending?.kind === 'connect' || pending?.kind === 'cancel'
+  const canCancel = status?.state === 'signing-in' ? status.local?.cancellable ?? true : pending?.kind === 'connect'
   useEffect(() => {
     if (!waiting) return
     // Reconcile only sanitized local state. This never refreshes OAuth or runs a model.
@@ -146,13 +147,20 @@ function useConnectionController() {
     })
   }, [finish])
 
-  const accountAction = useCallback((kind: 'refresh' | 'disconnect' | 'select', connectionId: string, trigger: HTMLElement | null): Promise<boolean> => {
+  const accountAction = useCallback((kind: 'refresh' | 'disconnect' | 'select' | 'resume', connectionId: string, trigger: HTMLElement | null): Promise<boolean> => {
     if (!snapshot.current?.actions[kind]) return Promise.resolve(false)
     const next = begin(kind, connectionId, trigger)
     if (!next) return Promise.resolve(false)
     const input = { connectionId }
     return finish(next, () => kind === 'refresh' ? window.collie.refreshAiConnection(input)
+      : kind === 'resume' ? window.collie.resumeAiConnection(input)
       : kind === 'disconnect' ? window.collie.disconnectAi(input) : window.collie.selectAiConnection(input))
+  }, [begin, finish])
+
+  const localAction = useCallback((kind: 'cleanup' | 'protectConnection', trigger: HTMLElement | null): Promise<boolean> => {
+    if (!snapshot.current?.actions[kind]) return Promise.resolve(false)
+    const next = begin(kind, null, trigger)
+    return next ? finish(next, () => kind === 'cleanup' ? window.collie.cleanupAiConnection() : window.collie.protectAiConnection()) : Promise.resolve(false)
   }, [begin, finish])
 
   const showOrigin = useCallback(() => {
@@ -164,8 +172,8 @@ function useConnectionController() {
   }, [restoreOriginFocus])
 
   const busy = !!pending || status?.state === 'signing-in' || status?.state === 'refreshing' || status?.state === 'disconnecting'
-  return useMemo(() => ({ status, checking, issue, pending, waiting, busy, checkStatus, connect, cancel, accountAction, showOrigin }),
-    [status, checking, issue, pending, waiting, busy, checkStatus, connect, cancel, accountAction, showOrigin])
+  return useMemo(() => ({ status, checking, issue, pending, waiting, canCancel, busy, checkStatus, connect, cancel, accountAction, localAction, showOrigin }),
+    [status, checking, issue, pending, waiting, canCancel, busy, checkStatus, connect, cancel, accountAction, localAction, showOrigin])
 }
 
 type Connections = ReturnType<typeof useConnectionController>

@@ -12,6 +12,17 @@ export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
   'resume-required': 'Resume the saved Codex connection explicitly before requesting AI work.',
   'reconnect-required': 'Reconnect your Codex account before requesting AI work.',
   'secure-session-unavailable': 'A secure isolated Codex session is unavailable on this device.',
+  'login-timeout': 'Codex did not finish this account action in time. If you closed the browser, cancel or start a new sign-in when available.',
+  'callback-port-in-use': 'Another app is using the Codex sign-in callback port. Finish its login or close it, then try again. Collie has not cancelled that login.',
+  'browser-unavailable': 'Collie could not confirm opening the system browser. Make a default browser available, then start a new sign-in. If an old sign-in window appears later, close it and use the newest attempt.',
+  'login-denied': 'Codex could not complete sign-in. Review any browser message, then start a new attempt when ready.',
+  'login-offline': 'Codex could not reach the account service. Continue writing locally and retry when online.',
+  'login-completed-before-cancel': 'Sign-in finished before cancellation could take effect. The connected account is shown below; choose Disconnect if you no longer want it connected.',
+  'local-config-conflict': 'External Codex configuration or an unexpected credential file conflicts with this isolated connection. Collie has stopped the session and retained its files. Keep your existing Codex settings; report this refusal for help.',
+  'local-runtime-exited': 'The Codex account process stopped. Resume the saved connection explicitly, or reconnect if needed.',
+  'local-cleanup-required': 'Some inactive Collie Codex credentials still need local sign-out. Use Clean up inactive sessions to retry their removal.',
+  'local-protection-required': 'An account metadata write is unconfirmed. Keep Collie open and retry saving connection state. This retry stays on this device.',
+  'local-account-changed': 'The saved account no longer matches this Codex profile. Continue with ChatGPT to authorize the intended account again.',
   'configuration-required': 'Sign-in has not been configured for this build.',
   'development-access-unavailable': 'Supported development sign-in is not available in this build yet.',
   'commercial-activation-pending': 'Provider approval and configuration for this release are still pending.',
@@ -43,14 +54,21 @@ export function fundingDescription(funding: AiFunding): string {
   return 'AI spending is unavailable for this app identity.'
 }
 
-export function connectionLabel(status: AiStatus | null, checking = false, action?: 'connect' | 'cancel' | 'refresh' | 'disconnect' | 'select'): string {
+export function connectionLabel(status: AiStatus | null, checking = false, action?: 'connect' | 'cancel' | 'refresh' | 'disconnect' | 'select' | 'resume' | 'cleanup' | 'protectConnection'): string {
   if (action === 'cancel') return 'Cancelling sign-in…'
   if (action === 'select') return 'Selecting account…'
+  if (action === 'resume') return 'Resuming Codex connection…'
+  if (action === 'cleanup') return 'Signing out inactive Codex sessions…'
+  if (action === 'protectConnection') return 'Saving connection state on this device…'
   if (action === 'connect' && status?.state !== 'signing-in') return 'Starting browser sign-in…'
   if (action === 'refresh') return 'Renewing account session…'
   if (action === 'disconnect') return 'Disconnecting account…'
   if (!status) return checking ? 'Checking connection…' : 'Connection status unavailable'
   if (status.route.kind === 'local-codex-chatgpt' && status.session.state === 'unavailable') return 'Local development · connection unavailable'
+  if (status.session.state === 'saved-needs-resume') return 'Saved Codex connection · resume required'
+  if (status.session.state === 'resuming') return 'Resuming Codex connection…'
+  if (status.session.state === 'reconnect-required') return 'Codex account needs reconnecting'
+  if (status.state === 'signing-in' && status.local && !status.local.cancellable) return 'Finishing Codex connection…'
   if (status.state === 'signing-in') return 'Waiting for browser sign-in'
   if (status.state === 'refreshing') return 'Renewing account session…'
   if (status.state === 'disconnecting') return 'Disconnecting account…'
@@ -61,6 +79,8 @@ export function connectionLabel(status: AiStatus | null, checking = false, actio
 }
 
 export function signInUnavailable(status: AiStatus): AiReason | AiConnectionReason | null {
+  const localPrerequisite = status.reasons.find(reason => ['secure-storage-unavailable','storage-unavailable','runtime-unavailable'].includes(reason))
+  if (status.route.kind === 'local-codex-chatgpt' && localPrerequisite) return localPrerequisite
   if (status.session.state === 'unavailable') return status.session.reason
   return status.reasons.find(reason => [
     'development-access-unavailable', 'commercial-activation-pending', 'configuration-required',

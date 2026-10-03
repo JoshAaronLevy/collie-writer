@@ -11,6 +11,7 @@ import AboutPanel from './features/settings/AboutPanel'
 import Orientation from './features/help/Orientation'
 import { AiConnectionsProvider } from './features/ai-connections/AiConnectionsProvider'
 import { AiConnectionNotice } from './features/ai-connections/AiConnectionNotice'
+import { AiProviderIndicator } from './features/ai-connections/AiProviderIndicator'
 import Projects from './features/projects/Projects'
 import { WorkspaceSessionProvider, useWorkspaceSession } from './features/workspace/WorkspaceSession'
 import { WorkspaceStatus } from './features/workspace/WorkspaceStatus'
@@ -66,6 +67,7 @@ function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; faile
           {project&&destination.kind!=='workspace'&&destination.kind!=='setup'?<SaveMenu />:null}
           <AppButton variant="subtle" disabled={navigating} onClick={() => { void navigate({kind:'library'}) }}>Projects</AppButton>
           {project ? <AppButton variant="subtle" disabled={navigating} onClick={returnToWork}>Return to work</AppButton> : null}
+          <AiProviderIndicator global active={destination.kind==='settings'&&destination.page==='ai'} onOpen={() => { void navigate({kind:'settings',page:'ai'}) }} />
           <AppButton variant="subtle" leftSection={<Settings size={18} aria-hidden="true" />}
             onClick={() => { void navigate({kind:'settings',page:'appearance'}) }}>Settings</AppButton>
           <ActionMenu label="App menu" actions={[
