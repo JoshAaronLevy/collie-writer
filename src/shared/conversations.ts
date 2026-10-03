@@ -27,8 +27,9 @@ export type ConversationRequest =
   | (OpenInput & { action: 'export'; conversationId: string; expectedRevision: string; includeContext: boolean })
 type ConversationBindingFields = { attemptId: string; operationId: string; connectionId: string; model: string; digest: string; captureDigest: string }
 /** Local operations database only. Legacy bindings deliberately have no version
- * key. v2 points to the route-bound journal without copying account authority. */
-export type ConversationBinding = ConversationBindingFields | (ConversationBindingFields & {version:2})
+ * key. v2/v3 point to route-bound journals without copying account authority;
+ * v3 is accepted only by the proofreading reader below. */
+export type ConversationBinding = ConversationBindingFields | (ConversationBindingFields & {version:2|3})
 export type ConversationWorkerInput = Exclude<ConversationRequest, ConversationSubmit | { action: 'cancel' | 'protect' | 'attempt' | 'reconcile' | 'export' }> | (OpenInput & (
   | { action: 'append'; submission: ConversationSubmit }
   | { action: 'bind'; binding: ConversationBinding }
@@ -86,11 +87,14 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
     default: return false
   }
 }
-export function isConversationBinding(v: unknown): v is ConversationBinding { return record(v)&&
+/** v3 is mechanics-only. The shared coordinator and proofreading worker use
+ * this reader; conversation consumers retain the exact legacy/v2 subset. */
+export function isContentBinding(v: unknown): v is ConversationBinding { return record(v)&&
   (exact(v,['attemptId','operationId','connectionId','model','digest','captureDigest'])||
-    v.version===2&&exact(v,['version','attemptId','operationId','connectionId','model','digest','captureDigest']))&&
+    (v.version===2||v.version===3)&&exact(v,['version','attemptId','operationId','connectionId','model','digest','captureDigest']))&&
   [v.attemptId,v.operationId,v.connectionId].every(isId)&&model(v.model)&&isCaptureDigest(v.digest)&&isCaptureDigest(v.captureDigest) }
-export function bindingVersion(binding:ConversationBinding):1|2 {return 'version'in binding?binding.version:1}
+export function isConversationBinding(v:unknown):v is ConversationBinding {return isContentBinding(v)&&bindingVersion(v)!==3}
+export function bindingVersion(binding:ConversationBinding):1|2|3 {return 'version'in binding?binding.version:1}
 export function isConversationWorkerInput(v: unknown): v is ConversationWorkerInput {
   if (!record(v)||!scope(v)) return false
   const fields=['projectId','workspaceId','action']

@@ -1,7 +1,7 @@
 .proofreading-panel { display: grid; gap: var(--collie-space-3); min-width: 0; font-size: .875rem; line-height: 1.55; }
 .proofreading-heading { display: grid; gap: var(--collie-space-2); }
 .proofreading-heading p, .proofreading-caption { color: var(--collie-text-secondary); font-size: .8125rem; }
-.proofreading-scope, .proofreading-history, .proofreading-account { border-block-start: 1px solid var(--collie-border); padding-block: var(--collie-space-3); }
+.proofreading-scope, .proofreading-history { border-block-start: 1px solid var(--collie-border); padding-block: var(--collie-space-3); }
 .proofreading-panel summary { cursor: pointer; font-weight: 600; margin-block: var(--collie-space-2); }
 .proofreading-panel h4, .proofreading-panel h5 { margin-block: var(--collie-space-2); font-size: .875rem; }
 .proofreading-actions { display: flex; flex-wrap: wrap; gap: var(--collie-space-2); align-items: center; }

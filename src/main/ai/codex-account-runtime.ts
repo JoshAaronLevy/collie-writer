@@ -16,7 +16,7 @@ import { selectAiRoute } from './deployment'
 import { AiError } from './errors'
 import { requireLocalTextIsolation } from './codex-local-policy'
 import { CodexTextTurn, type CodexTextUpdate } from './codex-text-turn'
-import { identityHash, LOCAL_DISPATCH_V2, workspaceIdentity } from './local-operation'
+import { executionOutputSchema, identityHash, LOCAL_DISPATCH_V2, workspaceIdentity, type LocalExecution } from './local-operation'
 import { secureAiStorage, type AiStorage } from './storage'
 
 export class CodexAccountError extends AiError {
@@ -331,10 +331,11 @@ export class CodexAccountRuntime {
   /** Main-only single-turn adapter, reached only through durable CD04 bindings.
    * The route-specific gate MUST stay before thread creation/content dispatch
    * until real tool and content-log controls replace the current refusal. */
-  async executeText(input:{epoch:string;model:string;text:string;defaultReasoningEffort:string}, authorize:()=>Promise<void>, update:(value:CodexTextUpdate)=>void):Promise<CodexTextUpdate> {
+  async executeText(input:{epoch:string;model:string;execution:LocalExecution}, authorize:()=>Promise<void>, update:(value:CodexTextUpdate)=>void):Promise<CodexTextUpdate> {
     if (this.executing) throw new AiError('busy')
     if (!this.hasCurrentAccount()||input.epoch!==this.epoch) throw new AiError('session-expired')
-    if (!isCatalogModelId(input.model)||!isCodexReasoningEffort(input.defaultReasoningEffort)||!aiText(input.text,AI_LIMITS.prompt+AI_LIMITS.context)||!input.text.trim()) throw new AiError('invalid-request')
+    const {framedText:text,defaultReasoningEffort}=input.execution,outputSchema=executionOutputSchema(input.execution)
+    if (!isCatalogModelId(input.model)||!isCodexReasoningEffort(defaultReasoningEffort)||!aiText(text,AI_LIMITS.prompt+AI_LIMITS.context)||!text.trim()) throw new AiError('invalid-request')
     requireLocalTextIsolation()
     this.executing=true;this.cancelText=false
     let turn:CodexTextTurn|null=null
@@ -361,8 +362,9 @@ export class CodexAccountRuntime {
       if (this.cancelText) throw new AiError('cancelled')
       if (!this.isAlive()||input.epoch!==this.epoch) throw new AiError('session-expired')
       turn.startDispatch()
-      const started=await this.rpc('turn/start',{threadId:turn.threadId,model:input.model,input:[{type:'text',text:input.text,text_elements:[]}],
-        approvalPolicy:'never',sandboxPolicy:{type:'readOnly',networkAccess:false},serviceTierForTurn:'default',effort:input.defaultReasoningEffort})
+      const started=await this.rpc('turn/start',{threadId:turn.threadId,model:input.model,input:[{type:'text',text,text_elements:[]}],
+        approvalPolicy:'never',sandboxPolicy:{type:'readOnly',networkAccess:false},serviceTierForTurn:'default',effort:defaultReasoningEffort,
+        ...(outputSchema?{outputSchema}:{})})
       turn.acknowledge(started)
       const outcome=await turn.outcome
       if (this.isAlive()) {

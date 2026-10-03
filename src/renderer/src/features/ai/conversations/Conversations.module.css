@@ -1,11 +1,9 @@
 .conversation-panel { display: grid; gap: var(--collie-space-3); min-width: 0; }
 .conversation-introduction, .conversation-heading { display: grid; gap: var(--collie-space-2); }
 .conversation-introduction p, .conversation-heading p, .conversation-caption { color: var(--collie-text-secondary); font-size: .8125rem; line-height: 1.5; }
-.conversation-library, .conversation-management, .conversation-account, .conversation-capture { border-block-start: 1px solid var(--collie-border); padding-block: var(--collie-space-3); }
+.conversation-library, .conversation-management, .conversation-capture { border-block-start: 1px solid var(--collie-border); padding-block: var(--collie-space-3); }
 .conversation-panel summary { cursor: pointer; font-weight: 600; margin-block-end: var(--collie-space-3); }
-.conversation-library > *, .conversation-management > *, .conversation-account > * { margin-block-end: var(--collie-space-3); }
-.conversation-account h2 { font-size: 1rem; line-height: 1.4; }
-.conversation-account p { font-size: .8125rem; line-height: 1.5; overflow-wrap: anywhere; }
+.conversation-library > *, .conversation-management > * { margin-block-end: var(--collie-space-3); }
 .conversation-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--collie-space-2); }
 .conversation-list li { display: grid; min-width: 0; }
 .conversation-list li > span { color: var(--collie-text-secondary); font-size: .75rem; padding-inline: var(--collie-space-2); }

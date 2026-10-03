@@ -93,7 +93,7 @@ export function connectionLabel(status: AiStatus | null, checking = false, actio
   if (status.state === 'disconnecting') return 'Disconnecting account…'
   const account = status.connections.find(item => item.id === status.activeConnectionId)
   if (account?.state === 'expired') return 'Account session expired'
-  if (account?.state === 'signed-in') return status.features.conversation.state==='available'?'Signed in · Conversations available':'Signed in · AI unavailable'
+  if (account?.state === 'signed-in') return status.features.conversation.state==='available'||status.features.proofread.state==='available'?'Signed in · Reviewed requests available':'Signed in · AI unavailable'
   return status.channelPermitted && status.configured ? 'Not connected' : 'Connection unavailable'
 }
 

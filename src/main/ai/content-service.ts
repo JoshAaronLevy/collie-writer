@@ -123,7 +123,7 @@ export class AiContentService {
         const t=await this.get(scope,binding.attemptId)
         const input=this.preparedInput(scope,binding,t)
         if(record.version!==bindingVersion(binding)||t.capture.digest!==binding.captureDigest||requestDigest(input)!==requestDigest(record.input)||record.view.digest!==binding.digest||
-          record.version===2&&(record.execution.captureDigest!==t.capture.digest||record.execution.template!==t.capture.template))throw new ProjectError('DENIED')
+          record.version!==1&&(record.execution.captureDigest!==t.capture.digest||record.execution.template!==t.capture.template))throw new ProjectError('DENIED')
         const operation=contentOperation(record)
         await this.protect({...scope,action:'settle',attemptId:binding.attemptId,binding,operation,reason:null},binding.attemptId)
         if(['starting','running','cancelling'].includes(operation.state))this.live.set(binding.operationId,{scope,binding});else this.live.delete(binding.operationId)
@@ -158,7 +158,8 @@ export class AiContentService {
       if(!review||review.template!==stored.turn.capture.template||review.captureDigest!==stored.turn.capture.digest)throw new ProjectError('STALE_REVISION')
       const prepared=await this.ai.prepare(preparedInput,review)
       const fields={attemptId:input.attemptId,operationId,connectionId:input.connectionId!,model:input.model!,digest:prepared.digest,captureDigest:stored.turn.capture.digest}
-      binding=this.ai.preparedVersion(prepared.authorizationId)===2?{version:2,...fields}:fields
+      const version=this.ai.preparedVersion(prepared.authorizationId)
+      binding=version===1?fields:{version,...fields}
       await this.protect({...scope,action:'bind',binding},input.attemptId)
       this.bound.set(operationId,{scope,binding})
       const operation=await this.ai.start({scope,operationId,authorizationId:prepared.authorizationId,digest:prepared.digest})
@@ -195,7 +196,7 @@ export class AiContentService {
         const action=this.kind==='conversation'?'conversation':'proofread',reviewStamp=await this.ai.reviewStamp(action)
         const result=await this.worker(input)
         if(result.type!=='review'||result.capture.template!==templateFor(action))throw new ProjectError('UNAVAILABLE')
-        if(this.kind==='conversation'&&!localRequestFits(result.capture))throw new ProjectError('LIMIT_EXCEEDED')
+        if(!localRequestFits(result.capture,action))throw new ProjectError('LIMIT_EXCEEDED')
         if(this.reviews.size>=64)this.reviews.delete(this.reviews.keys().next().value!)
         this.reviews.set(input.captureId,{reviewStamp,template:result.capture.template,captureDigest:result.capture.digest,
           reviewDigest:requestDigest(input),expiresAt:Date.now()+5*60000})

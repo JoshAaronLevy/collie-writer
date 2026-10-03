@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { AiModel } from '../../../../../shared/ai'
 import type { ConversationEvent } from '../../../../../shared/conversations'
 import type { ProofreadBundle, ProofreadCapture, ProofreadFinding, ProofreadRequest, ProofreadReview, ProofreadSummary, ProofreadSource } from '../../../../../shared/proofreading'
 import type { OpenInput } from '../../../../../shared/projects'
@@ -10,16 +9,16 @@ import { useWorkspaceSession } from '../../workspace/WorkspaceSession'
 import { scopeOf } from '../../workspace/useWorkspaceController'
 import { useRetainedDraft } from '../../workspace/DraftOwner'
 import { useAiConnections } from '../../ai-connections/AiConnectionsProvider'
-import { connectionReason } from '../../ai-connections/connection-copy'
 import { selectedRanges } from '../selection'
+import { reviewConnection, sameReviewConnection, type ReviewConnection } from '../review-connection'
 
-type Reviewed={input:ProofreadReview;capture:ProofreadCapture;connectionId:string|null;model:string|null}
+type Reviewed={input:ProofreadReview;capture:ProofreadCapture;approved:boolean}&ReviewConnection
+const sizeMessage='This scope exceeds one request: at most 128 text runs, 64,000 context characters, and 80,000 including the complete structured request, instructions and result schema. Select a smaller passage. Nothing was trimmed.'
 function useProofreadingController(){
   const session=useWorkspaceSession(),connections=useAiConnections()
   const [reviewed,setReviewed]=useState<Reviewed|null>(null),[items,setItems]=useState<ProofreadSummary[]>([]),[total,setTotal]=useState(0),[offset,setOffset]=useState(0)
   const [selected,setSelected]=useState<string|null>(null),[bundle,setBundle]=useState<ProofreadBundle|null>(null)
   const [busy,setBusy]=useState(false),[issue,setIssue]=useState(''),[notice,setNotice]=useState(''),[pending,setPending]=useState<ProofreadRequest|null>(null),[event,setEvent]=useState<ConversationEvent|null>(null)
-  const [models,setModels]=useState<AiModel[]>([]),[model,setModel]=useState('')
   const current=useRef(session),connectionRef=useRef(connections),state=useRef({selected,offset}),locked=useRef(false),pendingRef=useRef<ProofreadRequest|null>(null)
   const sequence=useRef(0),listSequence=useRef(0),timer=useRef<ReturnType<typeof setTimeout>|null>(null),panel=useRef<HTMLElement|null>(null)
   current.current=session;connectionRef.current=connections;state.current={selected,offset};pendingRef.current=pending
@@ -52,7 +51,7 @@ function useProofreadingController(){
   }
   useEffect(()=>{
     sequence.current++;listSequence.current++;state.current.selected=null;state.current.offset=0
-    setSelected(null);setBundle(null);setItems([]);setTotal(0);setOffset(0);setReviewed(null);setPending(null);setEvent(null);setIssue('');setNotice('');setModels([]);setModel('')
+    setSelected(null);setBundle(null);setItems([]);setTotal(0);setOffset(0);setReviewed(null);setPending(null);setEvent(null);setIssue('');setNotice('')
     if(timer.current){clearTimeout(timer.current);timer.current=null}
     if(!scope)return
     const captured=scope;let alive=true
@@ -67,48 +66,78 @@ function useProofreadingController(){
     if(!timer.current)timer.current=setTimeout(()=>{timer.current=null;void refresh(scopeOf(value))},300)
   }),[])
   useEffect(()=>()=>{if(timer.current)clearTimeout(timer.current)},[])
-  useEffect(()=>{setModels([]);setModel('')},[connections.status?.activeConnectionId])
+  const selectedConnection=reviewConnection(connections.status,'proofread')
+  useEffect(()=>{
+    if(reviewed&&!sameReviewConnection(reviewed,selectedConnection))setNotice('The connection or model changed. Your captured text is kept; review this capture again before saving or running it.')
+    setReviewed(previous=>previous&&!sameReviewConnection(previous,selectedConnection)?{...previous,approved:false}:previous)
+  },[selectedConnection.connectionId,selectedConnection.model,selectedConnection.reviewRevision])
   function choose(id:string):void {if(locked.current||pendingRef.current||current.current.proofreadingLocked)return;state.current.selected=id;setSelected(id);setBundle(null);setIssue('');setNotice('')}
+  async function capture(input:ProofreadReview,account:ReviewConnection):Promise<void>{
+    const result=await window.collie.proofreading(input)
+    if(!belongs(input))return
+    if(result.ok&&result.value.type==='review'){
+      const approved=sameReviewConnection(account,reviewConnection(connectionRef.current.status,'proofread'))
+      setReviewed({input,capture:result.value.capture,...account,approved})
+      setNotice(approved?'Review the included text and exclusions. Nothing has been sent.':'The connection changed during capture. The exact text is kept; review this capture again.')
+    }else setIssue(!result.ok&&result.error.code==='LIMIT_EXCEEDED'?sizeMessage:!result.ok&&result.error.code==='STALE_REVISION'?'The captured writing changed. Choose the intended scope again; the previous capture is kept.':!result.ok&&result.error.code==='VALIDATION'?'This scope has no supported text runs. Choose a paragraph, heading or list passage; tables, quotations and rich atoms are excluded.':!result.ok?result.error.message:'The capture could not be prepared.')
+  }
   async function prepare(kind:'passage'|'section'):Promise<void>{
-    if(!scope||locked.current||pendingRef.current||readOnly||session.busy)return
-    const s=current.current,editor=s.editorRef.current,original=s.project
-    if(!editor||!original||editorIsComposing(editor)||s.composition.current){setIssue('Finish composing in the manuscript before choosing a review scope.');return}
+    if(!scope||locked.current||pendingRef.current||readOnly||session.busy||session.closing||session.navigating)return
+    const s=current.current,editor=s.editorRef.current,original=s.project,account=reviewConnection(connectionRef.current.status,'proofread')
+    if(!editor||editor.isDestroyed||!original||editorIsComposing(editor)||s.composition.current){setIssue('Finish composing in the manuscript before choosing a review scope.');return}
     const before=editor.state.doc,ranges=kind==='passage'?selectedRanges(editor):null
     if(kind==='passage'&&!ranges){setIssue('Select text in the manuscript first. For a selection containing an image, choose a smaller text passage.');return}
     locked.current=true;setBusy(true);setIssue('')
     try{
       const saved=await s.flush(false,'save',['proofreading'])
-      if(!saved||!belongs(original)||saved.documentId!==original.documentId||!editor.state.doc.eq(before)){setIssue('The passage changed during local protection. Choose the intended scope again.');return}
+      if(!saved||!belongs(original)||current.current.editorRef.current!==editor||editor.isDestroyed||editorIsComposing(editor)||current.current.project?.documentId!==original.documentId||saved.documentId!==original.documentId||!editor.state.doc.eq(before)){setIssue('The passage changed during local protection. Choose the intended scope again.');return}
       const source:ProofreadSource=kind==='passage'?{kind,documentId:saved.documentId,revisionId:saved.revisionId,ranges:ranges!}:{kind,documentId:saved.documentId,revisionId:saved.revisionId}
       const input:ProofreadReview={...scopeOf(saved),action:'review',expectedHead:saved.headCommitId,captureId:crypto.randomUUID(),createdAt:new Date().toISOString(),source}
-      const result=await window.collie.proofreading(input)
-      if(!belongs(input))return
-      if(result.ok&&result.value.type==='review'){setReviewed({input,capture:result.value.capture,connectionId:connectionRef.current.status?.activeConnectionId??null,model:model||null});setNotice('Review the included text and exclusions. Nothing has been sent.')}
-      else setIssue(!result.ok&&result.error.code==='LIMIT_EXCEEDED'?'This scope exceeds one request: up to 128 text runs and 64,000 characters including the context envelope. Select a smaller passage. Nothing was trimmed.':!result.ok&&result.error.code==='VALIDATION'?'This scope has no supported text runs. Choose a paragraph, heading or list passage; tables, quotations and rich atoms are excluded.':!result.ok?result.error.message:'The capture could not be prepared.')
+      await capture(input,account)
     }catch{setIssue('The scope could not be prepared. Your writing is unchanged.')}
     finally{locked.current=false;setBusy(false)}
   }
+  async function reviewAgain():Promise<void>{
+    if(!scope||!reviewed||blocked||readOnly||locked.current||pendingRef.current||session.composition.current)return
+    const original=reviewed,account=reviewConnection(connectionRef.current.status,'proofread')
+    locked.current=true;setBusy(true);setIssue('')
+    try{
+      const saved=await current.current.flush(false,'save',['proofreading'])
+      if(!saved||!belongs(scope))return
+      // Revalidate the original protected source. Never recapture the current
+      // selection as a substitute for the text the user is reviewing.
+      await capture({...scope,action:'review',expectedHead:saved.headCommitId,captureId:crypto.randomUUID(),createdAt:new Date().toISOString(),source:original.capture.source},account)
+    }catch{setIssue('The capture could not be reviewed again. Its text is kept and nothing was sent.')}
+    finally{locked.current=false;setBusy(false)}
+  }
   async function request(input:ProofreadRequest):Promise<void>{
-    if(locked.current)return
+    if(locked.current||pendingRef.current&&pendingRef.current!==input)return
     locked.current=true;setBusy(true);setIssue('');setPending(input);pendingRef.current=input
     try{
       const result=await window.collie.proofreading(input)
       if(!belongs(input))return
-      if(!result.ok){if(!['UNAVAILABLE','DISK_FULL','PROJECT_LOCKED'].includes(result.error.code)){setPending(null);pendingRef.current=null}setIssue(result.error.code==='STALE_REVISION'?'The project or finding changed. Choose the scope again before a new review; no correction was applied.':result.error.code==='LIMIT_EXCEEDED'?'This review exceeds a supported storage or request limit. Retained reviews are kept.':result.error.message);return}
+      if(!result.ok){
+        if(!['UNAVAILABLE','DISK_FULL','PROJECT_LOCKED'].includes(result.error.code)){setPending(null);pendingRef.current=null}
+        if(input.action==='submit'&&result.error.code==='STALE_REVISION')setReviewed(previous=>previous?{...previous,approved:false}:previous)
+        setIssue(result.error.code==='STALE_REVISION'?'The project, finding or connection changed, or the review expired. Review the capture again; no correction was applied.':result.error.code==='LIMIT_EXCEEDED'?'This review exceeds a supported storage or request limit. Retained reviews are kept.':result.error.message);return
+      }
       setPending(null);pendingRef.current=null
-      if(input.action==='submit'){setReviewed(null);setSelected(input.attemptId);state.current.selected=input.attemptId;setNotice(input.send?'Review retained. Only validated completed output can become findings.':'Review saved locally. Nothing was sent or queued for later activation.')}
+      if(input.action==='submit'){setReviewed(null);setSelected(input.attemptId);state.current.selected=input.attemptId;setNotice(input.send?'Request retained in the local working project. Its actual outcome appears below; only valid completed output can become findings.':'Review saved in the local working project. Nothing was sent or queued. Project Save updates its chosen file.')}
       await refresh(scopeOf(input))
     }catch{setIssue('This local action is unconfirmed. Retry the same action; a retry cannot resend inference.')}
     finally{locked.current=false;setBusy(false)}
   }
   async function submit(send:boolean):Promise<void>{
-    if(!scope||!reviewed||locked.current||pendingRef.current||readOnly||session.proofreadingLocked)return
-    if(reviewed.connectionId!==(connections.status?.activeConnectionId??null)||reviewed.model!==(model||null)){setIssue('Account or model changed. Choose the scope again to review this request.');return}
+    if(!scope||!reviewed||locked.current||pendingRef.current||readOnly||blocked)return
+    const original=reviewed
+    if(!original.approved||!sameReviewConnection(original,reviewConnection(connectionRef.current.status,'proofread'))){setIssue('The connection or model changed. Review this capture again; its text is kept.');return}
+    if(send&&!mayRun(original)){setIssue('Run is unavailable. Read the connection status; local saving remains available.');return}
     locked.current=true;setBusy(true)
     let valid=false
-    try{const s=current.current,editor=s.editorRef.current,before=editor?.state.doc,saved=await s.flush(false,'save',['proofreading']);valid=!!saved&&belongs(scope)&&saved.headCommitId===reviewed.input.expectedHead&&!!editor&&!!before&&editor.state.doc.eq(before)}catch{setIssue('The writing could not be protected for this request. Keep the current capture and try again.');return}finally{locked.current=false;setBusy(false)}
+    try{const s=current.current,editor=s.editorRef.current,before=editor?.state.doc,saved=await s.flush(false,'save',['proofreading']);valid=!!saved&&belongs(scope)&&saved.headCommitId===original.input.expectedHead&&!!editor&&current.current.editorRef.current===editor&&!editor.isDestroyed&&!editorIsComposing(editor)&&!!before&&editor.state.doc.eq(before)}catch{setIssue('The writing could not be protected for this request. Keep the current capture and try again.');return}finally{locked.current=false;setBusy(false)}
     if(!valid){setIssue('The writing or project changed after review. Choose the scope again; the previous capture remains visible.');return}
-    await request({...scope,action:'submit',attemptId:crypto.randomUUID(),review:reviewed.input,digest:reviewed.capture.digest,send,connectionId:reviewed.connectionId,model:reviewed.model})
+    if(!sameReviewConnection(original,reviewConnection(connectionRef.current.status,'proofread'))||send&&!mayRun(original)){setIssue('Availability changed while protecting the writing. Review the connection and this capture again.');return}
+    await request({...scope,action:'submit',attemptId:crypto.randomUUID(),review:original.input,digest:original.capture.digest,send,connectionId:original.connectionId,model:original.model})
   }
   async function decide(f:ProofreadFinding,decision:'apply'|'ignore'|'undo-ignore'):Promise<void>{
     if(!scope||!bundle||locked.current||pendingRef.current||readOnly||current.current.proofreadingLocked)return
@@ -138,19 +167,19 @@ function useProofreadingController(){
     })
   }
   async function history(f:ProofreadFinding):Promise<void>{if(!f.checkpointId||!scope)return;const s=current.current;if(await s.navigate({kind:'workspace',scope,view:'history',documentId:s.project?.documentId}))s.run(()=>s.loadHistory(f.checkpointId))}
-  async function loadModels():Promise<void>{
-    const id=connections.status?.activeConnectionId;if(!id||locked.current)return
-    locked.current=true;setBusy(true)
-    try{const result=await window.collie.aiModels({connectionId:id});if(id!==connectionRef.current.status?.activeConnectionId)return;if(result.ok)setModels(result.value);else setIssue(connectionReason[result.reason])}finally{locked.current=false;setBusy(false)}
+  function mayRun(capture:Reviewed):boolean{
+    const owner=connectionRef.current,s=current.current,feature=owner.status?.features.proofread
+    return capture.approved&&sameReviewConnection(capture,reviewConnection(owner.status,'proofread'))&&feature?.state==='available'&&
+      feature.connectionId===capture.connectionId&&feature.model===capture.model&&!owner.busy&&owner.issue!=='outcome-unknown'&&
+      s.available&&!s.accessReadOnly&&!s.accessTransition&&!s.closing&&!s.navigating&&!s.proofreadingLocked
   }
-  const providerReason=connections.status?.reasons[0]
-  // The delivered catalog is explicitly unverified. I10 owns authoritative readiness adaptation.
-  const canSend=!!connections.status?.activeConnectionId&&connections.status.features.proofread.state!=='unavailable'&&!connections.status.reasons.length&&!!model&&models.some(m=>m.id===model&&m.eligibility!=='unverified')&&!readOnly
-  const blocked=busy||!!pending||session.busy||session.closing||session.proofreadingLocked
+  const capability=connections.status?.features.proofread
+  const blocked=busy||!!pending||session.busy||session.closing||session.navigating||!session.available||session.proofreadingLocked
+  const reviewCurrent=!!reviewed&&reviewed.approved&&sameReviewConnection(reviewed,selectedConnection)
+  const canSend=!!reviewed&&mayRun(reviewed)&&!blocked
   const validity=bundle&&(bundle.validity==='current'&&project?.documentId===bundle.capture.source.documentId&&(session.manuscriptDirty||project.revisionId!==bundle.capture.source.revisionId)?'stale':bundle.validity)
-  return {targetSectionOpen:!!bundle&&project?.documentId===bundle.capture.source.documentId,scope,items,total,offset,setOffset,selected,bundle,reviewed,issue,notice,pending,event,busy,blocked,readOnly,providerReason,models,model,canSend,panel,validity,proofreadingLocked:session.proofreadingLocked,
-    show,choose,prepare,submit,decide,original,history,loadModels,
-    chooseModel:(value:string)=>{setModel(value);setReviewed(null)},
+  return {targetSectionOpen:!!bundle&&project?.documentId===bundle.capture.source.documentId,scope,items,total,offset,setOffset,selected,bundle,reviewed,reviewCurrent,issue,notice,pending,event,busy,blocked,readOnly,capability,canSend,panel,validity,proofreadingLocked:session.proofreadingLocked,
+    show,choose,prepare,reviewAgain,submit,decide,original,history,
     clear:()=>{if(!blocked){setReviewed(null);setNotice('Unsubmitted capture cleared. Saved reviews remain.')}},
     retry:()=>pendingRef.current?void request(pendingRef.current):undefined,
     recover:()=>scope?void request({...scope,action:'reconcile'}):undefined,

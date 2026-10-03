@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { AI_LIMITS, type AiStatus } from '../../../../../shared/ai'
+import { AI_LIMITS } from '../../../../../shared/ai'
 import { CONVERSATION_LIMITS, type AiCapture, type CaptureSource, type Conversation, type ConversationEvent, type ConversationRequest, type ConversationReview, type ConversationTurn, type ConversationValue } from '../../../../../shared/conversations'
 import type { OpenInput } from '../../../../../shared/projects'
 import { sameScope } from '../../../../../shared/project-files'
@@ -9,13 +9,9 @@ import { useRetainedDraft } from '../../workspace/DraftOwner'
 import { useAiConnections } from '../../ai-connections/AiConnectionsProvider'
 import { selectedRanges } from '../selection'
 import { editorIsComposing } from '../../../editor/adapter'
+import { reviewConnection, sameReviewConnection, type ReviewConnection } from '../review-connection'
 
-type ReviewConnection={connectionId:string|null;model:string|null;reviewRevision:string|null}
 type Draft = { text:string; historyIds:string[]; source:CaptureSource; review:({input:ConversationReview;capture:AiCapture;excluded:number}&ReviewConnection)|null }
-function reviewConnection(status:AiStatus|null):ReviewConnection {
-  return {connectionId:status?.activeConnectionId??null,model:status?.catalog?.state==='loaded'?status.catalog.selectedModelId:null,reviewRevision:status?.reviewRevision??null}
-}
-function sameReviewConnection(a:ReviewConnection,b:ReviewConnection):boolean {return a.connectionId===b.connectionId&&a.model===b.model&&a.reviewRevision===b.reviewRevision}
 const sizeMessage='This request exceeds a supported limit: 16,000 prompt characters, 64,000 context characters, or 80,000 including the structured request and instructions. Shorten the prompt, choose a smaller passage or select fewer previous messages. Nothing has been trimmed.'
 const emptyDraft=():Draft=>({text:'',historyIds:[],source:{kind:'none'},review:null})
 const activeStates=['preparing','running','stopping']

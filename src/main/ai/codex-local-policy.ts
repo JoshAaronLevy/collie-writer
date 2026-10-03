@@ -36,7 +36,7 @@ export function localFeatureAvailability(facts:{session:AiSession;catalog:AiCata
   // This is a main-owned decision over actual runtime facts. CD03's enforced
   // policy still refuses execution; no setting can supply a ready state.
   if(reason||session.state!=='signed-in'||catalog?.state!=='loaded'||!catalog.selectedModelId)
-    return {conversation:{state:'unavailable',reason:reason??'model-selection-required'},proofread:{state:'unavailable',reason:reason??'proofreading-adapter-not-ready'}}
+    return {conversation:{state:'unavailable',reason:reason??'model-selection-required'},proofread:{state:'unavailable',reason:reason??'model-selection-required'}}
   return {conversation:{state:'available',connectionId:session.connectionId,model:catalog.selectedModelId},
-    proofread:{state:'unavailable',reason:'proofreading-adapter-not-ready'}}
+    proofread:{state:'available',connectionId:session.connectionId,model:catalog.selectedModelId}}
 }

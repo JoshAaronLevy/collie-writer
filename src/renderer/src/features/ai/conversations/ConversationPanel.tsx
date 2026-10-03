@@ -3,8 +3,8 @@ import { TextInput, Textarea } from '@mantine/core'
 import { AppButton, ChoiceField, SelectField } from '../../../components/ui/Controls'
 import { useWorkspaceSession } from '../../workspace/WorkspaceSession'
 import { useAiConnections } from '../../ai-connections/AiConnectionsProvider'
-import { AiModelSelection } from '../../ai-connections/AiModelSelection'
-import { connectionLabel, connectionReason, featureDescription, fundingDescription } from '../../ai-connections/connection-copy'
+import { AiRequestConnection } from '../../ai-connections/AiRequestConnection'
+import { connectionReason, featureDescription } from '../../ai-connections/connection-copy'
 import type { AiReason } from '../../../../../shared/ai'
 import type { ConversationTurn } from '../../../../../shared/conversations'
 import { useConversations } from './ConversationProvider'
@@ -49,8 +49,6 @@ export function ConversationPanel():React.JSX.Element {
   const key=`${c.selected??'none'}:${c.before??'latest'}`
   useLayoutEffect(()=>{if(transcript.current)transcript.current.scrollTop=c.scroll.current.get(key)??0},[key,c.page?.conversation.id])
   const blocked=c.busy||!!c.pending||session.closing||session.navigating,archived=c.page?.conversation.state==='archived',review=c.draft.review
-  const status=connections.status,account=status?.connections.find(item=>item.id===status.activeConnectionId)
-  const accountBlocked=blocked||connections.busy||!session.available||connections.issue==='outcome-unknown'
   return <section className={styles['conversation-panel']} aria-label="Project conversations"
     onCompositionStartCapture={()=>{c.composing.current=true;c.draftEvents.onCompositionStartCapture()}}
     onCompositionEndCapture={()=>{c.composing.current=false;c.draftEvents.onCompositionEndCapture()}}>
@@ -86,22 +84,7 @@ export function ConversationPanel():React.JSX.Element {
         {c.page.turns.length?c.page.turns.map(turn=><MessageTurn key={turn.attempt.id} turn={turn}/>):<p className={styles['conversation-empty']}>Start with a question or an idea. Writing is shared only when you choose it.</p>}
       </div>
       <p className={styles['conversation-caption']}>{c.page.totalMessages} saved messages. Up to five requests are shown per page. Previous messages are not attached automatically.</p>
-      <section className={styles['conversation-account']} data-ai-connection-surface aria-label="Conversation connection">
-        <h2 tabIndex={-1}>Codex connection</h2>
-        <p role="status">{connectionLabel(status,connections.checking,connections.pending?.kind)}{account?` · ${account.label}`:''}</p>
-        <p>{c.capability?featureDescription(c.capability):'Check connection status to read availability. Local review and saving do not need an AI connection.'}</p>
-        {connections.issue?<p className={styles['conversation-error']} role="alert">{connectionReason[connections.issue]}</p>:null}
-        {status?.local?.issue?<p>{connectionReason[status.local.issue]}</p>:null}
-        <div className={styles['conversation-actions']}>
-          <AppButton variant="default" disabled={blocked} onClick={()=>void session.navigate({kind:'settings',page:'ai'})}>{account?'Open connection settings':'Connect Codex…'}</AppButton>
-          {status?.actions.resume&&account?<AppButton variant="default" disabled={accountBlocked} onClick={event=>void connections.accountAction('resume',account.id,event.currentTarget)}>Resume Codex connection</AppButton>:null}
-          {status?.local?.protectionPending?<AppButton disabled={accountBlocked||!status.actions.protectConnection} onClick={event=>void connections.localAction('protectConnection',event.currentTarget)}>Retry saving connection state</AppButton>:null}
-          {connections.waiting?<AppButton variant="default" disabled={!connections.canCancel} onClick={()=>void connections.cancel()}>Cancel sign-in</AppButton>:null}
-          <AppButton variant="subtle" disabled={blocked||connections.checking||!session.available} onClick={()=>void connections.checkStatus(true)}>Check connection status</AppButton>
-        </div>
-        <details><summary>Choose model and view availability</summary><AiModelSelection disabled={blocked}/></details>
-        {status?<p className={styles['conversation-caption']}>{fundingDescription(status.funding)}</p>:null}
-      </section>
+      <AiRequestConnection action="conversation" disabled={blocked}/>
       {!archived||c.draft.text?<form className={styles['conversation-form']} onSubmit={e=>{e.preventDefault();void c.review()}}>
         <Textarea label="Your next message" ref={c.composer} value={c.draft.text} maxLength={16000} rows={5} readOnly={c.readOnly||blocked||archived} onChange={e=>c.update({text:e.currentTarget.value})}/>
         <p className={styles['conversation-caption']}>{c.draft.text.length.toLocaleString()} / 16,000 characters. Enter adds a new line; Review request opens the sharing review.</p>

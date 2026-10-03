@@ -2,18 +2,19 @@ import type { Mark } from '../domain/editor/schema'
 import { isId, safeLink } from '../domain/editor/schema'
 import { AI_LIMITS, isAiOperation, isAiReason, type AiOperation, type AiReason } from './ai'
 import type { AiAttemptFields, AiTextCaptureFields, CaptureSource } from './ai-content'
-import { isCaptureDigest, isCaptureSource, isConversationBinding, isConversationEvent, type ConversationBinding, type ConversationEvent } from './conversations'
+import { isCaptureDigest, isCaptureSource, isContentBinding, isConversationEvent, type ConversationBinding, type ConversationEvent } from './conversations'
 import { exact, record, isOpenInput, type OpenInput, type ProjectResult } from './projects'
+import { MECHANICS_RESULT_V1 as mechanics } from './mechanics-contract'
 
 export const PROOFREADING_CHANNEL = 'proofreading.command'
 export const PROOFREADING_CHANGED = 'proofreading.changed'
-export const PROOFREADING_LIMITS = { targets:128, findings:100, runs:10000, list:20, replacement:4000 } as const
+export const PROOFREADING_LIMITS = { targets:mechanics.limits.targets, findings:mechanics.limits.findings, runs:10000, list:20, replacement:mechanics.limits.span } as const
 export type ProofreadSource = Exclude<CaptureSource,{kind:'none'}>
 export type ProofreadTarget = { id:string; blockId:string; from:number; to:number; text:string; marks:Mark[] }
 export type CoverageKind = 'table'|'image'|'quotation'|'citation'|'footnote'|'footnote-body'|'break'|'unsupported-boundary'
 export type ProofreadCoverage = { includedCharacters:number; excluded:{kind:CoverageKind;count:number}[] }
 export type ProofreadCapture = AiTextCaptureFields & { source:ProofreadSource; mode:'mechanics'; template:'mechanics-v1'; language:'en-US'; targets:ProofreadTarget[]; coverage:ProofreadCoverage }
-export type FindingSuggestion = { targetId:string; from:number; to:number; before:string; replacement:string; reason:string; kind:'spelling'|'grammar'|'punctuation' }
+export type FindingSuggestion = { targetId:string; from:number; to:number; before:string; replacement:string; reason:string; kind:typeof mechanics.kinds[number] }
 export type ProofreadFinding = FindingSuggestion & { version:1; id:string; runId:string; revisionId:string; decision:'pending'|'accepted'|'ignored'; decidedAt:string|null; checkpointId:string|null }
 export type ProofreadRun = AiAttemptFields & { captureId:string; output:string; validation:'pending'|'valid'|'invalid'|'not-completed' }
 export type ProofreadBundle = { attempt:ProofreadRun; capture:ProofreadCapture; findings:ProofreadFinding[]; validity:'current'|'stale'|'missing' }
@@ -45,7 +46,8 @@ const integer=(v:unknown,max=1_000_000_000):v is number=>Number.isSafeInteger(v)
 const model=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9._-]{1,100}$/.test(v)
 const states=['not-sent','preparing','running','stopping','completed','cancelled','failed','unknown']
 const validations=['pending','valid','invalid','not-completed']
-const targetId=(v:unknown):v is string=>typeof v==='string'&&/^run-[1-9][0-9]{0,2}$/.test(v)
+const targetPattern=new RegExp(mechanics.targetPattern)
+const targetId=(v:unknown):v is string=>typeof v==='string'&&targetPattern.test(v)
 export const isProofreadText=(v:unknown):v is string=>text(v,AI_LIMITS.context)&&!/[\u0000-\u001f\u007f\u2028\u2029]/u.test(v)&&!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(v)
 export function isProofreadTarget(v:unknown):v is ProofreadTarget {
   return record(v)&&exact(v,['id','blockId','from','to','text','marks'])&&targetId(v.id)&&isId(v.blockId)&&integer(v.from)&&integer(v.to)&&v.to>v.from&&isProofreadText(v.text)&&v.text.length===v.to-v.from&&Array.isArray(v.marks)&&v.marks.length<=5&&v.marks.every(m=>record(m)&&(m.type==='link'?exact(m,['type','attrs'])&&record(m.attrs)&&exact(m.attrs,['href'])&&safeLink(m.attrs.href):exact(m,['type'])&&['bold','italic','underline','strike'].includes(String(m.type))))&&new Set(v.marks.map(m=>m.type)).size===v.marks.length
@@ -61,7 +63,7 @@ export function isProofreadCapture(v:unknown):v is ProofreadCapture {
     &&Array.isArray(v.context)&&v.context.length===1&&v.context.every(c=>record(c)&&exact(c,['kind','id','revision','label','text'])&&c.kind===source.kind&&c.id===source.documentId&&c.revision===source.revisionId&&text(c.label,200)&&text(c.text,AI_LIMITS.context))
 }
 export function isFindingSuggestion(v:unknown):v is FindingSuggestion {
-  return record(v)&&exact(v,['targetId','from','to','before','replacement','reason','kind'])&&targetId(v.targetId)&&integer(v.from,AI_LIMITS.context)&&integer(v.to,AI_LIMITS.context)&&v.to>v.from&&isProofreadText(v.before)&&v.before.length>0&&v.before.length<=4000&&v.before.length===v.to-v.from&&isProofreadText(v.replacement)&&v.replacement.length<=4000&&v.before!==v.replacement&&text(v.reason,1000)&&!!v.reason.trim()&&['spelling','grammar','punctuation'].includes(String(v.kind))
+  return record(v)&&exact(v,[...mechanics.findingKeys])&&targetId(v.targetId)&&integer(v.from,mechanics.limits.offset)&&integer(v.to,mechanics.limits.offset)&&v.to>v.from&&isProofreadText(v.before)&&v.before.length>0&&v.before.length<=mechanics.limits.span&&v.before.length===v.to-v.from&&isProofreadText(v.replacement)&&v.replacement.length<=mechanics.limits.span&&v.before!==v.replacement&&text(v.reason,mechanics.limits.reason)&&!!v.reason.trim()&&mechanics.kinds.some(kind=>kind===v.kind)
 }
 export function isProofreadFinding(v:unknown):v is ProofreadFinding {
   if(!record(v))return false
@@ -98,8 +100,8 @@ export function isProofreadWorkerInput(v:unknown):v is ProofreadWorkerInput {
     case 'receipt':return exact(v,[...fields,'decision'])&&isProofreadRequest(v.decision)&&v.decision.action==='decide'&&v.decision.projectId===v.projectId&&v.decision.workspaceId===v.workspaceId
     case 'get':return exact(v,[...fields,'attemptId'])&&isId(v.attemptId)
     case 'bindings':return exact(v,fields)
-    case 'bind':return exact(v,[...fields,'binding'])&&isConversationBinding(v.binding)
-    case 'settle':return exact(v,[...fields,'attemptId','binding','operation','reason'])&&isId(v.attemptId)&&(v.binding===null||isConversationBinding(v.binding))&&(v.operation===null||isAiOperation(v.operation))&&(v.reason===null||isAiReason(v.reason))
+    case 'bind':return exact(v,[...fields,'binding'])&&isContentBinding(v.binding)
+    case 'settle':return exact(v,[...fields,'attemptId','binding','operation','reason'])&&isId(v.attemptId)&&(v.binding===null||isContentBinding(v.binding))&&(v.operation===null||isAiOperation(v.operation))&&(v.reason===null||isAiReason(v.reason))
     default:return false
   }
 }
@@ -110,7 +112,7 @@ export function isProofreadValue(v:unknown):v is ProofreadValue {
     case 'review':return exact(v,['type','capture'])&&isProofreadCapture(v.capture)
     case 'turn':return exact(v,['type','turn','fresh','head','updatedAt'])&&isProofreadBundle(v.turn)&&typeof v.fresh==='boolean'&&isId(v.head)&&date(v.updatedAt)
     case 'decision':return exact(v,['type','turn','documentId','revisionId','head','updatedAt'])&&isProofreadBundle(v.turn)&&[v.documentId,v.revisionId,v.head].every(isId)&&date(v.updatedAt)
-    case 'bindings':return exact(v,['type','bindings'])&&Array.isArray(v.bindings)&&v.bindings.length<=AI_LIMITS.jobs&&v.bindings.every(isConversationBinding)
+    case 'bindings':return exact(v,['type','bindings'])&&Array.isArray(v.bindings)&&v.bindings.length<=AI_LIMITS.jobs&&v.bindings.every(isContentBinding)
     case 'done':return exact(v,['type'])
     default:return false
   }

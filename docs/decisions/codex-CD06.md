@@ -1,0 +1,31 @@
+# CD06 mechanics proofreading integration
+
+October 3, 2026. **Engineering partial — independent proofreading integration implemented, awaiting user testing.** CD03 still lacks enforced tool isolation and protected/suppressed runtime content logging. `requireLocalTextIsolation` continues to refuse before thread creation or content dispatch. The full CD06 real-findings milestone is blocked, not merely unobserved. CD05's first live response is also still blocked. This increment does not complete either prerequisite or begin CD07–CD09.
+
+## Scope and plan review
+
+The complete Codex plan was reviewed against its current main/shared/worker/renderer owners, CD05 handoff and I13 proofreading safety contract. The bottom handoff still said CD05 had not started; it now agrees with the dated CD05 record. The stage index and current handoff distinguish delivered independent work from missing execution enforcement. The target live manual handoff in the plan remains a future acceptance criterion, not a description of enabled behavior.
+
+Proofreading now reads `features.proofread` from main, uses the same explicit catalog/model selection as Conversations and Settings, and removes its separate legacy eligibility/model picker. Main applies the same real account, catalog, workspace identity, storage, capacity and execution requirements during authorization. A selected catalog model alone cannot enable Run. Both tools reuse `AiRequestConnection` and its scoped connection styles; neither gains another account owner or runtime.
+
+The main-only proofreading review stamp includes the fixed schema digest. Its opaque `proofreadReviewRevision` status projection invalidates renderer approval on connection/model/catalog/generation changes, independently of polling sequence. This is not a grant or a runtime identity. All status constructors and the shared exact main/preload validator include it. No new IPC command is exposed.
+
+A stale approval keeps the captured text, exclusions and source. **Review this capture again** asks the worker to validate the original protected source against the current project head; it never silently substitutes the current selection. A changed document revision requires choosing a new scope. Local save remains possible without inference after review. Exact pending requests cannot be replaced by another click. Selection capture and submission retain saved-editor/IME/identity checks and main's five-minute review expiry.
+
+## Native output contract
+
+The [app-server documentation](https://learn.chatgpt.com/docs/app-server) and published [0.160.0 `TurnStartParams`](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/app-server-protocol/schema/typescript/v2/TurnStartParams.ts) expose per-turn `outputSchema` for the final assistant message. These are source findings, not evidence that a selected account/model accepts this schema. No runtime was invoked or schema generator run.
+
+`shared/mechanics-contract.ts` holds the frozen v1 shape, kinds and bounds already enforced by I13. `domain/ai/proofreading.ts` derives a fresh JSON Schema from those constants; the existing exact whole-result validator uses the same constants. The original `MECHANICS_PROMPT`, capture template/digest and portable meanings are unchanged. The main runtime derives the schema from its execution descriptor and supplies it only on a mechanics `turn/start`; renderer input cannot provide a schema or schema identity. A provider refusal remains a real failed/invalid outcome, with no fallback parser or repair inference.
+
+New managed mechanics requests use **local operation v3** and `mechanics-schema-json-v1`, binding the fixed schema ID and digest along with the original execution identity. Conversation requests remain v2 and registered records v1. Old records retain their exact readers, digests and meaning; they are never rewritten with schema defaults or resumed for inference. See the [v3 format and consumer matrix](../formats/codex-operations-v3.md).
+
+Review and dispatch budget the exact frozen frame, instructions and serialized schema together within 80,000 UTF-16 units, as well as the existing 128-run/64,000-context limits. There is no trimming, batching or additional research/history capture. JSON Schema length constraints count code points; the existing validator additionally enforces UTF-16 lengths and grapheme boundaries, target membership, exact before text, nonoverlap and replacement restrictions. Every finding must pass before any findings are created. Empty findings remains valid.
+
+## Output, decisions and persistence
+
+The existing transport separates actual raw displayable output, commentary and a single completed final item. Only a completed unambiguous final response reaches mechanics parsing. Missing final output projects to failure; partial/cancelled/failed/unknown output stays inert. Multiple JSON objects, wrong keys/targets or other malformed results cannot yield a convenient subset of findings. The encrypted journal retains raw/channel output; the portable completed proofreading output holds the final response. There is no extra portable commentary field.
+
+Run outcome, whole-result validity, human decision and current/stale/missing target validity remain separate. Apply/Ignore/Undo ignore keep the I13 owners. Apply still rechecks rights, project head, finding and document revision, exact run/text/marks and ranges, protects a checkpoint and atomically records one correction. Its acknowledgment reaches the mounted editor through the normal transaction; an uncertain acknowledgment retains the exact operation and mutation lock. Other findings on the old document revision become stale. History comparison, exports, rekeying and copy isolation remain unchanged.
+
+SQL/minimum reader **12**, AST/archive **1**, compilation **3**, account metadata **v2**, the shared **64-operation** ceiling and release **NO-GO** remain. Operation encryption/envelope limits remain unchanged. No dependency or packaged/commercial route was changed. Native schema acceptance, findings quality, migration/recovery, editor undo, focus, CSP and all runtime behavior remain unobserved. No assistant tests, checks, builds, launches or provider actions occurred. Use the [manual guide](../manual-testing/codex-CD06.md) for delivered behavior; stop for Josh's observations.

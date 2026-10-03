@@ -1,14 +1,24 @@
 import { useEffect, useState } from 'react'
-import { AppButton, SelectField } from '../../../components/ui/Controls'
+import { AppButton } from '../../../components/ui/Controls'
 import { useProofreading } from './ProofreadingProvider'
-import { useWorkspaceSession } from '../../workspace/WorkspaceSession'
 import { useAiConnections } from '../../ai-connections/AiConnectionsProvider'
-import { connectionReason } from '../../ai-connections/connection-copy'
+import { connectionReason, featureDescription } from '../../ai-connections/connection-copy'
 import type { CoverageKind, ProofreadCapture } from '../../../../../shared/proofreading'
+import { AiRequestConnection } from '../../ai-connections/AiRequestConnection'
+import type { AiReason } from '../../../../../shared/ai'
 import styles from './Proofreading.module.css'
 
 const exclusions:Record<CoverageKind,string>={table:'tables',image:'images',quotation:'quotation blocks',citation:'citation references',footnote:'footnote references','footnote-body':'footnote bodies',break:'breaks and separators','unsupported-boundary':'unsupported text or grapheme boundaries'}
 const outcomes:Record<string,string>={'not-sent':'Saved locally · not sent',preparing:'Preparing review',running:'Review in progress',stopping:'Stop requested',completed:'Review completed',cancelled:'Review cancelled',failed:'Review failed',unknown:'Outcome unknown / interrupted'}
+function proofreadReason(reason:AiReason):string {
+  if(reason==='auth-failed'||reason==='signed-out'||reason==='session-expired')return 'Codex could not authorize this review. Open connection settings to explicitly resume or reconnect. Running again requires a new captured and reviewed request.'
+  if(reason==='model-unavailable')return 'Codex refused the selected model. Refresh models and explicitly select one before reviewing a new request. No model was substituted.'
+  if(reason==='invalid-request')return 'Codex could not accept this request or result contract. The retained outcome is unchanged. A new request requires another explicit review; there is no automatic fallback or repair.'
+  if(reason==='cancelled')return 'Codex reported cancellation. Any actual partial output remains readable and cannot authorize corrections; restored usage is not guaranteed.'
+  if(reason==='outcome-unknown')return 'This review’s outcome is uncertain. Actual retained output stays readable; reopening never resends it. A new reviewed request may consume additional usage.'
+  if(reason==='storage-unavailable')return 'Review output needs local protection. Keep Collie open and use Retry local output protection; it saves the same work without sending again.'
+  return connectionReason[reason]
+}
 function CaptureDetails({capture}:{capture:ProofreadCapture}):React.JSX.Element {
   return <div className={styles['proofreading-capture']}>
     <p><strong>{capture.context[0].label}</strong> · {capture.source.kind==='passage'?'Selected passage':'Current text section'}</p>
@@ -20,7 +30,7 @@ function CaptureDetails({capture}:{capture:ProofreadCapture}):React.JSX.Element 
   </div>
 }
 export function ProofreadingPanel():React.JSX.Element {
-  const p=useProofreading(),session=useWorkspaceSession(),connections=useAiConnections()
+  const p=useProofreading(),connections=useAiConnections()
   const [findingId,setFindingId]=useState<string|null>(null),[page,setPage]=useState(0)
   useEffect(()=>{setFindingId(null);setPage(0)},[p.selected])
   const b=p.bundle,f=b?.findings.find(item=>item.id===findingId),active=!!b&&['preparing','running','stopping'].includes(b.attempt.state)
@@ -35,14 +45,8 @@ export function ProofreadingPanel():React.JSX.Element {
       <div className={styles['proofreading-actions']}><AppButton variant="default" disabled={p.blocked||p.readOnly} onMouseDown={e=>e.preventDefault()} onClick={()=>void p.prepare('passage')}>Review selected passage</AppButton><AppButton variant="default" disabled={p.blocked||p.readOnly} onClick={()=>void p.prepare('section')}>Review current section</AppButton></div>
       <p>Paragraphs, headings and list text only. Citations, footnotes, images, tables and quotation blocks are excluded. A long section needs a smaller selection; it is never split automatically.</p>
     </section>
-    <details className={styles['proofreading-account']}><summary>AI account and model</summary>
-      <p>{connections.status?.connections.find(a=>a.id===connections.status?.activeConnectionId)?.label??'No AI account selected'}</p>
-      <AppButton variant="subtle" disabled={p.proofreadingLocked} onClick={()=>void session.navigate({kind:'settings',page:'ai'})}>Manage AI accounts</AppButton>
-      <AppButton variant="default" disabled={p.blocked||!connections.status?.activeConnectionId||!!p.providerReason} onClick={()=>void p.loadModels()}>Load provider models</AppButton>
-      {p.models.length?<SelectField label="Provider model" value={p.model} disabled={p.blocked} onChange={e=>p.chooseModel(e.currentTarget.value)}><option value="">Choose a model</option>{p.models.map(m=><option value={m.id} key={m.id}>{m.label} · eligibility unverified</option>)}</SelectField>:null}
-    </details>
-    <p className={styles['proofreading-caption']}>{p.providerReason?connectionReason[p.providerReason]:!p.canSend?'No eligible proofreading model is established. You can review and save a local capture.':'Your selected account will process only the reviewed request.'}</p>
-    {p.reviewed?<section className={styles['proofreading-review']} aria-label="Review outgoing proofreading request"><h4>Review what will be shared</h4><CaptureDetails capture={p.reviewed.capture}/><p>Account: {connections.status?.connections.find(a=>a.id===p.reviewed?.connectionId)?.label??'None'}. Model: {p.reviewed.model??'Not established'}.</p><div className={styles['proofreading-actions']}><AppButton disabled={p.blocked||p.readOnly} onClick={()=>void p.submit(false)}>Save review locally</AppButton><AppButton variant="default" disabled={p.blocked||!p.canSend||active} onClick={()=>void p.submit(true)}>Run reviewed request</AppButton><AppButton variant="subtle" disabled={p.blocked} onClick={p.clear}>Clear capture</AppButton></div><p>Saving locally does not send or queue a review. A saved unsent review will never run automatically.</p></section>:null}
+    <AiRequestConnection action="proofread" disabled={p.blocked}/>
+    {p.reviewed?<section className={styles['proofreading-review']} aria-label="Review outgoing proofreading request"><h4>Review what will be shared</h4><CaptureDetails capture={p.reviewed.capture}/>{!p.reviewCurrent?<p role="status">This capture needs a fresh review after a connection change or expired approval. Its original text is kept.</p>:null}{p.capability?.state==='unavailable'?<p>{featureDescription(p.capability)}</p>:null}<p>Provider: Codex. Account: {connections.status?.connections.find(a=>a.id===p.reviewed?.connectionId)?.label??'None'}. Model: {p.reviewed.model??'Not selected'}.</p><div className={styles['proofreading-actions']}><AppButton disabled={p.blocked||p.readOnly||!p.reviewCurrent} onClick={()=>void p.submit(false)}>Save review locally</AppButton><AppButton variant="default" disabled={p.blocked||!p.canSend||active} onClick={()=>void p.submit(true)}>Run reviewed request</AppButton><AppButton variant="default" disabled={p.blocked||p.readOnly} onClick={()=>void p.reviewAgain()}>Review this capture again</AppButton><AppButton variant="subtle" disabled={p.blocked} onClick={p.clear}>Clear capture</AppButton></div><p>Saving locally does not send or queue a review. A saved unsent review will never run automatically.</p></section>:null}
     <details className={styles['proofreading-history']} open={!b}><summary>Saved reviews ({p.total})</summary>
       <ul className={styles['proofreading-list']}>{p.items.map(item=><li key={item.id}><AppButton className={styles['proofreading-list-item']} variant={p.selected===item.id?'default':'subtle'} disabled={p.blocked} aria-current={p.selected===item.id?'true':undefined} onClick={()=>p.choose(item.id)}>{item.label} · {new Date(item.createdAt).toLocaleString()}</AppButton><span>{outcomes[item.state]}{item.validation==='valid'?` · ${item.findings} findings`:''}</span></li>)}</ul>
       {!p.items.length?<p>No saved reviews on this page. Choose a small writing scope to begin.</p>:null}
@@ -50,9 +54,9 @@ export function ProofreadingPanel():React.JSX.Element {
     </details>
     {b?<section className={styles['proofreading-results']} aria-label="Saved review results"><h4>{b.capture.context[0].label}</h4><p className={styles['proofreading-outcome']}>{outcomes[b.attempt.state]}</p>
       <p>{new Date(b.attempt.createdAt).toLocaleString()} · {b.attempt.provider??'Provider not established'} · {b.attempt.model??'Model not established'}</p>
-      {b.attempt.reason?<p>{connectionReason[b.attempt.reason]}</p>:null}
+      {b.attempt.reason?<p>{proofreadReason(b.attempt.reason)}</p>:null}
       {active?<AppButton variant="default" disabled={p.blocked||b.attempt.state==='stopping'} onClick={p.stop}>Stop review</AppButton>:null}
-      {b.attempt.state==='stopping'?<p>A stop request is not yet a confirmed cancellation.</p>:null}
+      {b.attempt.state==='stopping'?<p>A stop request is not yet a confirmed cancellation or restored usage.</p>:null}
       {b.attempt.validation==='invalid'?<p role="status">The returned text did not match the supported result format or exact targets. No applicable findings were created.</p>:null}
       {b.attempt.validation==='not-completed'?<p>Incomplete output cannot authorize corrections. You can choose the current scope again for a separate, explicitly reviewed request.</p>:null}
       {b.attempt.validation==='valid'&&!b.findings.length?<p>No corrections were suggested for the included runs. This is not a guarantee that the writing is error-free.</p>:null}
@@ -71,7 +75,7 @@ export function ProofreadingPanel():React.JSX.Element {
       {b.attempt.provider?<AppButton variant="subtle" disabled={p.blocked} onClick={p.protect}>Retry local output protection</AppButton>:null}
     </section>:null}
     <AppButton variant="subtle" disabled={p.blocked} onClick={p.recover}>Retry local recovery</AppButton>
-    <p className={styles['proofreading-caption']}>Reviews use your own eligible subscription. The current provider journal holds at most 64 operations across conversations and proofreading. A full journal refuses new requests and keeps saved work.</p>
+    <p className={styles['proofreading-caption']}>Reviewed requests use your own supported account and its spending settings. The current provider journal holds at most 64 operations across conversations and proofreading. A full journal refuses new requests and keeps saved work.</p>
   </section>
 }
 export function ProofreadingNotice():React.JSX.Element|null {

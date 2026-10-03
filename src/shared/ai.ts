@@ -29,6 +29,7 @@ export type AiStatus = {
   sequence: number
   /** Opaque transient review invalidation, never a runtime ID or send grant. */
   reviewRevision:string
+  proofreadReviewRevision:string
   provider: typeof AI_PROVIDER
   channel: 'development' | 'beta' | 'production'
   implementation: 'partial'
@@ -117,9 +118,10 @@ export function isAiOperation(v: unknown): v is AiOperation {
 export function isAiStatus(v: unknown): v is AiStatus {
   if(!record(v)||!isAiRoute(v.route)||!isAiSession(v.session)||!isAiFeatureAvailability(v.features))return false
   const {route,session,features}=v,execution=v.execution,catalog=v.catalog
-  return record(v) && exact(v,['sequence','reviewRevision','provider','channel','implementation','configured','channelPermitted','commercialApproved','route','session','funding','features','catalog','execution','runtime','state','reasons','attemptId','activeConnectionId','connections','remoteRevocation','actions','local']) &&
+  return record(v) && exact(v,['sequence','reviewRevision','proofreadReviewRevision','provider','channel','implementation','configured','channelPermitted','commercialApproved','route','session','funding','features','catalog','execution','runtime','state','reasons','attemptId','activeConnectionId','connections','remoteRevocation','actions','local']) &&
     Number.isSafeInteger(v.sequence) && Number(v.sequence)>=0 &&
     typeof v.reviewRevision==='string'&&/^[a-f0-9]{64}$/.test(v.reviewRevision)&&
+    typeof v.proofreadReviewRevision==='string'&&/^[a-f0-9]{64}$/.test(v.proofreadReviewRevision)&&
     v.provider === AI_PROVIDER && ['development','beta','production'].includes(String(v.channel)) && v.implementation === 'partial' &&
     [v.configured,v.channelPermitted,v.commercialApproved].every(b=>typeof b==='boolean') &&
     isAiRoute(v.route) && isAiSession(v.session) && isAiFunding(v.funding) && isAiFeatureAvailability(v.features) &&

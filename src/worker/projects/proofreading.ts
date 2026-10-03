@@ -4,7 +4,7 @@ import { readDocument, isId, type DocumentPayload } from '../../domain/editor/sc
 import { MECHANICS_PROMPT, mechanicsContext, mechanicsTargets, replaceMechanicsFinding, validateMechanicsResult } from '../../domain/ai/proofreading'
 import { ProjectError } from '../../domain/projects/errors'
 import { AI_LIMITS } from '../../shared/ai'
-import { isConversationBinding, type ConversationBinding } from '../../shared/conversations'
+import { isContentBinding, type ConversationBinding } from '../../shared/conversations'
 import { isProofreadCapture, isProofreadRun, isProofreadFinding, isProofreadBundle, type FindingSuggestion, type ProofreadCapture, type ProofreadRun, type ProofreadFinding, type ProofreadBundle, type ProofreadReview, type ProofreadValue, type ProofreadWorkerInput } from '../../shared/proofreading'
 import { captureDigest } from '../ai/capture'
 import { inWriteTransaction } from '../storage/driver'
@@ -50,7 +50,7 @@ function review(db:Database.Database,p:string,input:ProofreadReview):ProofreadCa
   if(!isProofreadCapture(capture))throw new ProjectError('VALIDATION')
   return capture
 }
-function bindings(operations:Database.Database):ConversationBinding[]{const rows=operations.prepare("SELECT result FROM jobs WHERE kind='proofreading-binding' ORDER BY created_at,id LIMIT ?").all(AI_LIMITS.jobs+1) as {result:string}[];if(rows.length>AI_LIMITS.jobs)return corrupt();return rows.map(r=>parse(r.result,isConversationBinding))}
+function bindings(operations:Database.Database):ConversationBinding[]{const rows=operations.prepare("SELECT result FROM jobs WHERE kind='proofreading-binding' ORDER BY created_at,id LIMIT ?").all(AI_LIMITS.jobs+1) as {result:string}[];if(rows.length>AI_LIMITS.jobs)return corrupt();return rows.map(r=>parse(r.result,isContentBinding))}
 const sameBinding=(a:ConversationBinding|undefined,b:ConversationBinding|null)=>!!a&&!!b&&requestDigest(a)===requestDigest(b)
 export function findingSuggestion(f:ProofreadFinding):FindingSuggestion {return {targetId:f.targetId,from:f.from,to:f.to,before:f.before,replacement:f.replacement,reason:f.reason,kind:f.kind}}
 

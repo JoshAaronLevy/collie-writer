@@ -7,7 +7,7 @@ import { AiError } from './errors'
 import { emptyLocalSession, type LocalCodexSessionV2 } from './local-session-metadata'
 import type { AiStorage } from './storage'
 import type { AiDispatchSession } from './dispatch-session'
-import { type LocalExecutionV2, type LocalSessionIdentity } from './local-operation'
+import { isSchemaExecution, type LocalExecution, type LocalSessionIdentity } from './local-operation'
 import { requireLocalTextIsolation } from './codex-local-policy'
 
 /** One main-owned account session, independent of project/panel lifetime. The
@@ -244,7 +244,7 @@ export class LocalCodexSession {
   legacyModels(connectionId: string): AiModel[] {
     if (connectionId!==this.data.active?.account.connectionId||!this.connected) throw new AiError('signed-out')
     // CD05 conversations uses the shared catalog and main capability instead
-    // of this legacy membership endpoint. CD06 proofreading remains pending.
+    // of this legacy membership endpoint. Both tools use the shared catalog.
     // A legacy catalog must never confer execution authority.
     return []
   }
@@ -263,8 +263,9 @@ export class LocalCodexSession {
   }
   dispatchSession():AiDispatchSession {
     const runtime=this.runtime
-    const authorize=(input:AiPrepareInput,execution:LocalExecutionV2|null):void=>{
+    const authorize=(input:AiPrepareInput,execution:LocalExecution|null):void=>{
       if(!execution||!runtime||this.runtime!==runtime)throw new AiError('context-changed')
+      if((input.action==='proofread')!==isSchemaExecution(execution))throw new AiError('context-changed')
       const current=this.executionIdentity(input)
       for(const key of Object.keys(current) as (keyof LocalSessionIdentity)[])if(current[key]!==execution[key])throw new AiError('context-changed')
       requireLocalTextIsolation()
@@ -275,7 +276,7 @@ export class LocalCodexSession {
         // Recheck the effective account immediately before content. No token is
         // read by Collie, and a changed identity cannot adopt the old intent.
         await runtime!.readAccount();authorize(input,execution);await guard()
-        await runtime!.executeText({epoch:execution!.sessionGeneration,model:input.model,text:execution!.framedText,defaultReasoningEffort:execution!.defaultReasoningEffort},guard,update)
+        await runtime!.executeText({epoch:execution!.sessionGeneration,model:input.model,execution:execution!},guard,update)
       },interrupt:async()=>{runtime?.interruptText()}}
   }
   private async cleanRetired(signal: AbortSignal): Promise<void> {
