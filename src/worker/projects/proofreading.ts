@@ -4,9 +4,10 @@ import { readDocument, isId, type DocumentPayload } from '../../domain/editor/sc
 import { MECHANICS_PROMPT, mechanicsContext, mechanicsTargets, replaceMechanicsFinding, validateMechanicsResult } from '../../domain/ai/proofreading'
 import { ProjectError } from '../../domain/projects/errors'
 import { AI_LIMITS } from '../../shared/ai'
-import { isContentBinding, type ConversationBinding } from '../../shared/conversations'
+import type { ConversationBinding } from '../../shared/conversations'
 import { isProofreadCapture, isProofreadRun, isProofreadFinding, isProofreadBundle, type FindingSuggestion, type ProofreadCapture, type ProofreadRun, type ProofreadFinding, type ProofreadBundle, type ProofreadReview, type ProofreadValue, type ProofreadWorkerInput } from '../../shared/proofreading'
 import { captureDigest } from '../ai/capture'
+import { activeBindings, localBinding, protectHandoff, retireBinding } from '../ai/handoff'
 import { inWriteTransaction } from '../storage/driver'
 import { requestDigest } from '../storage/digest'
 import { checkpoint, manuscript, payloadAnchors, updateDocumentAnchors } from './manuscript'
@@ -50,7 +51,7 @@ function review(db:Database.Database,p:string,input:ProofreadReview):ProofreadCa
   if(!isProofreadCapture(capture))throw new ProjectError('VALIDATION')
   return capture
 }
-function bindings(operations:Database.Database):ConversationBinding[]{const rows=operations.prepare("SELECT result FROM jobs WHERE kind='proofreading-binding' ORDER BY created_at,id LIMIT ?").all(AI_LIMITS.jobs+1) as {result:string}[];if(rows.length>AI_LIMITS.jobs)return corrupt();return rows.map(r=>parse(r.result,isContentBinding))}
+function bindings(operations:Database.Database):ConversationBinding[]{return activeBindings(operations,'proofread')}
 const sameBinding=(a:ConversationBinding|undefined,b:ConversationBinding|null)=>!!a&&!!b&&requestDigest(a)===requestDigest(b)
 export function findingSuggestion(f:ProofreadFinding):FindingSuggestion {return {targetId:f.targetId,from:f.from,to:f.to,before:f.before,replacement:f.replacement,reason:f.reason,kind:f.kind}}
 
@@ -75,6 +76,16 @@ export async function proofreadingCommand(context:Context,input:ProofreadWorkerI
       return {type:'decision',turn:b,documentId:b.capture.source.documentId,revisionId:doc.revision_id,...head(db,p)}
     }
     case 'bindings':return {type:'bindings',bindings:bindings(operations)}
+    case 'binding':return localBinding(context,'proofread',input.attemptId)
+    case 'handoff':{
+      const b=bundle(db,p,input.binding.attemptId),r=b.attempt,op=input.operation
+      if(b.capture.digest!==input.binding.captureDigest||r.sequence!==op.sequence+1||r.state!==op.state||r.model!==op.model||r.provider!=='openai-codex'||r.reason!==op.reason||r.finishedAt!==new Date(op.finishedAt??0).toISOString()||r.output!==op.text)throw new ProjectError('OPERATION_CONFLICT')
+      // Human decisions/freshness may change later; the validated suggestions
+      // and actual run outcome retained by this receipt do not.
+      const body={attempt:r,capture:b.capture,findings:b.findings.map(f=>({id:f.id,...findingSuggestion(f)}))}
+      return {type:'handoff',receipt:protectHandoff(context,'proofread',input.binding,op,input.acknowledged,{revision:r.revisionId,head:head(db,p).head,body})}
+    }
+    case 'retire':retireBinding(context,'proofread',input.receipt);return {type:'done'}
     case 'append':return inWriteTransaction(db,()=>{
       const s=input.submission,digest=requestDigest(s)
       if(db.prepare('SELECT id FROM proofreading_runs WHERE project_id=? AND id=?').get(p,s.attemptId)){if(run(db,p,s.attemptId).requestDigest!==digest)throw new ProjectError('OPERATION_CONFLICT');return result(s.attemptId)}
@@ -88,14 +99,15 @@ export async function proofreadingCommand(context:Context,input:ProofreadWorkerI
       return result(r.id,true)
     })
     case 'bind':{
-      const b=bundle(db,p,input.binding.attemptId),existing=bindings(operations).find(item=>item.attemptId===input.binding.attemptId)
+      const b=bundle(db,p,input.binding.attemptId),existing=localBinding(context,'proofread',input.binding.attemptId).binding??undefined
       if(b.capture.digest!==input.binding.captureDigest||b.attempt.state!=='not-sent'&&!existing||existing&&!sameBinding(existing,input.binding))throw new ProjectError('OPERATION_CONFLICT')
       if(!existing){if(bindings(operations).length>=AI_LIMITS.jobs)throw new ProjectError('LIMIT_EXCEEDED');operations.prepare('INSERT INTO jobs VALUES (?,?,?,?,?,?)').run(input.binding.attemptId,input.binding.operationId,'proofreading-binding','bound',new Date().toISOString(),JSON.stringify(input.binding))}
       return inWriteTransaction(db,()=>{const r=run(db,p,b.attempt.id);if(r.state==='not-sent'){r.state='preparing';r.provider='openai-codex';r.model=input.binding.model;writeRun(db,p,r);advance(db,p)}return result(r.id)})
     }
     case 'settle':return inWriteTransaction(db,()=>{
-      const b=bundle(db,p,input.attemptId),r=b.attempt,existing=bindings(operations).find(item=>item.attemptId===r.id),op=input.operation
+      const b=bundle(db,p,input.attemptId),r=b.attempt,owned=localBinding(context,'proofread',r.id),existing=owned.binding??undefined,op=input.operation
       if(input.binding&&!sameBinding(existing,input.binding))throw new ProjectError('DENIED')
+      if(owned.receipt){if(!op||owned.receipt.resultDigest!==requestDigest(op))throw new ProjectError('OPERATION_CONFLICT');return result(r.id)}
       if(op){
         if(!existing||!input.binding||op.scope.projectId!==p||op.scope.workspaceId!==context.workspaceId||op.operationId!==existing.operationId||op.digest!==existing.digest||op.connectionId!==existing.connectionId||op.model!==existing.model||op.action!=='proofread')throw new ProjectError('DENIED')
         if(op.sequence+1<=r.sequence)return result(r.id)

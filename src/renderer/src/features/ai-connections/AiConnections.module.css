@@ -55,3 +55,8 @@
 .ai-request-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--collie-space-2); }
 .ai-request-actions button { max-width: 100%; height: auto; min-height: 2.25rem; padding-block: .5rem; white-space: normal; }
 .ai-request-error { color: var(--collie-error); border-inline-start: 2px solid var(--collie-error); padding-inline-start: var(--collie-space-3); }
+.ai-capacity { display: grid; gap: var(--collie-space-2); border-block-start: 1px solid var(--collie-border); padding-block-start: var(--collie-space-3); }
+.ai-capacity p { margin: 0; overflow-wrap: anywhere; }
+.ai-capacity h3 { margin: 0; font-size: .875rem; }
+.ai-capacity ul { margin: 0; padding-inline-start: var(--collie-space-4); }
+.ai-capacity button { max-width: 100%; height: auto; white-space: normal; }

@@ -4,3 +4,5 @@
 .ai-work-list p { overflow-wrap: anywhere; }
 .ai-work-actions { display: flex; flex-wrap: wrap; gap: var(--collie-space-2); }
 .ai-work-actions button { max-width: 100%; height: auto; min-height: 2.25rem; white-space: normal; }
+.ai-retention-confirmation { display: grid; gap: var(--collie-space-3); }
+.ai-retention-confirmation p { margin: 0; }

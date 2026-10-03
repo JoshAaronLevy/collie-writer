@@ -2,6 +2,7 @@ import { AppButton } from '../../components/ui/Controls'
 import { useWorkspaceSession } from '../workspace/WorkspaceSession'
 import { useAiConnections } from './AiConnectionsProvider'
 import { AiModelSelection } from './AiModelSelection'
+import { AiCapacity } from './AiCapacity'
 import { connectionLabel, connectionReason, featureDescription, fundingDescription } from './connection-copy'
 import styles from './AiConnections.module.css'
 
@@ -25,6 +26,7 @@ export function AiRequestConnection({action,disabled=false}:{action:'conversatio
       <AppButton variant="subtle" disabled={blocked||connections.checking||!session.available} onClick={()=>void connections.checkStatus(true)}>Check connection status</AppButton>
     </div>
     <details><summary>Choose model and view availability</summary><AiModelSelection disabled={blocked}/></details>
+    <AiCapacity/>
     {status?<p className={styles['ai-sharing-note']}>{fundingDescription(status.funding)}</p>:null}
   </section>
 }

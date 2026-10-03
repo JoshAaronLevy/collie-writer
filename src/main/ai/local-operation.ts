@@ -111,13 +111,17 @@ export function isRetainedOperation(v:unknown):v is RetainedOperation {
     aiText(v.output.commentary,AI_LIMITS.output)&&(v.output.finalText===null||aiText(v.output.finalText,AI_LIMITS.output))&&
     (v.output.finalText===null||view.state==='completed'&&view.text.includes(v.output.finalText))&&v.output.commentary.length+(v.output.finalText?.length??0)<=AI_LIMITS.output
 }
+/** State-only status reads do not clone retained output into every work notice. */
+export function contentState(item:RetainedOperation):AiOperation['state'] {
+  return item.version!==1&&item.view.action==='proofread'&&item.view.state==='completed'&&item.output.finalText===null?'failed':item.view.state
+}
 /** Only protected snapshots are projected. v1 keeps its historical meaning.
  * Mechanics never interprets commentary/unclassified output as a final result. */
 export function contentOperation(item:RetainedOperation):AiOperation {
   const view=structuredClone(item.view)
   if(item.version!==1&&view.action==='proofread'&&view.state==='completed') {
     if(item.output.finalText!==null)view.text=item.output.finalText
-    else {view.state='failed';view.reason='provider-failed'}
+    else {view.state=contentState(item);view.reason='provider-failed'}
   }
   return view
 }

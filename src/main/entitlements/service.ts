@@ -161,6 +161,8 @@ export class AccessService {
     if(this.changing||this.sampleBusy||view.transition)throw new ProjectError('ACCESS_BUSY')
     if(!canEditProject(view,scope))throw new ProjectError('READ_ONLY_PROJECT')
   }
+  /** Local handoff targets only the original project observed from the worker. */
+  isActiveAiScope(scope:OpenInput):boolean{return sameProject(this.active,scope)}
   setExternalWorkGuard(pending:()=>boolean):void{this.externalWorkPending=pending}
   releaseWindow():void{this.active=null;this.activeWasEditable=false;this.transition=null;this.drainOperations.clear();this.lastView=''}
   private requireSettled(keepActive=false):void{if(!this.root)throw new ProjectError('STORAGE_LOCATION_REQUIRED');if(!this.initialized||(!keepActive&&this.dirty())||!this.storage.idle()||this.changing||this.sampleBusy||this.externalWorkPending())throw new ProjectError('ACCESS_BUSY')}

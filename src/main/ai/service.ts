@@ -1,4 +1,6 @@
 import { app } from 'electron'
+import type { AiHandoffReceipt } from '../../shared/ai-handoff'
+import { handoffMatches } from './handoff'
 import { randomUUID } from 'node:crypto'
 import { AI_LIMITS, AI_PROVIDER, type AiConnectInput, type AiEvent, type AiModel, type AiOperation, type AiOperationInput,
   type AiContentWork, type AiPrepareInput, type AiPrepared, type AiReason, type AiStartInput, type AiStatus } from '../../shared/ai'
@@ -15,7 +17,7 @@ import type { AiDispatchSession } from './dispatch-session'
 import { CODEX_VERSION, OPENAI_REGISTRATIONS, registration, requireIncludedFunding, requireTextOnlyRuntime,
   requireRegisteredRoute, routeFunding, selectAiRoute } from './deployment'
 import { operationDigestV1 } from './operation-identity'
-import { contentOperation, identityHash, isSchemaExecution, localExecution, mechanicsSchemaDigestV1, operationDigestV2, operationDigestV3, templateFor,
+import { contentOperation, contentState, identityHash, isSchemaExecution, localExecution, mechanicsSchemaDigestV1, operationDigestV2, operationDigestV3, templateFor,
   type ContentTemplate, type LocalExecution } from './local-operation'
 import { LocalCodexSession } from './local-codex-session'
 import { localExecutionReadiness, localFeatureAvailability } from './codex-local-policy'
@@ -45,6 +47,7 @@ export class AiService {
   private closing=false
   private closeRequested=false
   private suspended=false
+  private handoffWork:Promise<void>|null=null
   private attempt:OpenAiSignIn|null=null
   private authWork:Promise<void>|null=null
   private authAbort:AbortController|null=null
@@ -57,6 +60,7 @@ export class AiService {
   private prepared=new Map<string,Prepared>()
   private reviewGeneration=randomUUID()
   private retained=new Map<string,RetainedOperation>()
+  private retentionLoaded=false
   private protectedRecords=new Map<string,RetainedOperation>()
   private dispatch:AiDispatchSession|null=null
   private running:Promise<void>|null=null
@@ -75,6 +79,38 @@ export class AiService {
   setContentLifecycle(work:()=>AiContentWork[],settle:()=>Promise<boolean>):void {this.contentWork=work;this.settleContent=settle}
   isSettling():boolean {return this.closing||this.closeRequested||this.suspended}
   contentWorkChanged():void {this.publish()}
+  isContentScopeOpen(scope:OpenInput):boolean {return this.access.isActiveAiScope(scope)}
+  private capacity():AiStatus['capacity'] {
+    const projects=new Map<string,OpenInput>()
+    for(const item of this.retained.values())projects.set(`${item.view.scope.projectId}:${item.view.scope.workspaceId}`,{...item.view.scope})
+    const readable=this.retentionLoaded&&!this.storageFailure
+    return {limit:AI_LIMITS.jobs,used:readable?this.retained.size:null,projects:readable?[...projects.values()]:[]}
+  }
+  handoffReady(operationId:string):boolean {
+    const item=this.retained.get(operationId)
+    return !this.running&&!this.busy&&!this.attempt&&!this.local.hasPendingWork()&&!this.pendingRetention&&!this.retentionWriting&&!this.journalFailure&&(!item||!active(item.view))
+  }
+  async retire(receipt:AiHandoffReceipt):Promise<void> {
+    while(this.handoffWork)try{await this.handoffWork}catch{/* Each original transfer retains its own retry. */}
+    const task=this.retireOnce(receipt);this.handoffWork=task
+    try{await task}finally{if(this.handoffWork===task)this.handoffWork=null}
+  }
+  async settleOperation(operationId:string):Promise<void> {
+    if(this.activeOperationId===operationId)await this.running
+    await this.retention
+  }
+  private async retireOnce(receipt:AiHandoffReceipt):Promise<void> {
+    await this.ensure();this.access.authorizeAi(receipt.scope,false)
+    if(!this.handoffReady(receipt.operationId))throw new AiError('busy')
+    const item=this.protectedRecords.get(receipt.operationId)??await this.storage.operation(receipt.operationId)
+    if(!item||!handoffMatches(item,receipt))throw new AiError('invalid-request')
+    this.busy=true
+    try{
+      await this.storage.retire(receipt)
+      this.retained.delete(receipt.operationId);this.protectedRecords.delete(receipt.operationId)
+      for(const [id,prepared] of this.prepared)if(prepared.input.operationId===receipt.operationId)this.prepared.delete(id)
+    }finally{this.busy=false;this.publish()}
+  }
   readonly storage:AiStorage
   private readonly local:LocalCodexSession
   constructor(workingRoot:()=>string|undefined,private readonly access:AccessService){
@@ -93,7 +129,7 @@ export class AiService {
     return this.currentReviewStamp(action)
   }
   subscribe(listener:(event:AiEvent)=>void):()=>void {this.listeners.add(listener);return()=>this.listeners.delete(listener)}
-  hasPendingWork():boolean{return !!(this.busy||this.attempt||this.running||this.pendingRetention||this.retentionWriting||this.journalFailure||this.local.hasPendingWork())}
+  hasPendingWork():boolean{return !!(this.busy||this.attempt||this.running||this.handoffWork||this.pendingRetention||this.retentionWriting||this.journalFailure||this.local.hasPendingWork())}
   private emit(event:AiEvent):void {
     for(const listener of this.listeners)try{listener(structuredClone(event))}catch{/* A lost renderer cannot erase the retained operation. */}
   }
@@ -101,6 +137,7 @@ export class AiService {
   private async ensure():Promise<void> {
     if(!this.initialization){
       this.initialization=(async()=>{
+        this.retentionLoaded=false
         this.retained.clear()
         this.protectedRecords.clear()
         this.credentials=await this.storage.credentials()
@@ -112,6 +149,7 @@ export class AiService {
           this.retained.set(item.view.operationId,item)
           this.protectedRecords.set(item.view.operationId,structuredClone(item))
         }
+        this.retentionLoaded=true
         this.runtimeState=app.isPackaged?'not-packaged':await codexExecutable().then(()=> 'development-installed' as const,()=> 'unavailable' as const)
         this.storageFailure=false
       })().catch(error=>{this.storageFailure=true;this.initialization=null;throw error})
@@ -130,7 +168,7 @@ export class AiService {
       if(this.runtimeState!=='development-installed')reasons.push('runtime-unavailable')
       const idle=!this.isSettling()&&!this.busy&&!this.running&&!this.contentPending()
       const snapshot=this.local.snapshot(available,secureAiStorage()&&!this.storageFailure&&!this.journalFailure&&idle,idle)
-      return {sequence:++this.statusSequence,reviewRevision:this.currentReviewStamp('conversation'),proofreadReviewRevision:this.currentReviewStamp('proofread'),work:this.contentWork(),provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',route,
+      return {sequence:++this.statusSequence,reviewRevision:this.currentReviewStamp('conversation'),proofreadReviewRevision:this.currentReviewStamp('proofread'),work:this.contentWork(),capacity:this.capacity(),provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',route,
         funding:routeFunding(route),features:this.localFeatures(snapshot),execution,
         configured:true,channelPermitted:true,commercialApproved:false,runtime:this.runtimeState,reasons,...snapshot}
     }
@@ -140,7 +178,7 @@ export class AiService {
       if(this.storageFailure||this.journalFailure)reasons.push('storage-unavailable')
       if(this.runtimeState!=='development-installed')reasons.push('runtime-unavailable')
       if(this.lastReason&&!reasons.includes(this.lastReason))reasons.push(this.lastReason)
-      return {sequence:++this.statusSequence,reviewRevision:this.currentReviewStamp('conversation'),proofreadReviewRevision:this.currentReviewStamp('proofread'),work:this.contentWork(),provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',
+      return {sequence:++this.statusSequence,reviewRevision:this.currentReviewStamp('conversation'),proofreadReviewRevision:this.currentReviewStamp('proofread'),work:this.contentWork(),capacity:this.capacity(),provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',
         route,session:{state:'unavailable',reason:route.reason},funding:routeFunding(route),
         features:{conversation:{state:'unavailable',reason:route.reason},proofread:{state:'unavailable',reason:route.reason}},
         configured:false,channelPermitted:false,commercialApproved:false,runtime:this.runtimeState,state:'unavailable',
@@ -168,7 +206,7 @@ export class AiService {
       !selected?.tokens?{state:'signed-out'}:
       selected.refreshPending||selected.tokens.expiresAt<=Date.now()?{state:'reconnect-required',connectionId:selected.id}:
       {state:'signed-in',connectionId:selected.id}
-    return {sequence:++this.statusSequence,reviewRevision:this.currentReviewStamp('conversation'),proofreadReviewRevision:this.currentReviewStamp('proofread'),work:this.contentWork(),provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',configured:!!config,
+    return {sequence:++this.statusSequence,reviewRevision:this.currentReviewStamp('conversation'),proofreadReviewRevision:this.currentReviewStamp('proofread'),work:this.contentWork(),capacity:this.capacity(),provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',configured:!!config,
       route,session,funding:routeFunding(route),features:{conversation:{state:'unavailable',reason:'commercial-requirements-pending'},
         proofread:{state:'unavailable',reason:'commercial-requirements-pending'}},
       channelPermitted:permitted,commercialApproved:!!config?.commercialReference,runtime:this.runtimeState,
@@ -413,7 +451,7 @@ export class AiService {
     if(content&&content.reviewStamp!==this.currentReviewStamp(input.action))throw new AiError('context-changed')
     this.authorize(input,session,execution)
     for(const [key,value]of this.prepared)if(value.receipt.expiresAt<Date.now())this.prepared.delete(key)
-    if(this.retained.has(input.operationId))throw new AiError('context-changed')
+    if(this.retained.has(input.operationId)||await this.storage.operation(input.operationId))throw new AiError('context-changed')
     if(this.prepared.size>=8||this.retained.size>=AI_LIMITS.jobs)throw new AiError('busy')
     const receipt:AiPrepared={authorizationId:randomUUID(),operationId:input.operationId,digest:execution?(isSchemaExecution(execution)?operationDigestV3(input,execution):operationDigestV2(input,execution)):operationDigestV1(input),expiresAt:Date.now()+5*60000}
     this.prepared.set(receipt.authorizationId,{receipt,input:structuredClone(input),execution,session})
@@ -426,11 +464,11 @@ export class AiService {
   }
   async start(input:AiStartInput):Promise<AiOperation> {
     if(this.initialization)await this.initialization;else await this.ensure()
-    const prior=this.retained.get(input.operationId)
+    const prior=this.retained.get(input.operationId)??await this.storage.operation(input.operationId)
     if(prior){
       if(!sameProject(prior.view.scope,input.scope)||prior.view.digest!==input.digest)throw new AiError('context-changed')
       this.access.authorizeAi(input.scope,false)
-      const protectedRecord=this.protectedRecords.get(input.operationId)
+      const protectedRecord=this.protectedRecords.get(input.operationId)??(!this.retained.has(input.operationId)?prior:null)
       if(!protectedRecord)throw new AiError('storage-unavailable')
       return structuredClone(protectedRecord.view) // Exact replay never resends inference.
     }
@@ -521,6 +559,7 @@ export class AiService {
     if(this.initialization)await this.initialization;else await this.ensure()
     this.access.authorizeAi(input.scope,false)
     const item=this.retained.get(input.operationId)
+    if(!item){const cold=await this.contentRecord(input);if(!cold)throw new AiError('invalid-request');return structuredClone(cold.view)}
     if(!item||!sameProject(item.view.scope,input.scope))throw new AiError('invalid-request')
     if(active(item.view)&&this.activeOperationId===input.operationId){
       item.view={...item.view,state:'cancelling',sequence:item.view.sequence+1}
@@ -539,7 +578,7 @@ export class AiService {
   async operationRecord(input:AiOperationInput):Promise<import('../../shared/ai').AiOperationRecord>{
     if(this.initialization)await this.initialization;else await this.ensure()
     this.access.authorizeAi(input.scope,false)
-    const item=this.protectedRecords.get(input.operationId)
+    const item=await this.contentRecord(input)
     if(!item||!sameProject(item.view.scope,input.scope))throw new AiError('invalid-request')
     return structuredClone({input:item.input,operation:item.view})
   }
@@ -548,7 +587,7 @@ export class AiService {
   async contentRecord(input:AiOperationInput):Promise<RetainedOperation|null> {
     if(this.initialization)await this.initialization;else await this.ensure()
     this.access.authorizeAi(input.scope,false)
-    const item=this.protectedRecords.get(input.operationId)
+    const item=this.protectedRecords.get(input.operationId)??(!this.retained.has(input.operationId)?await this.storage.operation(input.operationId):null)
     if(!item&&this.retained.has(input.operationId))throw new AiError('storage-unavailable')
     if(item&&!sameProject(item.view.scope,input.scope))throw new AiError('invalid-request')
     return item?structuredClone(item):null
@@ -557,17 +596,22 @@ export class AiService {
     const item=this.protectedRecords.get(operationId)
     return item?.version===version?contentOperation(item):null
   }
+  protectedContentState(operationId:string,version:1|2|3):AiOperation['state']|null {
+    const item=this.protectedRecords.get(operationId)
+    return item?.version===version?contentState(item):null
+  }
   needsProtection(operationId:string):boolean {return this.journalFailure&&this.unprotectedOperationId===operationId}
   async hasOperation(input:AiOperationInput):Promise<boolean> {
     if(this.initialization)await this.initialization;else await this.ensure()
     this.access.authorizeAi(input.scope,false)
-    const item=this.retained.get(input.operationId)
+    const item=this.retained.get(input.operationId)??await this.storage.operation(input.operationId)
     if(item&&!sameProject(item.view.scope,input.scope))throw new AiError('invalid-request')
     return !!item
   }
   async retryProtection(input:AiOperationInput):Promise<AiOperation>{
     if(this.initialization)await this.initialization;else await this.ensure()
     this.access.authorizeAi(input.scope,false)
+    if(!this.retained.has(input.operationId)){const cold=await this.contentRecord(input);if(!cold)throw new AiError('invalid-request');return structuredClone(cold.view)}
     if(this.running||this.busy||this.attempt||this.local.hasPendingWork())throw new AiError('busy')
     const item=this.retained.get(input.operationId)
     if(!item||!sameProject(item.view.scope,input.scope))throw new AiError('invalid-request')

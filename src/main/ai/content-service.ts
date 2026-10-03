@@ -36,7 +36,11 @@ export class AiContentService {
   setOtherPending(read:()=>boolean):void {this.otherPending=read}
   constructor(private readonly storage:StorageWorker,private readonly ai:AiService,private readonly kind:'conversation'|'proofreading') {
     ai.subscribe(event=>{
-      if(event.kind==='connection'){for(const owner of this.bound.values())this.publish(owner.scope,owner.binding.attemptId,this.failures.has(owner.binding.attemptId)?'AI output needs local protection.':null);return}
+      if(event.kind==='connection'){
+        for(const owner of this.bound.values())this.publish(owner.scope,owner.binding.attemptId,this.failures.has(owner.binding.attemptId)?'AI output needs local protection.':null)
+        if(!this.timer&&!this.writing&&[...this.bound.values()].some(owner=>this.ai.isContentScopeOpen(owner.scope)&&!this.failures.has(owner.binding.attemptId)&&this.ai.protectedContentState(owner.binding.operationId,bindingVersion(owner.binding))==='completed'&&this.ai.handoffReady(owner.binding.operationId)))this.timer=setTimeout(()=>{this.timer=null;void this.drain()},250)
+        return
+      }
       const owner=this.bound.get(event.operation.operationId)
       if(owner&&same(owner.scope,event.operation.scope))this.enqueue(owner,event.operation)
     })
@@ -47,14 +51,19 @@ export class AiContentService {
     const items=new Map<string,AiContentWork>()
     const put=(scope:OpenInput,attemptId:string,state:AiContentWork['state']):void=>{items.set(attemptId,{scope:{projectId:scope.projectId,workspaceId:scope.workspaceId},feature:this.kind,attemptId,state})}
     for(const owner of this.live.values()) {
-      const op=this.ai.protectedContentOperation(owner.binding.operationId,bindingVersion(owner.binding))
-      put(owner.scope,owner.binding.attemptId,op?.state==='cancelling'?'stopping':'running')
+      const state=this.ai.protectedContentState(owner.binding.operationId,bindingVersion(owner.binding))
+      put(owner.scope,owner.binding.attemptId,state==='cancelling'?'stopping':'running')
     }
     for(const [id,input] of this.queued)if(!items.has(id))put(input,id,'protecting')
     for(const [id,input] of this.failures)put(input,id,'protection-required')
     for(const owner of this.bound.values()) {
       if(this.ai.needsProtection(owner.binding.operationId))put(owner.scope,owner.binding.attemptId,'protection-required')
       else if(this.protecting.has(owner.binding.attemptId)&&!items.has(owner.binding.attemptId))put(owner.scope,owner.binding.attemptId,'protecting')
+      else if(!items.has(owner.binding.attemptId)){
+        const state=this.ai.protectedContentState(owner.binding.operationId,bindingVersion(owner.binding))
+        if(state&&!['starting','running','cancelling'].includes(state))put(owner.scope,owner.binding.attemptId,state==='completed'?'handoff-required':'retained-outcome')
+        else if(!state&&!this.writing)put(owner.scope,owner.binding.attemptId,'record-unavailable')
+      }
     }
     return [...items.values()]
   }
@@ -68,7 +77,7 @@ export class AiContentService {
   private publish(scope:OpenInput,attemptId:string|null,issue:string|null=null):void {
     const failed=[...this.failures].find(([,input])=>same(input,scope)),running=[...this.live.values()].find(owner=>same(owner.scope,scope))
     const unprotected=[...this.bound.values()].find(owner=>same(owner.scope,scope)&&this.ai.needsProtection(owner.binding.operationId))
-    const event:ConversationEvent={projectId:scope.projectId,workspaceId:scope.workspaceId,attemptId:failed?.[0]??unprotected?.binding.attemptId??running?.binding.attemptId??attemptId,pending:this.commandScopes.has(`${scope.projectId}:${scope.workspaceId}`)||this.workItems().some(item=>same(item.scope,scope)),issue:issue??(failed||unprotected?'AI output needs local protection. Retry local output protection before closing.':null)}
+    const event:ConversationEvent={projectId:scope.projectId,workspaceId:scope.workspaceId,attemptId:failed?.[0]??unprotected?.binding.attemptId??running?.binding.attemptId??attemptId,pending:this.commandScopes.has(`${scope.projectId}:${scope.workspaceId}`)||this.workItems().some(item=>same(item.scope,scope)&&!['retained-outcome','handoff-required','record-unavailable'].includes(item.state)),issue:issue??(failed||unprotected?'AI output needs local protection. Retry local output protection before closing.':null)}
     for(const listener of this.listeners)try{listener(event)}catch{/* Renderer loss does not interrupt local protection. */}
   }
   async worker(input:ContentWorkerInput):Promise<ContentValue> {
@@ -91,6 +100,16 @@ export class AiContentService {
     })
     this.protecting.set(attemptId,task)
     try{return await task}finally{if(this.protecting.get(attemptId)===task)this.protecting.delete(attemptId);this.ai.contentWorkChanged()}
+  }
+  /** A repeated public acknowledgment finishes its original failed disk write
+   * before constructing another step. It cannot dispatch or replace that write. */
+  private async retryFailedWrite(scope:OpenInput,attemptId:string):Promise<boolean> {
+    while(this.protecting.has(attemptId))try{await this.protecting.get(attemptId)}catch{/* Read the exact retained failure below. */}
+    const pending=this.failures.get(attemptId)
+    if(!pending)return false
+    if(!same(scope,pending))throw new ProjectError('DENIED')
+    await this.protect(pending,attemptId)
+    return true
   }
   private enqueue(owner:Bound,notification:AiOperation):void {
     // Resolve from the protected owner, including the final-channel projection.
@@ -119,6 +138,14 @@ export class AiContentService {
         try{await this.protect(input,id)}catch{/* Exact input remains available for a disk-only retry. */}
         this.publish(input,id,this.failures.has(id)?'AI output needs local protection. Retry local protection.':null)
       }
+      for(const owner of [...this.bound.values()]){
+        // A project open may have entered the worker queue before this timer.
+        // Wait for its observed scope; never turn a closed original into a
+        // failed write that would prevent returning to it.
+        if(!this.storage.idle()||!this.ai.isContentScopeOpen(owner.scope)||this.failures.has(owner.binding.attemptId)||this.queued.has(owner.binding.attemptId))continue
+        const operation=this.ai.protectedContentOperation(owner.binding.operationId,bindingVersion(owner.binding))
+        if(operation?.state==='completed')try{await this.transfer(owner,operation,false)}catch{/* Exact local transfer remains retained for Retry protection. */}
+      }
     })()
     try{await this.writing}finally{this.writing=null;this.ai.contentWorkChanged();if([...this.queued.keys()].some(id=>!this.failures.has(id))&&!this.timer)this.timer=setTimeout(()=>{this.timer=null;void this.drain()},250);for(const owner of this.bound.values())this.publish(owner.scope,owner.binding.attemptId,this.failures.has(owner.binding.attemptId)?'AI output needs local protection.':null)}
   }
@@ -126,8 +153,43 @@ export class AiContentService {
     return {scope,operationId:b.operationId,connectionId:b.connectionId,model:b.model,action:this.kind==='conversation'?'conversation':'proofread',prompt:t.capture.prompt,context:t.capture.context}
   }
   private async get(scope:OpenInput,id:string):Promise<ContentTurn> {const value=await this.worker({...scope,action:'get',attemptId:id});if(value.type!=='turn')throw new ProjectError('UNAVAILABLE');return value.turn}
+  private forget(owner:Bound):void {
+    this.bound.delete(owner.binding.operationId);this.live.delete(owner.binding.operationId);this.seen.delete(owner.binding.operationId)
+    this.publish(owner.scope,owner.binding.attemptId);this.ai.contentWorkChanged()
+  }
+  private async transfer(owner:Bound,operation:AiOperation,acknowledged:boolean):Promise<boolean> {
+    if(operation.state!=='completed'&&!acknowledged)return false
+    await this.ai.settleOperation(operation.operationId)
+    if(!this.ai.handoffReady(operation.operationId)){if(acknowledged)throw new ProjectError('ACCESS_BUSY');return false}
+    const input:ContentWorkerInput={...owner.scope,action:'handoff',binding:owner.binding,operation,acknowledged}
+    try{
+      const value=await this.protect(input,owner.binding.attemptId)
+      if(value.type!=='handoff'||value.receipt.attemptId!==owner.binding.attemptId)throw new ProjectError('UNAVAILABLE')
+      await this.ai.retire(value.receipt)
+      await this.protect({...owner.scope,action:'retire',receipt:value.receipt},owner.binding.attemptId)
+      this.forget(owner);return true
+    }catch(error){
+      if(!this.failures.has(owner.binding.attemptId))this.failures.set(owner.binding.attemptId,structuredClone(input))
+      this.publish(owner.scope,owner.binding.attemptId,'The retained AI outcome needs its local handoff finished. Retry local protection; nothing will be sent.')
+      this.ai.contentWorkChanged();throw error
+    }
+  }
+  private async readBinding(scope:OpenInput,attemptId:string):Promise<Extract<ContentValue,{type:'binding'}>> {
+    const value=await this.worker({...scope,action:'binding',attemptId})
+    if(value.type!=='binding')throw new ProjectError('UNAVAILABLE')
+    if(value.binding&&value.binding.attemptId!==attemptId||value.receipt&&(!value.binding||!same(value.receipt.scope,scope)||value.receipt.attemptId!==attemptId||value.receipt.operationId!==value.binding.operationId||value.receipt.operationVersion!==bindingVersion(value.binding)||value.receipt.payloadDigest!==value.binding.digest||value.receipt.captureDigest!==value.binding.captureDigest))throw new ProjectError('DENIED')
+    return value
+  }
   private async loadBindings(scope:OpenInput):Promise<ConversationBinding[]> {
     const result=await this.worker({...scope,action:'bindings'});if(result.type!=='bindings')throw new ProjectError('UNAVAILABLE')
+    const active=new Set(result.bindings.map(binding=>binding.operationId))
+    // Keep only the opened collection plus genuinely pending owners in memory.
+    // Closed originals stay in the bounded main journal/capacity inventory and
+    // recover their own bindings when reopened; cold rows are never cached.
+    for(const owner of [...this.bound.values()]){
+      const id=owner.binding.attemptId,opId=owner.binding.operationId
+      if((!same(owner.scope,scope)||!active.has(opId))&&!this.failures.has(id)&&!this.queued.has(id)&&!this.protecting.has(id)&&!this.live.has(opId)&&!this.ai.needsProtection(opId))this.forget(owner)
+    }
     for(const binding of result.bindings){
       const previous=this.bound.get(binding.operationId)
       if(previous&&(!same(previous.scope,scope)||requestDigest(previous.binding)!==requestDigest(binding)))throw new ProjectError('DENIED')
@@ -150,6 +212,8 @@ export class AiContentService {
         const operation=contentOperation(record)
         await this.protect({...scope,action:'settle',attemptId:binding.attemptId,binding,operation,reason:null},binding.attemptId)
         if(['starting','running','cancelling'].includes(operation.state))this.live.set(binding.operationId,{scope,binding});else this.live.delete(binding.operationId)
+        const local=await this.readBinding(scope,binding.attemptId)
+        await this.transfer({scope,binding},operation,local.receipt?.acknowledged??false)
       } else await this.protect({...scope,action:'settle',attemptId:binding.attemptId,binding,operation:null,reason:'outcome-unknown'},binding.attemptId)
     }
     await this.drain()
@@ -195,7 +259,7 @@ export class AiContentService {
     const result=await this.worker({...scope,action:'get',attemptId:input.attemptId});return result
   }
   async command(input:ContentRequest):Promise<ContentValue> {
-    const changes=['submit','change','decide','reconcile','cancel','protect'].includes(input.action)
+    const changes=['submit','change','decide','reconcile','cancel','protect','acknowledge'].includes(input.action)
     // Read, protection and reconciliation stay available at the barrier. New
     // intents, captures and decisions wait until native settlement is released.
     if(this.ai.isSettling()&&['submit','change','decide','review'].includes(input.action))throw new ProjectError('ACCESS_BUSY')
@@ -231,12 +295,31 @@ export class AiContentService {
       }
       if(input.action==='submit')return await this.submit(input)
       if(input.action==='reconcile'){await this.reconcile({projectId:input.projectId,workspaceId:input.workspaceId});return {type:'done'}}
+      if(input.action==='acknowledge'){
+        await this.drain()
+        const scope={projectId:input.projectId,workspaceId:input.workspaceId}
+        await this.retryFailedWrite(scope,input.attemptId)
+        const local=await this.readBinding(scope,input.attemptId)
+        if(!local.binding)throw new ProjectError('NOT_FOUND')
+        const owner={scope,binding:local.binding}
+        if(local.retired){this.forget(owner);return {type:'done'}}
+        if(this.failures.has(input.attemptId)||this.protecting.has(input.attemptId))throw new ProjectError('ACCESS_BUSY')
+        const record=await this.ai.contentRecord({scope,operationId:local.binding.operationId})
+        if(!record)throw new ProjectError('NOT_FOUND')
+        const operation=contentOperation(record)
+        if(['starting','running','cancelling'].includes(operation.state))throw new ProjectError('ACCESS_BUSY')
+        await this.protect({...scope,action:'settle',attemptId:input.attemptId,binding:local.binding,operation,reason:null},input.attemptId)
+        await this.transfer(owner,operation,true)
+        return {type:'done'}
+      }
       if(input.action==='cancel'||input.action==='protect') {
         if(input.action==='protect'&&this.writing)await this.writing
-        const scope={projectId:input.projectId,workspaceId:input.workspaceId},pending=this.failures.get(input.attemptId)
-        if(pending&&input.action==='protect'){if(!same(scope,pending))throw new ProjectError('DENIED');await this.protect(pending,input.attemptId)}
-        const binding=(await this.loadBindings(scope)).find(b=>b.attemptId===input.attemptId)
-        if(!binding){if(pending)return {type:'done'};throw new ProjectError('NOT_FOUND')}
+        const scope={projectId:input.projectId,workspaceId:input.workspaceId}
+        const retried=input.action==='protect'&&await this.retryFailedWrite(scope,input.attemptId)
+        const local=await this.readBinding(scope,input.attemptId),binding=local.binding
+        if(!binding){if(retried)return {type:'done'};throw new ProjectError('NOT_FOUND')}
+        if(local.retired){this.forget({scope,binding});return {type:'done'}}
+        this.bound.set(binding.operationId,{scope,binding})
         if(input.action==='cancel')this.enqueue({scope,binding},await this.ai.cancel({scope,operationId:binding.operationId}))
         else {
           if(await this.ai.hasOperation({scope,operationId:binding.operationId}))await this.ai.retryProtection({scope,operationId:binding.operationId})

@@ -27,13 +27,14 @@ export type AiResult<T> = { ok: true; requestId: string; value: T } | { ok: fals
 export type AiConnection = { id: string; label: string; state: 'signed-in' | 'expired' | 'signed-out'; planConsent: boolean }
 /** Transient local work references, never content, credentials or runtime IDs. */
 export type AiContentWork = { scope: OpenInput; feature: 'conversation' | 'proofreading'; attemptId: string;
-  state: 'running' | 'stopping' | 'protecting' | 'protection-required' }
+  state: 'running' | 'stopping' | 'protecting' | 'protection-required' | 'retained-outcome' | 'handoff-required' | 'record-unavailable' }
 export type AiStatus = {
   sequence: number
   /** Opaque transient review invalidation, never a runtime ID or send grant. */
   reviewRevision:string
   proofreadReviewRevision:string
   work: AiContentWork[]
+  capacity: { limit: 64; used: number | null; projects: OpenInput[] }
   provider: typeof AI_PROVIDER
   channel: 'development' | 'beta' | 'production'
   implementation: 'partial'
@@ -122,12 +123,16 @@ export function isAiOperation(v: unknown): v is AiOperation {
 export function isAiStatus(v: unknown): v is AiStatus {
   if(!record(v)||!isAiRoute(v.route)||!isAiSession(v.session)||!isAiFeatureAvailability(v.features))return false
   const {route,session,features}=v,execution=v.execution,catalog=v.catalog
-  return record(v) && exact(v,['sequence','reviewRevision','proofreadReviewRevision','work','provider','channel','implementation','configured','channelPermitted','commercialApproved','route','session','funding','features','catalog','execution','runtime','state','reasons','attemptId','activeConnectionId','connections','remoteRevocation','actions','local']) &&
+  return record(v) && exact(v,['sequence','reviewRevision','proofreadReviewRevision','work','capacity','provider','channel','implementation','configured','channelPermitted','commercialApproved','route','session','funding','features','catalog','execution','runtime','state','reasons','attemptId','activeConnectionId','connections','remoteRevocation','actions','local']) &&
     Number.isSafeInteger(v.sequence) && Number(v.sequence)>=0 &&
     typeof v.reviewRevision==='string'&&/^[a-f0-9]{64}$/.test(v.reviewRevision)&&
     typeof v.proofreadReviewRevision==='string'&&/^[a-f0-9]{64}$/.test(v.proofreadReviewRevision)&&
     Array.isArray(v.work)&&v.work.length<=AI_LIMITS.jobs*2&&v.work.every(isAiContentWork)&&
     new Set(v.work.map(item=>`${item.feature}:${item.scope.projectId}:${item.scope.workspaceId}:${item.attemptId}`)).size===v.work.length&&
+    record(v.capacity)&&exact(v.capacity,['limit','used','projects'])&&v.capacity.limit===AI_LIMITS.jobs&&
+    (v.capacity.used===null||Number.isSafeInteger(v.capacity.used)&&Number(v.capacity.used)>=0&&Number(v.capacity.used)<=AI_LIMITS.jobs)&&
+    Array.isArray(v.capacity.projects)&&v.capacity.projects.length<=AI_LIMITS.jobs&&v.capacity.projects.every(isOpenInput)&&
+    new Set(v.capacity.projects.map(scope=>`${scope.projectId}:${scope.workspaceId}`)).size===v.capacity.projects.length&&
     v.provider === AI_PROVIDER && ['development','beta','production'].includes(String(v.channel)) && v.implementation === 'partial' &&
     [v.configured,v.channelPermitted,v.commercialApproved].every(b=>typeof b==='boolean') &&
     isAiRoute(v.route) && isAiSession(v.session) && isAiFunding(v.funding) && isAiFeatureAvailability(v.features) &&
@@ -148,7 +153,7 @@ export function isAiStatus(v: unknown): v is AiStatus {
 }
 export function isAiContentWork(v:unknown):v is AiContentWork {
   return record(v)&&exact(v,['scope','feature','attemptId','state'])&&isOpenInput(v.scope)&&isId(v.attemptId)&&
-    ['conversation','proofreading'].includes(String(v.feature))&&['running','stopping','protecting','protection-required'].includes(String(v.state))
+    ['conversation','proofreading'].includes(String(v.feature))&&['running','stopping','protecting','protection-required','retained-outcome','handoff-required','record-unavailable'].includes(String(v.state))
 }
 export function isAiModels(v: unknown): v is AiModel[] { return Array.isArray(v) && v.length <= 100 && v.every(m=>record(m) && exact(m,['id','label','eligibility']) && aiText(m.id,100) && aiText(m.label,200) && m.eligibility==='unverified') }
 export function isAiEvent(v: unknown): v is AiEvent { return record(v) && (v.kind==='connection' && exact(v,['kind','status']) && isAiStatus(v.status) || v.kind==='operation' && exact(v,['kind','operation']) && isAiOperation(v.operation)) }

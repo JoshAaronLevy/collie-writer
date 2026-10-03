@@ -95,7 +95,7 @@ function useConversationController() {
   const hadWork=useRef(false)
   useEffect(()=>{
     if(!scope)return
-    const work=connections.status?.work.find(item=>item.feature==='conversation'&&sameScope(item.scope,scope))
+    const work=connections.status?.work.find(item=>item.feature==='conversation'&&sameScope(item.scope,scope)&&!['retained-outcome','handoff-required','record-unavailable'].includes(item.state))
     const refreshNeeded=!!work||hadWork.current||active
     hadWork.current=!!work
     if(work)setRun({...scope,attemptId:work.attemptId,pending:true,issue:work.state==='protection-required'?'AI output needs local protection.':null})

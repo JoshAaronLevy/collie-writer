@@ -16,7 +16,7 @@ import { seedOutline, automaticCheckpoint, updateDocumentAnchors, manuscript } f
 import { effectiveState, isOutlineDocument, type OutlineDocument, type OutlineInput, type HistoryInput, type HistoryView } from '../../shared/outline'
 import Database from 'better-sqlite3'
 import { randomUUID, createHash } from 'node:crypto'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { readdir, lstat, readFile, rename, open, writeFile, unlink } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { isId, readDocument, type DocumentPayload } from '../../domain/editor/schema'
@@ -26,8 +26,8 @@ import { ProjectError, projectError } from '../../domain/projects/errors'
 import { exact, record } from '../../shared/projects'
 import type { RenameInput, ArchiveInput } from '../../shared/project-lifecycle'
 import type { CommitInput, CommitReceipt, CreateInput, OpenInput, OpenProject, ProjectList, ProjectSummary, SectionInput, SectionMetaInput, WorkerImageImport, ImageReadInput, ImageAsset, ImageData } from '../../shared/projects'
-import { inWriteTransaction, openStorageDatabase } from '../storage/driver'
-import { contained, directory, syncDirectory, writeJson } from '../storage/files'
+import { backupStorageDatabase, inWriteTransaction, openStorageDatabase } from '../storage/driver'
+import { contained, directory, syncDirectory, syncFile, writeJson } from '../storage/files'
 import { createProjectSchema, validateProjectSchema, inspectVersion } from '../storage/schema'
 import { openProjectDatabase } from '../storage/migrations'
 import { SnapshotJobs, type SnapshotRequest, type SnapshotJob } from './snapshot-jobs'
@@ -56,7 +56,8 @@ const catalogSchema = [
 ]
 const operationsSchema = [
   'CREATE TABLE jobs (id TEXT PRIMARY KEY, operation_id TEXT NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL, result TEXT) STRICT',
-  'CREATE TABLE delivery (operation_id TEXT PRIMARY KEY, state TEXT NOT NULL) STRICT'
+  'CREATE TABLE delivery (operation_id TEXT PRIMARY KEY, state TEXT NOT NULL) STRICT',
+  'CREATE INDEX ai_binding_capacity ON jobs (kind,state,created_at,id)'
 ]
 type Owned = { projectId: string; workspaceId: string; workspace: string; db: Database.Database; operations: Database.Database; lock: Database.Database; search: LocalSearch | null; destination: SavedLocation | null; archived: boolean; snapshots?: SnapshotJobs }
 async function exists(path: string): Promise<boolean> { try { await lstat(path); return true } catch (e) { if (e && typeof e === 'object' && 'code' in e && e.code === 'ENOENT') return false; throw e } }
@@ -102,7 +103,7 @@ export class ProjectRepository {
   private readonly exports: ExportJobs
   proofreading(input:ProofreadWorkerInput):Promise<ProofreadValue>{return this.serial(async()=>{
     this.fileContext(input)
-    const mutating=['append','bind','settle','decide'].includes(input.action)
+    const mutating=['append','bind','settle','decide','handoff','retire'].includes(input.action)
     if(mutating&&this.fileBusy)throw new ProjectError('PROJECT_LOCKED')
     const owned=this.active!,value=await proofreadingCommand(owned,input)
     if(mutating)await this.discovery(owned)
@@ -110,7 +111,7 @@ export class ProjectRepository {
   })}
   conversation(input:ConversationWorkerInput):Promise<ConversationValue>{return this.serial(async()=>{
     this.fileContext(input)
-    const mutating=['change','append','bind','settle'].includes(input.action)
+    const mutating=['change','append','bind','settle','handoff','retire'].includes(input.action)
     if(mutating&&this.fileBusy)throw new ProjectError('PROJECT_LOCKED')
     const owned=this.active!,value=await conversationCommand(owned,input)
     if(mutating)await this.discovery(owned)
@@ -361,15 +362,23 @@ export class ProjectRepository {
   private async safeDatabase(path: string): Promise<void> {
     for (const suffix of ['', '-wal', '-shm', '-journal']) if (await exists(path + suffix)) await contained(this.root, path + suffix, false)
   }
-  private async localDatabase(path: string, statements: readonly string[]): Promise<Database.Database> {
+  private async localDatabase(path: string, statements: readonly string[], version=1): Promise<Database.Database> {
     await this.safeDatabase(path)
     const db = openStorageDatabase(path, this.nativeBinding)
     try {
       const objects = db.prepare("SELECT sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").all() as { sql: string }[]
       if (!objects.length && db.pragma('user_version', { simple: true }) === 0) inWriteTransaction(db, () => {
-        statements.forEach(sql => db.exec(sql)); db.pragma('user_version=1')
+        statements.forEach(sql => db.exec(sql)); db.pragma(`user_version=${version}`)
       })
-      else if (db.pragma('user_version', { simple: true }) !== 1 || objects.length !== statements.length || objects.some(row => !statements.includes(row.sql))) throw new ProjectError('CORRUPT_PROJECT')
+      else if(version===2&&db.pragma('user_version',{simple:true})===1&&objects.length===2&&objects.every(row=>statements.slice(0,2).includes(row.sql))){
+        // Device-local upgrade only. Keep a complete prior database before the
+        // index/version change; portable project and old binding bytes stay exact.
+        const retained=`${path}.before-handoff-${randomUUID()}.sqlite`
+        await backupStorageDatabase(db,retained,this.nativeBinding)
+        await syncFile(retained);await syncDirectory(dirname(retained))
+        inWriteTransaction(db,()=>{db.exec(statements[2]);db.pragma('user_version=2')})
+      }
+      else if (db.pragma('user_version', { simple: true }) !== version || objects.length !== statements.length || objects.some(row => !statements.includes(row.sql))) throw new ProjectError('CORRUPT_PROJECT')
       return db
     } catch (error) { db.close(); throw error }
   }
@@ -441,7 +450,7 @@ export class ProjectRepository {
     let search: LocalSearch | undefined
     try {
       db = await openProjectDatabase(this.root, workspace, this.nativeBinding)
-      operations = await this.localDatabase(join(workspace, 'operations.sqlite'), operationsSchema)
+      operations = await this.localDatabase(join(workspace, 'operations.sqlite'), operationsSchema,2)
       await this.safeDatabase(join(workspace,'search.sqlite'))
       try {search = new LocalSearch(join(workspace,'search.sqlite'),this.nativeBinding)} catch {search=undefined}
       // No job is silently replayed after interruption.

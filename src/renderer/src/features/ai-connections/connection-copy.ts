@@ -35,7 +35,7 @@ export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
   'no-text-models': 'Codex reported no supported text models. You can save locally and explicitly refresh the catalog later.',
   'ai-work-pending': 'An AI request is still finishing. Wait for its outcome, or stop it in its conversation or proofreading panel.',
   'output-protection-required': 'Wait for local AI work to be protected. If protection needs attention, use the global work notice to return to its owner and retry local protection. This does not resend a request.',
-  'operation-capacity-full': 'The retained AI operation journal is full. New AI requests are unavailable; saved history and local saving remain available. Retention management has not been implemented yet.',
+  'operation-capacity-full': 'All 64 active AI slots are occupied. Open the original projects shown under Local AI capacity, finish local protection, and acknowledge any retained uncertain outcomes in the AI work notice. These actions do not resend requests. Saved history and local saving remain available.',
   'local-workspace-identity-unavailable': 'Codex has not supplied a usable account and workspace identity. Open connection settings and explicitly resume or reconnect the intended account; no request has been sent.',
   'configuration-required': 'Sign-in has not been configured for this build.',
   'development-access-unavailable': 'Supported development sign-in is not available in this build yet.',

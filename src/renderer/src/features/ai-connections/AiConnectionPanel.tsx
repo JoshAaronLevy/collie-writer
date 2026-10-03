@@ -6,6 +6,7 @@ import { StatusBanner } from '../../components/ui/Feedback'
 import { useWorkspaceSession } from '../workspace/WorkspaceSession'
 import { useAiConnections } from './AiConnectionsProvider'
 import { AiModelSelection } from './AiModelSelection'
+import { AiCapacity } from './AiCapacity'
 import { connectionLabel, connectionProblemReasons, connectionReason, featureDescription, fundingDescription, signInUnavailable } from './connection-copy'
 import styles from './AiConnections.module.css'
 
@@ -45,7 +46,7 @@ export function AiConnectionPanel({ compact = false }: { compact?: boolean }): R
       <div><h2 id={titleId} tabIndex={-1}>{local ? 'Codex connection' : 'ChatGPT account'}</h2><p className={styles['ai-provider-description']}>OpenAI · Codex runtime{local ? ' · Local development' : ''}</p></div>
     </header>
     <p className={styles['ai-connection-state']} role="status" aria-live="polite">{connectionLabel(status, checking, pending?.kind)}</p>
-    {status?.work.length?<StatusBanner title="Finish AI work before changing accounts">Use the global AI work notice to open the original request, stop it if needed, and finish local protection. Account changes never resend a saved request or move its result to another account.</StatusBanner>:null}
+    {status?.work.some(item=>!['retained-outcome','handoff-required','record-unavailable'].includes(item.state))?<StatusBanner title="Finish AI work before changing accounts">Use the global AI work notice to open the original request, stop it if needed, and finish local protection. Account changes never resend a saved request or move its result to another account.</StatusBanner>:null}
     {!session.available ? <StatusBanner title="Local storage is needed">Set up a safe local working folder before connecting an account. Your project setup remains available.
       <AppButton variant="subtle" onClick={() => void session.navigate({ kind: 'settings', page: 'data' })}>Open Data & recovery</AppButton>
     </StatusBanner> : null}
@@ -93,6 +94,7 @@ export function AiConnectionPanel({ compact = false }: { compact?: boolean }): R
       </div> : null}
     </div> : null}
     {local ? <AiModelSelection /> : null}
+    <AiCapacity/>
     <p className={styles['ai-sharing-note']}>Sign-in sends no manuscript, project title or description. Later AI requests will share only the context you approve with the selected provider under your account’s policies.</p>
     {local ? <p>Connect and Resume start Codex account services, which can refresh account and model metadata. Check connection status reads only Collie’s saved state. Credentials stay in the operating system keyring under Collie’s separate Codex profile.</p> : null}
     {status ? <p className={styles['ai-funding-note']}>{fundingDescription(status.funding)}</p> : null}

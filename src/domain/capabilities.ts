@@ -4,6 +4,8 @@ export type Capability = 'read' | 'edit' | 'recipes' | 'batch' | 'create'
 /** Exhaustive classification: new commands must make an explicit policy decision. */
 export function commandCapability(command: ProjectCommand): Capability {
   switch (command.kind) {
+    // Internal settlement/handoff/retirement protect existing outcomes even
+    // after edit access changes; they confer no new inference or editing grant.
     case 'proofreading': return ['append','decide'].includes(command.input.action) ? 'edit' : 'read'
     case 'conversation': return ['change','append'].includes(command.input.action) ? 'edit' : 'read'
     case 'create': return 'create'

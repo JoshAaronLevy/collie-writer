@@ -75,7 +75,7 @@ export function ProofreadingPanel():React.JSX.Element {
       {b.attempt.provider?<AppButton variant="subtle" disabled={p.blocked} onClick={p.protect}>Retry local output protection</AppButton>:null}
     </section>:null}
     <AppButton variant="subtle" disabled={p.blocked} onClick={p.recover}>Retry local recovery</AppButton>
-    <p className={styles['proofreading-caption']}>Reviewed requests use your own supported account and its spending settings. The current provider journal holds at most 64 operations across conversations and proofreading. A full journal refuses new requests and keeps saved work.</p>
+    <p className={styles['proofreading-caption']}>Reviewed requests use your own supported account and its spending settings. Conversations and proofreading share 64 active slots. Saved outcomes release capacity through local handoff; retained history remains available.</p>
   </section>
 }
 export function ProofreadingNotice():React.JSX.Element|null {

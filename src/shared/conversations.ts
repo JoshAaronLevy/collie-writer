@@ -1,4 +1,5 @@
 import type { CaptureSource, AiTextCaptureFields, AiAttemptFields } from './ai-content'
+import { isAiHandoffReceipt, type AiHandoffReceipt } from './ai-handoff'
 export type { CaptureSource, AttemptState } from './ai-content'
 import { isId } from '../domain/editor/schema'
 import { AI_LIMITS, isAiOperation, isAiReason, type AiOperation, type AiReason } from './ai'
@@ -23,6 +24,7 @@ export type ConversationRequest =
   | (OpenInput & { action: 'reconcile' })
   | (OpenInput & { action: 'cancel'; attemptId: string })
   | (OpenInput & { action: 'protect'; attemptId: string })
+  | (OpenInput & { action: 'acknowledge'; attemptId: string })
   | (OpenInput & { action: 'attempt'; attemptId: string })
   | (OpenInput & { action: 'export'; conversationId: string; expectedRevision: string; includeContext: boolean })
 type ConversationBindingFields = { attemptId: string; operationId: string; connectionId: string; model: string; digest: string; captureDigest: string }
@@ -30,11 +32,14 @@ type ConversationBindingFields = { attemptId: string; operationId: string; conne
  * key. v2/v3 point to route-bound journals without copying account authority;
  * v3 is accepted only by the proofreading reader below. */
 export type ConversationBinding = ConversationBindingFields | (ConversationBindingFields & {version:2|3})
-export type ConversationWorkerInput = Exclude<ConversationRequest, ConversationSubmit | { action: 'cancel' | 'protect' | 'attempt' | 'reconcile' | 'export' }> | (OpenInput & (
+export type ConversationWorkerInput = Exclude<ConversationRequest, ConversationSubmit | { action: 'cancel' | 'protect' | 'acknowledge' | 'attempt' | 'reconcile' | 'export' }> | (OpenInput & (
   | { action: 'append'; submission: ConversationSubmit }
   | { action: 'bind'; binding: ConversationBinding }
   | { action: 'settle'; attemptId: string; binding: ConversationBinding | null; operation: AiOperation | null; reason: AiReason | null }
   | { action: 'bindings' }
+  | { action: 'binding'; attemptId: string }
+  | { action: 'handoff'; binding: ConversationBinding; operation: AiOperation; acknowledged: boolean }
+  | { action: 'retire'; receipt: AiHandoffReceipt }
   | { action: 'get'; attemptId: string }
   | { action: 'export'; conversationId: string; expectedRevision: string; includeContext: boolean; destinationPath: string }
 ))
@@ -45,6 +50,8 @@ export type ConversationValue =
   | { type: 'review'; capture: AiCapture; excludedMessages: number }
   | { type: 'turn'; turn: ConversationTurn; fresh: boolean; head: string; updatedAt: string }
   | { type: 'bindings'; bindings: ConversationBinding[] }
+  | { type: 'binding'; binding: ConversationBinding | null; receipt: AiHandoffReceipt | null; retired: boolean }
+  | { type: 'handoff'; receipt: AiHandoffReceipt }
   | { type: 'done' }
   | { type: 'exported'; path: string }
 export type ConversationEvent = OpenInput & { attemptId: string | null; pending: boolean; issue: string | null }
@@ -82,7 +89,7 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
     case 'review': return exact(v,[...fields,'conversationId','expectedRevision','expectedHead','captureId','createdAt','prompt','source','historyIds']) && [v.conversationId,v.expectedRevision,v.expectedHead,v.captureId].every(isId) && date(v.createdAt) && text(v.prompt,AI_LIMITS.prompt) && !!v.prompt.trim() && isCaptureSource(v.source) && ids(v.historyIds)
     case 'submit': return exact(v,[...fields,'attemptId','review','digest','send','connectionId','model']) && isId(v.attemptId) && record(v.review) && v.review.action==='review' && isConversationRequest(v.review) && v.review.projectId===v.projectId && v.review.workspaceId===v.workspaceId && isCaptureDigest(v.digest) && typeof v.send==='boolean' && (v.connectionId===null||isId(v.connectionId)) && (v.model===null||model(v.model)) && (!v.send||(isId(v.connectionId)&&model(v.model)))
     case 'reconcile': return exact(v,fields)
-    case 'cancel': case 'protect': case 'attempt': return exact(v,[...fields,'attemptId']) && isId(v.attemptId)
+    case 'cancel': case 'protect': case 'acknowledge': case 'attempt': return exact(v,[...fields,'attemptId']) && isId(v.attemptId)
     case 'export': return exact(v,[...fields,'conversationId','expectedRevision','includeContext']) && isId(v.conversationId) && isId(v.expectedRevision) && typeof v.includeContext==='boolean'
     default: return false
   }
@@ -104,6 +111,9 @@ export function isConversationWorkerInput(v: unknown): v is ConversationWorkerIn
     case 'bind': return exact(v,[...fields,'binding'])&&isConversationBinding(v.binding)
     case 'settle': return exact(v,[...fields,'attemptId','binding','operation','reason'])&&isId(v.attemptId)&&(v.binding===null||isConversationBinding(v.binding))&&(v.operation===null||isAiOperation(v.operation))&&(v.reason===null||isAiReason(v.reason))
     case 'bindings': return exact(v,fields)
+    case 'binding': return exact(v,[...fields,'attemptId'])&&isId(v.attemptId)
+    case 'handoff': return exact(v,[...fields,'binding','operation','acknowledged'])&&isConversationBinding(v.binding)&&isAiOperation(v.operation)&&typeof v.acknowledged==='boolean'
+    case 'retire': return exact(v,[...fields,'receipt'])&&isAiHandoffReceipt(v.receipt)&&v.receipt.purpose==='conversation'&&v.receipt.scope.projectId===v.projectId&&v.receipt.scope.workspaceId===v.workspaceId
     case 'get': return exact(v,[...fields,'attemptId'])&&isId(v.attemptId)
     case 'export': { const {destinationPath,...publicInput}=v;return isConversationRequest(publicInput)&&text(destinationPath,4096)&&!!destinationPath }
     default: return false
@@ -118,6 +128,8 @@ export function isConversationValue(v: unknown): v is ConversationValue {
     case 'review': return exact(v,['type','capture','excludedMessages'])&&isAiCapture(v.capture)&&integer(v.excludedMessages)
     case 'turn': return exact(v,['type','turn','fresh','head','updatedAt'])&&isConversationTurn(v.turn)&&typeof v.fresh==='boolean'&&isId(v.head)&&date(v.updatedAt)
     case 'bindings': return exact(v,['type','bindings'])&&Array.isArray(v.bindings)&&v.bindings.length<=AI_LIMITS.jobs&&v.bindings.every(isConversationBinding)
+    case 'binding': return exact(v,['type','binding','receipt','retired'])&&(v.binding===null||isConversationBinding(v.binding))&&(v.receipt===null||isAiHandoffReceipt(v.receipt)&&v.receipt.purpose==='conversation')&&typeof v.retired==='boolean'&&(!v.retired||v.binding!==null&&v.receipt!==null)
+    case 'handoff': return exact(v,['type','receipt'])&&isAiHandoffReceipt(v.receipt)&&v.receipt.purpose==='conversation'
     case 'done': return exact(v,['type'])
     case 'exported': return exact(v,['type','path'])&&text(v.path,4096)
     default: return false

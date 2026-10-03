@@ -1,11 +1,14 @@
 import { safeStorage } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { lstat, readFile, readdir } from 'node:fs/promises'
+import { lstat, readFile, opendir, rename } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { isId } from '../../domain/editor/schema'
 import { aiText, AI_LIMITS } from '../../shared/ai'
 import { exact, record } from '../../shared/projects'
-import { contained, directory, writeJson } from '../../worker/storage/files'
+import { contained, directory, syncDirectory, writeJson } from '../../worker/storage/files'
+import { requestDigest } from '../../worker/storage/digest'
+import { isAiHandoffReceipt, type AiHandoffReceipt } from '../../shared/ai-handoff'
+import { handoffMatches } from './handoff'
 import { AiError } from './errors'
 import { isRetainedOperation, type RetainedOperation } from './local-operation'
 export type { RetainedOperation } from './local-operation'
@@ -17,8 +20,8 @@ export type Account = { id: string; subject: string; label: string; clientId: st
 // Registered OAuth v1 remains exact. Codex-managed auth MUST NOT be represented
 // by a fabricated clientId or Tokens value; see local-session-metadata.ts.
 export type Credentials = { version: 1; hostId: string; activeId: string | null; accounts: Account[] }
-// Both operation versions share the encrypted directory and global cap. Readers
-// validate the original version; no local-route defaults are added to v1.
+// The bounded hot directory and per-ID encrypted cold index share one owner.
+// All original v1/v2/v3 bytes and interrupted write candidates remain retained.
 const secret = (v: unknown): v is string => aiText(v,32768) && v.length > 0 && !/[\s\u0000-\u001f]/u.test(v)
 const finiteTime = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) >= 0
 export function isTokens(v: unknown): v is Tokens {
@@ -40,6 +43,7 @@ export function secureAiStorage(): boolean { return ['darwin','win32'].includes(
 export class AiStorage {
   private root: string | null = null
   private initialized: Promise<void> | null = null
+  private retentionLayout: Promise<void> | null = null
   constructor(private readonly workingRoot: ()=>string|undefined) {}
   async initialize(): Promise<void> {
     const working = this.workingRoot()
@@ -113,16 +117,50 @@ export class AiStorage {
     if(!isCredentials(value))throw new AiError('storage-unavailable')
     await this.write('credentials-v1.json',value)
   }
-  async operations(): Promise<RetainedOperation[]> {
+  private async retention():Promise<void> {
     await this.initialize()
-    const names=(await readdir(join(this.root!,'operations'))).filter(n=>n.endsWith('.json')&&!n.startsWith('.write-'))
-    if(names.length>AI_LIMITS.jobs)throw new AiError('storage-unavailable')
+    if(!this.retentionLayout)this.retentionLayout=(async()=>{
+      await directory(this.root!,join(this.root!,'retained-v1'))
+      await directory(this.root!,join(this.root!,'retained-v1','records'))
+      await directory(this.root!,join(this.root!,'retained-v1','receipts'))
+      await syncDirectory(join(this.root!,'retained-v1'));await syncDirectory(this.root!)
+      const name=join('operations','index-v1.json'),marker=await this.read(name)
+      // The marker also makes pre-CD08 readers refuse the new local layout.
+      if(marker===null)await this.write(name,{version:1,layout:'receipt-index-v1',limit:AI_LIMITS.jobs})
+      else if(!record(marker)||!exact(marker,['version','layout','limit'])||marker.version!==1||marker.layout!=='receipt-index-v1'||marker.limit!==AI_LIMITS.jobs)throw new AiError('storage-unavailable')
+    })().catch(error=>{this.retentionLayout=null;throw error})
+    await this.retentionLayout
+  }
+  private async coldIndex(id:string):Promise<{version:1;receipt:AiHandoffReceipt;recordDigest:string}|null> {
+    if(!isId(id))throw new AiError('invalid-request')
+    const value=await this.read(join('retained-v1','receipts',`${id}.json`),32768)
+    if(value===null)return null
+    if(!record(value)||!exact(value,['version','receipt','recordDigest'])||value.version!==1||!isAiHandoffReceipt(value.receipt)||value.receipt.operationId!==id||typeof value.recordDigest!=='string'||!/^[a-f0-9]{64}$/.test(value.recordDigest))throw new AiError('storage-unavailable')
+    return value as {version:1;receipt:AiHandoffReceipt;recordDigest:string}
+  }
+  /** Only exact IDs are read from cold storage; no unbounded history listing. */
+  async operation(id:string):Promise<RetainedOperation|null> {
+    if(!isId(id))throw new AiError('invalid-request')
+    await this.retention()
+    const hot=await this.read(join('operations',`${id}.json`),4*1024*1024)
+    const cold=await this.read(join('retained-v1','records',`${id}.json`),4*1024*1024)
+    if(hot!==null&&cold!==null)throw new AiError('storage-unavailable')
+    const value=hot??cold,index=await this.coldIndex(id)
+    if(value===null){if(index)throw new AiError('storage-unavailable');return null}
+    if(!isRetainedOperation(value)||value.view.operationId!==id||cold!==null&&!index||index&&(!handoffMatches(value,index.receipt)||requestDigest(value)!==index.recordDigest))throw new AiError('storage-unavailable')
+    return value
+  }
+  async operations(): Promise<RetainedOperation[]> {
+    await this.retention()
     const operations:RetainedOperation[]=[]
-    for(const name of names){
+    for await(const entry of await opendir(join(this.root!,'operations'))){
+      const name=entry.name
+      if(name==='index-v1.json'||name.startsWith('.write-'))continue
+      if(!name.endsWith('.json')||operations.length>=AI_LIMITS.jobs)throw new AiError('storage-unavailable')
       if(!isId(name.slice(0,-5)))throw new AiError('storage-unavailable')
       // v2 retains raw text plus final/commentary channels and exact framing.
       // Bound the encrypted envelope as well as the decoded content fields.
-      const value=await this.read(join('operations',name),4*1024*1024)
+      const value=await this.operation(name.slice(0,-5))
       if(!isRetainedOperation(value)||value.view.operationId!==name.slice(0,-5))throw new AiError('storage-unavailable')
       operations.push(value)
     }
@@ -130,6 +168,25 @@ export class AiStorage {
   }
   async retain(operation: RetainedOperation): Promise<void> {
     if(!isRetainedOperation(operation))throw new AiError('invalid-request')
+    await this.retention()
+    const index=await this.coldIndex(operation.view.operationId)
+    if(index){if(index.recordDigest!==requestDigest(operation)||!await this.operation(operation.view.operationId))throw new AiError('storage-unavailable');return}
     await this.write(join('operations',`${operation.view.operationId}.json`),operation,4*1024*1024)
+  }
+  /** Receipt first, atomic move second. Interrupted steps keep the hot slot or
+   * its cold proof, and repeating this local transfer cannot send inference. */
+  async retire(receipt:AiHandoffReceipt):Promise<void> {
+    await this.retention()
+    const item=await this.operation(receipt.operationId)
+    if(!item||!handoffMatches(item,receipt))throw new AiError('storage-unavailable')
+    const desired={version:1 as const,receipt,recordDigest:requestDigest(item)},previous=await this.coldIndex(receipt.operationId)
+    if(previous&&requestDigest(previous)!==requestDigest(desired))throw new AiError('storage-unavailable')
+    if(!previous)await this.write(join('retained-v1','receipts',`${receipt.operationId}.json`),desired,32768)
+    const hot=join(this.root!,'operations',`${receipt.operationId}.json`),cold=join(this.root!,'retained-v1','records',`${receipt.operationId}.json`)
+    if(await this.read(join('retained-v1','records',`${receipt.operationId}.json`),4*1024*1024)===null){
+      await contained(this.root!,hot,false);await contained(this.root!,dirname(cold),true)
+      await rename(hot,cold)
+    }
+    await syncDirectory(dirname(cold));await syncDirectory(dirname(hot))
   }
 }

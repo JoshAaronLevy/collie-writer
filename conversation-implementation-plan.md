@@ -2,13 +2,13 @@
 
 ## Status, purpose and relationship to the improvement plan
 
-**October 2, 2026 — planning only, awaiting Josh's review. No C stage is implemented or authorized by this document.** Implement this plan after the app improvement plan and any additional refinements Josh requests. I12 is now implementation complete — awaiting user testing: see its [decision](docs/decisions/improvement-12-conversation-foundation.md), [record](docs/validation/improvement-I12.md), [schema 11 matrix](docs/formats/working-project-v11.md) and [manual guide](docs/manual-testing/improvement-I12.md). This later plan remains planning only. I01–I11 are not instructions to repeat earlier work; I10 remains partial with live access, funding/isolation, eligibility and distribution requirements unresolved.
+**October 3, 2026 — C07 shared handoff implementation complete — awaiting user testing, delivered under the explicitly requested CD08 overlap. Other C stages remain planning only and are not authorized by this document.** Implement this plan after the app improvement plan and any additional refinements Josh requests. I12 is now implementation complete — awaiting user testing: see its [decision](docs/decisions/improvement-12-conversation-foundation.md), [record](docs/validation/improvement-I12.md), [schema 11 matrix](docs/formats/working-project-v11.md) and [manual guide](docs/manual-testing/improvement-I12.md). The remaining feature expansion remains planning only; C07 coverage is recorded below. I01–I11 are not instructions to repeat earlier work; I10 remains partial with live access, funding/isolation, eligibility and distribution requirements unresolved.
 
 Josh wants meaningful conversations about research and writing that remain easy to find and organize. A conversation can belong to multiple categories and relate to multiple research items/sources and chapters. AI can help propose these assignments, with the author deciding what to retain. This plan develops that vision from the bounded I12 foundation into a polished project feature.
 
 **Required addition, October 2, 2026:** sources introduced by the AI during a conversation must be easy to review and save to that project's Research → Sources library. Automatic collection into a conversation's review list is allowed; automatic creation or modification of Research sources is not. The user selects sources and explicitly adds them in a batch, without copying bibliographic fields one source at a time. This is a required conversation capability, not an optional future enhancement or a synonym for linking an already saved source.
 
-This revision inserts **C04A** and **C04B** between C04 and C05 so each implementation pass remains focused. Existing C01–C08 IDs, including C07's shared retention dependency in the proofreading plan, remain stable. The authoritative index below now contains ten implementation stages. No code, provider activation or earlier-stage implementation is part of this planning revision.
+This revision inserts **C04A** and **C04B** between C04 and C05 so each implementation pass remains focused. Existing C01–C08 IDs, including C07's shared retention dependency in the proofreading plan, remain stable. The authoritative index below now contains ten implementation stages. That planning revision delivered no code or provider activation; the subsequent CD08 request authorizes only its shared C07 overlap.
 
 The original **Important note** remains verbatim in [app-improvement-plan.md](app-improvement-plan.md). This plan supplies implementation contracts, not a replacement or narrowing of that goal. It does not add autonomous web research, specialized Study critique intake, manuscript rewriting, shared cloud history or imported provider-account history.
 
@@ -16,9 +16,9 @@ The original **Important note** remains verbatim in [app-improvement-plan.md](ap
 
 I12 supplies the retained AI writing companion, title search/Active–Archived pages, new/rename/archive/restore, durable plain-text requests/responses, exact passage OR section captures, opt-in prior messages, real I10 dispatch/stop/local-recovery wiring and native UTF-8 transcript export. I12 delivered SQL/minimum reader **11**; I13 subsequently advances the current format to **12**, with conversation tables unchanged. AST/archive **1**, frozen compilation **3** remain. `src/shared/ai-content.ts`, `src/domain/ai/context.ts` and `src/worker/ai/capture.ts` own action-neutral capture/attempt fields, projection and hashing. `src/shared/conversations.ts`, `src/worker/projects/conversations.ts`, `src/main/conversations/` and `features/ai/conversations/` own the concrete conversation implementation. I13 extracts the shared durable coordinator to `src/main/ai/content-service.ts` and shared editor selection to `features/ai/selection.ts`; both content features use them. Inspect these owners before extending them; do not recreate the foundation.
 
-The existing operations database stores local execution bindings separately from portable messages/captures/attempts. Copies retain history without provider authority. Lists page by 20 and transcripts by five requests; up to 20 unsent composer drafts are retained in memory with close/project/access guards. Prompts allow 16,000 characters and aggregate attached context 64,000; up to 12 prior messages are explicit. Unsent drafts need a local request receipt for crash durability. Transcript export is separate from manuscript export and preserves existing destinations. C07 still owns I10's global **64 retained operation** ceiling; I12 did not increase it or delete journals.
+The existing operations database stores local execution bindings separately from portable messages/captures/attempts. Copies retain history without provider authority. Lists page by 20 and transcripts by five requests; up to 20 unsent composer drafts are retained in memory with close/project/access guards. Prompts allow 16,000 characters and aggregate attached context 64,000; up to 12 prior messages are explicit. Unsent drafts need a local request receipt for crash durability. Transcript export is separate from manuscript export and preserves existing destinations. I12 left I10's global **64 retained operation** ceiling intact. CD08 now delivers C07's shared receipt-driven retirement: the hot ceiling stays 64, proven outcomes move to retained cold storage, and both worker binding collections release matching slots without deleting journals.
 
-Provider registration/funding/isolation/model readiness/distribution remain unresolved; actual live generation and every manual observation remain pending. C01–C08 and C04A/C04B are unimplemented. In particular, I12 does not yet collect assistant-suggested source candidates or add them to Research; that important requirement remains explicitly assigned below.
+Provider registration/funding/isolation/model readiness/distribution remain unresolved; actual live generation and every manual observation remain pending. C07 is implemented through CD08, awaiting user testing; C01–C06, C04A/C04B and C08 remain unimplemented. In particular, I12 does not yet collect assistant-suggested source candidates or add them to Research; that important requirement remains explicitly assigned below.
 
 ## Division of work
 
@@ -113,7 +113,7 @@ Model headings use the improvement plan's existing names: Astra for coupled arch
 | C04B | Explicit batch save/link to Research with provenance | C01, C04A, existing source repository | Not started; inserted stage, required |
 | C05 | User-reviewed AI organization suggestions | C01–C03 | Not started |
 | C06 | Deliberate summaries and conversation branches | C03; I12 attempt storage | Not started |
-| C07 | Shared durable outcome handoff and sustained use | I12; actual schemas of completed C/P stages; can be requested before other C stages | Not started |
+| C07 | Shared durable outcome handoff and sustained use | I12/I13 actual schemas; explicit CD08 overlap | Implementation complete — awaiting user testing; [shared record](docs/validation/conversation-C07.md); live use blocked by CD03 |
 | C08 | Integrated conversation polish and acceptance handoff | C01–C07, explicitly including C04A/C04B | Not started |
 
 ### Stage C01 — Add categories and many-to-many associations
@@ -261,6 +261,8 @@ Model headings use the improvement plan's existing names: Astra for coupled arch
 
 #### Model: Astra | Effort: Extra High
 
+**Implementation checkpoint, October 3, 2026:** CD08 explicitly authorized and implemented this shared contract using `AiContentService`, `AiStorage` and both feature workers. Trusted original-scope receipts precede main hot-record and local binding retirement; encrypted cold originals, exact identities and bounded lazy reads remain. Non-completed outcomes require explicit local acknowledgment and keep their actual state/output. Local database v2 retains its prior backup; portable formats and original operation versions do not change. See the [decision](docs/decisions/codex-CD08.md), [format matrix](docs/formats/ai-handoff-v1.md), [record](docs/validation/conversation-C07.md) and [manual guide](docs/manual-testing/conversation-C07.md). All observations await Josh; no other C stage is implemented. Live repeated use remains blocked by CD03.
+
 **Purpose and entry:** resolve I12's bounded operational capacity without losing unknown/partial content. Read I10's encrypted journal/cap, I12's durable attempt ingestion, main lifecycle/access service, project snapshots and all later schemas actually delivered. This is the shared operational-retention increment for conversations and proofreading. It can be explicitly requested after I12 independently of C01–C06; preserve their records and I13/P-stage findings if present. Proofreading does not need its own competing journal-retention service.
 
 **Implementation:**
@@ -294,9 +296,9 @@ Each requested C stage delivers its production changes, a decision where needed,
 
 | Milestone | Status |
 | --- | --- |
-| Planning and scope split | Draft delivered for Josh's review; no implementation authorization |
-| I12 baseline | Not implemented at this planning checkpoint |
-| C01–C08, including inserted C04A/C04B | Ten stages; all not started |
+| Planning and scope split | Feature expansion remains planned; explicit CD08 request authorizes the shared C07 overlap only |
+| I12 baseline | Implementation complete — awaiting user testing; I13 owns current portable schema 12 |
+| C01–C08, including inserted C04A/C04B | C07 implemented through CD08 — awaiting user testing; remaining nine stages not started |
 | Conversation sources → approved Research records | Required; C04A collects/reviews, C04B promotes; neither implemented |
 | User acceptance and live conversation quality | Unobserved; provider prerequisites remain unresolved |
 | Release readiness | Existing NO-GO remains independent |

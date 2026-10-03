@@ -1,4 +1,5 @@
 import { captureDigest } from '../ai/capture'
+import { activeBindings, localBinding, protectHandoff, retireBinding } from '../ai/handoff'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { open, unlink } from 'node:fs/promises'
@@ -7,7 +8,7 @@ import { dirname } from 'node:path'
 import { captureWriting } from '../../domain/ai/context'
 import { ProjectError } from '../../domain/projects/errors'
 import { AI_LIMITS } from '../../shared/ai'
-import { CONVERSATION_LIMITS, isAiCapture, isConversation, isConversationAttempt, isConversationBinding, isConversationMessage, isConversationTurn, type AiCapture, type Conversation, type ConversationAttempt, type ConversationBinding, type ConversationMessage, type ConversationReview, type ConversationTurn, type ConversationValue, type ConversationWorkerInput } from '../../shared/conversations'
+import { CONVERSATION_LIMITS, isAiCapture, isConversation, isConversationAttempt, isConversationMessage, isConversationTurn, type AiCapture, type Conversation, type ConversationAttempt, type ConversationBinding, type ConversationMessage, type ConversationReview, type ConversationTurn, type ConversationValue, type ConversationWorkerInput } from '../../shared/conversations'
 import { requestDigest } from '../storage/digest'
 import { inWriteTransaction } from '../storage/driver'
 import { syncDirectory } from '../storage/files'
@@ -77,9 +78,7 @@ function review(db:Database.Database,p:string,input:ConversationReview):Extract<
   return {type:'review',capture,excludedMessages:total-input.historyIds.length}
 }
 function bindings(operations:Database.Database):ConversationBinding[] {
-  const rows=operations.prepare("SELECT result FROM jobs WHERE kind='conversation-binding' ORDER BY created_at,id LIMIT ?").all(AI_LIMITS.jobs+1) as {result:string}[]
-  if(rows.length>AI_LIMITS.jobs)return corrupt()
-  return rows.map(row=>parse(row.result,isConversationBinding))
+  return activeBindings(operations,'conversation')
 }
 function sameBinding(left:ConversationBinding|undefined,right:ConversationBinding|null):boolean {return !!left&&!!right&&requestDigest(left)===requestDigest(right)}
 export async function conversationCommand(context:Context,input:ConversationWorkerInput):Promise<ConversationValue> {
@@ -98,6 +97,13 @@ export async function conversationCommand(context:Context,input:ConversationWork
     case 'review': return review(db,p,input)
     case 'get': return {type:'turn',turn:turn(db,p,input.attemptId),fresh:false,...head(db,p)}
     case 'bindings': return {type:'bindings',bindings:bindings(operations)}
+    case 'binding': return localBinding(context,'conversation',input.attemptId)
+    case 'handoff': {
+      const t=turn(db,p,input.binding.attemptId),a=t.attempt,op=input.operation
+      if(t.capture.digest!==input.binding.captureDigest||a.sequence!==op.sequence+1||a.state!==op.state||a.model!==op.model||a.provider!=='openai-codex'||a.reason!==op.reason||a.finishedAt!==new Date(op.finishedAt??0).toISOString()||(t.assistant?.text??'')!==op.text)throw new ProjectError('OPERATION_CONFLICT')
+      return {type:'handoff',receipt:protectHandoff(context,'conversation',input.binding,op,input.acknowledged,{revision:a.revisionId,head:head(db,p).head,body:t})}
+    }
+    case 'retire': retireBinding(context,'conversation',input.receipt);return {type:'done'}
     case 'change': return inWriteTransaction(db,()=>{
       const digest=requestDigest(input),prior=db.prepare('SELECT digest FROM domain_operations WHERE project_id=? AND operation_id=?').get(p,input.operationId) as {digest:string}|undefined
       if(prior){if(prior.digest!==digest)throw new ProjectError('OPERATION_CONFLICT');return {type:'changed' as const,conversation:conversation(db,p,input.conversationId),...head(db,p)}}
@@ -129,7 +135,7 @@ export async function conversationCommand(context:Context,input:ConversationWork
       return {type:'turn' as const,turn:{attempt:a,capture,user,assistant:null},fresh:true,...advance(db,p,a.conversationId)}
     })
     case 'bind': {
-      const value=turn(db,p,input.binding.attemptId),existing=bindings(operations).find(b=>b.attemptId===input.binding.attemptId)
+      const value=turn(db,p,input.binding.attemptId),existing=localBinding(context,'conversation',input.binding.attemptId).binding??undefined
       if(value.capture.digest!==input.binding.captureDigest||value.attempt.state!=='not-sent'&&!existing)throw new ProjectError('OPERATION_CONFLICT')
       if(existing&&!sameBinding(existing,input.binding))throw new ProjectError('OPERATION_CONFLICT')
       if(!existing) {
@@ -144,8 +150,9 @@ export async function conversationCommand(context:Context,input:ConversationWork
       })
     }
     case 'settle': return inWriteTransaction(db,()=>{
-      const a=attempt(db,p,input.attemptId),existing=bindings(operations).find(b=>b.attemptId===a.id),op=input.operation
+      const a=attempt(db,p,input.attemptId),owned=localBinding(context,'conversation',a.id),existing=owned.binding??undefined,op=input.operation
       if(input.binding&&!sameBinding(existing,input.binding))throw new ProjectError('DENIED')
+      if(owned.receipt){if(!op||owned.receipt.resultDigest!==requestDigest(op))throw new ProjectError('OPERATION_CONFLICT');return {type:'turn' as const,turn:turn(db,p,a.id),fresh:false,...head(db,p)}}
       if(op) {
         if(!existing||!input.binding||op.scope.projectId!==p||op.scope.workspaceId!==context.workspaceId||op.operationId!==existing.operationId||op.digest!==existing.digest||op.connectionId!==existing.connectionId||op.model!==existing.model||op.action!=='conversation')throw new ProjectError('DENIED')
         if(op.sequence+1<=a.sequence)return {type:'turn' as const,turn:turn(db,p,a.id),fresh:false,...head(db,p)}

@@ -1,4 +1,5 @@
 import type { Mark } from '../domain/editor/schema'
+import { isAiHandoffReceipt, type AiHandoffReceipt } from './ai-handoff'
 import { isId, safeLink } from '../domain/editor/schema'
 import { AI_LIMITS, isAiOperation, isAiReason, type AiOperation, type AiReason } from './ai'
 import type { AiAttemptFields, AiTextCaptureFields, CaptureSource } from './ai-content'
@@ -23,11 +24,14 @@ export type ProofreadSubmit = OpenInput & { action:'submit'; attemptId:string; r
 export type ProofreadDecision = OpenInput & { action:'decide'; operationId:string; attemptId:string; findingId:string; expectedRevision:string; expectedHead:string; decision:'apply'|'ignore'|'undo-ignore' }
 export type ProofreadRequest = ProofreadReview | ProofreadSubmit | ProofreadDecision
   | (OpenInput & { action:'list'; offset:number })
-  | (OpenInput & { action:'attempt'|'cancel'|'protect'; attemptId:string })
+  | (OpenInput & { action:'attempt'|'cancel'|'protect'|'acknowledge'; attemptId:string })
   | (OpenInput & { action:'reconcile' })
 export type ProofreadWorkerInput = ProofreadReview | ProofreadDecision | Extract<ProofreadRequest,{action:'list'}> | (OpenInput & (
   { action:'append'; submission:ProofreadSubmit } | { action:'receipt'; decision:ProofreadDecision } | { action:'get'; attemptId:string } | {action:'bindings'} |
   { action:'bind'; binding:ConversationBinding } |
+  { action:'binding'; attemptId:string } |
+  { action:'handoff'; binding:ConversationBinding; operation:AiOperation; acknowledged:boolean } |
+  { action:'retire'; receipt:AiHandoffReceipt } |
   { action:'settle'; attemptId:string; binding:ConversationBinding|null; operation:AiOperation|null; reason:AiReason|null }
 ))
 export type ProofreadSummary = { id:string; createdAt:string; state:ProofreadRun['state']; label:string; findings:number; validation:ProofreadRun['validation'] }
@@ -37,6 +41,8 @@ export type ProofreadValue =
   | { type:'turn'; turn:ProofreadBundle; fresh:boolean; head:string; updatedAt:string }
   | { type:'decision'; turn:ProofreadBundle; documentId:string; revisionId:string; head:string; updatedAt:string }
   | { type:'bindings'; bindings:ConversationBinding[] } | { type:'done' }
+  | { type:'binding'; binding:ConversationBinding|null; receipt:AiHandoffReceipt|null; retired:boolean }
+  | { type:'handoff'; receipt:AiHandoffReceipt }
 export type ProofreadingAPI = { proofreading(input:ProofreadRequest):Promise<ProjectResult<ProofreadValue>>; onProofreadingChanged(listener:(event:ConversationEvent)=>void):()=>void }
 export { isConversationEvent as isProofreadingEvent }
 
@@ -86,7 +92,7 @@ export function isProofreadRequest(v:unknown):v is ProofreadRequest {
     case 'review': return exact(v,[...fields,'expectedHead','captureId','createdAt','source'])&&isId(v.expectedHead)&&isId(v.captureId)&&date(v.createdAt)&&isCaptureSource(v.source)&&v.source.kind!=='none'
     case 'submit': return exact(v,[...fields,'attemptId','review','digest','send','connectionId','model'])&&isId(v.attemptId)&&record(v.review)&&v.review.action==='review'&&isProofreadRequest(v.review)&&v.review.projectId===v.projectId&&v.review.workspaceId===v.workspaceId&&isCaptureDigest(v.digest)&&typeof v.send==='boolean'&&(v.connectionId===null||isId(v.connectionId))&&(v.model===null||model(v.model))&&(!v.send||(isId(v.connectionId)&&model(v.model)))
     case 'decide': return exact(v,[...fields,'operationId','attemptId','findingId','expectedRevision','expectedHead','decision'])&&[v.operationId,v.attemptId,v.findingId,v.expectedRevision,v.expectedHead].every(isId)&&['apply','ignore','undo-ignore'].includes(String(v.decision))
-    case 'attempt': case 'cancel': case 'protect': return exact(v,[...fields,'attemptId'])&&isId(v.attemptId)
+    case 'attempt': case 'cancel': case 'protect': case 'acknowledge': return exact(v,[...fields,'attemptId'])&&isId(v.attemptId)
     case 'reconcile': return exact(v,fields)
     default:return false
   }
@@ -100,6 +106,9 @@ export function isProofreadWorkerInput(v:unknown):v is ProofreadWorkerInput {
     case 'receipt':return exact(v,[...fields,'decision'])&&isProofreadRequest(v.decision)&&v.decision.action==='decide'&&v.decision.projectId===v.projectId&&v.decision.workspaceId===v.workspaceId
     case 'get':return exact(v,[...fields,'attemptId'])&&isId(v.attemptId)
     case 'bindings':return exact(v,fields)
+    case 'binding':return exact(v,[...fields,'attemptId'])&&isId(v.attemptId)
+    case 'handoff':return exact(v,[...fields,'binding','operation','acknowledged'])&&isContentBinding(v.binding)&&isAiOperation(v.operation)&&typeof v.acknowledged==='boolean'
+    case 'retire':return exact(v,[...fields,'receipt'])&&isAiHandoffReceipt(v.receipt)&&v.receipt.purpose==='proofread'&&v.receipt.scope.projectId===v.projectId&&v.receipt.scope.workspaceId===v.workspaceId
     case 'bind':return exact(v,[...fields,'binding'])&&isContentBinding(v.binding)
     case 'settle':return exact(v,[...fields,'attemptId','binding','operation','reason'])&&isId(v.attemptId)&&(v.binding===null||isContentBinding(v.binding))&&(v.operation===null||isAiOperation(v.operation))&&(v.reason===null||isAiReason(v.reason))
     default:return false
@@ -113,6 +122,8 @@ export function isProofreadValue(v:unknown):v is ProofreadValue {
     case 'turn':return exact(v,['type','turn','fresh','head','updatedAt'])&&isProofreadBundle(v.turn)&&typeof v.fresh==='boolean'&&isId(v.head)&&date(v.updatedAt)
     case 'decision':return exact(v,['type','turn','documentId','revisionId','head','updatedAt'])&&isProofreadBundle(v.turn)&&[v.documentId,v.revisionId,v.head].every(isId)&&date(v.updatedAt)
     case 'bindings':return exact(v,['type','bindings'])&&Array.isArray(v.bindings)&&v.bindings.length<=AI_LIMITS.jobs&&v.bindings.every(isContentBinding)
+    case 'binding':return exact(v,['type','binding','receipt','retired'])&&(v.binding===null||isContentBinding(v.binding))&&(v.receipt===null||isAiHandoffReceipt(v.receipt)&&v.receipt.purpose==='proofread')&&typeof v.retired==='boolean'&&(!v.retired||v.binding!==null&&v.receipt!==null)
+    case 'handoff':return exact(v,['type','receipt'])&&isAiHandoffReceipt(v.receipt)&&v.receipt.purpose==='proofread'
     case 'done':return exact(v,['type'])
     default:return false
   }
