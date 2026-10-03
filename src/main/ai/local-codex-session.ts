@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import type { AiConnectInput, AiModel, AiStatus } from '../../shared/ai'
+import type { AiConnectInput, AiModel, AiPrepareInput, AiStatus } from '../../shared/ai'
 import type { AiCatalog, AiSelectModelInput } from '../../shared/ai-catalog'
 import type { AiConnectionReason, AiSession } from '../../shared/ai-route'
 import { CodexAccountError, CodexAccountRuntime } from './codex-account-runtime'
 import { AiError } from './errors'
 import { emptyLocalSession, type LocalCodexSessionV2 } from './local-session-metadata'
 import type { AiStorage } from './storage'
+import type { AiDispatchSession } from './dispatch-session'
+import { type LocalExecutionV2, type LocalSessionIdentity } from './local-operation'
+import { requireLocalTextIsolation } from './codex-local-policy'
 
 /** One main-owned account session, independent of project/panel lifetime. The
  * encrypted active pointer alone grants resume authority; retired candidates
@@ -124,9 +127,9 @@ export class LocalCodexSession {
         attempt.accepting=true;this.changed()
         await this.save({...this.data,active:{profileId,account:{connectionId:randomUUID(),label}},
           retired:[...this.data.retired.filter(id=>id!==profileId),...(prior?[prior.profileId]:[])]})
-        this.connected=runtime.isAlive();this.revocation='none'
+        this.connected=runtime.hasCurrentAccount();this.revocation='none'
         this.epoch=this.connected?runtime.epoch:null
-        if (!this.connected) this.issue='local-runtime-exited'
+        if (!this.connected) this.issue=runtime.isAlive()?'reconnect-required':'local-runtime-exited'
       } catch(error) {
         await this.stopRuntime()
         // A failed final write restores the old pointer and retains the new
@@ -166,15 +169,21 @@ export class LocalCodexSession {
     if (!active||active.account.connectionId!==connectionId) throw new AiError('signed-out')
     if (this.connected) return
     this.begin('resume',async signal=>{
-      await this.stopRuntime()
       try {
-        const runtime=await this.open(active.profileId,signal),label=await runtime.readAccount()
+        // An idle account notification invalidates authority without necessarily
+        // ending the child. Only this explicit action may re-read that owner.
+        let runtime=this.runtime
+        if(!runtime?.isAlive()){await this.stopRuntime();runtime=await this.open(active.profileId,signal)}
+        const owner=runtime,abort=():void=>{void owner.close()}
+        signal.addEventListener('abort',abort,{once:true})
+        let label:string
+        try{label=await owner.readAccount()}finally{signal.removeEventListener('abort',abort)}
         if (signal.aborted||this.closing) throw new AiError('cancelled')
-        if (!runtime.isAlive()) throw new CodexAccountError('local-runtime-exited')
-        // Published account/read has no stable subject/workspace ID. A changed
-        // label requires new browser authorization; CD04 owns execution binding.
+        if (!owner.hasCurrentAccount()) throw new CodexAccountError('reconnect-required')
+        // Saved metadata is only a resume hint. CD04 additionally captures the
+        // actual workspace identity and new process generation for execution.
         if (label!==active.account.label) throw new CodexAccountError('local-account-changed')
-        this.connected=true;this.epoch=runtime.epoch
+        this.connected=true;this.epoch=owner.epoch
       } catch(error) {await this.stopRuntime();throw error}
     })
     await this.work
@@ -234,10 +243,39 @@ export class LocalCodexSession {
   }
   legacyModels(connectionId: string): AiModel[] {
     if (connectionId!==this.data.active?.account.connectionId||!this.connected) throw new AiError('signed-out')
-    // I12 accepts mere membership as Send eligibility. Keep its legacy endpoint
-    // empty until CD04/CD05 replace that check with a durable local-route grant.
+    // Keep legacy catalog-based actions empty until the CD03 execution
+    // prerequisite and CD05/CD06 feature readiness are implemented.
     // Real model choices are exposed only through the connection catalog.
     return []
+  }
+  /** Pure local snapshot; account identity was obtained by an explicit account
+   * action, never by a review/status read. No cached label grants execution. */
+  executionIdentity(input:AiPrepareInput):LocalSessionIdentity {
+    const active=this.data.active,runtime=this.runtime,catalog=this.catalog,identity=runtime?.accountIdentity()
+    if(this.closing||this.work||this.pendingWrite)throw new AiError('busy')
+    if(!active||active.account.connectionId!==input.connectionId||!this.connected||!runtime?.isAlive()||!this.epoch)throw new AiError('session-expired')
+    if(!identity)throw new AiError('auth-failed')
+    if(catalog.state!=='loaded'||catalog.selectedModelId!==input.model)throw new AiError('model-unavailable')
+    const model=catalog.models.find(m=>m.id===input.model)
+    if(!model)throw new AiError('model-unavailable')
+    return {profileId:active.profileId,...identity,sessionGeneration:this.epoch,catalogRevision:catalog.revision,defaultReasoningEffort:model.defaultReasoningEffort}
+  }
+  dispatchSession():AiDispatchSession {
+    const runtime=this.runtime
+    const authorize=(input:AiPrepareInput,execution:LocalExecutionV2|null):void=>{
+      if(!execution||!runtime||this.runtime!==runtime)throw new AiError('context-changed')
+      const current=this.executionIdentity(input)
+      for(const key of Object.keys(current) as (keyof LocalSessionIdentity)[])if(current[key]!==execution[key])throw new AiError('context-changed')
+      requireLocalTextIsolation()
+    }
+    return {route:'local-codex-chatgpt',authorize,
+      execute:async(input,execution,guard,update)=>{
+        authorize(input,execution)
+        // Recheck the effective account immediately before content. No token is
+        // read by Collie, and a changed identity cannot adopt the old intent.
+        await runtime!.readAccount();authorize(input,execution);await guard()
+        await runtime!.executeText({epoch:execution!.sessionGeneration,model:input.model,text:execution!.framedText,defaultReasoningEffort:execution!.defaultReasoningEffort},guard,update)
+      },interrupt:async()=>{runtime?.interruptText()}}
   }
   private async cleanRetired(signal: AbortSignal): Promise<void> {
     await this.stopRuntime()

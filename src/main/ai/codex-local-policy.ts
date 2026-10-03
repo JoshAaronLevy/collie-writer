@@ -16,7 +16,8 @@ export function requireLocalTextIsolation(): void {
 export function localFeatureAvailability(session: AiSession): AiFeatureAvailability {
   const reason = session.state==='saved-needs-resume' ? 'resume-required' :
     session.state==='unavailable' ? session.reason : session.state==='signed-out'||session.state==='reconnect-required' ? 'reconnect-required' : null
-  // No feature is advertised as ready before its durable route adapter exists.
-  return {conversation:{state:'unavailable',reason:reason??'conversation-adapter-not-ready'},
-    proofread:{state:'unavailable',reason:reason??'proofreading-adapter-not-ready'}}
+  // CD04 shares durable dispatch across both adapters. Its transport prerequisite
+  // is still refused; a catalog or connection cannot enable either action.
+  return {conversation:{state:'unavailable',reason:reason??'local-tool-isolation-unavailable'},
+    proofread:{state:'unavailable',reason:reason??'local-tool-isolation-unavailable'}}
 }

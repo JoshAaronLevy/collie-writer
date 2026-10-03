@@ -1,0 +1,21 @@
+# CD04 implementation record
+
+October 2, 2026. **Implementation complete — awaiting user testing.** This records the shared dispatch/persistence increment. CD03 remains engineering partial, so live local dispatch and end-to-end provider acceptance remain blocked. User observations: none. Release: **NO-GO**.
+
+The full `codex-implementation-plan.md`, prior Codex decisions/format contracts and the shared main/worker consumers were read. The [decision](../decisions/codex-CD04.md) records the stage review and exact limitations; the [format matrix](../formats/codex-operations-v2.md) records all new local consumers.
+
+| Owner | Delivered implementation |
+| --- | --- |
+| `dispatch-session.ts`, `service.ts`, `local-codex-session.ts` | Main-only session interface; separate registered/managed owners; exact route/profile/account/workspace/generation/model/policy/content authority; same actual managed child for local dispatch; project/lifecycle guards. |
+| `codex-account-runtime.ts` | Pinned experimental workspace identity capture; conservative account-update retirement; no returned endpoint authority; explicit catalog-default effort; unchanged isolation refusal. |
+| `local-operation.ts`, `storage.ts` | Exact operation v2 reader/writer/digest, framing bound, raw/final/commentary retention, strict protected feature projection; unchanged v1 canonical digest and no eager migration. Bounded 4 MiB operation envelopes. |
+| `service.ts` | Separate protected snapshots, coalesced writes, no settlement from failed journal writes, exact unknown initial-write repair, disk-only retry and local startup interruption recovery. |
+| `content-service.ts`, both inherited feature adapters | Main review stamps, portable intent before prepare, versioned local binding before start, per-attempt exact protection serialization, original-scope/version/capture reconciliation and sequence guards. No alternate provider stack. |
+| `shared/conversations.ts` / both existing worker readers | Exact legacy binding or v2 binding with explicit discriminator; same jobs tables/caps, no portable authority or schema changes. |
+| `codex-local-policy.ts` | Both actions remain unavailable with the real tool-isolation explanation; a catalog/login does not grant Send or Run. |
+
+No tests, test code, harnesses, fixtures, mocks, verification scripts, typechecks, lint, formatting/audit/build/package checks, app/dev-server/runtime/browser launches, account access or inference were performed. Source/Git reading is not passed testing. No dependency installation, credentials, API keys, registration, outreach or publication was added.
+
+Unobserved: compilation/runtime behavior; managed experimental account identity availability; conservative notification handling; native keyring; exact journal reads/writes/recovery; disk-failure behavior; streaming/cancellation; navigation/restart; both feature projections and real output. Old journal compatibility has source implementation only, not an executed round-trip claim. CD03 tool/content-log protections are **unfinished implementation**, distinct from these pending observations.
+
+SQL/minimum reader **12**, AST/archive **1**, compilation **3**, commercial refusals, account metadata v2 and the global **64-operation** limit remain. Use the [manual guide](../manual-testing/codex-CD04.md). Stop for user results; CD05–CD09 remain unimplemented.

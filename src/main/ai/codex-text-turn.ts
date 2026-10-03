@@ -3,8 +3,8 @@ import { AI_LIMITS, aiText, type AiReason } from '../../shared/ai'
 import { record } from '../../shared/projects'
 import { AiError } from './errors'
 
-// Main-only output. CD04 must bind/protect these distinct channels before a
-// feature can use them. No opaque provider IDs or hidden reasoning leave here.
+// Main-only output. CD04 binds/protects these distinct channels before feature
+// settlement. No opaque provider IDs or hidden reasoning leave here.
 export type CodexTextUpdate = {
   text: string; commentary: string; finalText: string | null
   state: 'running' | 'completed' | 'cancelled' | 'failed' | 'unknown'; reason: AiReason | null

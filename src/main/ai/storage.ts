@@ -3,10 +3,12 @@ import { randomUUID } from 'node:crypto'
 import { lstat, readFile, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { isId } from '../../domain/editor/schema'
-import { aiText, isAiOperation, isAiPrepare, AI_LIMITS, type AiOperation, type AiPrepareInput } from '../../shared/ai'
+import { aiText, AI_LIMITS } from '../../shared/ai'
 import { exact, record } from '../../shared/projects'
 import { contained, directory, writeJson } from '../../worker/storage/files'
 import { AiError } from './errors'
+import { isRetainedOperation, type RetainedOperation } from './local-operation'
+export type { RetainedOperation } from './local-operation'
 import { emptyLocalSession, isLocalCodexMetadataV1, isLocalCodexSessionV2, LOCAL_CODEX_METADATA_FILE,
   LOCAL_CODEX_SESSION_FILE, type LocalCodexSessionV2 } from './local-session-metadata'
 
@@ -15,9 +17,8 @@ export type Account = { id: string; subject: string; label: string; clientId: st
 // Registered OAuth v1 remains exact. Codex-managed auth MUST NOT be represented
 // by a fabricated clientId or Tokens value; see local-session-metadata.ts.
 export type Credentials = { version: 1; hostId: string; activeId: string | null; accounts: Account[] }
-// Frozen v1 identity uses operationDigestV1. CD04 owns a separate route-bound v2
-// reader/writer and digest. Unknown versions continue to fail without rewriting.
-export type RetainedOperation = { version: 1; input: AiPrepareInput; view: AiOperation }
+// Both operation versions share the encrypted directory and global cap. Readers
+// validate the original version; no local-route defaults are added to v1.
 const secret = (v: unknown): v is string => aiText(v,32768) && v.length > 0 && !/[\s\u0000-\u001f]/u.test(v)
 const finiteTime = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) >= 0
 export function isTokens(v: unknown): v is Tokens {
@@ -68,14 +69,14 @@ export class AiStorage {
     if (!isLocalCodexSessionV2(value)) throw new AiError('storage-unavailable')
     await this.write(LOCAL_CODEX_SESSION_FILE, value)
   }
-  private async read(name: string): Promise<unknown|null> {
+  private async read(name: string, maxBytes=2*1024*1024): Promise<unknown|null> {
     await this.initialize()
     const path = join(this.root!,name)
     try {
       await contained(this.root!,path,false)
-      if ((await lstat(path)).size>2*1024*1024) throw new AiError('storage-unavailable')
+      if ((await lstat(path)).size>maxBytes) throw new AiError('storage-unavailable')
       const bytes=await readFile(path)
-      if(bytes.length>2*1024*1024)throw new AiError('storage-unavailable')
+      if(bytes.length>maxBytes)throw new AiError('storage-unavailable')
       const envelope:unknown=JSON.parse(bytes.toString('utf8'))
       if(!record(envelope)||!exact(envelope,['version','encrypted'])||envelope.version!==1||typeof envelope.encrypted!=='string'||!/^[A-Za-z0-9+/]+=*$/.test(envelope.encrypted))throw new AiError('storage-unavailable')
       return JSON.parse(safeStorage.decryptString(Buffer.from(envelope.encrypted,'base64')))
@@ -84,14 +85,16 @@ export class AiStorage {
       throw new AiError('storage-unavailable')
     }
   }
-  private async write(name: string, value: unknown): Promise<void> {
+  private async write(name: string, value: unknown, maxBytes=2*1024*1024): Promise<void> {
     await this.initialize()
     try {
       const path=join(this.root!,name)
       await contained(this.root!,dirname(path),true)
       try { await contained(this.root!,path,false) }
       catch(error) { if(!error||typeof error!=='object'||!('code'in error)||error.code!=='ENOENT')throw error }
-      await writeJson(path,{version:1,encrypted:safeStorage.encryptString(JSON.stringify(value)).toString('base64')})
+      const envelope={version:1,encrypted:safeStorage.encryptString(JSON.stringify(value)).toString('base64')}
+      if(Buffer.byteLength(JSON.stringify(envelope),'utf8')>maxBytes)throw new AiError('storage-unavailable')
+      await writeJson(path,envelope)
     }
     catch { throw new AiError('storage-unavailable') }
   }
@@ -117,14 +120,16 @@ export class AiStorage {
     const operations:RetainedOperation[]=[]
     for(const name of names){
       if(!isId(name.slice(0,-5)))throw new AiError('storage-unavailable')
-      const value=await this.read(join('operations',name))
-      if(!record(value)||!exact(value,['version','input','view'])||value.version!==1||!isAiPrepare(value.input)||!isAiOperation(value.view)||value.view.operationId!==name.slice(0,-5)||value.input.operationId!==value.view.operationId)throw new AiError('storage-unavailable')
-      operations.push(value as RetainedOperation)
+      // v2 retains raw text plus final/commentary channels and exact framing.
+      // Bound the encrypted envelope as well as the decoded content fields.
+      const value=await this.read(join('operations',name),4*1024*1024)
+      if(!isRetainedOperation(value)||value.view.operationId!==name.slice(0,-5))throw new AiError('storage-unavailable')
+      operations.push(value)
     }
     return operations
   }
   async retain(operation: RetainedOperation): Promise<void> {
-    if(!isAiPrepare(operation.input)||!isAiOperation(operation.view))throw new AiError('invalid-request')
-    await this.write(join('operations',`${operation.view.operationId}.json`),operation)
+    if(!isRetainedOperation(operation))throw new AiError('invalid-request')
+    await this.write(join('operations',`${operation.view.operationId}.json`),operation,4*1024*1024)
   }
 }

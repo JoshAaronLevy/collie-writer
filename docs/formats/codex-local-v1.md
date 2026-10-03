@@ -2,6 +2,8 @@
 
 October 2, 2026. Device-local contracts only. Portable SQL/minimum reader **12**, AST/archive **1** and compilation **3** are unchanged. No migration runs in CD01.
 
+This is the historical CD01 boundary. CD04 subsequently delivered the separate [operation v2 contract](codex-operations-v2.md), preserving the v1 identities below. CD02's [account metadata v2](codex-local-v2.md) has a separate version lifecycle.
+
 | Record / boundary | Current contract | Local-route treatment |
 | --- | --- | --- |
 | `ai/credentials-v1.json` | Exact registered OAuth v1 payload, inside existing version-1 encrypted envelope. Host ID, active ID and registered accounts retain their existing semantics. | Preserve it. Never populate fake registered client IDs or convert Codex-managed credentials into `Tokens`. Existing accounts are not selected/advertised as local Codex accounts. |
