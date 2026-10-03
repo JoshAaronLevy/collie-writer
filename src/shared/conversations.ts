@@ -12,7 +12,8 @@ export const CONVERSATION_LIMITS = { title: 160, list: 20, turns: 5, history: 12
 export type AiCapture = AiTextCaptureFields & { conversationId: string; template: 'conversation-v1'; historyIds: string[] }
 export type Conversation = { version: 1; id: string; revisionId: string; title: string; state: 'active' | 'archived'; createdAt: string; updatedAt: string }
 export type ConversationMessage = { version: 1; id: string; revisionId: string; conversationId: string; attemptId: string; ordinal: number; role: 'user' | 'assistant'; text: string; createdAt: string }
-export type ConversationAttempt = AiAttemptFields & { conversationId: string; captureId: string; userMessageId: string; assistantMessageId: string | null }
+export type ConversationAttempt = Omit<AiAttemptFields,'version'|'provider'> & { version:1|2; provider:'openai-codex'|'openai-chatgpt-plan'|null;
+  conversationId: string; captureId: string; userMessageId: string; assistantMessageId: string | null }
 export type ConversationTurn = { attempt: ConversationAttempt; capture: AiCapture; user: ConversationMessage; assistant: ConversationMessage | null }
 export type ConversationReview = OpenInput & { action: 'review'; conversationId: string; expectedRevision: string; expectedHead: string; captureId: string; createdAt: string; prompt: string; source: CaptureSource; historyIds: string[] }
 export type ConversationChange = OpenInput & { action: 'change'; operationId: string; conversationId: string; expectedRevision: string | null; title: string; state: 'active' | 'archived' }
@@ -29,9 +30,9 @@ export type ConversationRequest =
   | (OpenInput & { action: 'export'; conversationId: string; expectedRevision: string; includeContext: boolean })
 type ConversationBindingFields = { attemptId: string; operationId: string; connectionId: string; model: string; digest: string; captureDigest: string }
 /** Local operations database only. Legacy bindings deliberately have no version
- * key. v2/v3 point to route-bound journals without copying account authority;
- * v3 is accepted only by the proofreading reader below. */
-export type ConversationBinding = ConversationBindingFields | (ConversationBindingFields & {version:2|3})
+ * key. v2/v3 are Codex; v4 is a direct ChatGPT-plan conversation. The readers
+ * keep v3 mechanics-only and v4 conversation-only. No binding confers authority. */
+export type ConversationBinding = ConversationBindingFields | (ConversationBindingFields & {version:2|3|4})
 export type ConversationWorkerInput = Exclude<ConversationRequest, ConversationSubmit | { action: 'cancel' | 'protect' | 'acknowledge' | 'attempt' | 'reconcile' | 'export' }> | (OpenInput & (
   | { action: 'append'; submission: ConversationSubmit }
   | { action: 'bind'; binding: ConversationBinding }
@@ -77,7 +78,7 @@ export function isAiCapture(v: unknown): v is AiCapture {
 }
 export function isConversation(v: unknown): v is Conversation { return record(v) && exact(v,['version','id','revisionId','title','state','createdAt','updatedAt']) && v.version===1 && isId(v.id) && isId(v.revisionId) && text(v.title,160) && !!v.title.trim() && state(v.state) && date(v.createdAt) && date(v.updatedAt) }
 export function isConversationMessage(v: unknown): v is ConversationMessage { return record(v) && exact(v,['version','id','revisionId','conversationId','attemptId','ordinal','role','text','createdAt']) && v.version===1 && [v.id,v.revisionId,v.conversationId,v.attemptId].every(isId) && integer(v.ordinal) && ['user','assistant'].includes(String(v.role)) && text(v.text,v.role==='user'?AI_LIMITS.prompt:AI_LIMITS.output) && date(v.createdAt) }
-export function isConversationAttempt(v: unknown): v is ConversationAttempt { return record(v) && exact(v,['version','id','revisionId','conversationId','captureId','userMessageId','assistantMessageId','state','provider','model','reason','sequence','createdAt','finishedAt','requestDigest']) && v.version===1 && [v.id,v.revisionId,v.conversationId,v.captureId,v.userMessageId].every(isId) && (v.assistantMessageId===null||isId(v.assistantMessageId)) && ['not-sent','preparing','running','stopping','completed','cancelled','failed','unknown'].includes(String(v.state)) && (v.provider===null||v.provider==='openai-codex') && (v.model===null||model(v.model)) && (v.reason===null||isAiReason(v.reason)) && integer(v.sequence) && date(v.createdAt) && (v.finishedAt===null||date(v.finishedAt)) && isCaptureDigest(v.requestDigest) }
+export function isConversationAttempt(v: unknown): v is ConversationAttempt { return record(v) && exact(v,['version','id','revisionId','conversationId','captureId','userMessageId','assistantMessageId','state','provider','model','reason','sequence','createdAt','finishedAt','requestDigest']) && (v.version===1&&(v.provider===null||v.provider==='openai-codex')||v.version===2&&v.provider==='openai-chatgpt-plan'&&model(v.model)&&v.state!=='not-sent') && [v.id,v.revisionId,v.conversationId,v.captureId,v.userMessageId].every(isId) && (v.assistantMessageId===null||isId(v.assistantMessageId)) && ['not-sent','preparing','running','stopping','completed','cancelled','failed','unknown'].includes(String(v.state)) && (v.model===null||model(v.model)) && (v.reason===null||isAiReason(v.reason)) && integer(v.sequence) && date(v.createdAt) && (v.finishedAt===null||date(v.finishedAt)) && isCaptureDigest(v.requestDigest) }
 export function isConversationTurn(v: unknown): v is ConversationTurn { return record(v) && exact(v,['attempt','capture','user','assistant']) && isConversationAttempt(v.attempt) && isAiCapture(v.capture) && isConversationMessage(v.user) && (v.assistant===null||isConversationMessage(v.assistant)) && v.attempt.captureId===v.capture.id && v.attempt.userMessageId===v.user.id && v.user.attemptId===v.attempt.id && v.user.role==='user' && v.user.text===v.capture.prompt && v.attempt.conversationId===v.capture.conversationId && v.user.conversationId===v.capture.conversationId && (v.assistant===null?v.attempt.assistantMessageId===null:v.assistant.id===v.attempt.assistantMessageId&&v.assistant.attemptId===v.attempt.id&&v.assistant.conversationId===v.capture.conversationId&&v.assistant.role==='assistant'&&v.assistant.ordinal===v.user.ordinal+1) }
 export function isConversationRequest(v: unknown): v is ConversationRequest {
   if (!record(v)||!scope(v)) return false
@@ -94,14 +95,14 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
     default: return false
   }
 }
-/** v3 is mechanics-only. The shared coordinator and proofreading worker use
- * this reader; conversation consumers retain the exact legacy/v2 subset. */
+/** The coordinator knows all versions; each feature uses its narrower reader. */
 export function isContentBinding(v: unknown): v is ConversationBinding { return record(v)&&
   (exact(v,['attemptId','operationId','connectionId','model','digest','captureDigest'])||
-    (v.version===2||v.version===3)&&exact(v,['version','attemptId','operationId','connectionId','model','digest','captureDigest']))&&
+    (v.version===2||v.version===3||v.version===4)&&exact(v,['version','attemptId','operationId','connectionId','model','digest','captureDigest']))&&
   [v.attemptId,v.operationId,v.connectionId].every(isId)&&model(v.model)&&isCaptureDigest(v.digest)&&isCaptureDigest(v.captureDigest) }
 export function isConversationBinding(v:unknown):v is ConversationBinding {return isContentBinding(v)&&bindingVersion(v)!==3}
-export function bindingVersion(binding:ConversationBinding):1|2|3 {return 'version'in binding?binding.version:1}
+export function isProofreadingBinding(v:unknown):v is ConversationBinding {return isContentBinding(v)&&bindingVersion(v)!==4}
+export function bindingVersion(binding:ConversationBinding):1|2|3|4 {return 'version'in binding?binding.version:1}
 export function isConversationWorkerInput(v: unknown): v is ConversationWorkerInput {
   if (!record(v)||!scope(v)) return false
   const fields=['projectId','workspaceId','action']

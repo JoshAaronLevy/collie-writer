@@ -1,0 +1,241 @@
+# Collie Writer AI integration reassessment
+
+October 3, 2026. Repository baseline: `03732446823d9154b0e3ae84697460ae9ff17d1d`.
+
+This is a diagnostic report, not an implementation or acceptance record. I inspected source, package manifests/lockfile, installed package metadata, plans, current official documentation, and the relevant published Codex source. The working tree was clean when inspection began. I did not run application code, launch Codex, inspect credentials, sign in, submit inference, install dependencies, or run tests/builds/checks. This report is the only project change. File links identify the implementation; official links identify external claims.
+
+**1. Current diagnosis in plain English**
+
+Collie has substantial local AI infrastructure: connection screens, browser-login code, protected account storage, model selection, saved conversations, mechanics-review records, and request/recovery machinery. **There is no established successful end-to-end AI workflow in the evidence reviewed.** The repository's recent implementation records explicitly say that native sign-in and inference remain unobserved. “Implemented” below means code exists, not that I observed it working.
+
+The immediate reason local conversations and proofreading cannot run is deterministic: **Collie's own policy always refuses inference.** In [codex-local-policy.ts](src/main/ai/codex-local-policy.ts), `localExecutionReadiness()` returns unavailable with two reasons: incomplete tool isolation and incomplete protection against runtime content logging. Those refusals reach the feature buttons, main-process authorization, and the runtime itself. A successful login or a different model cannot clear them.
+
+This is not an observed OpenAI account rejection. The implementation chose a general-purpose coding-agent runtime for a task that needs a bounded text request. It then required that runtime to expose no unrelated tools and create no unprotected duplicate content logs. Engineering those constraints stalled; subsequent stages built persistence and UI around the still-disabled execution path. This explanation is supported by the current source and [CD03 decision](docs/decisions/codex-CD03.md), not merely by the old I10 gate list.
+
+There is also a separate product gap: **the representative claim-versus-cited-evidence feature has not been implemented.** It is P06, “Source faithfulness,” in the [proofreading plan](proofreading-implementation-plan.md). Today's proofreading code handles en-US spelling, grammar, and punctuation. Enabling a model would not turn that code into source-faithfulness analysis.
+
+Several earlier conclusions need correction or narrower wording:
+
+- Treating commercial approval as the universal reason personal development cannot proceed was too broad. The current desktop example explicitly includes personal projects running locally. Its publication date is September 28; I cannot attribute the correction to a later policy change. Our diagnosis needed to distinguish routes more carefully. [Official desktop example](https://learn.chatgpt.com/cookbook/articles/sign-in-with-chatgpt).
+- Codex is not required to consume authorized ChatGPT-plan usage. A documented OAuth credential can authorize direct inference through the public Responses endpoint. An API endpoint, or an SDK parameter named `api_key`, does not by itself mean developer API-key billing. [Models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference).
+- The older project documents already acknowledge that endpoint/billing distinction. The missing step was evaluating direct inference as the primary, simpler implementation rather than continuing to assume a Codex runtime was necessary. See [provider eligibility](docs/ai/provider-eligibility.md).
+- The Codex isolation concerns have a real source basis. They are limitations of the selected implementation and its protection requirements, not evidence that OpenAI prohibits claim checking.
+- I found no evidence of a required claim-checking plugin failing. The precise supported interpretation of the plugin concern is in section 4.
+
+**2. What the application implements today**
+
+**Actual dependencies and components**
+
+Versions below come from [package.json](package.json), [package-lock.json](package-lock.json), and read-only inspection of installed package manifests.
+
+| Component | Current state and role |
+| --- | --- |
+| `@openai/codex` | Exact development dependency **0.160.0**; installed. Supplies the native Codex runtime. Collie starts its `app-server` subcommand. |
+| `@openai/codex-darwin-arm64` | **0.160.0-darwin-arm64**, installed; its native binary exists under `vendor/aarch64-apple-darwin/bin/codex`. Presence does not prove execution. The x64 package is in the lockfile but not installed here. |
+| Codex TypeScript SDK, `@openai/codex-sdk` | Absent from manifest, lockfile, and inspected installed metadata. No `new Codex()` / SDK thread path is used by this integration. |
+| OpenAI API SDK, `openai` | Absent. Existing authentication HTTP is implemented using Node HTTPS. No direct Responses client is implemented. |
+| Sign in with ChatGPT devkit, `@siwc/local` / `@siwc/react` | Neither installed nor declared. These appear in the official example, not in Collie. |
+| `jose` | **6.2.12**, installed production dependency; validates OAuth JWTs in the separate app-owned authentication code. |
+| Electron / React | Electron **44.5.0**; React resolves to **19.3.0**. Electron main owns processes, browser opening, IPC, and protected storage; React renders connection and feature state. |
+| MCP / ChatGPT plugin | No such component is required by the implemented writing requests. Codex configuration attempts to disable these surfaces. The development assistant's connectors/plugins are not Collie application dependencies. |
+| Grok Build | Partial source-only ACP transport in [grok-runtime.ts](src/main/ai/grok-runtime.ts); its launch function always refuses. It is not a usable second provider. |
+
+**There are two distinct OpenAI paths, not one interchangeable login implementation.**
+
+The path selected in an unpackaged development application is `local-codex-chatgpt`. [deployment.ts](src/main/ai/deployment.ts), `selectAiRoute()`, requires unpackaged Electron and the exact development channel, distribution, and app identity. [release.ts](src/main/release.ts) supplies that identity. This route does not consult the null commercial client registrations.
+
+The other path, `registered-openai`, is selected only for recognized packaged direct beta/production identities. It has app-owned OAuth code but no configured registration, no completed funding/isolation enforcement, and no usable packaged runtime.
+
+**Current local path: clicking Connect through account state**
+
+1. [AiConnectionPanel.tsx](src/renderer/src/features/ai-connections/AiConnectionPanel.tsx) renders **Continue with ChatGPT**. It checks main-supplied action availability and workspace readiness. [AiConnectionsProvider.tsx](src/renderer/src/features/ai-connections/AiConnectionsProvider.tsx), `connect()`, creates an exact attempt and calls `window.collie.connectAi(...)`.
+2. [preload/ai.ts](src/preload/ai.ts) sends the narrow IPC request. [main/ai/ipc.ts](src/main/ai/ipc.ts), `registerAiIpc()`, checks sender and request shape, then calls [AiService.connect()](src/main/ai/service.ts). There is no renderer-controlled shell command, endpoint, credential, or arbitrary app-server RPC.
+3. For development, the service calls [LocalCodexSession.connect()](src/main/ai/local-codex-session.ts). It protects a candidate profile record before login, keeps the previous active account recoverable, and owns the asynchronous attempt independently of panel visibility.
+4. [CodexAccountRuntime.open()/launch()](src/main/ai/codex-account-runtime.ts) first starts a credential-free configuration namespace, examines effective configuration, then starts the candidate account namespace. These are sequential children, not simultaneous credential owners. The binary comes from [codexExecutable()](src/main/ai/codex-runtime.ts), which checks the exact platform-package version and contained binary path; it does not use a global executable or downloader.
+5. The child runs `codex app-server --listen stdio://`. Communication is newline-delimited JSON-RPC. Configuration requires managed ChatGPT login and OS keyring storage. The child receives a separately constructed environment and profile directories, without inherited API keys. External nonempty configuration layers and unexpected profile auth/config files are refused.
+6. `CodexAccountRuntime.login()` checks whether loopback port 1455 is available, calls `account/login/start` with the ChatGPT login type, validates the returned authorization URL, and opens the system browser with Electron `shell.openExternal()`. **Codex owns this OAuth exchange and callback**, not `OpenAiSignIn` below. Collie accepts only the matching completion, followed by `account/read`.
+7. Codex owns credentials and refresh in its profile-specific OS keyring namespace. Collie stores the active profile pointer, sanitized account label, attempt, and retired-profile recovery metadata in encrypted `codex-local-session-v2.json`. [AiStorage](src/main/ai/storage.ts) uses Electron `safeStorage`; metadata is outside portable projects. Actual keyring behavior is unobserved. The pinned upstream [auth storage](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/login/src/auth/storage.rs) derives its namespace from the canonical Codex home.
+8. `readAccount()` extracts experimental workspace-routing identity when available. An email label alone cannot authorize execution. Explicit Resume reconciles a saved account after restart; normal status polling stays local. Explicit Refresh models uses `LocalCodexSession.refreshModels()` and the same child's `model/list`; choices and selection remain in memory. A listed model is not proof of inference entitlement.
+
+The local snapshot deliberately sets `planConsent: false`; it is not reading the separate SIWC direct-use grant. That field must not be interpreted as proof that managed Codex lacks subscription access. These are different authentication contracts. [LocalCodexSession.snapshot()](src/main/ai/local-codex-session.ts).
+
+**Request submission and response handling**
+
+Conversations and proofreading share [AiContentService](src/main/ai/content-service.ts), through the small [conversation](src/main/conversations/service.ts) and [proofreading](src/main/proofreading/service.ts) adapters. Renderer owners retain drafts and explicit context review. The main service binds a reviewed request to the exact captured document/context and account/model generation.
+
+`AiContentService.submit()` writes the portable request first. A local-only save stops there. Sending would proceed through `AiService.prepare()`, durable worker binding, `AiService.start()`, encrypted initial operation protection, and the selected `AiDispatchSession`. Replaying an existing operation retrieves its outcome rather than sending it again.
+
+**Today that path is refused before content dispatch.** `AiService.authorize()` consults unavailable feature capabilities. [LocalCodexSession.dispatchSession()](src/main/ai/local-codex-session.ts) and [CodexAccountRuntime.executeText()](src/main/ai/codex-account-runtime.ts) independently enforce `requireLocalTextIsolation()`. Even bypassing a disabled button would not make a supported request execute.
+
+Behind that refusal, real transport code exists for a fresh ephemeral thread, explicit instructions, one text turn, streaming, interruption, and terminal outcomes. [CodexTextTurn](src/main/ai/codex-text-turn.ts) correlates events, separates commentary from final text, and distinguishes completion from failure/cancellation/uncertainty. `AiService.run()` protects output before publishing it; the content service settles it into project history. CD08 adds durable handoff receipts and retained cold records so settled outcomes can free active capacity without deletion.
+
+Proofreading additionally derives a native output schema and validates the entire result in [domain/ai/proofreading.ts](src/domain/ai/proofreading.ts), `mechanicsOutputSchemaV1()` / `validateMechanicsResult()`. Findings require exact captured text/ranges. Partial or invalid output cannot authorize corrections; applying a valid finding remains a separate human operation. These paths are implemented but have no demonstrated live result in the reviewed evidence.
+
+**The separate app-owned OAuth path**
+
+[OpenAiSignIn.run()](src/main/ai/openai-auth.ts) implements loopback OAuth with state, nonce, PKCE, scope requests, token exchange, and identity validation. [openai-http.ts](src/main/ai/openai-http.ts) implements restricted authentication HTTP and JWKS verification. [AiStorage.credentials()/saveCredentials()](src/main/ai/storage.ts) stores account/token sets encrypted in `credentials-v1.json`.
+
+However, it requires a preexisting `OpenAiRegistration.clientId`. All entries in `OPENAI_REGISTRATIONS` are null. It **does not implement dynamic first-time registration**, accept and persist a newly issued client ID before exchange, or expose a personal direct-SIWC route. Setting the client ID to `dynamic_agent_client` would not fix it: current validation expects an issued `oaiapp_...` registration and rejects a different callback client ID.
+
+If this separate route were completed, [CodexRuntime.open(token)](src/main/ai/codex-runtime.ts) would give its OAuth access token to an app-server child through `ACCESS_TOKEN` and configure the public Responses provider. That is already conceptually subscription-token inference, not a developer API key. It remains behind `requireIncludedFunding()`, `requireTextOnlyRuntime()`, and the packaged-runtime refusal. The current HTTP helper permits only the authentication origin and JSON/form exchanges; it is not a streaming inference client.
+
+There are no success-producing mocks or seeded AI findings in these reviewed production paths. The placeholders are explicit unavailable states and unconditional refusal functions. The rest is real but incompletely activated and unverified implementation.
+
+**3. Material blockers and what each actually prevents**
+
+**B1 — Local Codex tool isolation: confirmed implementation blocker; actual unintended execution unobserved.**
+
+- **Prevents:** both conversation Send and mechanics Run on the current local route.
+- **Cause/evidence:** `localExecutionReadiness()` always refuses. I re-read pinned [tool construction](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/tools/spec_plan.rs): `add_core_utility_tools()` can add ApplyPatch based on model metadata and an available environment, plus model-advertised utilities independently of the existing shell/MCP flags. The pinned [thread-start type](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/app-server-protocol/schema/typescript/v2/ThreadStartParams.ts) exposes no dedicated complete tool-policy field; internal [session policy](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/session/session.rs) is a separate Rust extension mechanism.
+- **Scope:** selected runtime architecture and Collie's text-only contract, not account access or commercial approval. This does not prove sandbox escape, successful file modification, or that every possible Codex version/configuration is unsuitable. Even harmless clock tools violate an absolute zero-tool contract, so the risk and the contractual requirement should not be conflated.
+- **Smallest next step:** for this POC, implement direct text inference without a tool executor. If retaining Codex, establish supported complete controls for one exact version before changing the refusal. Prompts and rejecting notifications after a tool starts do not establish those controls.
+
+**B2 — Codex can write content-bearing diagnostics outside Collie's encrypted journal: source-supported risk; occurrence unobserved.**
+
+- **Prevents:** the same local content dispatch under the current protection contract.
+- **Cause/evidence:** pinned [app-server initialization](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/app-server/src/lib.rs) initializes SQLite and attaches a database logger independently of the stderr filter. [The database filter](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/state/src/log_db.rs) defaults broadly to TRACE while suppressing selected payload targets. A concrete remaining [WebSocket parser path](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/codex-api/src/endpoint/responses_websocket.rs) logs malformed event text at DEBUG. Collie's discarded stderr and ephemeral threads do not suppress that sink.
+- **Scope:** local data handling of the managed runtime. This is not evidence that all normal responses are logged, that anything was leaked here, or that the separate HTTP-only provider necessarily exercises that WebSocket branch.
+- **Smallest next step:** direct inference avoids this child-runtime sink. Keeping Codex requires supported suppression or protected storage of applicable runtime content files. Disabling WebSockets alone would address the cited branch, not establish complete log protection.
+
+**B3 — The simpler direct-plan route is missing, not shown to be unavailable.**
+
+- **Prevents:** an in-app personal SIWC authorization followed by a direct Responses request.
+- **Cause/evidence:** the fixed-registration assumptions in `OpenAiSignIn.run()`, no direct route in `selectAiRoute()`, and no Responses streaming client. This is missing implementation; neither an API-key SDK nor a new backend is required to fill it.
+- **Scope:** local POC engineering. Personal-route applicability and actual account admission remain distinct from implementation.
+- **Smallest next step:** implement the documented dynamic registration lifecycle and a narrow main-process text transport, then connect it to one existing conversation request path. Preserve existing records and version any changed credential/operation/provenance contracts. Do not relabel direct inference as `openai-codex` simply to fit the current [attempt type](src/shared/ai-content.ts).
+
+**B4 — Native login, account eligibility, and model access have no observed result.**
+
+- **Prevents:** claiming that this machine/account has completed authentication and authorized inference. It does not justify asserting that the account is ineligible.
+- **Cause/evidence:** no successful observations in the reviewed CD02–CD08 records. The installed arm64 runtime is present, but secure-store access, configuration acceptance, browser callback, workspace identity, and model admission were not exercised. The code has concrete refusals such as `callback-port-in-use`, `local-config-conflict`, and `local-workspace-identity-unavailable`; none is a reproduced error in this investigation.
+- **Scope:** environment/account uncertainty. Current declared toolchain is Node **24.21.0** / npm **11.19.0**. A historical I02 install-shell engine warning is not evidence of an AI-plugin incompatibility or the current shell's condition. [I02 decision](docs/decisions/improvement-02-visual-foundation.md).
+- **Smallest next step:** after the chosen route exists, the owner performs the single manual flow in section 7. Record the stage and sanitized machine-readable refusal if it fails. Do not request token files or unrestricted logs. A model list alone cannot resolve this uncertainty.
+
+**B5 — Source-faithfulness analysis is an unimplemented feature.**
+
+- **Prevents:** selecting a manuscript claim and its cited passages, obtaining a structured support assessment with trustworthy source locators, and reviewing a provenance-bound suggestion.
+- **Cause/evidence:** [P06](proofreading-implementation-plan.md) is not started. [MECHANICS_RESULT_V1](src/shared/mechanics-contract.ts) permits only spelling, grammar, and punctuation. [CaptureSource](src/shared/ai-content.ts) supports no context, a manuscript section, or a manuscript passage; the planned explicit research-context extension is absent. Existing [evidence links](src/worker/projects/evidence.ts) are human-authored relationships, not model assessments.
+- **Scope:** product implementation, independent of authentication. A bibliography entry or citation count is insufficient evidence for this comparison.
+- **Smallest next step:** prove the transport using manually supplied claim/context/passages in a conversation. Later implement P06's evidence picker, immutable source captures, assessment contract, exact quote checks, stale-source handling, and human review. Live access is needed to assess end-to-end quality, not to write those local portions.
+
+**B6 — Commercial/private availability and registration remain separate unresolved gates.**
+
+- **Prevents:** claiming permission to activate a paid/distributed Collie integration, or treating managed Codex login as a commercial workaround.
+- **Cause/evidence:** the repository records no commercial approval and has null registrations. Current [app-server authentication documentation](https://learn.chatgpt.com/docs/app-server#auth-endpoints) allows continuation for local/open-source applications but explicitly excludes commercial or hosted services from built-in app-server authentication. The [SIWC quickstart](https://developers.openai.com/siwc/quickstart) describes limited commercial availability and selected private clients.
+- **Scope:** the applicable route and use case, not all source development. An owner's local prototype of a future paid product is not automatically the same category as its distributed product; the public material does not give a definitive classification for this exact boundary.
+- **Smallest next step:** use the documented personal-project scope as the basis for the proposed POC and accurately describe its owner-only purpose. Obtain clarification if that commercial-prototype boundary determines eligibility; obtain the commercial route's actual participation/registration before distribution. No evidence establishes a universal requirement to finish or publicly release the app first.
+
+**B7 — A strict included-allowance-only guarantee is stronger than no API-key fallback.**
+
+- **Prevents:** claiming the commercial product can never consume user-authorized credits after included allowance, under all account-setting/concurrency conditions.
+- **Cause/evidence:** [deployment.ts](src/main/ai/deployment.ts) distinguishes local normal-subscription behavior from unresolved commercial included-only enforcement. The current official [UI guidance](https://developers.openai.com/siwc/ui-ux-guidelines) describes eligible usage against plan or credit balance. The [error documentation](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery) says plan-use failures do not silently change billing paths. These facts do not establish a client-enforceable ban on every permitted credit use.
+- **Scope:** the stronger commercial funding promise. Josh already accepted normal subscription/account-credit behavior for his own unpackaged development, with no API-key fallback; [the CD plan](codex-implementation-plan.md) records that policy. I am not reopening it or making it a new POC blocker.
+- **Smallest next step:** retain that explicit local policy and no-fallback behavior. Resolve provider-enforced included-only semantics before making the stronger commercial promise. A completed request proves authorization for that request, not which balance funded every unit. Also, the current user-facing SIWC page no longer substantiates the older approval guide's specific “credits after limits” toggle description; that exact UI detail should be treated as stale, not repeated as observed fact.
+
+**B8 — Packaged execution is deliberately unavailable.**
+
+- **Prevents:** running this Codex integration in packaged Collie, regardless of login success in development.
+- **Cause/evidence:** `codexExecutable()` rejects `app.isPackaged`; Codex is a dev dependency; registered-route readiness also remains unavailable. This is unfinished runtime distribution/signing/configuration, not evidence that a particular dependency license prohibits distribution.
+- **Scope:** packaged releases, not the unpackaged POC.
+- **Smallest next step:** validate the local route first. A direct transport removes the need to package a Codex binary; commercial access and normal Electron distribution requirements still remain.
+
+Other existing guards—editable project scope, current context revisions, account changes, output-protection failures, and active capacity—can legitimately refuse an individual request. They are not proven causes of the present universal block. In particular, **the old claim that 64 operations is an unrecoverable lifetime ceiling is outdated**: CD08/C07 implements receipt-based retirement while retaining originals. The active ceiling remains, and its runtime behavior awaits user observation. [CD08 record](docs/validation/codex-CD08.md).
+
+**4. The plugin compatibility issue, precisely**
+
+**No named, necessary claim-checking plugin with a reproduced incompatibility appears in the evidence reviewed.** I cannot truthfully supply a failing plugin version or actual plugin error that the repository does not contain. If a previous explanation attributed the overall failure to “plugin compatibility,” that was insufficiently specific.
+
+The concrete versioned issue I can establish is in **`@openai/codex` 0.160.0**, the application runtime dependency. Its published [ThreadStartResponse](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/app-server-protocol/schema/typescript/v2/ThreadStartResponse.ts) describes `disabledPluginIds` as: “Saved list of disabled plugin IDs. Does not yet filter plugin capabilities.” That field cannot serve as an enforced capability restriction. This is a runtime behavior limitation, not an npm peer-dependency conflict or a failed external plugin install. Collie's current error is its own `isolation-unresolved` refusal.
+
+A different documented limitation affects the **SIWC plan-inference route**: hosted MCP/connectors and Responses `tool_search` are unsupported; an app-server configuration emitting that tool will fail. This is a route restriction, not a statement that all local MCP tools or all Codex plugins are incompatible. I have not observed such a provider error in Collie. [Preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
+
+The proposed claim-checking request needs neither component. Collie already owns the claim and research passages; it can send explicitly selected text and receive an assessment. Autonomous retrieval might eventually justify tools, but that is a separate product capability.
+
+For completeness, installed build tooling includes `@vitejs/plugin-react` **5.2.0** with `electron-vite` **5.0.0**. Citation import uses `@citation-js/plugin-bibtex` / `plugin-ris` **0.9.0**. Those packages have unrelated roles, and I found no evidence that they cause this inference refusal. The plugins available to me as the development assistant likewise do not decide what Collie's main process can execute. No missing assistant plugin prevented this diagnostic investigation.
+
+**5. Rechecked official authentication and subscription paths**
+
+I opened all five supplied resources and read their substantive content. They establish the following—not automatic approval or account eligibility for every project.
+
+| Supplied resource | What it establishes |
+| --- | --- |
+| [Desktop integration example](https://learn.chatgpt.com/cookbook/articles/sign-in-with-chatgpt) | An Electron/React example with authentication and requests owned by main, a narrow renderer bridge, protected local credentials, and optional devkit packages. It explicitly names open-source projects, personal projects running locally, and selected private apps as launch audiences. |
+| [Quickstart / availability](https://developers.openai.com/siwc/quickstart) | Identity and plan usage are separate capabilities. Commercial access is limited; private-client access is selected, not universal. Identity scopes alone grant neither API-resource access nor conversation access. |
+| [Registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in) | The local dynamic flow starts with `dynamic_agent_client`, a stable host ID, the real app name, loopback callback, PKCE/state/nonce, and requested plan scopes. Persist the issued client ID before exchange and reuse it. Verify identity and granted direct-use permission; no client secret or partner API key is required for this flow. |
+| [Models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference) | The authorized OAuth access token can call public model discovery and Responses directly. The credential and authorization determine the route's funding model. Streaming text alone is insufficient: completion must be confirmed. |
+| [Codex app-server adapter](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server) | The same authorized token can instead be supplied to an app-server child configured for Responses over HTTP. No second Codex sign-in is needed. App-owned refresh requires restarting that child with the renewed credential. |
+
+**Three routes should stay distinct.**
+
+| Route | Authentication owner | Inference owner | Fit for Collie |
+| --- | --- | --- | --- |
+| Managed local Codex | Codex browser flow, storage, and refresh | Codex app-server | Already implemented for owner development, but content execution is refused by Collie's unresolved runtime controls. It is not direct-SIWC grant verification. |
+| SIWC plan authorization + app-server | Collie owns OAuth and renewal | Local Codex child using the supplied OAuth credential | Officially documented technical adapter. Keeps agent-runtime complexity, logs/tools and packaging work. It does not confer commercial access by itself. |
+| SIWC plan authorization + direct Responses | Collie owns OAuth and renewal | A narrow main-process HTTPS client | Best fit for explicitly supplied claim/evidence text. Removes the child agent and its unrelated execution capabilities. Not implemented here yet. |
+
+The [Codex auth guide](https://learn.chatgpt.com/docs/auth) separately describes ChatGPT subscription authentication and API-key usage-based authentication. Do not take a managed Codex credential from the keyring and repurpose it for a different endpoint. The direct route should obtain its own documented app authorization. Likewise, identity-only login must remain signed-in-but-AI-unavailable when the required plan permission is absent.
+
+For a direct request, current documentation requires `POST https://api.openai.com/v1/responses`, the selected account's OAuth bearer credential, `store: false`, and `stream: true`. Current model discovery uses `GET /v1/models` and this route's `models` array with model slugs/display visibility; it should not be implemented by assuming the ordinary API-key catalog shape. Success requires `response.completed`; incomplete, failed, and interrupted streams need separate outcomes. [Inference contract](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference).
+
+The preview supports a text-only request of the proposed kind. It rejects several familiar API options, including `max_output_tokens`, `temperature`, hosted file search, and persistent HTTP conversation references. Send explicit context/history; do not compensate by adding unsupported parameters or cloud storage. Omitting tool capabilities is suitable here. `store: false` is not a blanket promise of zero provider retention. [Preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
+
+**Personal, open-source, and commercial/private scope.** The personal-local category is explicitly documented; there is no evidence that a domain, company email, completed product, or partner form is universally required before a qualifying personal POC. Open-source/local clients have a published dynamic-registration path. Paid or remotely hosted applications are directed to the interest process; selected private apps are not a universal entitlement. These distinctions appear in the [plan-use overview](https://developers.openai.com/siwc/token-sharing-open-source) and the supplied example/quickstart. The remaining narrow uncertainty is how OpenAI classifies an owner-only development build of an intended commercial product, plus the user's actual account/workspace eligibility. Local execution alone does not settle either.
+
+I also opened the [commercial interest form](https://openai.com/form/sign-in-with-chatgpt-interest/). It asks for work email, name, company, website URL, desired capability, and a product description. It offers both sign-in-only and sign-in-plus-plan-use choices. It does **not** say that the product must already be publicly released. The [client-ID page](https://developers.openai.com/siwc/request-client-id) identifies this as a commercial waitlist. A required URL field does not establish a launch requirement, and submission is not approval. Nothing was submitted.
+
+**6. Reconciliation with the feature plans**
+
+“Local work can proceed” means it can be implemented when requested; this diagnostic does not authorize or perform another stage. None of the implementation-complete statuses below means user acceptance passed.
+
+| Feature / stages | Current state | Actual dependency | Work that can proceed without live inference |
+| --- | --- | --- | --- |
+| Writing, research, sources, citations, exports; I01–I09 | Local implementation delivered, user acceptance separate | Local content/storage/native functionality | Local fixes and UX work; AI connection is not required. |
+| Account UI and local managed login; I11, CD01–CD02 | Implemented; native login success unobserved | Secure storage, binary/config acceptance, browser/callback, eligible account | Improve connection explanation; adapt main-owned auth to the selected direct route. |
+| Model choice and execution readiness; CD03 | Catalog controls delivered; isolated runtime incomplete | Codex tool/log controls for current route | Keep controls and honest refusal; implement an alternative direct transport instead of completing unnecessary agent capabilities. |
+| Shared durable dispatch; CD04 | Implementation complete, untested | A genuinely available transport, exact account/context authority | Add a versioned direct-route adapter while preserving ordering, records, and recovery. |
+| Saved conversations; I12 / CD05 | Local foundation delivered; real-response milestone partial | Live inference for new assistant responses | History, local request capture, export, and draft/recovery UX. A manually supplied evidence prompt is sufficient for the initial transport POC. |
+| Mechanics proofreading; I13 / CD06 | Local capture/findings/decision machinery delivered; live findings partial | Completed suitable output plus strict mechanics validation | Local review/decision behavior and route adaptation. No artificial findings should be added to simulate acceptance. |
+| Source faithfulness / claims needing support; P06 | **Not started** | Exact claim/evidence capture and new result contract, then live inference | Evidence selection, source versions/locators, result presentation, quote validation, and stale-state handling. |
+| Other expanded review modes; P01–P05, P07–P09 | Not started | Reusable findings, scope/batch work; inference for model judgments | Finding UI, grouped human decisions, scope/coverage logic and deterministic citation reports. Quality remains unverified without real output. |
+| Conversation organization/search; C01–C02 | Not started | Local schema, relationships and UI | Entire local organization/retrieval implementation. |
+| Research conversation context, notes and source promotion; C03–C04, C04A/C04B | Not started | Explicit captures and provenance; actual messages for automated candidate extraction | Local picker, review list, reversible decisions, deduplication and batch save/link. Saved references do not require autonomous web browsing. |
+| AI organization / summaries / branches; C05–C06 | Not started | Local organization/history; inference for suggestions/summaries | Branch/history controls and human acceptance flows. |
+| Close/cancel/recovery and capacity; CD07, CD08/C07 | Implementation complete, awaiting user testing | Existing local owners; live requests for full lifecycle acceptance | Preserve delivered code; diagnose local defects independently. CD09 remains not started. |
+| Grok provider choice; I14 | Engineering partial; launch refuses | Missing auth/storage, isolation/funding, routing and distribution work | Its independent work can be scoped separately; irrelevant to proving the OpenAI requirement. |
+| Integrated polish/acceptance; I15, C08, P09, CD09 | Not delivered as complete workflows | Respective preceding features and owner observations | Documentation/local polish can proceed; complete AI acceptance cannot be claimed. |
+
+Sources: current indexes in [Codex plan](codex-implementation-plan.md), [conversation plan](conversation-implementation-plan.md), [proofreading plan](proofreading-implementation-plan.md), and [app improvement plan](app-improvement-plan.md), cross-checked against the source owners above. Some earlier checkpoints still describe later stages as unimplemented; the current indexes and CD08 record supersede those chronological statements.
+
+**7. Simplest supported next step**
+
+**Implement a narrowly scoped, owner-local SIWC authorization and direct Responses path inside the existing app, then manually exercise one conversation with supplied claim/evidence text.** This is my primary recommendation, based on the documented personal-local category and the task's lack of agent-tool requirements. Resolve the specific commercial-prototype classification if needed; do not turn that uncertainty into an assertion that all personal testing requires partner approval.
+
+This changes the authentication/transport approach while retaining the useful architecture: Electron main owns credentials/network activity; preload exposes bounded actions; the existing conversation owner captures explicit content; the shared service protects requests and outcomes; manuscript edits remain human-controlled. It does not require a plugin framework, MCP server, hosted backend, billing system, or a broader provider abstraction.
+
+The next implementation should be limited to:
+
+1. Add the documented personal dynamic-registration lifecycle to an app-owned connection, including durable issued-client registration before token exchange and protected account-specific renewal. Existing fixed-registration code is a starting point, not a drop-in implementation. Keep managed Codex credentials separate.
+2. Add a fixed-origin main-process model lookup and bounded text/SSE response adapter. Supply no tool execution capability; retain interruption, terminal-state handling, sanitized error codes/request IDs, and no automatic fallback or fresh-request replay. The existing authentication HTTP helper needs a separate inference counterpart, not a generic renderer HTTP interface.
+3. Integrate that explicit route with the existing reviewed conversation path. Version route/provenance and operation bindings where necessary, rather than weakening old validators or reinterpreting saved Codex records. Keep the old Codex isolation refusal intact for its own route.
+4. Show connection, granted plan permission, chosen model, and request outcome separately, with the appropriate usage-management link. Do not label a model list “AI verified.” The official example's `@siwc/local` is useful reference material, but adopting a new package is not necessary to make this design work. [Desktop example](https://learn.chatgpt.com/cookbook/articles/sign-in-with-chatgpt).
+
+That is a bounded implementation change, not a configuration toggle. It does not complete P06, the entire conversation plan, or commercial release readiness. Retaining managed Codex remains a possible alternative, but resolving its tool/log requirements is unnecessary work for this particular proof.
+
+**Smallest manual end-to-end acceptance, after that implementation**
+
+Prerequisites: the direct route described above; a suitable personal ChatGPT Plus/Pro account and permitted workspace; applicable personal-use access; working local secure storage and outbound authentication/inference connectivity. No developer API account, pasted API key, hosted callback, or Codex Cloud job is part of the proposed flow. The current checkout cannot yet perform it.
+
+1. **Launch:** using the repository's pinned Node/npm toolchain and already installed dependencies, the owner starts the unpackaged app with `npm run dev`, opens a disposable project, and opens the connection panel. Expected: the explicitly implemented personal route is identified and writing remains usable. This is a future user action, not a command run during this diagnosis.
+2. **Sign in:** choose Continue with ChatGPT, select the intended account/workspace, and grant plan use in the browser. Expected: the app returns to a connected account with plan authorization established from the validated grant. Declining permission must leave inference unavailable. See the [registration contract](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
+3. **Choose and review:** load the account's model choices and select one. In a new conversation, supply only this invented example and inspect the outgoing text: claim, “The study proves that a ten-minute walk improves memory in all adults”; surrounding text, “This demonstrates a universal causal effect”; evidence, “An observational study of 60 volunteers aged 20–30 found an association between self-reported walking and a memory score. Participants were not randomized. The authors state that causation cannot be inferred.” Ask for support assessment, missing qualifications, and a cautious revision. No source plugin or download is needed.
+4. **Send once:** expected transport result is a completed, nonempty response under the selected plan authorization, saved to that conversation. Expected substantive response identifies the causal and generalization overstatements and proposes narrower wording. These are two different observations: successful transport does not guarantee good reasoning. If admission/streaming fails, preserve the draft/partial result and sanitized status/code/request ID; do not switch credentials or billing. [Error handling](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery).
+5. **Confirm ownership and persistence:** inspect the app's authorization/usage entry in ChatGPT where available; navigate away and reopen the conversation. Expected: the same local request and completed answer remain, without another inference call and without manuscript changes. Usage attribution corroborates the account route; it does not alone prove an included-only funding guarantee. [Accounts and sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions).
+
+The evidence to retain is the app/build route, selected account/workspace label, granted permission names, chosen model, terminal outcome, sanitized provider request identifier when supplied, and the synthetic request/answer. Do not retain credentials or authorization URLs. This single flow establishes the essential account-authorized request path; full source-faithfulness provenance and review quality require their own later implementation and user acceptance.
+
+**Remaining questions and missing information**
+
+1. Which ChatGPT plan and workspace would you use for the POC—personal Plus/Pro or an organization-managed workspace? No credentials are needed.
+2. Have you already tried Connect, Resume, or Refresh models in this checkout? If so, what was the last successful visible step and exact non-secret error? The repository contains no user-confirmed outcome.
+3. What exact earlier message named the “plugin compatibility” problem? Its plugin/package name and error would let a reviewer distinguish a separate real incompatibility from the Codex isolation limitation established here.
+4. Has OpenAI supplied any non-secret access decision for this owner-only prototype or Collie's commercial integration since the repository's October 2 “not approved” record? If not, the personal-prototype/commercial-product classification remains the narrow external question described above.

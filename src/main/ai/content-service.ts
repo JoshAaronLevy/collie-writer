@@ -9,7 +9,7 @@ import { requestDigest } from '../../worker/storage/digest'
 import type { StorageWorker } from '../storage-worker'
 import type { AiService, ContentAuthorization } from '../ai/service'
 import { aiReason } from '../ai/errors'
-import { contentOperation, localRequestFits, templateFor } from './local-operation'
+import { contentOperation, templateFor } from './local-operation'
 
 type ContentWorkerInput = ConversationWorkerInput | ProofreadWorkerInput
 type ContentValue = ConversationValue | ProofreadValue
@@ -287,7 +287,7 @@ export class AiContentService {
         const action=this.kind==='conversation'?'conversation':'proofread',reviewStamp=await this.ai.reviewStamp(action)
         const result=await this.worker(input)
         if(result.type!=='review'||result.capture.template!==templateFor(action))throw new ProjectError('UNAVAILABLE')
-        if(!localRequestFits(result.capture,action))throw new ProjectError('LIMIT_EXCEEDED')
+        if(!this.ai.requestFits(result.capture,action))throw new ProjectError('LIMIT_EXCEEDED')
         if(this.reviews.size>=64)this.reviews.delete(this.reviews.keys().next().value!)
         this.reviews.set(input.captureId,{reviewStamp,template:result.capture.template,captureDigest:result.capture.digest,
           reviewDigest:requestDigest(input),expiresAt:Date.now()+5*60000})

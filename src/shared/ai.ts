@@ -1,4 +1,5 @@
 import { isId } from '../domain/editor/schema'
+import { isAiDirectStatus, type AiDirectStatus } from './ai-direct'
 import { exact, isOpenInput, record, type OpenInput } from './projects'
 import { isAiCatalog, isAiExecutionReadiness, type AiCatalog, type AiExecutionReadiness, type AiSelectModelInput } from './ai-catalog'
 import { isAiConnectionReason, isAiFeatureAvailability, isAiFunding, isAiRoute, isAiSession,
@@ -13,6 +14,7 @@ export const AI_CHANNELS = {
 } as const
 export const AI_CHANGED = 'ai.changed'
 export const AI_PROVIDER = 'openai-codex' as const
+export const DIRECT_AI_PROVIDER = 'openai-chatgpt-plan' as const
 export const AI_LIMITS = { prompt: 16000, context: 64000, chunks: 32, output: 128000, jobs: 64 } as const
 export type AiReason = 'configuration-required' | 'development-access-unavailable' | 'commercial-activation-pending' |
   'secure-storage-unavailable' | 'storage-unavailable' | 'signed-out' | 'session-expired' | 'consent-required' |
@@ -35,7 +37,7 @@ export type AiStatus = {
   proofreadReviewRevision:string
   work: AiContentWork[]
   capacity: { limit: 64; used: number | null; projects: OpenInput[] }
-  provider: typeof AI_PROVIDER
+  provider: typeof AI_PROVIDER | typeof DIRECT_AI_PROVIDER
   channel: 'development' | 'beta' | 'production'
   implementation: 'partial'
   configured: boolean
@@ -47,6 +49,7 @@ export type AiStatus = {
   features: AiFeatureAvailability
   catalog: AiCatalog | null
   execution: AiExecutionReadiness | null
+  direct: AiDirectStatus | null
   runtime: 'development-installed' | 'not-packaged' | 'unavailable'
   state: 'unavailable' | 'signed-out' | 'signing-in' | 'signed-in' | 'refreshing' | 'disconnecting'
   reasons: AiReason[]
@@ -123,7 +126,7 @@ export function isAiOperation(v: unknown): v is AiOperation {
 export function isAiStatus(v: unknown): v is AiStatus {
   if(!record(v)||!isAiRoute(v.route)||!isAiSession(v.session)||!isAiFeatureAvailability(v.features))return false
   const {route,session,features}=v,execution=v.execution,catalog=v.catalog
-  return record(v) && exact(v,['sequence','reviewRevision','proofreadReviewRevision','work','capacity','provider','channel','implementation','configured','channelPermitted','commercialApproved','route','session','funding','features','catalog','execution','runtime','state','reasons','attemptId','activeConnectionId','connections','remoteRevocation','actions','local']) &&
+  return record(v) && exact(v,['sequence','reviewRevision','proofreadReviewRevision','work','capacity','provider','channel','implementation','configured','channelPermitted','commercialApproved','route','session','funding','features','catalog','execution','direct','runtime','state','reasons','attemptId','activeConnectionId','connections','remoteRevocation','actions','local']) &&
     Number.isSafeInteger(v.sequence) && Number(v.sequence)>=0 &&
     typeof v.reviewRevision==='string'&&/^[a-f0-9]{64}$/.test(v.reviewRevision)&&
     typeof v.proofreadReviewRevision==='string'&&/^[a-f0-9]{64}$/.test(v.proofreadReviewRevision)&&
@@ -133,14 +136,17 @@ export function isAiStatus(v: unknown): v is AiStatus {
     (v.capacity.used===null||Number.isSafeInteger(v.capacity.used)&&Number(v.capacity.used)>=0&&Number(v.capacity.used)<=AI_LIMITS.jobs)&&
     Array.isArray(v.capacity.projects)&&v.capacity.projects.length<=AI_LIMITS.jobs&&v.capacity.projects.every(isOpenInput)&&
     new Set(v.capacity.projects.map(scope=>`${scope.projectId}:${scope.workspaceId}`)).size===v.capacity.projects.length&&
-    v.provider === AI_PROVIDER && ['development','beta','production'].includes(String(v.channel)) && v.implementation === 'partial' &&
+    v.provider === (route.kind==='local-chatgpt-plan'?DIRECT_AI_PROVIDER:AI_PROVIDER) && ['development','beta','production'].includes(String(v.channel)) && v.implementation === 'partial' &&
     [v.configured,v.channelPermitted,v.commercialApproved].every(b=>typeof b==='boolean') &&
     isAiRoute(v.route) && isAiSession(v.session) && isAiFunding(v.funding) && isAiFeatureAvailability(v.features) &&
-    (v.route.kind==='local-codex-chatgpt' ? isAiCatalog(v.catalog) && isAiExecutionReadiness(v.execution) : v.catalog===null && v.execution===null) &&
-    Object.values(features).every(feature=>feature.state==='unavailable'||route.kind==='local-codex-chatgpt'&&
-      isAiExecutionReadiness(execution)&&execution.state==='available'&&session.state==='signed-in'&&session.connectionId===feature.connectionId&&
+    (route.kind==='local-chatgpt-plan'?isAiDirectStatus(v.direct)&&isAiCatalog(catalog)&&execution===null&&features.proofread.state==='unavailable':
+      v.direct===null&&(route.kind==='local-codex-chatgpt'?isAiCatalog(catalog)&&isAiExecutionReadiness(execution):catalog===null&&execution===null))&&
+    Object.values(features).every(feature=>feature.state==='unavailable'||
+      (route.kind==='local-codex-chatgpt'&&isAiExecutionReadiness(execution)&&execution.state==='available'||
+        route.kind==='local-chatgpt-plan'&&isAiDirectStatus(v.direct)&&v.direct.authentication==='verified'&&v.direct.planAuthorized)&&
+      session.state==='signed-in'&&session.connectionId===feature.connectionId&&
       v.activeConnectionId===feature.connectionId&&isAiCatalog(catalog)&&catalog.state==='loaded'&&catalog.selectedModelId===feature.model)&&
-    (v.route.kind === 'local-codex-chatgpt' ? v.channel === 'development' && v.funding.kind === 'normal-subscription' && v.commercialApproved === false :
+    (v.route.kind === 'local-codex-chatgpt'||v.route.kind==='local-chatgpt-plan' ? v.channel === 'development' && v.funding.kind === 'normal-subscription' && v.commercialApproved === false :
       v.route.kind === 'registered-openai' ? v.channel !== 'development' && v.funding.kind === 'included-only' : v.funding.kind === 'unavailable') &&
     ['development-installed','not-packaged','unavailable'].includes(String(v.runtime)) && ['unavailable','signed-out','signing-in','signed-in','refreshing','disconnecting'].includes(String(v.state)) &&
     Array.isArray(v.reasons) && v.reasons.length <= reasons.length && v.reasons.every(isAiReason) && nullableId(v.attemptId) && nullableId(v.activeConnectionId) &&

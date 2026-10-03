@@ -10,6 +10,7 @@ import { requestDigest } from '../../worker/storage/digest'
 import { isAiHandoffReceipt, type AiHandoffReceipt } from '../../shared/ai-handoff'
 import { handoffMatches } from './handoff'
 import { AiError } from './errors'
+import { DIRECT_CREDENTIAL_FILE, emptyPlanCredentials, isPlanCredentials, type PlanCredentials } from './direct-credentials'
 import { isRetainedOperation, type RetainedOperation } from './local-operation'
 export type { RetainedOperation } from './local-operation'
 import { emptyLocalSession, isLocalCodexMetadataV1, isLocalCodexSessionV2, LOCAL_CODEX_METADATA_FILE,
@@ -116,6 +117,28 @@ export class AiStorage {
   async saveCredentials(value: Credentials): Promise<void> {
     if(!isCredentials(value))throw new AiError('storage-unavailable')
     await this.write('credentials-v1.json',value)
+  }
+  async planCredentials():Promise<PlanCredentials> {
+    const value=await this.read(DIRECT_CREDENTIAL_FILE)
+    if(value===null)return emptyPlanCredentials()
+    if(!isPlanCredentials(value))throw new AiError('storage-unavailable')
+    // An interrupted rotation cannot be retried with the previous refresh token.
+    // Keep its registration and identity hint; sign-out also removes the hint.
+    if(value.accounts.some(a=>a.pending!==null)){
+      for(const account of value.accounts)if(account.pending){
+        if(account.pending==='sign-out'){
+          account.hint=null
+          if(value.activeId===account.id)value.activeId=null
+        }
+        account.tokens=null;account.pending=null
+      }
+      await this.savePlanCredentials(value)
+    }
+    return value
+  }
+  async savePlanCredentials(value:PlanCredentials):Promise<void> {
+    if(!isPlanCredentials(value))throw new AiError('storage-unavailable')
+    await this.write(DIRECT_CREDENTIAL_FILE,value)
   }
   private async retention():Promise<void> {
     await this.initialize()

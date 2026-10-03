@@ -1,5 +1,7 @@
 # OpenAI approval steps for Collie Writer
 
+**DP01 clarification — October 3, 2026:** the active personal/local milestone now uses [app-owned SIWC and direct Responses](../../chatgpt-plan-implementation.md), not managed Codex. The [official cookbook](https://learn.chatgpt.com/cookbook/articles/sign-in-with-chatgpt) explicitly includes personal projects running locally and requires paid/hosted apps to request access before offering the integration to users. The [quickstart](https://developers.openai.com/siwc/quickstart) retains selected commercial/private availability. No Collie-specific commercial approval is inferred. This guide remains about commercial access; its dated Codex engineering status is historical. Dynamic registration for the bounded personal flow needs no prefilled commercial registration or partner API key. Actual eligibility/refusal awaits Josh's browser and inference observations; do not claim an external block without its evidence.
+
 October 2, 2026. **Draft for Josh; nothing submitted or approved.** I10's local engineering can proceed under the revised plan; commercial activation and eligible inference remain pending. Josh confirmed that approval has not been obtained and asked what is needed. This guide provides the current application route and prepared wording; it cannot promise admission or a response date.
 
 ## Scope: commercial activation only

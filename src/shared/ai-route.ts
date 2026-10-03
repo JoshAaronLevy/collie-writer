@@ -11,7 +11,7 @@ export type AiConnectionReason = 'local-login-not-implemented' | 'local-executio
   'local-cleanup-required' | 'local-protection-required' | 'local-account-changed' | 'login-offline' | 'login-completed-before-cancel' | 'local-stop-pending' |
   'model-catalog-unavailable' | 'model-catalog-timeout' | 'local-tool-isolation-unavailable' | 'local-content-logging-unavailable' |
   'connect-required' | 'account-work-pending' | 'model-refresh-required' | 'model-selection-required' | 'no-text-models' |
-  'ai-work-pending' | 'output-protection-required' | 'operation-capacity-full' | 'local-workspace-identity-unavailable'
+  'ai-work-pending' | 'output-protection-required' | 'operation-capacity-full' | 'local-workspace-identity-unavailable' | 'plan-authorization-required'
 const connectionReasons: readonly AiConnectionReason[] = [
   'local-login-not-implemented', 'local-execution-not-implemented', 'conversation-adapter-not-ready',
   'proofreading-adapter-not-ready', 'packaged-development-refused', 'unsupported-app-identity',
@@ -20,9 +20,10 @@ const connectionReasons: readonly AiConnectionReason[] = [
   'local-runtime-exited', 'local-cleanup-required', 'local-protection-required', 'local-account-changed', 'login-offline', 'login-completed-before-cancel', 'local-stop-pending',
   'model-catalog-unavailable', 'model-catalog-timeout', 'local-tool-isolation-unavailable', 'local-content-logging-unavailable',
   'connect-required', 'account-work-pending', 'model-refresh-required', 'model-selection-required', 'no-text-models',
-  'ai-work-pending', 'output-protection-required', 'operation-capacity-full', 'local-workspace-identity-unavailable'
+  'ai-work-pending', 'output-protection-required', 'operation-capacity-full', 'local-workspace-identity-unavailable', 'plan-authorization-required'
 ]
 export type AiRoute =
+  | { kind: 'local-chatgpt-plan'; policyRevision: 1; scope: 'owner-unpackaged-development'; providerClassification: 'unresolved' }
   | { kind: 'local-codex-chatgpt'; policyRevision: 1; scope: 'owner-unpackaged-development'; providerClassification: 'unresolved' }
   | { kind: 'registered-openai'; policyRevision: 1 }
   | { kind: 'unavailable'; reason: 'packaged-development-refused' | 'unsupported-app-identity' }
@@ -51,7 +52,7 @@ export function isAiConnectionReason(value: unknown): value is AiConnectionReaso
 }
 export function isAiRoute(value: unknown): value is AiRoute {
   if (!record(value)) return false
-  if (value.kind === 'local-codex-chatgpt') return exact(value, ['kind', 'policyRevision', 'scope', 'providerClassification']) &&
+  if (value.kind === 'local-codex-chatgpt'||value.kind==='local-chatgpt-plan') return exact(value, ['kind', 'policyRevision', 'scope', 'providerClassification']) &&
     value.policyRevision === 1 && value.scope === 'owner-unpackaged-development' && value.providerClassification === 'unresolved'
   if (value.kind === 'registered-openai') return exact(value, ['kind', 'policyRevision']) && value.policyRevision === 1
   return value.kind === 'unavailable' && exact(value, ['kind', 'reason']) &&

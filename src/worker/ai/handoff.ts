@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 import { AI_LIMITS, type AiOperation } from '../../shared/ai'
 import { isAiHandoffReceipt, type AiHandoffReceipt } from '../../shared/ai-handoff'
-import { bindingVersion, isContentBinding, isConversationBinding, type ConversationBinding } from '../../shared/conversations'
+import { bindingVersion, isProofreadingBinding, isConversationBinding, type ConversationBinding } from '../../shared/conversations'
 import type { OpenInput } from '../../shared/projects'
 import { requestDigest } from '../storage/digest'
 import { inWriteTransaction } from '../storage/driver'
@@ -18,14 +18,14 @@ function parse<T>(raw:unknown,valid:(v:unknown)=>v is T):T {
 export function activeBindings(operations:Database.Database,purpose:Purpose):ConversationBinding[] {
   const rows=operations.prepare("SELECT id,operation_id,substr(result,1,16001) AS result FROM jobs WHERE kind=? AND state='bound' ORDER BY created_at,id LIMIT ?").all(kind(purpose),AI_LIMITS.jobs+1) as {id:string;operation_id:string;result:string}[]
   if(rows.length>AI_LIMITS.jobs)throw new ProjectError('CORRUPT_PROJECT')
-  return rows.map(row=>{const b=parse(row.result,purpose==='conversation'?isConversationBinding:isContentBinding);if(b.attemptId!==row.id||b.operationId!==row.operation_id)throw new ProjectError('CORRUPT_PROJECT');return b})
+  return rows.map(row=>{const b=parse(row.result,purpose==='conversation'?isConversationBinding:isProofreadingBinding);if(b.attemptId!==row.id||b.operationId!==row.operation_id)throw new ProjectError('CORRUPT_PROJECT');return b})
 }
 /** Exact indexed read also finds retained bindings; never scans cold history. */
 export function localBinding(context:Context,purpose:Purpose,attemptId:string):{type:'binding';binding:ConversationBinding|null;receipt:AiHandoffReceipt|null;retired:boolean} {
   const row=context.operations.prepare('SELECT kind,state,operation_id,substr(result,1,16001) AS result FROM jobs WHERE id=?').get(attemptId) as {kind:string;state:string;operation_id:string;result:string}|undefined
   if(!row)return {type:'binding',binding:null,receipt:null,retired:false}
   if(row.kind!==kind(purpose)||!['bound','retained-v1'].includes(row.state))throw new ProjectError('CORRUPT_PROJECT')
-  const binding=parse(row.result,purpose==='conversation'?isConversationBinding:isContentBinding)
+  const binding=parse(row.result,purpose==='conversation'?isConversationBinding:isProofreadingBinding)
   if(binding.attemptId!==attemptId||binding.operationId!==row.operation_id)throw new ProjectError('CORRUPT_PROJECT')
   const saved=context.operations.prepare('SELECT kind,state,operation_id,substr(result,1,16001) AS result FROM jobs WHERE id=?').get(binding.operationId) as {kind:string;state:string;operation_id:string;result:string}|undefined
   let receipt:AiHandoffReceipt|null=null

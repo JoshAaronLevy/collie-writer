@@ -7,7 +7,7 @@ import { AiError } from './errors'
 import { emptyLocalSession, type LocalCodexSessionV2 } from './local-session-metadata'
 import type { AiStorage } from './storage'
 import type { AiDispatchSession } from './dispatch-session'
-import { isSchemaExecution, type LocalExecution, type LocalSessionIdentity } from './local-operation'
+import { isSchemaExecution, type LocalSessionIdentity } from './local-operation'
 import { requireLocalTextIsolation } from './codex-local-policy'
 
 /** One main-owned account session, independent of project/panel lifetime. The
@@ -262,7 +262,7 @@ export class LocalCodexSession {
     if(!identity)throw new AiError('auth-failed')
     if(catalog.state!=='loaded'||catalog.selectedModelId!==input.model)throw new AiError('model-unavailable')
     const model=catalog.models.find(m=>m.id===input.model)
-    if(!model)throw new AiError('model-unavailable')
+    if(!model||model.defaultReasoningEffort===null)throw new AiError('model-unavailable')
     return {profileId:active.profileId,...identity,sessionGeneration:this.epoch,catalogRevision:catalog.revision,defaultReasoningEffort:model.defaultReasoningEffort}
   }
   dispatchSession():AiDispatchSession {
@@ -275,8 +275,8 @@ export class LocalCodexSession {
         this.catalog={...this.catalog,selectedModelId:null};this.changed()
       }
     }
-    const authorize=(input:AiPrepareInput,execution:LocalExecution|null):void=>{
-      if(!execution||!runtime||this.runtime!==runtime)throw new AiError('context-changed')
+    const authorize:AiDispatchSession['authorize']=(input,execution):void=>{
+      if(!execution||execution.route!=='local-codex-chatgpt'||!runtime||this.runtime!==runtime)throw new AiError('context-changed')
       if((input.action==='proofread')!==isSchemaExecution(execution))throw new AiError('context-changed')
       const current=this.executionIdentity(input)
       for(const key of Object.keys(current) as (keyof LocalSessionIdentity)[])if(current[key]!==execution[key])throw new AiError('context-changed')
@@ -285,6 +285,7 @@ export class LocalCodexSession {
     return {route:'local-codex-chatgpt',authorize,
       execute:async(input,execution,guard,update)=>{
         try {
+          if(!execution||execution.route!=='local-codex-chatgpt')throw new AiError('context-changed')
           authorize(input,execution)
           // Recheck the effective account immediately before content. No token is
           // read by Collie, and a changed identity cannot adopt the old intent.

@@ -3,7 +3,7 @@ import { isAiHandoffReceipt, type AiHandoffReceipt } from './ai-handoff'
 import { isId, safeLink } from '../domain/editor/schema'
 import { AI_LIMITS, isAiOperation, isAiReason, type AiOperation, type AiReason } from './ai'
 import type { AiAttemptFields, AiTextCaptureFields, CaptureSource } from './ai-content'
-import { isCaptureDigest, isCaptureSource, isContentBinding, isConversationEvent, type ConversationBinding, type ConversationEvent } from './conversations'
+import { isCaptureDigest, isCaptureSource, isProofreadingBinding, isConversationEvent, type ConversationBinding, type ConversationEvent } from './conversations'
 import { exact, record, isOpenInput, type OpenInput, type ProjectResult } from './projects'
 import { MECHANICS_RESULT_V1 as mechanics } from './mechanics-contract'
 
@@ -107,10 +107,10 @@ export function isProofreadWorkerInput(v:unknown):v is ProofreadWorkerInput {
     case 'get':return exact(v,[...fields,'attemptId'])&&isId(v.attemptId)
     case 'bindings':return exact(v,fields)
     case 'binding':return exact(v,[...fields,'attemptId'])&&isId(v.attemptId)
-    case 'handoff':return exact(v,[...fields,'binding','operation','acknowledged'])&&isContentBinding(v.binding)&&isAiOperation(v.operation)&&typeof v.acknowledged==='boolean'
+    case 'handoff':return exact(v,[...fields,'binding','operation','acknowledged'])&&isProofreadingBinding(v.binding)&&isAiOperation(v.operation)&&typeof v.acknowledged==='boolean'
     case 'retire':return exact(v,[...fields,'receipt'])&&isAiHandoffReceipt(v.receipt)&&v.receipt.purpose==='proofread'&&v.receipt.scope.projectId===v.projectId&&v.receipt.scope.workspaceId===v.workspaceId
-    case 'bind':return exact(v,[...fields,'binding'])&&isContentBinding(v.binding)
-    case 'settle':return exact(v,[...fields,'attemptId','binding','operation','reason'])&&isId(v.attemptId)&&(v.binding===null||isContentBinding(v.binding))&&(v.operation===null||isAiOperation(v.operation))&&(v.reason===null||isAiReason(v.reason))
+    case 'bind':return exact(v,[...fields,'binding'])&&isProofreadingBinding(v.binding)
+    case 'settle':return exact(v,[...fields,'attemptId','binding','operation','reason'])&&isId(v.attemptId)&&(v.binding===null||isProofreadingBinding(v.binding))&&(v.operation===null||isAiOperation(v.operation))&&(v.reason===null||isAiReason(v.reason))
     default:return false
   }
 }
@@ -121,8 +121,8 @@ export function isProofreadValue(v:unknown):v is ProofreadValue {
     case 'review':return exact(v,['type','capture'])&&isProofreadCapture(v.capture)
     case 'turn':return exact(v,['type','turn','fresh','head','updatedAt'])&&isProofreadBundle(v.turn)&&typeof v.fresh==='boolean'&&isId(v.head)&&date(v.updatedAt)
     case 'decision':return exact(v,['type','turn','documentId','revisionId','head','updatedAt'])&&isProofreadBundle(v.turn)&&[v.documentId,v.revisionId,v.head].every(isId)&&date(v.updatedAt)
-    case 'bindings':return exact(v,['type','bindings'])&&Array.isArray(v.bindings)&&v.bindings.length<=AI_LIMITS.jobs&&v.bindings.every(isContentBinding)
-    case 'binding':return exact(v,['type','binding','receipt','retired'])&&(v.binding===null||isContentBinding(v.binding))&&(v.receipt===null||isAiHandoffReceipt(v.receipt)&&v.receipt.purpose==='proofread')&&typeof v.retired==='boolean'&&(!v.retired||v.binding!==null&&v.receipt!==null)
+    case 'bindings':return exact(v,['type','bindings'])&&Array.isArray(v.bindings)&&v.bindings.length<=AI_LIMITS.jobs&&v.bindings.every(isProofreadingBinding)
+    case 'binding':return exact(v,['type','binding','receipt','retired'])&&(v.binding===null||isProofreadingBinding(v.binding))&&(v.receipt===null||isAiHandoffReceipt(v.receipt)&&v.receipt.purpose==='proofread')&&typeof v.retired==='boolean'&&(!v.retired||v.binding!==null&&v.receipt!==null)
     case 'handoff':return exact(v,['type','receipt'])&&isAiHandoffReceipt(v.receipt)&&v.receipt.purpose==='proofread'
     case 'done':return exact(v,['type'])
     default:return false

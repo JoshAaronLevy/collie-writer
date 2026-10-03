@@ -1,5 +1,15 @@
 # Working in Collie Writer
 
+## DP01 current AI architecture — October 3, 2026
+
+The requested course correction is **implementation complete — awaiting user testing**. The active owner-only unpackaged milestone is app-owned Sign in with ChatGPT plus direct streaming Responses, through the existing conversation workflow. Read [the active decision/plan](chatgpt-plan-implementation.md), [credential/operation/project formats](docs/formats/chatgpt-plan-v1.md), [implementation record](docs/validation/chatgpt-plan-DP01.md), and [manual guide](docs/manual-testing/chatgpt-plan-DP01.md). This checkpoint supersedes earlier statements making Codex runtime isolation a prerequisite for this bounded direct request; the dated checkpoints below remain historical.
+
+`DirectPlanSession` owns a separate encrypted registration/token lifecycle. Dynamic registration protects the issued client ID before exchange; returning sign-in reuses it and verifies identity. Explicit model discovery and reviewed conversation dispatch use only the user's plan-authorized OAuth token. No API keys, fallback billing, hosted backend, tools, autonomous filesystem access or Codex process is involved. Normal account subscription/credit settings remain the owner's accepted local policy, not a guaranteed included-only claim. Managed Codex credentials are untouched; Codex refusals remain attached to that route. Packaged/commercial restrictions and null commercial registrations remain.
+
+Current SQL/minimum reader is **13**, AST/archive **1**, compilation **3**. Retained 12→13 migration changes reader markers only; historical attempts stay v1/Codex, direct-bound conversation attempts use v2/`openai-chatgpt-plan`, and device-local operations/bindings use v4. Preserve all original readers/digests, exact replay, reviewed captures, protection and receipt handoff. Direct v4 is conversation-only; proofreading and P06 are not activated. Detailed connection failures are transient and sanitized; actual request/output history remains durable.
+
+No tests/checks/builds/launches/login/inference were performed. Browser behavior, account eligibility, completion, renewal, migration and reopening await Josh. Do not auto-advance. Commercial readiness remains separate and release remains NO-GO. The standing manual-testing policy below is unchanged.
+
 This is a fresh Electron/React/TypeScript product. The authoritative MVP specification and stage index is [mvp-implementation-plan.md](mvp-implementation-plan.md). The approved direction and stage index for the subsequent UX/UI and onboarding improvements is [app-improvement-plan.md](app-improvement-plan.md); use the plan named in the user's request and keep its stage numbers separate from the MVP stages. Approval of a plan does not authorize implementing unrequested stages. `mvp-planning-prompt.md` is referenced by the planning history but is absent from this checkout; do not invent a replacement. The Cultural Analysis application is reference history, not a dependency; do not copy its code/private data or require its checkout. Make project changes only here.
 
 ## UI library and semantic CSS — standing instruction

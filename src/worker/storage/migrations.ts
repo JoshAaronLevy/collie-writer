@@ -98,6 +98,15 @@ const migrations: readonly Migration[] = [{
     for (const sql of proofreadingTables) db.exec(sql)
     db.prepare('UPDATE format SET schema_version=12,minimum_reader=12').run()
   }
+}, {
+  from: 12, to: 13,
+  validateSource: db => {
+    validateProjectSchema(db,12)
+    for(const row of db.prepare('SELECT id FROM projects').all() as {id:string}[])validatePortableConversations(db,row.id)
+  },
+  // Only the reader floor changes. Historical attempts retain their exact
+  // version/provider; new direct attempts use a distinct portable version.
+  apply: db => { db.prepare('UPDATE format SET schema_version=13,minimum_reader=13').run() }
 }]
 
 export async function activeDatabase(root: string, workspace: string): Promise<string> {

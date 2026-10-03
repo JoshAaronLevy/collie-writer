@@ -11,7 +11,7 @@ export async function openAiRequest(url: string, body?: URLSearchParams, signal?
   return new Promise((resolve,reject)=>{
     let deadline:ReturnType<typeof setTimeout>|undefined
     const fail=(error:AiError):void=>{if(deadline)clearTimeout(deadline);reject(error)}
-    const req=request(target,{method:body?'POST':'GET',signal,headers:{Accept:'application/json',...(body?{'Content-Type':'application/x-www-form-urlencoded'}:{})}},res=>{
+    const req=request(target,{method:body?'POST':'GET',signal,agent:false,headers:{Accept:'application/json',...(body?{'Content-Type':'application/x-www-form-urlencoded'}:{})}},res=>{
       const chunks:Buffer[]=[];let size=0
       res.on('data',(chunk:Buffer)=>{size+=chunk.length;if(size>256*1024){req.destroy();fail(new AiError('provider-failed'))}else chunks.push(chunk)})
       res.on('error',()=>fail(new AiError('offline')))

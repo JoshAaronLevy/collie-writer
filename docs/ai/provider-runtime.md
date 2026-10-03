@@ -1,5 +1,19 @@
 # I10 provider boundary and activation runbook
 
+## Current local milestone — DP01, October 3, 2026
+
+For the owner's unpackaged app, the current route is **app-owned SIWC → direct Responses**, implemented and awaiting user testing. [Active plan](../../chatgpt-plan-implementation.md), [manual guide](../manual-testing/chatgpt-plan-DP01.md), [formats](../formats/chatgpt-plan-v1.md). The Codex sections below retain historical and commercial-route information; their isolation refusals do not apply to this direct text path.
+
+| Current owner | Role |
+| --- | --- |
+| `main/ai/deployment.ts` | Trusted unpackaged identity chooses `local-chatgpt-plan`; packaged/commercial restrictions remain |
+| `direct-auth.ts`, `direct-credentials.ts`, `direct-session.ts` | Dynamic/returning OAuth, protected registration, account selection, renewal, revocation and stage status |
+| `direct-http.ts`, `direct-operation.ts` | Fixed-origin account models and one bounded Responses stream; no tools/retries/API keys |
+| `service.ts`, `content-service.ts` | Existing reviewed durable dispatch, new operation/binding v4, exact recovery and handoff |
+| Shared status and connection/conversation UI | Identity, plan grant, models, completed response and safe failure stages remain separate |
+
+Main-process files above are under `src/main/ai/`; shared contracts are under `src/shared/` and UI owners under `src/renderer/src/features/`. Credential files are separate from managed Codex storage. Existing jose/Node HTTPS suffice; dependencies are unchanged. Project schema/minimum reader 13 protects new attempt v2 provenance without changing historical attempt/provider meanings. No runtime outcome is observed; commercial activation and release NO-GO remain.
+
 October 2, 2026. **Independent local implementation delivered — awaiting user testing. I10 overall remains partial.** This describes actual code plus exact missing integration work. No sign-in, runtime process, inference or native behavior has been observed. I11 subsequently delivered the shared connection UI described below; I12/I13 delivered durable feature foundations. CD02 implements managed local login and CD03 adds model controls with incomplete execution isolation; registered commercial configuration remains unset.
 
 ## CD01–CD08 owner-only local route — current scope

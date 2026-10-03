@@ -2,12 +2,13 @@ import { isId } from '../domain/editor/schema'
 import { exact, record } from './projects'
 
 // Connection-only catalog data. Never part of a portable project or v1 journal.
-// The pinned protocol deliberately defines ReasoningEffort as an open string.
+// The pinned Codex protocol defines ReasoningEffort as an open string. Direct
+// catalog entries use null/[] because this route reports no effort contract.
 export type CodexReasoningEffort = string
 export type AiCatalogModel = {
   id: string; label: string; isDefault: boolean
   inputModalities: ('text' | 'image')[]
-  reasoningEfforts: CodexReasoningEffort[]; defaultReasoningEffort: CodexReasoningEffort
+  reasoningEfforts: CodexReasoningEffort[]; defaultReasoningEffort: CodexReasoningEffort | null
 }
 export type AiCatalog =
   | { state: 'not-loaded' }
@@ -28,9 +29,9 @@ export function isAiCatalogModel(v: unknown): v is AiCatalogModel {
     !/[\u0000-\u001f\u007f]/u.test(v.label) && typeof v.isDefault === 'boolean' &&
     Array.isArray(v.inputModalities) && v.inputModalities.length > 0 && v.inputModalities.length <= 2 &&
     v.inputModalities.includes('text') && v.inputModalities.every(m=>m==='text'||m==='image') && new Set(v.inputModalities).size===v.inputModalities.length &&
-    Array.isArray(v.reasoningEfforts) && v.reasoningEfforts.length > 0 && v.reasoningEfforts.length <= 32 &&
+    Array.isArray(v.reasoningEfforts) && v.reasoningEfforts.length <= 32 &&
     v.reasoningEfforts.every(isCodexReasoningEffort) && new Set(v.reasoningEfforts).size===v.reasoningEfforts.length &&
-    isCodexReasoningEffort(v.defaultReasoningEffort) && v.reasoningEfforts.includes(v.defaultReasoningEffort)
+    (v.defaultReasoningEffort===null?v.reasoningEfforts.length===0:isCodexReasoningEffort(v.defaultReasoningEffort)&&v.reasoningEfforts.includes(v.defaultReasoningEffort))
 }
 export function isAiCatalog(v: unknown): v is AiCatalog {
   if (!record(v)) return false

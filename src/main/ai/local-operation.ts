@@ -7,6 +7,7 @@ import { operationDigestV1 } from './operation-identity'
 import { AiError } from './errors'
 import { mechanicsOutputSchemaV1 } from '../../domain/ai/proofreading'
 import { MECHANICS_RESULT_V1 } from '../../shared/mechanics-contract'
+import { isDirectExecution, operationDigestV4, type DirectExecution } from './direct-operation'
 
 /** Journal versions are independent of portable captures and account metadata.
  * Keep these v2 constants/readers when a later runtime or policy is introduced. */
@@ -32,9 +33,12 @@ export type LocalExecutionV3 = Omit<LocalExecutionV2,'template'|'outputContract'
   template:'mechanics-v1';outputContract:'mechanics-schema-json-v1';schemaId:typeof MECHANICS_RESULT_V1.schemaId;schemaDigest:string
 }
 export type LocalExecution = LocalExecutionV2 | LocalExecutionV3
+export type DispatchExecution = LocalExecution | DirectExecution
 export type RetainedOperationV3 = {version:3;input:AiPrepareInput;execution:LocalExecutionV3;view:AiOperation;
   output:{commentary:string;finalText:string|null}}
-export type RetainedOperation = RetainedOperationV1 | RetainedOperationV2 | RetainedOperationV3
+export type RetainedOperationV4 = {version:4;input:AiPrepareInput;execution:DirectExecution;view:AiOperation;
+  output:{commentary:string;finalText:string|null}}
+export type RetainedOperation = RetainedOperationV1 | RetainedOperationV2 | RetainedOperationV3 | RetainedOperationV4
 const hash=(text:string):string=>createHash('sha256').update(text).digest('hex')
 export const identityHash=(value:unknown):string=>hash(JSON.stringify(value))
 const digest=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v)
@@ -106,10 +110,12 @@ export function isRetainedOperation(v:unknown):v is RetainedOperation {
   if(v.version===1)return exact(v,['version','input','view'])&&operationDigestV1(input)===view.digest
   return exact(v,['version','input','execution','view','output'])&&
     (v.version===2&&isExecution(v.execution,input)&&operationDigestV2(input,v.execution)===view.digest||
-      v.version===3&&isExecutionV3(v.execution,input)&&operationDigestV3(input,v.execution)===view.digest)&&
+      v.version===3&&isExecutionV3(v.execution,input)&&operationDigestV3(input,v.execution)===view.digest||
+      v.version===4&&isDirectExecution(v.execution,input)&&operationDigestV4(input,v.execution)===view.digest)&&
     record(v.output)&&exact(v.output,['commentary','finalText'])&&
     aiText(v.output.commentary,AI_LIMITS.output)&&(v.output.finalText===null||aiText(v.output.finalText,AI_LIMITS.output))&&
-    (v.output.finalText===null||view.state==='completed'&&view.text.includes(v.output.finalText))&&v.output.commentary.length+(v.output.finalText?.length??0)<=AI_LIMITS.output
+    (v.output.finalText===null||view.state==='completed'&&view.text.includes(v.output.finalText))&&v.output.commentary.length+(v.output.finalText?.length??0)<=AI_LIMITS.output&&
+    (v.version!==4||v.output.commentary===''&&(view.state==='completed'?v.output.finalText===view.text&&view.text.trim().length>0:v.output.finalText===null))
 }
 /** State-only status reads do not clone retained output into every work notice. */
 export function contentState(item:RetainedOperation):AiOperation['state'] {

@@ -16,8 +16,8 @@ export const LOCAL_CODEX_POLICY = Object.freeze({
 export function selectAiRoute(): AiRoute {
   if (!app.isPackaged && RELEASE.channel === 'development' && RELEASE.distribution === 'development' &&
     RELEASE.appId === 'com.colliewriter.app.dev') {
-    return { kind: 'local-codex-chatgpt', policyRevision: LOCAL_CODEX_POLICY.revision,
-      scope: LOCAL_CODEX_POLICY.scope, providerClassification: LOCAL_CODEX_POLICY.providerClassification }
+    return { kind: 'local-chatgpt-plan', policyRevision: 1,
+      scope: 'owner-unpackaged-development', providerClassification: 'unresolved' }
   }
   if (app.isPackaged && RELEASE.channel === 'development') return { kind: 'unavailable', reason: 'packaged-development-refused' }
   if (app.isPackaged && RELEASE.distribution === 'direct' &&
@@ -29,7 +29,7 @@ export function selectAiRoute(): AiRoute {
 }
 
 export function routeFunding(route: AiRoute): AiFunding {
-  if (route.kind === 'local-codex-chatgpt') return { kind: 'normal-subscription', credits: 'account-settings', apiKeyFallback: false, appBillingChanges: false }
+  if (route.kind === 'local-codex-chatgpt'||route.kind==='local-chatgpt-plan') return { kind: 'normal-subscription', credits: 'account-settings', apiKeyFallback: false, appBillingChanges: false }
   if (route.kind === 'registered-openai') return { kind: 'included-only', enforcement: 'unresolved', apiKeyFallback: false, appBillingChanges: false }
   return { kind: 'unavailable', apiKeyFallback: false, appBillingChanges: false }
 }

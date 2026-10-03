@@ -8,7 +8,7 @@ import { dirname } from 'node:path'
 import { captureWriting } from '../../domain/ai/context'
 import { ProjectError } from '../../domain/projects/errors'
 import { AI_LIMITS } from '../../shared/ai'
-import { CONVERSATION_LIMITS, isAiCapture, isConversation, isConversationAttempt, isConversationMessage, isConversationTurn, type AiCapture, type Conversation, type ConversationAttempt, type ConversationBinding, type ConversationMessage, type ConversationReview, type ConversationTurn, type ConversationValue, type ConversationWorkerInput } from '../../shared/conversations'
+import { bindingVersion, CONVERSATION_LIMITS, isAiCapture, isConversation, isConversationAttempt, isConversationMessage, isConversationTurn, type AiCapture, type Conversation, type ConversationAttempt, type ConversationBinding, type ConversationMessage, type ConversationReview, type ConversationTurn, type ConversationValue, type ConversationWorkerInput } from '../../shared/conversations'
 import { requestDigest } from '../storage/digest'
 import { inWriteTransaction } from '../storage/driver'
 import { syncDirectory } from '../storage/files'
@@ -30,7 +30,10 @@ function message(db:Database.Database,p:string,id:string):ConversationMessage {
 }
 function attempt(db:Database.Database,p:string,id:string):ConversationAttempt {
   const row=db.prepare('SELECT substr(body,1,1000001) AS body FROM conversation_attempts WHERE project_id=? AND id=?').get(p,id) as {body:string}|undefined
-  if(!row)throw new ProjectError('NOT_FOUND');return parse(row.body,isConversationAttempt)
+  if(!row)throw new ProjectError('NOT_FOUND')
+  const value=parse(row.body,isConversationAttempt)
+  if(value.version===2&&Number(db.pragma('user_version',{simple:true}))<13)return corrupt()
+  return value
 }
 function turn(db:Database.Database,p:string,id:string):ConversationTurn {
   const a=attempt(db,p,id),row=db.prepare('SELECT substr(body,1,1000001) AS body FROM ai_captures WHERE project_id=? AND id=?').get(p,a.captureId) as {body:string}|undefined
@@ -81,6 +84,11 @@ function bindings(operations:Database.Database):ConversationBinding[] {
   return activeBindings(operations,'conversation')
 }
 function sameBinding(left:ConversationBinding|undefined,right:ConversationBinding|null):boolean {return !!left&&!!right&&requestDigest(left)===requestDigest(right)}
+function bindProvider(a:ConversationAttempt,binding:ConversationBinding):void {
+  const direct=bindingVersion(binding)===4,provider=direct?'openai-chatgpt-plan':'openai-codex'
+  if(a.provider!==null&&a.provider!==provider)throw new ProjectError('OPERATION_CONFLICT')
+  a.version=direct?2:1;a.provider=provider;a.model=binding.model
+}
 export async function conversationCommand(context:Context,input:ConversationWorkerInput):Promise<ConversationValue> {
   const {db,operations,projectId:p}=context
   switch(input.action) {
@@ -100,7 +108,7 @@ export async function conversationCommand(context:Context,input:ConversationWork
     case 'binding': return localBinding(context,'conversation',input.attemptId)
     case 'handoff': {
       const t=turn(db,p,input.binding.attemptId),a=t.attempt,op=input.operation
-      if(t.capture.digest!==input.binding.captureDigest||a.sequence!==op.sequence+1||a.state!==op.state||a.model!==op.model||a.provider!=='openai-codex'||a.reason!==op.reason||a.finishedAt!==new Date(op.finishedAt??0).toISOString()||(t.assistant?.text??'')!==op.text)throw new ProjectError('OPERATION_CONFLICT')
+      if(t.capture.digest!==input.binding.captureDigest||a.sequence!==op.sequence+1||a.state!==op.state||a.model!==op.model||a.provider!==(bindingVersion(input.binding)===4?'openai-chatgpt-plan':'openai-codex')||a.reason!==op.reason||a.finishedAt!==new Date(op.finishedAt??0).toISOString()||(t.assistant?.text??'')!==op.text)throw new ProjectError('OPERATION_CONFLICT')
       return {type:'handoff',receipt:protectHandoff(context,'conversation',input.binding,op,input.acknowledged,{revision:a.revisionId,head:head(db,p).head,body:t})}
     }
     case 'retire': retireBinding(context,'conversation',input.receipt);return {type:'done'}
@@ -145,7 +153,7 @@ export async function conversationCommand(context:Context,input:ConversationWork
       }
       return inWriteTransaction(db,()=>{
         const a=attempt(db,p,input.binding.attemptId)
-        if(a.state==='not-sent'){a.state='preparing';a.provider='openai-codex';a.model=input.binding.model;writeAttempt(db,p,a);advance(db,p,a.conversationId)}
+        if(a.state==='not-sent'){a.state='preparing';bindProvider(a,input.binding);writeAttempt(db,p,a);advance(db,p,a.conversationId)}
         return {type:'turn' as const,turn:turn(db,p,a.id),fresh:false,...head(db,p)}
       })
     }
@@ -156,7 +164,7 @@ export async function conversationCommand(context:Context,input:ConversationWork
       if(op) {
         if(!existing||!input.binding||op.scope.projectId!==p||op.scope.workspaceId!==context.workspaceId||op.operationId!==existing.operationId||op.digest!==existing.digest||op.connectionId!==existing.connectionId||op.model!==existing.model||op.action!=='conversation')throw new ProjectError('DENIED')
         if(op.sequence+1<=a.sequence)return {type:'turn' as const,turn:turn(db,p,a.id),fresh:false,...head(db,p)}
-        a.sequence=op.sequence+1;a.provider='openai-codex';a.model=op.model;a.state=op.state==='starting'?'preparing':op.state==='cancelling'?'stopping':op.state;a.reason=op.reason;a.finishedAt=op.finishedAt===null?null:new Date(op.finishedAt).toISOString()
+        bindProvider(a,existing);a.sequence=op.sequence+1;a.state=op.state==='starting'?'preparing':op.state==='cancelling'?'stopping':op.state;a.reason=op.reason;a.finishedAt=op.finishedAt===null?null:new Date(op.finishedAt).toISOString()
         if(op.text) {
           const user=message(db,p,a.userMessageId)
           if(!a.assistantMessageId){a.assistantMessageId=randomUUID();insertMessage(db,p,{version:1,id:a.assistantMessageId,revisionId:randomUUID(),conversationId:a.conversationId,attemptId:a.id,ordinal:user.ordinal+1,role:'assistant',text:op.text,createdAt:new Date(op.startedAt).toISOString()})}
@@ -164,7 +172,7 @@ export async function conversationCommand(context:Context,input:ConversationWork
         }
       } else {
         if(a.state==='not-sent'&&!existing){if(a.reason===input.reason)return {type:'turn' as const,turn:turn(db,p,a.id),fresh:false,...head(db,p)};a.reason=input.reason}
-        else if(activeStates.includes(a.state)||a.state==='not-sent'&&existing){a.state='unknown';a.reason='outcome-unknown';a.finishedAt=new Date().toISOString()}
+        else if(activeStates.includes(a.state)||a.state==='not-sent'&&existing){if(existing)bindProvider(a,existing);a.state='unknown';a.reason='outcome-unknown';a.finishedAt=new Date().toISOString()}
         else return {type:'turn' as const,turn:turn(db,p,a.id),fresh:false,...head(db,p)}
       }
       writeAttempt(db,p,a)

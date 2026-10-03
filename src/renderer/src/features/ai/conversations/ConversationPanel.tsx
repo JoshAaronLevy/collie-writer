@@ -12,9 +12,9 @@ import styles from './Conversations.module.css'
 
 const outcomes={ 'not-sent':'Not sent',preparing:'Preparing',running:'Responding',stopping:'Stop requested',completed:'Completed',cancelled:'Cancelled',failed:'Failed',unknown:'Interrupted · outcome unknown' }
 function requestReason(reason:AiReason):string {
-  if(reason==='auth-failed'||reason==='session-expired'||reason==='signed-out')return 'Codex could not authorize this request. Open connection settings and explicitly resume or reconnect your account. A further request needs a new review; this one will not resend.'
-  if(reason==='model-unavailable')return 'Codex refused the selected model. Refresh models and explicitly choose an available model before reviewing a new request. No model was substituted.'
-  if(reason==='invalid-request')return 'Codex could not accept this request. Narrow the prompt or context and review a new request. This attempt is retained and will not resend.'
+  if(reason==='auth-failed'||reason==='session-expired'||reason==='signed-out')return 'The provider could not authorize this request. Open connection settings and renew or reconnect your account. A further request needs a new review; this one will not resend.'
+  if(reason==='model-unavailable')return 'The provider refused the selected model. Refresh models and explicitly choose an available model before reviewing a new request. No model was substituted.'
+  if(reason==='invalid-request')return 'The provider could not accept this request. Narrow the prompt or context and review a new request. This attempt is retained and will not resend.'
   if(reason==='storage-unavailable')return 'The request or output needs local protection. Keep Collie open and use Retry local protection. This action saves the same retained work without sending again.'
   if(reason==='outcome-unknown')return 'The outcome is uncertain. Any retained text is shown. A missing local execution record or an independent project copy cannot resume the original request. Reopening never resends it; a new reviewed request may consume additional usage.'
   if(reason==='cancelled')return 'The provider reported cancellation. Any actual partial response remains here; cancellation does not confirm restored usage.'
@@ -28,7 +28,7 @@ function MessageTurn({turn}:{turn:ConversationTurn}):React.JSX.Element {
       <div className={styles['conversation-message-text']}>{m.text}</div>
       {c.page?.conversation.state==='active'?<ChoiceField label={`Include this ${m.role==='user'?'user':'assistant'} message in the next request`} checked={c.draft.historyIds.includes(m.id)} disabled={c.readOnly||c.busy||!!c.pending||active||a.state==='unknown'} onChange={e=>c.history(m.id,e.currentTarget.checked)}/>:null}
     </div>)}
-    <p className={styles['conversation-outcome']} role={active?'status':undefined}>{outcomes[a.state]}{a.model?` · ${a.provider==='openai-codex'?'Codex · ':''}${a.model}`:''}</p>
+    <p className={styles['conversation-outcome']} role={active?'status':undefined}>{outcomes[a.state]}{a.model?` · ${a.provider==='openai-codex'?'Codex · ':a.provider==='openai-chatgpt-plan'?'ChatGPT plan · ':''}${a.model}`:''}</p>
     {a.reason?<p className={styles['conversation-caption']}>{a.reason==='busy'?`The provider is busy or its ${c.capacity}-operation retained journal is full. Nothing will be retried automatically.`:requestReason(a.reason)}</p>:null}
     {a.state==='not-sent'?<p className={styles['conversation-caption']}>Saved locally. Nothing was queued for later sending.</p>:null}
     {a.state==='stopping'?<p className={styles['conversation-caption']}>Waiting for the provider’s outcome. A stop request does not confirm cancellation or restored usage.</p>:null}
@@ -102,7 +102,7 @@ export function ConversationPanel():React.JSX.Element {
         <h4>Review what will be shared</h4><p>{review.excluded} saved messages excluded. No other writing or research will be added.</p>
         <AppButton variant="subtle" aria-expanded={expandedReview} onClick={()=>setExpandedReview(!expandedReview)}>{expandedReview?'Collapse exact request':'Show exact request'}</AppButton>
         <div hidden={!expandedReview} inert={!expandedReview}><h4>Your message</h4><div className={styles['conversation-message-text']}>{review.capture.prompt}</div>{review.capture.context.map((item,i)=><div key={i}><h4>{item.label||'Untitled section'} · {item.kind}</h4><div className={styles['conversation-message-text']}>{item.text}</div></div>)}<p className={styles['conversation-caption']}>The provider receives these text fields in a structured request with their labels, source IDs and saved revision IDs. Template: {review.capture.template}.</p><p className={styles['conversation-digest']}>Capture digest: {review.capture.digest}</p></div>
-        <p className={styles['conversation-caption']}>Provider: Codex. Account: {connections.status?.connections.find(a=>a.id===review.connectionId)?.label??'None'}. Model: {review.model??'Not selected'}. Saving locally does not send or queue this request.</p>
+        <p className={styles['conversation-caption']}>Provider: {connections.status?.direct?'ChatGPT plan (direct text)':'Codex'}. Account: {connections.status?.connections.find(a=>a.id===review.connectionId)?.label??'None'}. Model: {review.model??'Not selected'}. Saving locally does not send or queue this request.</p>
         {c.capability?.state==='unavailable'?<p className={styles['conversation-caption']}>{featureDescription(c.capability)}</p>:null}
         <div className={styles['conversation-actions']}><AppButton disabled={blocked||c.readOnly||archived} onClick={()=>c.submit(false)}>Save request locally</AppButton><AppButton variant="default" disabled={blocked||!c.canSend||archived||c.active} onClick={()=>c.submit(true)}>Send reviewed request</AppButton><AppButton variant="subtle" disabled={blocked} onClick={()=>c.update({})}>Edit request</AppButton></div>
       </section>:null}

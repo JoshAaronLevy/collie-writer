@@ -5,12 +5,12 @@ export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
   'local-login-not-implemented': 'The local development route is defined. Browser sign-in is not implemented yet.',
   'local-execution-not-implemented': 'Local Codex execution is not implemented yet.',
   'conversation-adapter-not-ready': 'Codex conversations are not ready yet. You can save a request locally.',
-  'proofreading-adapter-not-ready': 'Codex proofreading is not ready yet. You can save a review locally.',
+  'proofreading-adapter-not-ready': 'Proofreading is unavailable on the current route. You can save a review locally.',
   'packaged-development-refused': 'The local development connection is unavailable in packaged apps.',
   'unsupported-app-identity': 'This app identity cannot use the local development connection.',
   'commercial-requirements-pending': 'Commercial provider configuration, included-only usage and safe execution remain unresolved.',
   'resume-required': 'Resume the saved Codex connection explicitly before requesting AI work.',
-  'reconnect-required': 'Reconnect your Codex account before requesting AI work.',
+  'reconnect-required': 'Reconnect your account before requesting AI work.',
   'secure-session-unavailable': 'A secure isolated Codex session is unavailable on this device.',
   'login-timeout': 'Codex did not finish this account action in time. If you closed the browser, cancel or start a new sign-in when available.',
   'callback-port-in-use': 'Another app is using the Codex sign-in callback port. Finish its login or close it, then try again. Collie has not cancelled that login.',
@@ -24,19 +24,20 @@ export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
   'local-cleanup-required': 'Some inactive Collie Codex credentials still need local sign-out. Use Clean up inactive sessions to retry their removal.',
   'local-protection-required': 'An account metadata write is unconfirmed. Keep Collie open and retry saving connection state. This retry stays on this device.',
   'local-account-changed': 'The saved account no longer matches this Codex profile. Continue with ChatGPT to authorize the intended account again.',
-  'model-catalog-unavailable': 'Codex could not supply a supported text-model catalog. Refresh models to try again. No model or request was substituted.',
-  'model-catalog-timeout': 'Codex did not finish listing models in time. Refresh models when you want to retry; no writing was sent.',
+  'model-catalog-unavailable': 'The provider could not supply a supported model catalog. Refresh models to try again. No model or request was substituted.',
+  'model-catalog-timeout': 'The provider did not finish listing models in time. Refresh models when you want to retry; no writing was sent.',
   'local-tool-isolation-unavailable': 'Text requests are disabled: this Codex version can expose model-provided tools that Collie cannot yet suppress.',
   'local-content-logging-unavailable': 'Text requests are disabled: this Codex version can save response content in its local diagnostic database. Protected runtime storage is not implemented yet.',
-  'connect-required': 'Connect your Codex account to choose a model for future reviewed requests. Local saving is available without a connection.',
+  'connect-required': 'Connect your ChatGPT account to choose a model for future reviewed requests. Local saving is available without a connection.',
   'account-work-pending': 'An account or model action is finishing. Wait for its result; your draft stays here.',
-  'model-refresh-required': 'Refresh models to read the connected Codex catalog, then choose a model. No writing is sent by these actions.',
-  'model-selection-required': 'Choose a Codex model below, then review your request again.',
-  'no-text-models': 'Codex reported no supported text models. You can save locally and explicitly refresh the catalog later.',
+  'model-refresh-required': 'Refresh models to read the connected account catalog, then choose a model. No writing is sent by these actions.',
+  'model-selection-required': 'Choose a model below, then review your request again.',
+  'no-text-models': 'The provider returned no supported text models. You can save locally and explicitly refresh the catalog later.',
   'ai-work-pending': 'An AI request is still finishing. Wait for its outcome, or stop it in its conversation or proofreading panel.',
   'output-protection-required': 'Wait for local AI work to be protected. If protection needs attention, use the global work notice to return to its owner and retry local protection. This does not resend a request.',
   'operation-capacity-full': 'All 64 active AI slots are occupied. Open the original projects shown under Local AI capacity, finish local protection, and acknowledge any retained uncertain outcomes in the AI work notice. These actions do not resend requests. Saved history and local saving remain available.',
   'local-workspace-identity-unavailable': 'Codex has not supplied a usable account and workspace identity. Open connection settings and explicitly resume or reconnect the intended account; no request has been sent.',
+  'plan-authorization-required': 'Sign-in succeeded, but ChatGPT plan use is not authorized. Use Continue with ChatGPT for this saved account and review the plan-use consent.',
   'configuration-required': 'Sign-in has not been configured for this build.',
   'development-access-unavailable': 'Supported development sign-in is not available in this build yet.',
   'commercial-activation-pending': 'Provider approval and configuration for this release are still pending.',
@@ -67,7 +68,7 @@ export function featureDescription(feature:AiActionAvailability):string {
 }
 
 export function fundingDescription(funding: AiFunding): string {
-  if (funding.kind === 'normal-subscription') return 'Local development follows your normal Codex subscription and account spending settings. Available credits may be consumed. Collie will not buy credits, enable top-ups, change your plan or use API-key fallback.'
+  if (funding.kind === 'normal-subscription') return 'Local development follows your normal ChatGPT subscription and account spending settings. Available credits may be consumed. Collie will not buy credits, enable top-ups, change your plan or use API-key fallback.'
   if (funding.kind === 'included-only') return connectionReason['funding-unknown']
   return 'AI spending is unavailable for this app identity.'
 }
@@ -78,7 +79,7 @@ export function connectionLabel(status: AiStatus | null, checking = false, actio
   if (action === 'resume') return 'Resuming Codex connection…'
   if (action === 'cleanup') return 'Signing out inactive Codex sessions…'
   if (action === 'protectConnection') return 'Saving connection state on this device…'
-  if (action === 'refreshModels' || status?.catalog?.state==='loading') return 'Loading Codex models…'
+  if (action === 'refreshModels' || status?.catalog?.state==='loading') return 'Loading account models…'
   if (action === 'selectModel') return 'Selecting model…'
   if (action === 'connect' && status?.state !== 'signing-in') return 'Starting browser sign-in…'
   if (action === 'refresh') return 'Renewing account session…'
@@ -87,7 +88,7 @@ export function connectionLabel(status: AiStatus | null, checking = false, actio
   if (status.route.kind === 'local-codex-chatgpt' && status.session.state === 'unavailable') return 'Local development · connection unavailable'
   if (status.session.state === 'saved-needs-resume') return 'Saved Codex connection · resume required'
   if (status.session.state === 'resuming') return 'Resuming Codex connection…'
-  if (status.session.state === 'reconnect-required') return 'Codex account needs reconnecting'
+  if (status.session.state === 'reconnect-required') return 'Account needs renewal or reauthorization'
   if (status.state === 'signing-in' && status.local && !status.local.cancellable) return 'Finishing Codex connection…'
   if (status.state === 'signing-in') return 'Waiting for browser sign-in'
   if (status.state === 'refreshing') return 'Renewing account session…'
