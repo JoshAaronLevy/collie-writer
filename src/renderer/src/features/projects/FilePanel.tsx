@@ -14,8 +14,8 @@ export default function FilePanel({ status, dirty, disabled, save, locate, inspe
   const labels: Record<FileStatus['state'], string> = {
     unsaved: dirty ? 'New typing is not yet protected. No file destination selected.' : 'Unsaved project — recovery on this computer.', checking: 'Checking the chosen file…',
     saved: dirty ? 'The chosen file contains the last saved writing. New typing is not yet protected.' : 'Saved to the selected file on this device.',
-    pending: 'Newer edits protected locally. The chosen file has an earlier revision.',
-    'external-change': 'The chosen file changed externally. Local writing and the external file are separate versions.',
+    pending: 'Unsaved changes are protected on this device. Use Save to update the chosen file.',
+    'external-change': 'The chosen file differs from its last saved version. Save writes your current local project.',
     unavailable: 'Destination unavailable. Local recovery remains on this computer.',
     interrupted: 'A previous file operation was interrupted. Retained candidates and previous files need inspection.'
   }
@@ -24,11 +24,12 @@ export default function FilePanel({ status, dirty, disabled, save, locate, inspe
     {destination ? <p className={styles['project-file-path']}>{destination.path}</p> : <p>No file destination selected.</p>}
     <p role="status">{active && job?.kind === 'save' ? 'Saving to chosen location…' : labels[status.state]}</p>
     <div className={styles['project-file-actions']}>
-      <AppButton disabled={disabled || active} onClick={() => save(false)}>{status.state === 'unavailable' ? 'Retry Save' : 'Save…'}</AppButton>
+      <AppButton disabled={disabled || active} onClick={() => save(false)}>{status.state === 'unavailable' ? 'Retry Save' : destination ? 'Save' : 'Save…'}</AppButton>
       <AppButton variant="default" disabled={disabled || active} onClick={() => save(true)}>Save As…</AppButton>
       {destination ? <><AppButton variant="subtle" disabled={disabled || active} onClick={reveal}>Show project file</AppButton><AppButton variant="subtle" disabled={disabled || active} onClick={locate}>Locate moved file…</AppButton><AppButton variant="subtle" disabled={disabled || active} onClick={inspect}>Inspect saved file</AppButton></> : null}
     </div>
-    {status.state === 'external-change' || status.state === 'interrupted' ? <p>Inspect the saved file to open a separate copy, or use Save As to keep your local branch in another file. No versions are merged automatically.</p> : null}
+    {status.state === 'external-change' ? <p>Save replaces this file with your local work and keeps the previous file for recovery. Inspect it to compare a separate copy, or use Save As to choose another location.</p> : null}
+    {status.state === 'interrupted' ? <p>Your local writing is retained. Retry Save, inspect the file, or review retained versions in Data and recovery.</p> : null}
     {active && job ? <div className={styles['project-file-progress']} aria-live="polite">
       <p>{phases[job.phase]} · {(job.bytes / (1024 * 1024)).toFixed(1)} MiB processed</p>
       <p>Progress includes several read/write passes. It is not an upload percentage.</p>
@@ -48,6 +49,6 @@ export default function FilePanel({ status, dirty, disabled, save, locate, inspe
       <p>An independent copy starts without a destination. Its first Save asks for a new location.</p>
     </div> : null}
     {job?.error ? <p role="alert">{projectMessages[job.error]}</p> : null}
-    <p>Saved means this file was written and reopened. Your cloud provider manages uploads separately. Destination autosave runs after 30 seconds of idle writing; use Save for an immediate commit.</p>
+    <p>Writing is protected automatically on this device and restored when you reopen Collie Writer. The project file updates only when you save it. Closing keeps unsaved writing locally. Your cloud provider manages uploads separately.</p>
   </section>
 }

@@ -48,7 +48,7 @@ export const projectMessages: Record<ProjectCode, string> = {
   MIGRATION_FAILED: 'The migration could not finish. The original and any migration copies have been retained.',
   NOT_FOUND: 'This local project could not be found. Its files have not been removed.',
   CANCELLED: 'The file operation was cancelled. Local writing and existing destinations have been kept.',
-  EXTERNAL_CHANGE: 'The selected file changed outside Collie Writer. Inspect it or save your local work to another file.',
+  EXTERNAL_CHANGE: 'The selected file differs from the saved version or changed during the file operation. Your local writing is kept. Save writes your local version; you can also inspect the file.',
   DESTINATION_UNAVAILABLE: 'The selected file cannot be reached. Retry, locate the moved file, or use Save As. Local recovery remains here.',
   UNSAFE_DESTINATION: 'This location cannot support the selected-file save safely. Choose a local APFS/HFS+ or fixed NTFS/ReFS folder, including a local cloud-sync folder.',
   JOB_INTERRUPTED: 'An interrupted file operation needs inspection. Retained candidates and previous files have not been removed. Use Save As to preserve another copy.',

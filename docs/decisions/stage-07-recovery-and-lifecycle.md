@@ -1,5 +1,7 @@
 # Stage 7 — Recovery and project lifecycle
 
+**October 3 correction:** [Explicit Save and local recovery](save-and-local-recovery.md) supersedes the historical close choices below: normal close now protects local work without requiring a selected-file Save or a separate recovery confirmation.
+
 September 30, 2026. Implementation complete — awaiting user testing. This extends the Stage 6 checkpoint; no native, runtime, type/build, interruption or performance result is claimed.
 
 ## Recovery discovery and authority

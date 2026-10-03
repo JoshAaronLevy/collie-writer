@@ -30,10 +30,10 @@ export default function ProjectLibrary(): React.JSX.Element {
     if (!item.destination) return 'Protected on this device · no project file yet'
     if (project && sameScope(project, item) && sameScope(files.scope,item)) {
       if (files.state === 'checking') return 'Checking the selected file · local work remains available'
-      if (files.state === 'external-change') return 'Selected file changed · review both versions'
+      if (files.state === 'external-change') return 'Selected file differs · Save writes your local work'
       if (files.state === 'unavailable') return 'Selected file unavailable · local work remains available'
       if (files.state === 'interrupted') return 'Interrupted file operation · review recovery'
-      if (files.state === 'pending') return 'Newer work protected locally · selected file is older'
+      if (files.state === 'pending') return 'Unsaved changes · protected on this device'
       if (files.state === 'saved') return 'Saved to selected file on this device'
     }
     return item.headCommitId === item.destination.headCommitId

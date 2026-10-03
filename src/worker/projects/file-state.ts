@@ -17,6 +17,10 @@ export function isGeneration(v: unknown): v is Generation {
 export function sameGeneration(a: Generation | null, b: Generation | null): boolean {
   return a === null ? b === null : !!b && a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtime === b.mtime && a.ctime === b.ctime && a.sha256 === b.sha256
 }
+/** Filesystem metadata may change without changing the saved project bytes. */
+export function sameFileContents(a: Generation | null, b: Generation | null): boolean {
+  return a === null ? b === null : !!b && a.size === b.size && a.sha256 === b.sha256
+}
 export function destinationView(value: SavedLocation | null): DestinationView | null {
   if (!value) return null
   const { path, snapshotId, headCommitId, generationId } = value

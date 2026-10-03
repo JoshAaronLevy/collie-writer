@@ -13,7 +13,7 @@ import { contained, directory, syncDirectory } from '../storage/files'
 import { requestDigest } from '../storage/digest'
 import { extractArchive } from './archive'
 import { cancelled, SnapshotError } from './manifest'
-import { ARCHIVE_BYTES, destinationView, observe, sameGeneration, selectedPath, type SavedLocation } from './file-state'
+import { ARCHIVE_BYTES, destinationView, observe, sameFileContents, sameGeneration, selectedPath, type SavedLocation } from './file-state'
 import { requireDestinationVolume } from './destination-volume'
 import { requireSpace, transfer } from './streams'
 import { promoteIncoming } from './incoming'
@@ -187,7 +187,7 @@ export class ProjectFiles {
       const destination = this.repository.fileContext(scope).destination
       if (!destination) { this.state = unresolved ? 'interrupted' : 'unsaved'; return }
       const path = await selectedPath(this.root, destination.path)
-      if (path !== destination.path || !sameGeneration(await observe(path, signal, this.progress(running)), destination.fingerprint)) throw new ProjectError(await present(path) ? 'EXTERNAL_CHANGE' : 'DESTINATION_UNAVAILABLE')
+      if (path !== destination.path || !sameFileContents(await observe(path, signal, this.progress(running)), destination.fingerprint)) throw new ProjectError(await present(path) ? 'EXTERNAL_CHANGE' : 'DESTINATION_UNAVAILABLE')
       this.state = unresolved ? 'interrupted' : 'saved'
     })
   }
@@ -221,7 +221,7 @@ export class ProjectFiles {
       // A fingerprint match alone is not enough to reconcile a replaced-but-unacknowledged archive.
       const inspection = join(folder, `reconcile-${randomUUID()}`)
       const manifest = await extractArchive(path, inspection, this.nativeBinding, signal)
-      if (manifest.projectId !== scope.projectId || manifest.snapshotId !== intent.snapshotId || manifest.headCommitId !== intent.head || !sameGeneration(observed, await observe(path, signal))) { unresolved = true; continue }
+      if (manifest.projectId !== scope.projectId || manifest.snapshotId !== intent.snapshotId || manifest.headCommitId !== intent.head || !sameFileContents(observed, await observe(path, signal))) { unresolved = true; continue }
       await this.repository.acknowledgeFile(scope, { path, snapshotId: intent.snapshotId, headCommitId: intent.head, generationId: id, fingerprint: observed, grantId: intent.grantId })
       intent.phase = 'acknowledged'; await persistIntent(folder, intent)
       await rm(inspection, { recursive: true }).catch(() => {})
@@ -261,8 +261,14 @@ export class ProjectFiles {
       running.view.path = target
       await requireDestinationVolume(target)
       const expected = await observe(target, signal, progress)
-      const replacingAssigned = !!destination && (target === destination.path || !!expected && expected.dev === destination.fingerprint.dev && expected.ino === destination.fingerprint.ino)
-      if ((!grant || replacingAssigned) && !sameGeneration(expected, destination?.fingerprint ?? null)) throw new ProjectError(expected ? 'EXTERNAL_CHANGE' : 'DESTINATION_UNAVAILABLE')
+      // Only the assigned path inherits ordinary Save authority. A historical inode
+      // may have been reused and cannot authorize another Save As target.
+      const replacingAssigned = !!destination && target === destination.path
+      if (!grant && target !== destination?.path) throw new ProjectError('EXTERNAL_CHANGE')
+      // Explicit Save publishes local work over the currently observed assigned file,
+      // retaining that file first. The last save's fingerprint is not an overwrite veto.
+      // Still refuse content changes during this operation; metadata-only rewrites are harmless.
+      const matchesTarget = replacingAssigned ? sameFileContents : sameGeneration
       // Backup/Move require a fresh filename; neither can replace an assigned file.
       if (mode !== 'save' && (expected || target === destination?.path)) throw new ProjectError('DESTINATION_EXISTS')
       // Save As to an existing unrelated file always gets generation-bound native consent.
@@ -311,17 +317,17 @@ export class ProjectFiles {
       const staged = await extractArchive(staging, join(folder, 'stage-inspection'), this.nativeBinding, signal, progress)
       if (staged.snapshotId !== intent.snapshotId || staged.headCommitId !== intent.head || staged.projectId !== input.scope.projectId) throw new ProjectError('INVALID_ARCHIVE')
       intent.phase = 'staged'; await persistIntent(folder, intent, journal); await syncDirectory(dirname(target))
-      if (!sameGeneration(expected, await observe(target, signal, progress))) throw new ProjectError('EXTERNAL_CHANGE')
+      if (!matchesTarget(expected, await observe(target, signal, progress))) throw new ProjectError('EXTERNAL_CHANGE')
       if (expected) {
         const retained = await observe(target, signal, progress, previous)
-        if (!sameGeneration(expected, retained) || (await observe(previous, signal, progress))?.sha256 !== expected.sha256) throw new ProjectError('EXTERNAL_CHANGE')
+        if (!matchesTarget(expected, retained) || (await observe(previous, signal, progress))?.sha256 !== expected.sha256) throw new ProjectError('EXTERNAL_CHANGE')
         await syncDirectory(dirname(target))
       }
       cancelled(signal)
       if ((await observe(staging, signal, progress))?.sha256 !== intent.candidateHash) throw new ProjectError('EXTERNAL_CHANGE')
       intent.phase = 'replacing'; await persistIntent(folder, intent, journal)
-      // Final generation/parent check occurs after intent and retention are durable.
-      if (await selectedPath(this.root, target) !== target || !sameGeneration(expected, await observe(target, signal, progress))) throw new ProjectError('EXTERNAL_CHANGE')
+      // Final target/parent check occurs after intent and retention are durable.
+      if (await selectedPath(this.root, target) !== target || !matchesTarget(expected, await observe(target, signal, progress))) throw new ProjectError('EXTERNAL_CHANGE')
       cancelled(signal)
       running.view.cancellable = false; running.view.phase = 'replacing'; this.emit()
       if (expected) {
@@ -342,7 +348,7 @@ export class ProjectFiles {
       const final = await observe(target, undefined, progress)
       if (!final || final.sha256 !== intent.candidateHash) throw new ProjectError('EXTERNAL_CHANGE')
       const reopened = await extractArchive(target, join(folder, 'final-inspection'), this.nativeBinding, undefined, progress)
-      if (reopened.projectId !== input.scope.projectId || reopened.snapshotId !== intent.snapshotId || reopened.headCommitId !== intent.head || !sameGeneration(final, await observe(target, undefined, progress))) throw new ProjectError('EXTERNAL_CHANGE')
+      if (reopened.projectId !== input.scope.projectId || reopened.snapshotId !== intent.snapshotId || reopened.headCommitId !== intent.head || !matchesTarget(final, await observe(target, undefined, progress))) throw new ProjectError('EXTERNAL_CHANGE')
       if (!backup) await this.repository.acknowledgeFile(input.scope, { path: target, snapshotId: intent.snapshotId, headCommitId: intent.head, generationId: intent.id, fingerprint: final, grantId: intent.grantId })
       intent.phase = 'acknowledged'; await persistIntent(folder, intent, journal)
       if (!backup) { this.state = 'saved'; this.needsCheck = false }

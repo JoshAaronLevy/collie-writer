@@ -1,5 +1,7 @@
 # Stage 6 — Native locations and save acknowledgment
 
+**October 3 correction:** The [explicit Save and local recovery decision](save-and-local-recovery.md) supersedes this historical checkpoint's destination autosave, stale saved-generation veto and Save-on-close policy. Other file-safety and retention contracts remain.
+
 September 29, 2026. Implementation selected; **native acceptance is pending user testing**. This extends D6 without changing archive v1, SQL schema 2, AST v1, dependencies or the build pipeline. No verification activity was performed.
 
 ## Location authority and opening

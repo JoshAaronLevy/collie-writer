@@ -1,5 +1,7 @@
 # I06 — Returning projects and lifecycle surfaces
 
+**October 3 correction:** [Explicit Save and local recovery](save-and-local-recovery.md) now owns Save/close semantics. A changed selected file can be replaced by explicit Save of local work with prior-file retention; normal close needs local protection, not a current selected file.
+
 October 2, 2026. **Implementation complete — awaiting user testing.** This stage reorganizes access to existing local/project-file commands. It does not change their authority, persistence formats, retention, or release gates.
 
 ## Returning safely

@@ -1,5 +1,7 @@
 # I03 — Persistent session and typed navigation
 
+**October 3 correction:** The [Save/local-recovery decision](save-and-local-recovery.md) removes the 30-second selected-file autosave and Save-on-close behavior recorded below. Persistent session ownership, draft guards and 900 ms/5-second local protection remain.
+
 October 1, 2026. **Implementation complete — awaiting user testing.** This decision describes source changes, not observed runtime behavior. I04 was expressly requested while the I03 handoff was being completed; its separate format changes are recorded in its own decision.
 
 ## Ownership

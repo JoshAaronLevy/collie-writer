@@ -29,6 +29,10 @@ export class ProjectLifecycle {
     }, error => { this.ai?.resume(); this.files.action('close-cancelled'); throw error }).finally(() => { this.request = undefined })
     return this.request
   }
+  private hasFileWork(): boolean {
+    const job = this.files.current().job
+    return fileBusy(job) && job?.kind !== 'check'
+  }
   private async closeOnce(): Promise<boolean> {
     const owner = this.owner(), window = owner ? BrowserWindow.fromWebContents(owner) : null
     // Establish the barrier before a native dialog can yield to other IPC.
@@ -49,7 +53,7 @@ export class ProjectLifecycle {
       else await dialog.showMessageBox(options)
       return false
     }
-    if (!owner || !window) return !this.dirty() && (!fileBusy(this.files.current().job) || this.files.current().job?.kind === 'check')
+    if (!owner || !window) return !this.dirty() && !this.hasFileWork()
     const id = randomUUID()
     let timer: ReturnType<typeof setTimeout> | undefined
     const response = new Promise<string>(resolve => {
@@ -61,16 +65,10 @@ export class ProjectLifecycle {
     if (timer) clearTimeout(timer)
     this.pending = undefined
     if (window.isDestroyed() || owner !== this.owner()) return false
-    if (outcome === 'saved' && !this.dirty() && !fileBusy(this.files.current().job)) return !this.conversationPending()&&(!this.ai||await this.ai.prepareClose())
+    // A protected local draft is sufficient. Closing never requires a portable-file Save.
+    if ((outcome === 'saved' || outcome === 'local') && !this.dirty() && !this.hasFileWork()) return !this.conversationPending()&&(!this.ai||await this.ai.prepareClose())
     if (outcome === 'cancel') return false
-    if (outcome !== 'local' || this.dirty() || fileBusy(this.files.current().job)) {
-      await dialog.showMessageBox(window, { type: 'warning', title: 'Keep your writing open', message: 'Closing has been paused.', detail: 'Writing or a file operation has not finished safely. Keep this window open, finish any composition, and retry or copy unprotected text. You can cancel a file operation before replacement begins.', buttons: ['Keep window open'], noLink: true })
-      return false
-    }
-    const answer = await dialog.showMessageBox(window, { type: 'warning', title: 'Writing protected locally', message: 'The chosen project file is not confirmed current.', detail: 'Your draft is protected in this computer’s working folder. You can retry Save, choose another file, or explicitly close with local recovery. Local recovery is not a portable file or cloud upload.', buttons: ['Keep window open','Retry Save','Save As…','Close with local recovery'], defaultId: 0, cancelId: 0, noLink: true })
-    if (answer.response === 1 || answer.response === 2) this.files.action('close-cancelled')
-    if (answer.response === 1) this.files.action('save')
-    if (answer.response === 2) this.files.action('save-as')
-    return answer.response === 3 && !this.dirty() && !fileBusy(this.files.current().job)&&!this.conversationPending()&&(!this.ai||await this.ai.prepareClose())
+    await dialog.showMessageBox(window, { type: 'warning', title: 'Keep your writing open', message: 'Closing has been paused.', detail: 'Writing or a file operation has not finished safely. Keep this window open, finish any composition, and retry or copy unprotected text. You can cancel a file operation before replacement begins.', buttons: ['Keep window open'], noLink: true })
+    return false
   }
 }

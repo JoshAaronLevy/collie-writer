@@ -49,7 +49,7 @@ export function WorkspaceStatus(): React.JSX.Element {
     {closing ? <p role="status">Protecting writing and finishing file work before closing…</p> : null}
     {project && !fileStateReady ? <p role="status">Checking project-file status…</p> : null}
     {project && destination.kind === 'workspace' && destination.view !== 'details' && !writing && fileStateReady && !fileNeedsAttention ? <div className={styles['file-summary']}>
-      <p>{!project.destination ? 'Protected locally · no project file selected' : files.state === 'pending' ? 'Newer writing protected locally · selected file is older' : 'Selected project file saved on this device'}</p>
+      <p>{!project.destination ? 'Protected locally · no project file selected' : files.state === 'pending' || dirty ? 'Unsaved changes · use Save to update the project file' : 'Selected project file saved on this device'}</p>
       <SaveMenu />
       <AppButton variant="subtle" onClick={() => { void navigate({kind:'workspace',scope:{projectId:project.projectId,workspaceId:project.workspaceId},view:'details'}) }}>Project file actions</AppButton>
     </div> : null}

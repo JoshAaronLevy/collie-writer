@@ -84,7 +84,7 @@ export function useWorkspaceController(storage: StorageStatus) {
   const fileState = useRef<FileStatus>(emptyFiles), alive = useRef(true)
   const jobWaiters = useRef(new Map<string, Set<(job: FileJobView | null) => void>>())
   const finishedJobs = useRef(new Map<string, FileJobView>())
-  const handlers = useRef<{ action: (action: FileAction) => Promise<void>; save: () => void }>({ action: async () => {}, save: () => {} })
+  const handlers = useRef<{ action: (action: FileAction) => Promise<void> }>({ action: async () => {} })
   const noteDirty = drafts.states().some(s => s.id === 'notes' && (s.dirty || !!s.pendingOperation))
   const sourceDirty = drafts.states().some(s => s.id === 'sources' && (s.dirty || !!s.pendingOperation))
   const selectedSection = project?.documents.find(doc => doc.id === project.documentId)
@@ -146,12 +146,6 @@ export function useWorkspaceController(storage: StorageStatus) {
     if (storage.state === 'ready') { void refreshData(); return }
     if (storage.state === 'unavailable') { for (const group of jobWaiters.current.values()) for (const resolve of group) resolve(null); jobWaiters.current.clear() }
   }, [storage.state])
-  useEffect(() => {
-    if (!project?.destination || fileActive || acting || closing || storage.state !== 'ready' || ['external-change','unavailable','interrupted','checking'].includes(files.state)) return
-    if (!dirty && project.headCommitId === project.destination.headCommitId) return
-    const timer = setTimeout(() => handlers.current.save(), 30000)
-    return () => clearTimeout(timer)
-  }, [editVersion, project?.headCommitId, project?.destination?.headCommitId, files.state, dirty, fileActive, acting, closing, storage.state])
   useEffect(() => {
     if (!project || !dirty || closing || storage.state !== 'ready') return
     const timer = setTimeout(() => { if (!actionTask.current && !retryCommit.current && !metaPending.current) void flushManuscript() }, 900)
@@ -445,7 +439,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     if (!fileBusy(job) || !job) return true
     return !!await waitJob(job.id)
   }
-  async function save(as: boolean, automatic = false): Promise<boolean> {
+  async function save(as: boolean): Promise<boolean> {
     if (!await waitActive()) return false
     setBusy(true)
     const p = await flush()
@@ -454,7 +448,6 @@ export function useWorkspaceController(storage: StorageStatus) {
     if (!await waitActive()) { setBusy(false); return false }
     let token: string | null = null
     const destination = fileState.current.destination
-    if (automatic && (!destination || ['external-change','unavailable','interrupted'].includes(fileState.current.state))) { setBusy(false); return false }
     if ((as || !destination) && !(pendingSave.current && !as)) {
       const choice = await window.collie.pickProjectFile({ purpose: 'save', scope: scopeOf(p) })
       if (!choice.ok || !choice.value) { if (!choice.ok) setError(choice.error.message); setBusy(false); return false }
@@ -468,7 +461,7 @@ export function useWorkspaceController(storage: StorageStatus) {
     if (job || !result.ok && result.error.code !== 'UNAVAILABLE') pendingSave.current = null
     if (job?.state === 'completed') {
       // Reconcile the old request before capturing any newer edits submitted with this explicit Save.
-      if (retrying && fileState.current.destination?.headCommitId !== p.headCommitId) return save(false, automatic)
+      if (retrying && fileState.current.destination?.headCommitId !== p.headCommitId) return save(false)
       await refresh(); return true
     }
     return false
@@ -592,22 +585,25 @@ export function useWorkspaceController(storage: StorageStatus) {
     try {
       await navigationTask.current
       await actionTask.current
+      // Closing protects the local workspace; it does not need an external-file read.
+      const job = fileState.current.job
+      if (job?.kind === 'check' && fileBusy(job)) {
+        const cancelled = await window.collie.cancelFileJob(job.id)
+        if (cancelled.ok) applyFiles(cancelled.value)
+      }
       if (!await waitActive()) return
       if (outlinePending.current && !await performOutline()) return
       if (!current.current) { outcome = 'saved'; return }
       if (!await flush(false, 'close')) return
-      await refreshFiles(); if (!await waitActive()) return
-      if (current.current.destination && (fileState.current.state !== 'saved' || current.current.headCommitId !== fileState.current.destination?.headCommitId)) {
-        const succeeded = await save(false)
-        outcome = succeeded && !isDirty() ? 'saved' : !isDirty() ? 'local' : 'failed'
-      } else outcome = current.current.destination ? 'saved' : 'local'
+      // Leave the selected file and its saved head unchanged until an explicit Save.
+      outcome = isDirty() ? 'failed' : 'local'
     } finally {
       // Keep typing locked until main either closes the window or explicitly releases this handshake.
       setBusy(false)
       window.collie.setUnprotectedChanges(isDirty()); window.collie.finishClose(action.id, outcome)
     }
   }
-  handlers.current = { action: handleAction, save: () => run(() => save(false, true)) }
+  handlers.current = { action: handleAction }
   async function captureAnnotation(): Promise<void> {
     const p = current.current, e = editorRef.current
     if (!p || !e) return
