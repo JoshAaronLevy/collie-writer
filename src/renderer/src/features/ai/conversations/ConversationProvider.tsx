@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { AI_LIMITS, type AiModel } from '../../../../../shared/ai'
+import { AI_LIMITS, type AiStatus } from '../../../../../shared/ai'
 import { CONVERSATION_LIMITS, type AiCapture, type CaptureSource, type Conversation, type ConversationEvent, type ConversationRequest, type ConversationReview, type ConversationTurn, type ConversationValue } from '../../../../../shared/conversations'
 import type { OpenInput } from '../../../../../shared/projects'
 import { sameScope } from '../../../../../shared/project-files'
@@ -7,10 +7,16 @@ import { useWorkspaceSession } from '../../workspace/WorkspaceSession'
 import { scopeOf } from '../../workspace/useWorkspaceController'
 import { useRetainedDraft } from '../../workspace/DraftOwner'
 import { useAiConnections } from '../../ai-connections/AiConnectionsProvider'
-import { connectionReason } from '../../ai-connections/connection-copy'
 import { selectedRanges } from '../selection'
+import { editorIsComposing } from '../../../editor/adapter'
 
-type Draft = { text:string; historyIds:string[]; source:CaptureSource; review:{input:ConversationReview;capture:AiCapture;excluded:number;connectionId:string|null;model:string|null}|null }
+type ReviewConnection={connectionId:string|null;model:string|null;reviewRevision:string|null}
+type Draft = { text:string; historyIds:string[]; source:CaptureSource; review:({input:ConversationReview;capture:AiCapture;excluded:number}&ReviewConnection)|null }
+function reviewConnection(status:AiStatus|null):ReviewConnection {
+  return {connectionId:status?.activeConnectionId??null,model:status?.catalog?.state==='loaded'?status.catalog.selectedModelId:null,reviewRevision:status?.reviewRevision??null}
+}
+function sameReviewConnection(a:ReviewConnection,b:ReviewConnection):boolean {return a.connectionId===b.connectionId&&a.model===b.model&&a.reviewRevision===b.reviewRevision}
+const sizeMessage='This request exceeds a supported limit: 16,000 prompt characters, 64,000 context characters, or 80,000 including the structured request and instructions. Shorten the prompt, choose a smaller passage or select fewer previous messages. Nothing has been trimmed.'
 const emptyDraft=():Draft=>({text:'',historyIds:[],source:{kind:'none'},review:null})
 const activeStates=['preparing','running','stopping']
 function useConversationController() {
@@ -19,7 +25,7 @@ function useConversationController() {
   const [selected,setSelected]=useState<string|null>(null),[page,setPage]=useState<Extract<ConversationValue,{type:'page'}>|null>(null),[before,setBefore]=useState<number|null>(null)
   const [drafts,setDrafts]=useState<Record<string,Draft>>({}),[newTitle,setNewTitle]=useState(''),[rename,setRename]=useState('')
   const [issue,setIssue]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false),[run,setRun]=useState<ConversationEvent|null>(null)
-  const [pending,setPending]=useState<ConversationRequest|null>(null),[models,setModels]=useState<AiModel[]>([]),[model,setModel]=useState('')
+  const [pending,setPending]=useState<ConversationRequest|null>(null)
   const connectionRef=useRef(connections);connectionRef.current=connections
   const current=useRef(session),state=useRef({selected,query,view,offset,before,rename}),locked=useRef(false),pendingRef=useRef<ConversationRequest|null>(null)
   const readSequence=useRef(0),listSequence=useRef(0),refreshTimer=useRef<ReturnType<typeof setTimeout>|null>(null)
@@ -69,7 +75,7 @@ function useConversationController() {
   useEffect(()=>{
     if(refreshTimer.current){clearTimeout(refreshTimer.current);refreshTimer.current=null}
     readSequence.current++;listSequence.current++
-    setItems([]);setTotal(0);setSelected(null);setPage(null);setBefore(null);setDrafts({});setNewTitle('');setRename('');setIssue('');setNotice('');setPending(null);setRun(null);setModels([]);setModel('');scroll.current.clear();historyOrder.current.clear()
+    setItems([]);setTotal(0);setSelected(null);setPage(null);setBefore(null);setDrafts({});setNewTitle('');setRename('');setIssue('');setNotice('');setPending(null);setRun(null);scroll.current.clear();historyOrder.current.clear()
     if(!scope)return
     const captured=scope;let alive=true
     void (async()=>{
@@ -89,25 +95,36 @@ function useConversationController() {
     if(!refreshTimer.current)refreshTimer.current=setTimeout(()=>{refreshTimer.current=null;void refresh({projectId:event.projectId,workspaceId:event.workspaceId})},300)
   }),[])
   useEffect(()=>()=>{if(refreshTimer.current)clearTimeout(refreshTimer.current)},[])
-  useEffect(()=>{setModels([]);setModel('');setDrafts(previous=>Object.fromEntries(Object.entries(previous).map(([id,d])=>[id,{...d,review:null}])) )},[connections.status?.activeConnectionId])
+  const selectedConnection=reviewConnection(connections.status)
+  useEffect(()=>{
+    if(Object.values(drafts).some(d=>d.review&&!sameReviewConnection(d.review,selectedConnection)))setNotice('The connection or model changed. Your draft and selected context are kept; review them again.')
+    setDrafts(previous=>Object.fromEntries(Object.entries(previous).map(([id,d])=>[id,d.review&&!sameReviewConnection(d.review,selectedConnection)?{...d,review:null}:d])))
+  },[selectedConnection.connectionId,selectedConnection.model,selectedConnection.reviewRevision])
   function update(patch:Partial<Draft>):void {if(!selected||pendingRef.current||locked.current)return;if(!drafts[selected]?.text&&Object.values(drafts).filter(d=>!!d.text).length>=20){setIssue('Save or clear an existing conversation draft before keeping another. Up to 20 unsent drafts can be retained in this session.');return;}setDrafts(previous=>({...previous,[selected]:{...(previous[selected]??emptyDraft()),...patch,review:null}}))}
   function choose(id:string):void {if(composing.current||locked.current||pendingRef.current)return;if(rename){setIssue('Save or clear the rename draft before opening another conversation.');return;}setSelected(id);state.current.selected=id;state.current.before=null;setBefore(null);setPage(null);setRename('');setIssue('');setNotice('')}
   async function request(input:ConversationRequest):Promise<void> {
-    if(locked.current||composing.current)return
+    if(locked.current||composing.current||pendingRef.current&&pendingRef.current!==input)return
     locked.current=true;setBusy(true);setIssue('');setNotice('');setPending(input);pendingRef.current=input
     try {
       const result=await window.collie.conversation(input)
       if(!belongs(input))return
       if(!result.ok){
         if(!['UNAVAILABLE','DISK_FULL','PROJECT_LOCKED'].includes(result.error.code)){setPending(null);pendingRef.current=null}
-        setIssue(result.error.code==='LIMIT_EXCEEDED'?'This request exceeds a supported limit. A prompt allows 16,000 characters and attached context 64,000; choose a smaller passage or fewer prior messages.':result.error.code==='DESTINATION_EXISTS'?'That file already exists. Export again using a new filename. The existing file was kept.':result.error.message)
+        if(input.action==='submit'&&result.error.code==='STALE_REVISION')setDrafts(previous=>{
+          const d=previous[input.review.conversationId]
+          return d?{...previous,[input.review.conversationId]:{...d,review:null}}:previous
+        })
+        setIssue(result.error.code==='LIMIT_EXCEEDED'?sizeMessage:result.error.code==='STALE_REVISION'?'The reviewed writing, conversation or connection changed, or the review expired. Review the request again; your draft is kept.':result.error.code==='DESTINATION_EXISTS'?'That file already exists. Export again using a new filename. The existing file was kept.':result.error.message)
         return
       }
       setPending(null);pendingRef.current=null
       if(input.action==='change'&&result.value.type==='changed'){if(input.expectedRevision===null)setNewTitle('');else setRename('');setSelected(input.conversationId);state.current.selected=input.conversationId;setPage(null);setBefore(null);state.current.before=null}
       if(input.action==='submit'){
         setDrafts(previous=>({...previous,[input.review.conversationId]:emptyDraft()}));setBefore(null);state.current.before=null
-        setNotice(input.send?'Request retained. The outcome below comes from the provider operation.':'Request saved locally. Nothing was sent; reopening will not send it.')
+        const outcome=result.value.type==='turn'?result.value.turn.attempt.state:null
+        setNotice(!input.send?'Request saved in the local working project. Nothing was sent or queued. Use project Save to update its selected file.':
+          outcome==='not-sent'?'Request saved locally, but sending was refused. Read the reason below; nothing is queued for later delivery.':
+          'Request retained in the local working project. Its status and any actual response appear below; project Save updates the selected file.')
       }
       if(result.value.type==='exported')setNotice(`Transcript exported to ${result.value.path}`)
       await refresh({projectId:input.projectId,workspaceId:input.workspaceId})
@@ -122,24 +139,24 @@ function useConversationController() {
     void request(input)
   }
   async function attach(kind:'none'|'section'|'passage'):Promise<void> {
-    if(!scope||!selected||locked.current||pendingRef.current)return
+    if(!scope||!selected||locked.current||pendingRef.current||readOnly||page?.conversation.state!=='active')return
     if(kind==='none'){update({source:{kind:'none'}});return}
     const s=current.current,editor=s.editorRef.current,original=s.project
-    if(!original||!editor||s.composition.current){setIssue('Finish composing in the manuscript first.');return}
+    if(!original||!editor||editor.isDestroyed||editorIsComposing(editor)||s.composition.current){setIssue('Finish composing in the manuscript first.');return}
     const document=editor.state.doc,ranges=kind==='passage'?selectedRanges(editor):null
     if(kind==='passage'&&!ranges){setIssue('Select a continuous text passage in the manuscript first. Images and non-text selections are not supported.');return}
     locked.current=true;setBusy(true)
     try{
       const saved=await s.flush(false,'save',['conversations'])
-      if(!saved||!belongs(original)||saved.documentId!==original.documentId||!editor.state.doc.eq(document)){setIssue('The writing changed while being protected. Select the intended passage again.');return}
+      if(!saved||!belongs(original)||current.current.editorRef.current!==editor||editor.isDestroyed||editorIsComposing(editor)||current.current.project?.documentId!==original.documentId||saved.documentId!==original.documentId||!editor.state.doc.eq(document)){setIssue('The writing changed while being protected. Select the intended passage again.');return}
       const source:CaptureSource=kind==='passage'?{kind,documentId:saved.documentId,revisionId:saved.revisionId,ranges:ranges!}:{kind,documentId:saved.documentId,revisionId:saved.revisionId}
       setDrafts(previous=>({...previous,[selected]:{...(previous[selected]??emptyDraft()),source,review:null}}));setNotice(`${kind==='passage'?'Selected passage':'Current section'} chosen. Review the exact text before saving or sending.`)
-    }finally{locked.current=false;setBusy(false)}
+    }catch{setIssue('The writing could not be protected for this context. Your draft is kept; choose the intended passage again.')}finally{locked.current=false;setBusy(false)}
   }
   async function review():Promise<void> {
-    if(!scope||!selected||!page||locked.current||pendingRef.current||composing.current||!draft.text.trim())return
+    if(!scope||!selected||!page||page.conversation.state!=='active'||readOnly||active||locked.current||pendingRef.current||composing.current||!draft.text.trim())return
     locked.current=true;setBusy(true);setIssue('')
-    const id=selected,original={...draft}
+    const id=selected,original={...draft},account=reviewConnection(connectionRef.current.status)
     try{
       const saved=await current.current.flush(false,'save',['conversations'])
       if(!saved||!belongs(scope))return
@@ -147,21 +164,18 @@ function useConversationController() {
       if(!latest.ok||latest.value.type!=='page'){setIssue('The conversation could not be read for review.');return}
       const input:ConversationReview={...scope,action:'review',conversationId:id,expectedRevision:latest.value.conversation.revisionId,expectedHead:saved.headCommitId,captureId:crypto.randomUUID(),createdAt:new Date().toISOString(),prompt:original.text,source:original.source,historyIds:original.historyIds}
       const result=await window.collie.conversation(input)
-      if(!belongs(scope))return
+      if(!belongs(scope)||state.current.selected!==id)return
+      if(!sameReviewConnection(account,reviewConnection(connectionRef.current.status))){setIssue('The connection or model changed during review. Your draft is kept; review it again.');return}
       if(result.ok&&result.value.type==='review'){
-        const value=result.value;setDrafts(previous=>({...previous,[id]:{...original,review:{input,capture:value.capture,excluded:value.excludedMessages,connectionId:connections.status?.activeConnectionId??null,model:model||null}}}))
-      }else setIssue(!result.ok&&result.error.code==='LIMIT_EXCEEDED'?'The attached context exceeds 64,000 characters. Choose a smaller passage or fewer previous messages; nothing has been trimmed.':!result.ok&&result.error.code==='STALE_REVISION'?'The source or conversation changed. Choose the passage or section again, then review.':!result.ok?result.error.message:'Review could not be prepared.')
-    }finally{locked.current=false;setBusy(false)}
+        const value=result.value;setDrafts(previous=>({...previous,[id]:{...original,review:{input,capture:value.capture,excluded:value.excludedMessages,...account}}}))
+      }else setIssue(!result.ok&&result.error.code==='LIMIT_EXCEEDED'?sizeMessage:!result.ok&&result.error.code==='STALE_REVISION'?'The source or conversation changed. Choose the passage or section again, then review.':!result.ok?result.error.message:'Review could not be prepared.')
+    }catch{setIssue('Review could not be prepared. Your draft is kept; nothing was sent.')}finally{locked.current=false;setBusy(false)}
   }
   function submit(send:boolean):void {
-    const reviewed=draft.review;if(!scope||!reviewed||readOnly||composing.current)return
-    if(reviewed.connectionId!==(connections.status?.activeConnectionId??null)||reviewed.model!==(model||null)){setIssue('The account or model changed. Review the request again.');return}
+    const reviewed=draft.review;if(!scope||!reviewed||readOnly||page?.conversation.state!=='active'||active||composing.current||locked.current||pendingRef.current)return
+    if(!sameReviewConnection(reviewed,reviewConnection(connectionRef.current.status))){setIssue('The connection or model changed. Review the request again.');return}
+    if(send&&!canSend){setIssue('Sending is unavailable. Read the connection status below; you can still save this reviewed request locally.');return}
     void request({...scope,action:'submit',attemptId:crypto.randomUUID(),review:reviewed.input,digest:reviewed.capture.digest,send,connectionId:reviewed.connectionId,model:reviewed.model})
-  }
-  async function loadModels():Promise<void> {
-    const id=connections.status?.activeConnectionId;if(!id||locked.current)return
-    locked.current=true;setBusy(true)
-    try{const result=await window.collie.aiModels({connectionId:id});if(id!==connectionRef.current.status?.activeConnectionId)return;if(result.ok)setModels(result.value);else setIssue(connectionReason[result.reason])}finally{locked.current=false;setBusy(false)}
   }
   function retryAsNew(t:ConversationTurn):void {
     if(!selected||draft.text||readOnly||busy||pending)return
@@ -177,10 +191,11 @@ function useConversationController() {
     update({historyIds:[...chosen].sort((a,b)=>(historyOrder.current.get(a)??0)-(historyOrder.current.get(b)??0))})
   }
   const historyOrder=useRef(new Map<string,number>())
-  const providerReason=connections.status?.reasons[0]
-  // I10 currently supplies only unverified catalog eligibility. Keep the authoritative refusal visible.
-  const canSend=!!connections.status?.activeConnectionId&&connections.status.features.conversation.state!=='unavailable'&&!!model&&connections.status.reasons.length===0&&models.some(m=>m.id===model)&&!readOnly
-  return {items,total,query,setQuery,view,setView,offset,setOffset,selected,page,before,setBefore,draft,update,drafts,newTitle,setNewTitle,rename,setRename,issue,notice,busy,loading,pending,readOnly,active,run,models,model,setModel,canSend,providerReason,scope,scroll,composer,choose,change,attach,review,submit,loadModels,retryAsNew,history,show,request,refresh,composing,draftEvents,
+  const capability=connections.status?.features.conversation
+  const canSend=capability?.state==='available'&&!!draft.review&&sameReviewConnection(draft.review,selectedConnection)&&
+    capability.connectionId===draft.review.connectionId&&capability.model===draft.review.model&&!connections.busy&&connections.issue!=='outcome-unknown'&&
+    !readOnly&&!busy&&!pending&&!active&&page?.conversation.state==='active'&&session.available&&!session.closing&&!session.navigating
+  return {items,total,query,setQuery,view,setView,offset,setOffset,selected,page,before,setBefore,draft,update,drafts,newTitle,setNewTitle,rename,setRename,issue,notice,busy,loading,pending,readOnly,active,run,canSend,capability,scope,scroll,composer,choose,change,attach,review,submit,retryAsNew,history,show,request,refresh,composing,draftEvents,
     retry:()=>pendingRef.current?void request(pendingRef.current):scope?void request({...scope,action:'reconcile'}):undefined,
     clear:()=>{if(selected&&!pending&&!busy){setDrafts(previous=>({...previous,[selected]:emptyDraft()}));setIssue('');setNotice('Unsent draft cleared. Saved history was kept.')}},
     recover:()=>scope?void request({...scope,action:'reconcile'}):undefined,

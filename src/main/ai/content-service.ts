@@ -9,7 +9,7 @@ import { requestDigest } from '../../worker/storage/digest'
 import type { StorageWorker } from '../storage-worker'
 import type { AiService, ContentAuthorization } from '../ai/service'
 import { aiReason } from '../ai/errors'
-import { contentOperation, templateFor } from './local-operation'
+import { contentOperation, localRequestFits, templateFor } from './local-operation'
 
 type ContentWorkerInput = ConversationWorkerInput | ProofreadWorkerInput
 type ContentValue = ConversationValue | ProofreadValue
@@ -67,7 +67,7 @@ export class AiContentService {
       this.failures.set(attemptId,structuredClone(input));this.publish(input,attemptId,'The AI request has an unconfirmed local write. Keep it open and retry local protection.');throw error
     })
     this.protecting.set(attemptId,task)
-    try{return await task}finally{if(this.protecting.get(attemptId)===task)this.protecting.delete(attemptId)}
+    try{return await task}finally{if(this.protecting.get(attemptId)===task)this.protecting.delete(attemptId);this.ai.contentWorkChanged()}
   }
   private enqueue(owner:Bound,notification:AiOperation):void {
     // Resolve from the protected owner, including the final-channel projection.
@@ -80,6 +80,7 @@ export class AiContentService {
     this.seen.set(operation.operationId,operation.sequence)
     if(['starting','running','cancelling'].includes(operation.state))this.live.set(operation.operationId,owner);else this.live.delete(operation.operationId)
     this.queued.set(owner.binding.attemptId,{...owner.scope,action:'settle',attemptId:owner.binding.attemptId,binding:owner.binding,operation,reason:null})
+    this.ai.contentWorkChanged()
     this.publish(owner.scope,owner.binding.attemptId)
     if(!this.timer&&!this.writing)this.timer=setTimeout(()=>{this.timer=null;void this.drain()},250)
   }
@@ -96,7 +97,7 @@ export class AiContentService {
         this.publish(input,id,this.failures.has(id)?'AI output needs local protection. Retry local protection.':null)
       }
     })()
-    try{await this.writing}finally{this.writing=null;if([...this.queued.keys()].some(id=>!this.failures.has(id))&&!this.timer)this.timer=setTimeout(()=>{this.timer=null;void this.drain()},250);for(const owner of this.bound.values())this.publish(owner.scope,owner.binding.attemptId,this.failures.has(owner.binding.attemptId)?'AI output needs local protection.':null)}
+    try{await this.writing}finally{this.writing=null;this.ai.contentWorkChanged();if([...this.queued.keys()].some(id=>!this.failures.has(id))&&!this.timer)this.timer=setTimeout(()=>{this.timer=null;void this.drain()},250);for(const owner of this.bound.values())this.publish(owner.scope,owner.binding.attemptId,this.failures.has(owner.binding.attemptId)?'AI output needs local protection.':null)}
   }
   private preparedInput(scope:OpenInput,b:ConversationBinding,t:ContentTurn):AiPrepareInput {
     return {scope,operationId:b.operationId,connectionId:b.connectionId,model:b.model,action:this.kind==='conversation'?'conversation':'proofread',prompt:t.capture.prompt,context:t.capture.context}
@@ -178,7 +179,7 @@ export class AiContentService {
       if(previous.attempt.requestDigest!==requestDigest(input))throw new ProjectError('OPERATION_CONFLICT')
       return this.worker({projectId:input.projectId,workspaceId:input.workspaceId,action:'get',attemptId:input.attemptId})
     }
-    if(changes)this.commands++
+    if(changes){this.commands++;this.ai.contentWorkChanged()}
     try {
       if(input.action==='decide'){
         if(this.kind!=='proofreading')throw new ProjectError('VALIDATION')
@@ -194,6 +195,7 @@ export class AiContentService {
         const action=this.kind==='conversation'?'conversation':'proofread',reviewStamp=await this.ai.reviewStamp(action)
         const result=await this.worker(input)
         if(result.type!=='review'||result.capture.template!==templateFor(action))throw new ProjectError('UNAVAILABLE')
+        if(this.kind==='conversation'&&!localRequestFits(result.capture))throw new ProjectError('LIMIT_EXCEEDED')
         if(this.reviews.size>=64)this.reviews.delete(this.reviews.keys().next().value!)
         this.reviews.set(input.captureId,{reviewStamp,template:result.capture.template,captureDigest:result.capture.digest,
           reviewDigest:requestDigest(input),expiresAt:Date.now()+5*60000})
@@ -216,6 +218,6 @@ export class AiContentService {
       }
       if(!isConversationWorkerInput(input)&&!isProofreadWorkerInput(input))throw new ProjectError('VALIDATION')
       return await this.worker(input)
-    } finally {if(changes){this.commands--;this.publish(input,'attemptId'in input?input.attemptId:null,this.failures.size?'AI output needs local protection.':null)}}
+    } finally {if(changes){this.commands--;this.ai.contentWorkChanged();this.publish(input,'attemptId'in input?input.attemptId:null,this.failures.size?'AI output needs local protection.':null)}}
   }
 }

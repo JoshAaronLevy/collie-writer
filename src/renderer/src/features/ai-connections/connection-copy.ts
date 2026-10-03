@@ -1,5 +1,5 @@
 import type { AiReason, AiStatus } from '../../../../shared/ai'
-import type { AiConnectionReason, AiFunding } from '../../../../shared/ai-route'
+import type { AiActionAvailability, AiConnectionReason, AiFunding } from '../../../../shared/ai-route'
 
 export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
   'local-login-not-implemented': 'The local development route is defined. Browser sign-in is not implemented yet.',
@@ -27,6 +27,15 @@ export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
   'model-catalog-timeout': 'Codex did not finish listing models in time. Refresh models when you want to retry; no writing was sent.',
   'local-tool-isolation-unavailable': 'Text requests are disabled: this Codex version can expose model-provided tools that Collie cannot yet suppress.',
   'local-content-logging-unavailable': 'Text requests are disabled: this Codex version can save response content in its local diagnostic database. Protected runtime storage is not implemented yet.',
+  'connect-required': 'Connect your Codex account to choose a model for future reviewed requests. Local saving is available without a connection.',
+  'account-work-pending': 'An account or model action is finishing. Wait for its result; your draft stays here.',
+  'model-refresh-required': 'Refresh models to read the connected Codex catalog, then choose a model. No writing is sent by these actions.',
+  'model-selection-required': 'Choose a Codex model below, then review your request again.',
+  'no-text-models': 'Codex reported no supported text models. You can save locally and explicitly refresh the catalog later.',
+  'ai-work-pending': 'An AI request is still finishing. Wait for its outcome, or stop it in its conversation or proofreading panel.',
+  'output-protection-required': 'Wait for local AI work to be protected. If protection needs attention, use the global work notice to return to its owner and retry local protection. This does not resend a request.',
+  'operation-capacity-full': 'The retained AI operation journal is full. New AI requests are unavailable; saved history and local saving remain available. Retention management has not been implemented yet.',
+  'local-workspace-identity-unavailable': 'Codex has not supplied a usable account and workspace identity. Open connection settings and explicitly resume or reconnect the intended account; no request has been sent.',
   'configuration-required': 'Sign-in has not been configured for this build.',
   'development-access-unavailable': 'Supported development sign-in is not available in this build yet.',
   'commercial-activation-pending': 'Provider approval and configuration for this release are still pending.',
@@ -50,6 +59,10 @@ export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
   'outcome-unknown': 'The action’s result could not be confirmed. Check status before starting another sign-in or account change.',
   'output-limit': 'The request exceeded the supported content limit. Narrow its scope before a new request.',
   'context-changed': 'The approved request no longer matches this action. Review the intended context again.'
+}
+
+export function featureDescription(feature:AiActionAvailability):string {
+  return feature.state==='unavailable'?connectionReason[feature.reason]:'Available for a new reviewed request. Provider access and usage limits are checked again when sending.'
 }
 
 export function fundingDescription(funding: AiFunding): string {
@@ -80,7 +93,7 @@ export function connectionLabel(status: AiStatus | null, checking = false, actio
   if (status.state === 'disconnecting') return 'Disconnecting account…'
   const account = status.connections.find(item => item.id === status.activeConnectionId)
   if (account?.state === 'expired') return 'Account session expired'
-  if (account?.state === 'signed-in') return 'Signed in · AI unavailable'
+  if (account?.state === 'signed-in') return status.features.conversation.state==='available'?'Signed in · Conversations available':'Signed in · AI unavailable'
   return status.channelPermitted && status.configured ? 'Not connected' : 'Connection unavailable'
 }
 

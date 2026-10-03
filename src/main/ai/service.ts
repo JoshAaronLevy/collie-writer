@@ -60,6 +60,9 @@ export class AiService {
   private cancelledAttempts=new Set<string>()
   private publishTimer:ReturnType<typeof setTimeout>|null=null
   private listeners=new Set<(event:AiEvent)=>void>()
+  private contentPending:()=>boolean=()=>false
+  setContentPending(read:()=>boolean):void {this.contentPending=read}
+  contentWorkChanged():void {this.publish()}
   readonly storage:AiStorage
   private readonly local:LocalCodexSession
   constructor(workingRoot:()=>string|undefined,private readonly access:AccessService){
@@ -108,14 +111,14 @@ export class AiService {
     const route=selectAiRoute()
     if(route.kind==='local-codex-chatgpt') {
       const available=secureAiStorage()&&!this.storageFailure&&!this.journalFailure&&this.runtimeState==='development-installed'
-      const reasons:AiReason[]=['isolation-unresolved']
+      const execution=localExecutionReadiness(),reasons:AiReason[]=execution.state==='unavailable'?['isolation-unresolved']:[]
       if(!secureAiStorage())reasons.push('secure-storage-unavailable')
       if(this.storageFailure||this.journalFailure)reasons.push('storage-unavailable')
       if(this.runtimeState!=='development-installed')reasons.push('runtime-unavailable')
-      const snapshot=this.local.snapshot(available&&!this.closing&&!this.busy&&!this.running,
-        secureAiStorage()&&!this.storageFailure&&!this.journalFailure&&!this.closing&&!this.busy&&!this.running)
-      return {sequence:++this.statusSequence,provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',route,
-        funding:routeFunding(route),features:localFeatureAvailability(snapshot.session),execution:localExecutionReadiness(),
+      const idle=!this.closing&&!this.busy&&!this.running&&!this.contentPending()
+      const snapshot=this.local.snapshot(available,secureAiStorage()&&!this.storageFailure&&!this.journalFailure&&idle,idle)
+      return {sequence:++this.statusSequence,reviewRevision:this.currentReviewStamp('conversation'),provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',route,
+        funding:routeFunding(route),features:this.localFeatures(snapshot),execution,
         configured:true,channelPermitted:true,commercialApproved:false,runtime:this.runtimeState,reasons,...snapshot}
     }
     if(route.kind!=='registered-openai') {
@@ -124,7 +127,7 @@ export class AiService {
       if(this.storageFailure||this.journalFailure)reasons.push('storage-unavailable')
       if(this.runtimeState!=='development-installed')reasons.push('runtime-unavailable')
       if(this.lastReason&&!reasons.includes(this.lastReason))reasons.push(this.lastReason)
-      return {sequence:++this.statusSequence,provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',
+      return {sequence:++this.statusSequence,reviewRevision:this.currentReviewStamp('conversation'),provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',
         route,session:{state:'unavailable',reason:route.reason},funding:routeFunding(route),
         features:{conversation:{state:'unavailable',reason:route.reason},proofread:{state:'unavailable',reason:route.reason}},
         configured:false,channelPermitted:false,commercialApproved:false,runtime:this.runtimeState,state:'unavailable',
@@ -152,7 +155,7 @@ export class AiService {
       !selected?.tokens?{state:'signed-out'}:
       selected.refreshPending||selected.tokens.expiresAt<=Date.now()?{state:'reconnect-required',connectionId:selected.id}:
       {state:'signed-in',connectionId:selected.id}
-    return {sequence:++this.statusSequence,provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',configured:!!config,
+    return {sequence:++this.statusSequence,reviewRevision:this.currentReviewStamp('conversation'),provider:AI_PROVIDER,channel:RELEASE.channel,implementation:'partial',configured:!!config,
       route,session,funding:routeFunding(route),features:{conversation:{state:'unavailable',reason:'commercial-requirements-pending'},
         proofread:{state:'unavailable',reason:'commercial-requirements-pending'}},
       channelPermitted:permitted,commercialApproved:!!config?.commercialReference,runtime:this.runtimeState,
@@ -160,6 +163,13 @@ export class AiService {
       activeConnectionId:this.credentials?.activeId??null,connections:this.credentials?.accounts.map(a=>({id:a.id,label:a.label,
         state:!a.tokens?'signed-out':a.refreshPending||a.tokens.expiresAt<=Date.now()?'expired':'signed-in',planConsent:!!a.tokens?.scopes.includes('chatgpt.tokens.use.direct')}))??[],remoteRevocation:this.revocation,
       catalog:null,execution:null,local:null,actions:{connect:settled&&permitted,refresh:settled&&permitted,disconnect:settled,select:settled&&permitted,resume:false,cleanup:false,protectConnection:false,refreshModels:false,selectModel:false}}
+  }
+  private localFeatures(snapshot:ReturnType<LocalCodexSession['snapshot']>,dispatching=false) {
+    return localFeatureAvailability({session:snapshot.session,catalog:snapshot.catalog,execution:localExecutionReadiness(),
+      accountProtectionPending:!!snapshot.local?.protectionPending,
+      protectionPending:this.journalFailure||(!dispatching&&this.contentPending()),
+      busy:this.closing||this.busy||(!dispatching&&!!this.running),
+      capacityFull:!dispatching&&this.retained.size>=AI_LIMITS.jobs,identityKnown:this.local.hasExecutionIdentity()})
   }
   private requireIdle():void {if(this.closing||this.busy||this.attempt||this.running||this.local.hasPendingWork())throw new AiError('busy')}
   private account(id:string):Account {
@@ -333,6 +343,21 @@ export class AiService {
     const route=selectAiRoute()
     if(this.closing||route.kind!==session.route)throw new AiError('context-changed')
     if(execution&&(route.kind!=='local-codex-chatgpt'||route.policyRevision!==execution.policyRevision||CODEX_VERSION!==execution.runtimeVersion))throw new AiError('context-changed')
+    if(route.kind==='local-codex-chatgpt') {
+      if(!secureAiStorage())throw new AiError('secure-storage-unavailable')
+      if(this.storageFailure||this.journalFailure)throw new AiError('storage-unavailable')
+      if(this.runtimeState!=='development-installed')throw new AiError('runtime-unavailable')
+      const available=secureAiStorage()&&!this.storageFailure&&!this.journalFailure&&this.runtimeState==='development-installed'
+      // The content owner has already reserved this exact intent. Its own write
+      // and running slot must not be mistaken for competing work.
+      const feature=this.localFeatures(this.local.snapshot(available,false,false),true)[input.action]
+      if(feature.state==='unavailable')throw new AiError(feature.reason==='output-protection-required'?'storage-unavailable':
+        feature.reason==='model-selection-required'||feature.reason==='model-refresh-required'||feature.reason==='no-text-models'?'model-unavailable':
+        feature.reason==='connect-required'?'signed-out':feature.reason==='resume-required'||feature.reason==='reconnect-required'?'session-expired':
+        feature.reason==='local-workspace-identity-unavailable'?'auth-failed':
+        feature.reason==='account-work-pending'||feature.reason==='ai-work-pending'?'busy':'isolation-unresolved')
+      if(feature.connectionId!==input.connectionId||feature.model!==input.model)throw new AiError('context-changed')
+    }
     session.authorize(input,execution)
   }
   private registeredSession():AiDispatchSession {
@@ -421,6 +446,7 @@ export class AiService {
     this.dispatch=prepared.session
     this.emit({kind:'operation',operation:item.view})
     this.running=this.run(item,prepared.session).finally(()=>{this.running=null;this.dispatch=null;this.activeOperationId=null;this.publish()})
+    this.publish()
     return structuredClone(this.protectedRecords.get(input.operationId)!.view)
   }
   private queueRetention(item:RetainedOperation):void {

@@ -1,0 +1,23 @@
+# CD05 implementation record
+
+October 2, 2026. **Engineering partial — independent conversation integration implemented, awaiting user testing.** Full CD05 completion is blocked by unfinished CD03 tool/content-log isolation. User observations: none. Release: **NO-GO**.
+
+The full `codex-implementation-plan.md`, applicable instructions, CD04 handoff/operation contract and relevant main/shared/worker/renderer owners were read. The [decision](../decisions/codex-CD05.md) records the scope and dependency assessment.
+
+| Owner | Delivered change |
+| --- | --- |
+| `shared/ai.ts`, `ai-route.ts`, `ai-catalog.ts` | Exact transient review revision and discriminated feature/execution availability, with signed-in/account/model consistency checks. Connection-only reasons; no portable enum or IPC command changes. |
+| `main/ai/codex-local-policy.ts`, `service.ts`, `local-codex-session.ts` | Main conversation capability over actual session/catalog/identity/protection/capacity/policy facts; same decision enforced during authorization. Authentication presentation remains separate from active content work. Current execution policy still refuses. |
+| `main/ai/content-service.ts`, `main/index.ts` | Shared content-work status propagation; exact framed-size bound at conversation review; unchanged original intent/binding/dispatch/recovery ownership. |
+| `main/ai/local-operation.ts` | Shared production size calculation over the existing frozen frame/instructions. No digest, framing, instructions or journal version changes. |
+| `ConversationProvider.tsx` | Shared model selection; capability-based Send; captured review revision and invalidation; stronger saved-editor capture; exact pending retry guard and useful stale/size explanations. Draft/context preservation and manuscript-safe refresh remain. |
+| `ConversationPanel.tsx`, scoped CSS | Normal shared connection/model controls, explicit pending/refusal reasons and spending copy; separate local saving/attempt/actual-output presentation; actionable request errors. |
+| Shared connection presentation | Discriminant-aware feature descriptions, shared model controls with caller busy state, accurate current workspace identity explanation. Proofreading activation is not added. |
+
+No tests or test code, harnesses, fixtures, mocks, probes, verification scripts, typechecks, lint, formatting/audit/build/package checks, app/dev-server/runtime/browser launches, sign-in, inference or delegated verification were performed. Ordinary source/Git inspection is not passed testing. No dependency installation, registration, outreach, publication, credentials or API keys were used.
+
+Unobserved: compilation, native account/model actions, UI layout/CSP/focus/keyboard/IME, retained drafts, capture limits and exact history order, local persistence/restart/export/archive/access behavior, identity/review race handling, request replay/protection, streaming/cancellation and real provider errors. These are pending manual observations; CD03's missing enforcement is separately unfinished engineering. Live response retention cannot be accepted while Send remains gated.
+
+Formats remain SQL/minimum reader **12**, AST/archive **1**, compilation **3**, local operation **v2**/registered operation **v1**, account metadata **v2**, and unchanged portable request/capture digests. The shared **64-operation** ceiling remains. Commercial and packaged routes remain refused. CD06–CD09 are not implemented by this increment.
+
+Use the [manual guide](../manual-testing/codex-CD05.md) for delivered behavior. Stop for Josh's results; do not record full CD05 acceptance or automatically advance.

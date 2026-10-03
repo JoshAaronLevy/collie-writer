@@ -39,9 +39,9 @@ export class LocalCodexSession {
     if (this.data.lastAttempt) this.attempted.set(this.data.lastAttempt.attemptId,this.data.lastAttempt.connectionId)
   }
   hasPendingWork(): boolean { return !!(this.work || this.pendingWrite) }
-  snapshot(available: boolean, canProtect: boolean): Pick<AiStatus,'session'|'state'|'attemptId'|'activeConnectionId'|'connections'|'actions'|'remoteRevocation'|'local'|'catalog'> {
+  snapshot(available: boolean, canProtect: boolean, allowActions=true): Pick<AiStatus,'session'|'state'|'attemptId'|'activeConnectionId'|'connections'|'actions'|'remoteRevocation'|'local'|'catalog'> {
     const account = this.data.active?.account
-    const idle = available && this.initialized && !this.work && !this.pendingWrite && !this.closing
+    const idle = available && allowActions && this.initialized && !this.work && !this.pendingWrite && !this.closing
     const session: AiSession = this.attempt ? {state:'signing-in',attemptId:this.attempt.input.attemptId} :
       this.activity === 'disconnect' && account ? {state:'disconnecting',connectionId:account.connectionId} :
       this.activity === 'resume' && account ? {state:'resuming',connectionId:account.connectionId} :
@@ -243,13 +243,14 @@ export class LocalCodexSession {
   }
   legacyModels(connectionId: string): AiModel[] {
     if (connectionId!==this.data.active?.account.connectionId||!this.connected) throw new AiError('signed-out')
-    // Keep legacy catalog-based actions empty until the CD03 execution
-    // prerequisite and CD05/CD06 feature readiness are implemented.
-    // Real model choices are exposed only through the connection catalog.
+    // CD05 conversations uses the shared catalog and main capability instead
+    // of this legacy membership endpoint. CD06 proofreading remains pending.
+    // A legacy catalog must never confer execution authority.
     return []
   }
   /** Pure local snapshot; account identity was obtained by an explicit account
    * action, never by a review/status read. No cached label grants execution. */
+  hasExecutionIdentity():boolean {return !!(this.connected&&this.epoch&&this.runtime?.isAlive()&&this.runtime.accountIdentity())}
   executionIdentity(input:AiPrepareInput):LocalSessionIdentity {
     const active=this.data.active,runtime=this.runtime,catalog=this.catalog,identity=runtime?.accountIdentity()
     if(this.closing||this.work||this.pendingWrite)throw new AiError('busy')

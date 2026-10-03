@@ -15,7 +15,7 @@ export type AiCatalog =
   | { state: 'failed'; reason: 'model-catalog-unavailable' | 'model-catalog-timeout' }
   | { state: 'loaded'; revision: string; models: AiCatalogModel[]; selectedModelId: string | null }
 export type AiSelectModelInput = { connectionId: string; catalogRevision: string; modelId: string }
-export type AiExecutionReadiness = {
+export type AiExecutionReadiness = {state:'available'} | {
   state: 'unavailable'
   blockers: ('local-tool-isolation-unavailable' | 'local-content-logging-unavailable')[]
 }
@@ -44,6 +44,7 @@ export function isAiSelectModel(v: unknown): v is AiSelectModelInput {
   return record(v) && exact(v,['connectionId','catalogRevision','modelId']) && isId(v.connectionId) && isId(v.catalogRevision) && isCatalogModelId(v.modelId)
 }
 export function isAiExecutionReadiness(v: unknown): v is AiExecutionReadiness {
+  if(record(v)&&v.state==='available')return exact(v,['state'])
   return record(v) && exact(v,['state','blockers']) && v.state==='unavailable' && Array.isArray(v.blockers) &&
     v.blockers.length>0 && v.blockers.length<=2 && new Set(v.blockers).size===v.blockers.length &&
     v.blockers.every(b=>b==='local-tool-isolation-unavailable'||b==='local-content-logging-unavailable')

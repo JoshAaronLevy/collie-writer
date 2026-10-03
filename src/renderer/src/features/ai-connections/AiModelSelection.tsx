@@ -2,16 +2,16 @@ import { useId } from 'react'
 import { AppButton, SelectField } from '../../components/ui/Controls'
 import { useWorkspaceSession } from '../workspace/WorkspaceSession'
 import { useAiConnections } from './AiConnectionsProvider'
-import { connectionReason } from './connection-copy'
+import { connectionReason, featureDescription } from './connection-copy'
 import styles from './AiConnections.module.css'
 
-export function AiModelSelection(): React.JSX.Element | null {
+export function AiModelSelection({disabled=false}:{disabled?:boolean}): React.JSX.Element | null {
   const connections=useAiConnections(), session=useWorkspaceSession(), heading=useId()
   const {status,pending,busy,issue}=connections
   if (status?.route.kind!=='local-codex-chatgpt'||!status.catalog) return null
   const catalog=status.catalog, connectionId=status.activeConnectionId
   const selected=catalog.state==='loaded'?catalog.models.find(model=>model.id===catalog.selectedModelId):undefined
-  const blocked=busy||session.closing||session.navigating||!session.available||issue==='outcome-unknown'
+  const blocked=disabled||busy||session.closing||session.navigating||!session.available||issue==='outcome-unknown'
   return <section className={styles['ai-model-selection']} aria-labelledby={heading}>
     <h3 id={heading}>Codex models</h3>
     <p>Refresh reads the catalog reported by your connected Codex runtime. It sends no writing and does not run a model. A listed model may still be refused by your account.</p>
@@ -31,9 +31,10 @@ export function AiModelSelection(): React.JSX.Element | null {
       {selected?<p>Selected: {selected.label}. Runtime default effort: {selected.defaultReasoningEffort}. Reported efforts: {selected.reasoningEfforts.join(', ')}. Collie uses the runtime default; this choice starts no request.</p>:null}
     </>:null}
     <div className={styles['ai-execution-availability']}>
-      <h3>Text requests unavailable</h3>
-      {status.execution?.blockers.map(reason=><p key={reason}>{connectionReason[reason]}</p>)}
-      <p>{connectionReason[status.features.conversation.reason]} {connectionReason[status.features.proofread.reason]}</p>
+      <h3>Text request availability</h3>
+      {status.execution?.state==='unavailable'?status.execution.blockers.map(reason=><p key={reason}>{connectionReason[reason]}</p>):null}
+      <p>Conversations: {featureDescription(status.features.conversation)}</p>
+      <p>Proofreading: {featureDescription(status.features.proofread)}</p>
     </div>
   </section>
 }

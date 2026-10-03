@@ -3,12 +3,23 @@ import { TextInput, Textarea } from '@mantine/core'
 import { AppButton, ChoiceField, SelectField } from '../../../components/ui/Controls'
 import { useWorkspaceSession } from '../../workspace/WorkspaceSession'
 import { useAiConnections } from '../../ai-connections/AiConnectionsProvider'
-import { connectionReason } from '../../ai-connections/connection-copy'
+import { AiModelSelection } from '../../ai-connections/AiModelSelection'
+import { connectionLabel, connectionReason, featureDescription, fundingDescription } from '../../ai-connections/connection-copy'
+import type { AiReason } from '../../../../../shared/ai'
 import type { ConversationTurn } from '../../../../../shared/conversations'
 import { useConversations } from './ConversationProvider'
 import styles from './Conversations.module.css'
 
 const outcomes={ 'not-sent':'Not sent',preparing:'Preparing',running:'Responding',stopping:'Stop requested',completed:'Completed',cancelled:'Cancelled',failed:'Failed',unknown:'Interrupted · outcome unknown' }
+function requestReason(reason:AiReason):string {
+  if(reason==='auth-failed'||reason==='session-expired'||reason==='signed-out')return 'Codex could not authorize this request. Open connection settings and explicitly resume or reconnect your account. A further request needs a new review; this one will not resend.'
+  if(reason==='model-unavailable')return 'Codex refused the selected model. Refresh models and explicitly choose an available model before reviewing a new request. No model was substituted.'
+  if(reason==='invalid-request')return 'Codex could not accept this request. Narrow the prompt or context and review a new request. This attempt is retained and will not resend.'
+  if(reason==='storage-unavailable')return 'The request or output needs local protection. Keep Collie open and use Retry local protection. This action saves the same retained work without sending again.'
+  if(reason==='outcome-unknown')return 'The outcome is uncertain. Any retained text is shown; reopening never resends this request. A new reviewed request may consume additional usage.'
+  if(reason==='cancelled')return 'The provider reported cancellation. Any actual partial response remains here; cancellation does not confirm restored usage.'
+  return connectionReason[reason]
+}
 function MessageTurn({turn}:{turn:ConversationTurn}):React.JSX.Element {
   const c=useConversations(),a=turn.attempt,active=['preparing','running','stopping'].includes(a.state),messages=turn.assistant?[turn.user,turn.assistant]:[turn.user]
   return <article className={styles['conversation-turn']} aria-label={`Request from ${new Date(turn.user.createdAt).toLocaleString()}`}>
@@ -18,8 +29,8 @@ function MessageTurn({turn}:{turn:ConversationTurn}):React.JSX.Element {
       {c.page?.conversation.state==='active'?<ChoiceField label={`Include this ${m.role==='user'?'user':'assistant'} message in the next request`} checked={c.draft.historyIds.includes(m.id)} disabled={c.readOnly||c.busy||!!c.pending||active||a.state==='unknown'} onChange={e=>c.history(m.id,e.currentTarget.checked)}/>:null}
     </div>)}
     <p className={styles['conversation-outcome']} role={active?'status':undefined}>{outcomes[a.state]}{a.model?` · ${a.provider==='openai-codex'?'Codex · ':''}${a.model}`:''}</p>
-    {a.reason?<p className={styles['conversation-caption']}>{a.reason==='busy'?`The provider is busy or its ${c.capacity}-operation retained journal is full. Nothing will be retried automatically.`:a.reason==='outcome-unknown'?'The outcome is uncertain. Retained text is shown; reopening never resends the request.':a.reason==='cancelled'?'The provider reported cancellation. Any real partial response remains here.':connectionReason[a.reason]}</p>:null}
-    {a.state==='not-sent'&&!a.reason?<p className={styles['conversation-caption']}>Saved locally. Nothing was queued for later sending.</p>:null}
+    {a.reason?<p className={styles['conversation-caption']}>{a.reason==='busy'?`The provider is busy or its ${c.capacity}-operation retained journal is full. Nothing will be retried automatically.`:requestReason(a.reason)}</p>:null}
+    {a.state==='not-sent'?<p className={styles['conversation-caption']}>Saved locally. Nothing was queued for later sending.</p>:null}
     {a.state==='stopping'?<p className={styles['conversation-caption']}>Waiting for the provider’s outcome. A stop request does not confirm cancellation or restored usage.</p>:null}
     <div className={styles['conversation-actions']}>
       {active?<AppButton variant="default" disabled={c.busy||!!c.pending||a.state==='stopping'} onClick={()=>c.cancel(a.id)}>Stop response</AppButton>:<AppButton variant="subtle" disabled={c.busy||!!c.pending||c.readOnly||!!c.draft.text||c.page?.conversation.state!=='active'} onClick={()=>c.retryAsNew(turn)}>Use prompt in a new request</AppButton>}
@@ -37,7 +48,9 @@ export function ConversationPanel():React.JSX.Element {
   const [includeContext,setIncludeContext]=useState(false),[expandedReview,setExpandedReview]=useState(true)
   const key=`${c.selected??'none'}:${c.before??'latest'}`
   useLayoutEffect(()=>{if(transcript.current)transcript.current.scrollTop=c.scroll.current.get(key)??0},[key,c.page?.conversation.id])
-  const blocked=c.busy||!!c.pending,archived=c.page?.conversation.state==='archived',review=c.draft.review
+  const blocked=c.busy||!!c.pending||session.closing||session.navigating,archived=c.page?.conversation.state==='archived',review=c.draft.review
+  const status=connections.status,account=status?.connections.find(item=>item.id===status.activeConnectionId)
+  const accountBlocked=blocked||connections.busy||!session.available||connections.issue==='outcome-unknown'
   return <section className={styles['conversation-panel']} aria-label="Project conversations"
     onCompositionStartCapture={()=>{c.composing.current=true;c.draftEvents.onCompositionStartCapture()}}
     onCompositionEndCapture={()=>{c.composing.current=false;c.draftEvents.onCompositionEndCapture()}}>
@@ -73,6 +86,22 @@ export function ConversationPanel():React.JSX.Element {
         {c.page.turns.length?c.page.turns.map(turn=><MessageTurn key={turn.attempt.id} turn={turn}/>):<p className={styles['conversation-empty']}>Start with a question or an idea. Writing is shared only when you choose it.</p>}
       </div>
       <p className={styles['conversation-caption']}>{c.page.totalMessages} saved messages. Up to five requests are shown per page. Previous messages are not attached automatically.</p>
+      <section className={styles['conversation-account']} data-ai-connection-surface aria-label="Conversation connection">
+        <h2 tabIndex={-1}>Codex connection</h2>
+        <p role="status">{connectionLabel(status,connections.checking,connections.pending?.kind)}{account?` · ${account.label}`:''}</p>
+        <p>{c.capability?featureDescription(c.capability):'Check connection status to read availability. Local review and saving do not need an AI connection.'}</p>
+        {connections.issue?<p className={styles['conversation-error']} role="alert">{connectionReason[connections.issue]}</p>:null}
+        {status?.local?.issue?<p>{connectionReason[status.local.issue]}</p>:null}
+        <div className={styles['conversation-actions']}>
+          <AppButton variant="default" disabled={blocked} onClick={()=>void session.navigate({kind:'settings',page:'ai'})}>{account?'Open connection settings':'Connect Codex…'}</AppButton>
+          {status?.actions.resume&&account?<AppButton variant="default" disabled={accountBlocked} onClick={event=>void connections.accountAction('resume',account.id,event.currentTarget)}>Resume Codex connection</AppButton>:null}
+          {status?.local?.protectionPending?<AppButton disabled={accountBlocked||!status.actions.protectConnection} onClick={event=>void connections.localAction('protectConnection',event.currentTarget)}>Retry saving connection state</AppButton>:null}
+          {connections.waiting?<AppButton variant="default" disabled={!connections.canCancel} onClick={()=>void connections.cancel()}>Cancel sign-in</AppButton>:null}
+          <AppButton variant="subtle" disabled={blocked||connections.checking||!session.available} onClick={()=>void connections.checkStatus(true)}>Check connection status</AppButton>
+        </div>
+        <details><summary>Choose model and view availability</summary><AiModelSelection disabled={blocked}/></details>
+        {status?<p className={styles['conversation-caption']}>{fundingDescription(status.funding)}</p>:null}
+      </section>
       {!archived||c.draft.text?<form className={styles['conversation-form']} onSubmit={e=>{e.preventDefault();void c.review()}}>
         <Textarea label="Your next message" ref={c.composer} value={c.draft.text} maxLength={16000} rows={5} readOnly={c.readOnly||blocked||archived} onChange={e=>c.update({text:e.currentTarget.value})}/>
         <p className={styles['conversation-caption']}>{c.draft.text.length.toLocaleString()} / 16,000 characters. Enter adds a new line; Review request opens the sharing review.</p>
@@ -82,21 +111,16 @@ export function ConversationPanel():React.JSX.Element {
           {c.draft.source.kind!=='none'?<AppButton variant="subtle" disabled={blocked} onClick={()=>void c.attach('none')}>Remove writing context</AppButton>:null}
         </div>
         <p className={styles['conversation-caption']}>{c.draft.source.kind==='none'?'No writing attached.':c.draft.source.kind==='passage'?'The selected passage is attached at its saved revision.':'The selected section is attached at its saved revision, including footnote bodies.'} Text only: citation and footnote references are labelled; images and formatting are omitted. The exact text appears in review.</p>
-        <p className={styles['conversation-caption']}>{c.draft.historyIds.length} previous messages selected, at most 12. All attached writing and history share a 64,000-character limit.</p>
+        <p className={styles['conversation-caption']}>{c.draft.historyIds.length} previous messages selected, at most 12. All attached writing and history share a 64,000-character limit. Review also checks the combined structured request and instructions against an 80,000-character limit.</p>
         {c.draft.historyIds.length?<AppButton variant="subtle" disabled={blocked} onClick={()=>c.update({historyIds:[]})}>Clear previous-message selection</AppButton>:null}
-        <details className={styles['conversation-account']}><summary>AI account and model</summary><p>{connections.status?.connections.find(a=>a.id===connections.status?.activeConnectionId)?.label??'No AI account selected'}</p>
-          <AppButton variant="subtle" onClick={()=>void session.navigate({kind:'settings',page:'ai'})}>Manage AI accounts</AppButton>
-          <AppButton variant="default" disabled={blocked||!connections.status?.activeConnectionId||!!c.providerReason} onClick={()=>void c.loadModels()}>Load provider models</AppButton>
-          {c.models.length?<SelectField label="Provider model (eligibility checked before sending)" value={c.model} disabled={blocked} onChange={e=>{c.setModel(e.currentTarget.value);c.update({})}}><option value="">Choose a model</option>{c.models.map(model=><option value={model.id} key={model.id}>{model.label}</option>)}</SelectField>:null}
-        </details>
-        {c.providerReason?<p className={styles['conversation-caption']}>{connectionReason[c.providerReason]}</p>:null}
         <div className={styles['conversation-actions']}><AppButton type="submit" disabled={blocked||c.readOnly||archived||!c.draft.text.trim()||c.active}>Review request</AppButton><AppButton variant="subtle" disabled={blocked||!c.draft.text} onClick={c.clear}>Clear unsent draft</AppButton></div>
       </form>:null}
       {review?<section className={styles['conversation-review']} aria-label="Review outgoing request">
         <h4>Review what will be shared</h4><p>{review.excluded} saved messages excluded. No other writing or research will be added.</p>
         <AppButton variant="subtle" aria-expanded={expandedReview} onClick={()=>setExpandedReview(!expandedReview)}>{expandedReview?'Collapse exact request':'Show exact request'}</AppButton>
         <div hidden={!expandedReview} inert={!expandedReview}><h4>Your message</h4><div className={styles['conversation-message-text']}>{review.capture.prompt}</div>{review.capture.context.map((item,i)=><div key={i}><h4>{item.label||'Untitled section'} · {item.kind}</h4><div className={styles['conversation-message-text']}>{item.text}</div></div>)}<p className={styles['conversation-caption']}>The provider receives these text fields in a structured request with their labels, source IDs and saved revision IDs. Template: {review.capture.template}.</p><p className={styles['conversation-digest']}>Capture digest: {review.capture.digest}</p></div>
-        <p className={styles['conversation-caption']}>Account: {connections.status?.connections.find(a=>a.id===review.connectionId)?.label??'None'}. Model: {review.model??'Not established'}. Saving locally does not send or queue this request.</p>
+        <p className={styles['conversation-caption']}>Provider: Codex. Account: {connections.status?.connections.find(a=>a.id===review.connectionId)?.label??'None'}. Model: {review.model??'Not selected'}. Saving locally does not send or queue this request.</p>
+        {c.capability?.state==='unavailable'?<p className={styles['conversation-caption']}>{featureDescription(c.capability)}</p>:null}
         <div className={styles['conversation-actions']}><AppButton disabled={blocked||c.readOnly||archived} onClick={()=>c.submit(false)}>Save request locally</AppButton><AppButton variant="default" disabled={blocked||!c.canSend||archived||c.active} onClick={()=>c.submit(true)}>Send reviewed request</AppButton><AppButton variant="subtle" disabled={blocked} onClick={()=>c.update({})}>Edit request</AppButton></div>
       </section>:null}
     </>:null}

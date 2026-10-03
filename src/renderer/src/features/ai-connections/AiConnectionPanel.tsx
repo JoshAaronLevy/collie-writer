@@ -6,7 +6,7 @@ import { StatusBanner } from '../../components/ui/Feedback'
 import { useWorkspaceSession } from '../workspace/WorkspaceSession'
 import { useAiConnections } from './AiConnectionsProvider'
 import { AiModelSelection } from './AiModelSelection'
-import { connectionLabel, connectionProblemReasons, connectionReason, fundingDescription, signInUnavailable } from './connection-copy'
+import { connectionLabel, connectionProblemReasons, connectionReason, featureDescription, fundingDescription, signInUnavailable } from './connection-copy'
 import styles from './AiConnections.module.css'
 
 export function AiConnectionPanel({ compact = false }: { compact?: boolean }): React.JSX.Element {
@@ -63,7 +63,7 @@ export function AiConnectionPanel({ compact = false }: { compact?: boolean }): R
     </div> : null}
     {account ? <div className={styles['ai-current-account']}>
       <h3>Selected account</h3><p className={styles['ai-account-label']}>{account.label}</p>
-      <p>{local ? account.state === 'signed-in' ? 'Connected to Codex. Conversations and proofreading are not ready yet.' : status?.session.state === 'reconnect-required' ? 'Continue with ChatGPT to reconnect this account.' : 'Saved on this device. Resume explicitly to check the account with Codex.' : account.state === 'signed-in' ? 'Signed in for future requests. AI usage eligibility is still unresolved.' : account.state === 'expired' ? 'This session has expired. Reconnect to authorize this account again.' : 'This saved account is signed out.'}</p>
+      <p>{local ? account.state === 'signed-in' ? 'Connected to Codex. Each feature’s availability is shown below.' : status?.session.state === 'reconnect-required' ? 'Continue with ChatGPT to reconnect this account.' : 'Saved on this device. Resume explicitly to check the account with Codex.' : account.state === 'signed-in' ? 'Signed in for future requests. AI usage eligibility is still unresolved.' : account.state === 'expired' ? 'This session has expired. Reconnect to authorize this account again.' : 'This saved account is signed out.'}</p>
       <div className={styles['ai-account-actions']}>
         {local && account.state !== 'signed-in' ? <AppButton variant="default" disabled={!status?.actions.resume || blocked} pending={pending?.kind === 'resume'} onClick={event => void connections.accountAction('resume',account.id,event.currentTarget)}>Resume Codex connection</AppButton> : null}
         {(!local || account.state !== 'signed-in') ? <AppButton variant="default" disabled={!canConnect} leftSection={<ExternalLink size={16} aria-hidden="true" />} onClick={event => void connections.connect(account.id, event.currentTarget)}>{local ? 'Continue with ChatGPT' : 'Reconnect account'}</AppButton> : null}
@@ -101,10 +101,10 @@ export function AiConnectionPanel({ compact = false }: { compact?: boolean }): R
         <div><dt>Sign-in access</dt><dd>{status ? unavailable ? connectionReason[unavailable] : status.channelPermitted && status.configured ? 'Configured for this build. Account sign-in is separate from AI eligibility.' : 'Unavailable in this build.' : 'Status has not been loaded.'}</dd></div>
         <div><dt>Commercial activation</dt><dd>{status?.commercialApproved ? 'An approval reference is recorded by the app. Other AI requirements still apply.' : 'Approval is not recorded for this build. Local writing remains available.'}</dd></div>
         <div><dt>Spending policy</dt><dd>{status ? fundingDescription(status.funding) : 'Not established.'}</dd></div>
-        {status ? <><div><dt>Conversations</dt><dd>{connectionReason[status.features.conversation.reason]}</dd></div>
-          <div><dt>Proofreading</dt><dd>{connectionReason[status.features.proofread.reason]}</dd></div></> : null}
+        {status ? <><div><dt>Conversations</dt><dd>{featureDescription(status.features.conversation)}</dd></div>
+          <div><dt>Proofreading</dt><dd>{featureDescription(status.features.proofread)}</dd></div></> : null}
         <div><dt>Runtime</dt><dd>{status?.runtime === 'development-installed' ? 'The development runtime is present; safe execution is not enabled.' : status?.runtime === 'not-packaged' ? 'The runtime is not included in this packaged build.' : 'The runtime is unavailable.'}</dd></div>
-        <div><dt>Models & workspace</dt><dd>{local ? 'The model choices above come from the explicitly requested runtime catalog. Selection is not execution authority or proof of account access. Provider workspace binding is unfinished.' : 'No model or provider workspace is authorized for requests yet. Sign-in does not establish model eligibility.'}</dd></div>
+        <div><dt>Models & workspace</dt><dd>{local ? 'Model choices come from the explicitly requested runtime catalog. Selection is not proof of account access. Collie must retain the runtime’s actual account and workspace identity for each request.' : 'No model or provider workspace is authorized for requests yet. Sign-in does not establish model eligibility.'}</dd></div>
       </dl>
       {status?.reasons.includes('isolation-unresolved') ? <p>{connectionReason['isolation-unresolved']}</p> : null}
       <p>Collie access and the provider account are separate. Connecting cannot change your free editable project or unlock paid Collie features.</p>

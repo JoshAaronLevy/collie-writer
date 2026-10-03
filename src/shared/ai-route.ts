@@ -1,5 +1,6 @@
 import { isId } from '../domain/editor/schema'
 import { exact, record } from './projects'
+import { isCatalogModelId } from './ai-catalog'
 
 /** Transient connection explanations only. Never add these to portable AiReason. */
 export type AiConnectionReason = 'local-login-not-implemented' | 'local-execution-not-implemented' |
@@ -8,14 +9,18 @@ export type AiConnectionReason = 'local-login-not-implemented' | 'local-executio
   'reconnect-required' | 'secure-session-unavailable' | 'login-timeout' | 'callback-port-in-use' |
   'browser-unavailable' | 'login-denied' | 'local-config-conflict' | 'local-runtime-exited' |
   'local-cleanup-required' | 'local-protection-required' | 'local-account-changed' | 'login-offline' | 'login-completed-before-cancel' |
-  'model-catalog-unavailable' | 'model-catalog-timeout' | 'local-tool-isolation-unavailable' | 'local-content-logging-unavailable'
+  'model-catalog-unavailable' | 'model-catalog-timeout' | 'local-tool-isolation-unavailable' | 'local-content-logging-unavailable' |
+  'connect-required' | 'account-work-pending' | 'model-refresh-required' | 'model-selection-required' | 'no-text-models' |
+  'ai-work-pending' | 'output-protection-required' | 'operation-capacity-full' | 'local-workspace-identity-unavailable'
 const connectionReasons: readonly AiConnectionReason[] = [
   'local-login-not-implemented', 'local-execution-not-implemented', 'conversation-adapter-not-ready',
   'proofreading-adapter-not-ready', 'packaged-development-refused', 'unsupported-app-identity',
   'commercial-requirements-pending', 'resume-required', 'reconnect-required', 'secure-session-unavailable',
   'login-timeout', 'callback-port-in-use', 'browser-unavailable', 'login-denied', 'local-config-conflict',
   'local-runtime-exited', 'local-cleanup-required', 'local-protection-required', 'local-account-changed', 'login-offline', 'login-completed-before-cancel',
-  'model-catalog-unavailable', 'model-catalog-timeout', 'local-tool-isolation-unavailable', 'local-content-logging-unavailable'
+  'model-catalog-unavailable', 'model-catalog-timeout', 'local-tool-isolation-unavailable', 'local-content-logging-unavailable',
+  'connect-required', 'account-work-pending', 'model-refresh-required', 'model-selection-required', 'no-text-models',
+  'ai-work-pending', 'output-protection-required', 'operation-capacity-full', 'local-workspace-identity-unavailable'
 ]
 export type AiRoute =
   | { kind: 'local-codex-chatgpt'; policyRevision: 1; scope: 'owner-unpackaged-development'; providerClassification: 'unresolved' }
@@ -35,9 +40,10 @@ export type AiFunding =
   | { kind: 'normal-subscription'; credits: 'account-settings'; apiKeyFallback: false; appBillingChanges: false }
   | { kind: 'included-only'; enforcement: 'unresolved'; apiKeyFallback: false; appBillingChanges: false }
   | { kind: 'unavailable'; apiKeyFallback: false; appBillingChanges: false }
-/** No ready variant while CD03 isolation and feature adapters remain unfinished.
- * Login, presence of a binary and a catalog cannot manufacture feature readiness. */
-export type AiActionAvailability = { state: 'unavailable'; reason: AiConnectionReason }
+/** Main's current decision, not an execution grant or proof of provider access.
+ * CD03 still produces an unavailable execution policy; no ready flag is added. */
+export type AiActionAvailability = { state: 'unavailable'; reason: AiConnectionReason } |
+  {state:'available';connectionId:string;model:string}
 export type AiFeatureAvailability = { conversation: AiActionAvailability; proofread: AiActionAvailability }
 
 export function isAiConnectionReason(value: unknown): value is AiConnectionReason {
@@ -67,5 +73,6 @@ export function isAiFunding(value: unknown): value is AiFunding {
 }
 export function isAiFeatureAvailability(value: unknown): value is AiFeatureAvailability {
   return record(value) && exact(value, ['conversation', 'proofread']) && Object.values(value).every(action =>
-    record(action) && exact(action, ['state', 'reason']) && action.state === 'unavailable' && isAiConnectionReason(action.reason))
+    record(action) && (exact(action, ['state', 'reason']) && action.state === 'unavailable' && isAiConnectionReason(action.reason) ||
+      exact(action,['state','connectionId','model'])&&action.state==='available'&&isId(action.connectionId)&&isCatalogModelId(action.model)))
 }

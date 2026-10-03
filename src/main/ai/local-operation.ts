@@ -32,13 +32,18 @@ export const identityHash=(value:unknown):string=>hash(JSON.stringify(value))
 const digest=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v)
 export const workspaceIdentity=(v:unknown):v is string=>aiText(v,200)&&v.length>0&&!/[\s\u0000-\u001f\u007f]/u.test(v)
 export function templateFor(action:AiPrepareInput['action']):ContentTemplate {return action==='conversation'?'conversation-v1':'mechanics-v1'}
-function frame(input:AiPrepareInput):string {
+function frame(input:Pick<AiPrepareInput,'prompt'|'context'>):string {
   return JSON.stringify({request:input.prompt,context:input.context.map(c=>({kind:c.kind,id:c.id,revision:c.revision,label:c.label,text:c.text}))})
+}
+/** Count the exact frozen v2 payload, including escaping, identifiers, labels
+ * and instructions. Review and dispatch share this bound; nothing is trimmed. */
+export function localRequestFits(input:Pick<AiPrepareInput,'prompt'|'context'>):boolean {
+  return frame(input).length+LOCAL_DISPATCH_V2.baseInstructions.length+LOCAL_DISPATCH_V2.developerInstructions.length<=AI_LIMITS.prompt+AI_LIMITS.context
 }
 export function localExecution(input:AiPrepareInput,session:LocalSessionIdentity,template:ContentTemplate,captureDigest:string):LocalExecutionV2 {
   if(template!==templateFor(input.action)||!digest(captureDigest))throw new AiError('context-changed')
   const framedText=frame(input)
-  if(framedText.length+LOCAL_DISPATCH_V2.baseInstructions.length+LOCAL_DISPATCH_V2.developerInstructions.length>AI_LIMITS.prompt+AI_LIMITS.context)throw new AiError('invalid-request')
+  if(!localRequestFits(input))throw new AiError('invalid-request')
   return {...session,route:'local-codex-chatgpt',policyRevision:1,runtimeVersion:LOCAL_DISPATCH_V2.runtimeVersion,framingVersion:1,
     template,outputContract:input.action==='conversation'?'conversation-text-v1':'mechanics-final-json-v1',captureDigest,framedText}
 }

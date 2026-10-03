@@ -2,7 +2,7 @@
 
 October 2, 2026.
 
-**Status: CD01, CD02 and CD04 implementation complete — awaiting user testing; CD03 engineering partial; CD05–CD09 not started.** This document plans a real, owner-operated Codex connection for Collie Writer's unpackaged local development app. Creating or approving this plan does not implement or authorize automatically advancing through its stages. No application, runtime, sign-in, inference, build or check was run during assistant implementation. CD01's [decision](docs/decisions/codex-CD01.md), [pinned protocol map](docs/ai/codex-local-contracts.md), [compatibility record](docs/formats/codex-local-v1.md), [evidence](docs/validation/codex-CD01.md) and [manual guide](docs/manual-testing/codex-CD01.md) describe the delivered foundation. CD02's [decision](docs/decisions/codex-CD02.md), [local v2 record](docs/formats/codex-local-v2.md), [evidence](docs/validation/codex-CD02.md) and [manual guide](docs/manual-testing/codex-CD02.md) own the managed account connection milestone; runtime outcomes remain unobserved. CD03's [decision](docs/decisions/codex-CD03.md), [record](docs/validation/codex-CD03.md) and [manual guide](docs/manual-testing/codex-CD03.md) record delivered model controls/transport machinery and the unresolved tool/content-log isolation blockers.
+**Status: CD01, CD02 and CD04 implementation complete — awaiting user testing; CD03 and CD05 engineering partial; CD06–CD09 not started.** This document plans a real, owner-operated Codex connection for Collie Writer's unpackaged local development app. Creating or approving this plan does not implement or authorize automatically advancing through its stages. No application, runtime, sign-in, inference, build or check was run during assistant implementation. CD01's [decision](docs/decisions/codex-CD01.md), [pinned protocol map](docs/ai/codex-local-contracts.md), [compatibility record](docs/formats/codex-local-v1.md), [evidence](docs/validation/codex-CD01.md) and [manual guide](docs/manual-testing/codex-CD01.md) describe the delivered foundation. CD02's [decision](docs/decisions/codex-CD02.md), [local v2 record](docs/formats/codex-local-v2.md), [evidence](docs/validation/codex-CD02.md) and [manual guide](docs/manual-testing/codex-CD02.md) own the managed account connection milestone; runtime outcomes remain unobserved. CD03's [decision](docs/decisions/codex-CD03.md), [record](docs/validation/codex-CD03.md) and [manual guide](docs/manual-testing/codex-CD03.md) record delivered model controls/transport machinery and the unresolved tool/content-log isolation blockers.
 
 ## Outcome and owner decisions
 
@@ -187,7 +187,7 @@ The assignments are engineering judgments based on each stage's scope, informed 
 | CD02 | Secure Codex login and real in-app connection controls | CD01 | Implementation complete — awaiting user testing |
 | CD03 | Isolated text runtime, model discovery and action readiness | CD02 | Engineering partial — model controls delivered; execution isolation unfinished |
 | CD04 | Route-bound durable dispatch shared by both features | CD03 remains partial; live execution refused | Implementation complete — awaiting user testing |
-| CD05 | Working in-app conversations with real Codex responses | CD04 | Not started |
+| CD05 | Working in-app conversations with real Codex responses | CD04; unfinished CD03 isolation | Engineering partial — conversation integration delivered; live responses remain blocked |
 | CD06 | Working mechanics proofreading with validated real findings | CD04; CD05 establishes the first live owner observation | Not started |
 | CD07 | Integrated account, close, cancellation and recovery lifecycle | CD05–CD06 | Not started |
 | CD08 | Shared durable handoff for repeated development use | CD07; reuse C07 if already delivered | Not started |
@@ -310,6 +310,8 @@ The assignments are engineering judgments based on each stage's scope, informed 
 ### CD05 — Deliver real in-app conversations
 
 #### Model: Sol | Effort: High
+
+**Implementation checkpoint, October 2, 2026: engineering partial.** The shared model controls, main-authoritative conversation capability, transient review invalidation, complete framed-request budget and exact pending retry protections are implemented — awaiting user testing. Local review/save, explicit history/context, persistence/export and manuscript-preserving refresh retain their existing owners. CD03 still refuses tool exposure and unprotected content logging, so this stage’s real-response completion criterion is not met. See the [decision](docs/decisions/codex-CD05.md), [record](docs/validation/codex-CD05.md) and [manual guide for delivered behavior](docs/manual-testing/codex-CD05.md). The target live handoff below remains blocked; do not treat it as current behavior. CD06–CD09 are not started.
 
 **Why this recommendation:** Connects the existing conversation UI and adapter to the transport, eligibility and persistence contracts established by CD03–CD04.
 

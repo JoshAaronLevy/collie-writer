@@ -27,6 +27,8 @@ export type AiResult<T> = { ok: true; requestId: string; value: T } | { ok: fals
 export type AiConnection = { id: string; label: string; state: 'signed-in' | 'expired' | 'signed-out'; planConsent: boolean }
 export type AiStatus = {
   sequence: number
+  /** Opaque transient review invalidation, never a runtime ID or send grant. */
+  reviewRevision:string
   provider: typeof AI_PROVIDER
   channel: 'development' | 'beta' | 'production'
   implementation: 'partial'
@@ -113,12 +115,18 @@ export function isAiOperation(v: unknown): v is AiOperation {
     aiText(v.text,AI_LIMITS.output) && Number.isSafeInteger(v.sequence) && Number(v.sequence) >= 0 && (v.reason === null || isAiReason(v.reason)) && time(v.startedAt) && (v.finishedAt === null || time(v.finishedAt))
 }
 export function isAiStatus(v: unknown): v is AiStatus {
-  return record(v) && exact(v,['sequence','provider','channel','implementation','configured','channelPermitted','commercialApproved','route','session','funding','features','catalog','execution','runtime','state','reasons','attemptId','activeConnectionId','connections','remoteRevocation','actions','local']) &&
+  if(!record(v)||!isAiRoute(v.route)||!isAiSession(v.session)||!isAiFeatureAvailability(v.features))return false
+  const {route,session,features}=v,execution=v.execution,catalog=v.catalog
+  return record(v) && exact(v,['sequence','reviewRevision','provider','channel','implementation','configured','channelPermitted','commercialApproved','route','session','funding','features','catalog','execution','runtime','state','reasons','attemptId','activeConnectionId','connections','remoteRevocation','actions','local']) &&
     Number.isSafeInteger(v.sequence) && Number(v.sequence)>=0 &&
+    typeof v.reviewRevision==='string'&&/^[a-f0-9]{64}$/.test(v.reviewRevision)&&
     v.provider === AI_PROVIDER && ['development','beta','production'].includes(String(v.channel)) && v.implementation === 'partial' &&
     [v.configured,v.channelPermitted,v.commercialApproved].every(b=>typeof b==='boolean') &&
     isAiRoute(v.route) && isAiSession(v.session) && isAiFunding(v.funding) && isAiFeatureAvailability(v.features) &&
     (v.route.kind==='local-codex-chatgpt' ? isAiCatalog(v.catalog) && isAiExecutionReadiness(v.execution) : v.catalog===null && v.execution===null) &&
+    Object.values(features).every(feature=>feature.state==='unavailable'||route.kind==='local-codex-chatgpt'&&
+      isAiExecutionReadiness(execution)&&execution.state==='available'&&session.state==='signed-in'&&session.connectionId===feature.connectionId&&
+      v.activeConnectionId===feature.connectionId&&isAiCatalog(catalog)&&catalog.state==='loaded'&&catalog.selectedModelId===feature.model)&&
     (v.route.kind === 'local-codex-chatgpt' ? v.channel === 'development' && v.funding.kind === 'normal-subscription' && v.commercialApproved === false :
       v.route.kind === 'registered-openai' ? v.channel !== 'development' && v.funding.kind === 'included-only' : v.funding.kind === 'unavailable') &&
     ['development-installed','not-packaged','unavailable'].includes(String(v.runtime)) && ['unavailable','signed-out','signing-in','signed-in','refreshing','disconnecting'].includes(String(v.state)) &&
