@@ -1,5 +1,9 @@
 # Working in Collie Writer
 
+## App branding checkpoint — October 3, 2026
+
+Josh approved the collie-and-pencil artwork and requested its integration. Branding is **implementation complete — awaiting user testing**; see the [asset notes](resources/branding/README.md), [record](docs/validation/app-branding.md) and [manual guide](docs/manual-testing/app-branding.md). Preserve the original `resources/branding/collie-writer-master.png`. The committed `build/icon.*`, `build/icon.iconset/` and renderer PNG derive from it without cropping; `npm run icons:generate` regenerates assets on macOS only, without launching/building the app. The shared `AppLogo` owns header/About presentation. Renderer PNG imports stay external (`?no-inline`) and use the exact bundled asset protocol; native `?asset` imports come from `build/`, not main's public `resources/` directory. Windows development resource editing stays enabled with signing disabled; direct release explicitly retains signing. Native/UI acceptance remains pending and release remains NO-GO. No assistant tests/checks/builds/launches were performed.
+
 ## Current Save and close contract — October 3, 2026
 
 The user-requested [Save/local-recovery correction](docs/decisions/save-and-local-recovery.md) is **implementation complete — awaiting user testing**; see its [record](docs/validation/save-and-local-recovery.md) and [manual guide](docs/manual-testing/save-and-local-recovery.md). It supersedes earlier destination-autosave, external-fingerprint overwrite veto and save-on-close instructions. First Save asks for a destination. Explicit Save flushes local writing, retains the currently observed assigned file and writes the local project at that path; metadata-only differences do not establish content conflicts. Contents changing during the operation still stop replacement. Unrelated Save As targets retain native confirmation, and all staging, journals, prior-version retention and archive validation remain.

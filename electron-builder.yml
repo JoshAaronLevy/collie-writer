@@ -29,9 +29,12 @@ extraResources:
       - licenses/**
       - tutorial/*.txt
 win:
+  icon: build/icon.ico
   executableName: collie-writer-dev
   target: nsis
-  signAndEditExecutable: false
+  # Embed branding in development EXEs without enabling code signing.
+  signAndEditExecutable: true
+  signExecutable: false
   extraResources:
     - from: node_modules/better-sqlite3/prebuilds/win32-${arch}.node
       to: native/better_sqlite3.node
@@ -41,6 +44,7 @@ nsis:
   uninstallDisplayName: Collie Writer (Development)
   createDesktopShortcut: false
 mac:
+  icon: build/icon.icns
   target: dmg
   minimumSystemVersion: '15.0'
   identity: null

@@ -3,7 +3,7 @@ import { ProofreadingNotice } from './features/ai/proofreading/ProofreadingPanel
 import { ConversationProvider } from './features/ai/conversations/ConversationProvider'
 import { ConversationNotice } from './features/ai/conversations/ConversationPanel'
 import { useEffect, useRef, useState } from 'react'
-import { BookOpen, FolderOpen, PenLine, Settings } from 'lucide-react'
+import { BookOpen, FolderOpen, Settings } from 'lucide-react'
 import type { AppInfo } from '../../shared/commands'
 import type { StorageStatus } from '../../shared/storage'
 import SaveMenu from './features/workspace/SaveMenu'
@@ -18,6 +18,7 @@ import { WorkspaceSessionProvider, useWorkspaceSession } from './features/worksp
 import { WorkspaceStatus } from './features/workspace/WorkspaceStatus'
 import { RetainedRegion } from './features/workspace/RetainedRegion'
 import { ActionMenu } from './components/ui/ActionMenu'
+import { AppLogo } from './components/AppLogo'
 import { AppButton } from './components/ui/Controls'
 import { StatusBanner } from './components/ui/Feedback'
 import { useVisualPreferences } from './theme/VisualPreferencesProvider'
@@ -60,7 +61,7 @@ function AppShell({ info, failed, storageStatus }: { info: AppInfo | null; faile
       }}>Skip to workspace</a>
       <header className={styles['app-header']}>
         <div className={styles['app-identity']}>
-          <span className={styles['app-symbol']}><PenLine size={22} aria-hidden="true" /></span>
+          <AppLogo />
           <span className={styles['app-wordmark']}>Collie Writer</span>
           {channel && channel !== 'Direct' ? <span className={styles['build-label']}>{channel}</span> : null}
         </div>

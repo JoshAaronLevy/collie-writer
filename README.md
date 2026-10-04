@@ -50,7 +50,7 @@ Electron **44.5.0**, electron-vite **5.0.0**, and electron-builder **26.15.3** a
 
 Automated-test scripts and dependencies remain in `package.json` as history, and their earlier results are documented in the Stage 1 record. They are not part of the current manual handoff and must not be run or maintained by the assistant. No additional test/benchmark/audit commands are planned.
 
-The former native CI configuration for macOS arm64, Intel macOS and Windows x64 is disabled and retained only as history. Its commands are not an assistant checklist. Windows Server CI does not establish Windows 11 interactive behavior. Linux is outside product support. Development artifacts retain temporary scaffold packaging icons; final branding, legal seller metadata, signing and production identities belong to Stage 21.
+The former native CI configuration for macOS arm64, Intel macOS and Windows x64 is disabled and retained only as history. Its commands are not an assistant checklist. Windows Server CI does not establish Windows 11 interactive behavior. Linux is outside product support. The approved collie-and-pencil artwork now supplies the app header, About screen and native icons; see the [artwork and regeneration notes](resources/branding/README.md) and [manual guide](docs/manual-testing/app-branding.md). Branding integration is implementation complete — awaiting user testing. Legal seller metadata, signing and production readiness remain separate Stage 21 gates.
 
 ## Boundaries
 

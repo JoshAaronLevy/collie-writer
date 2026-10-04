@@ -42,6 +42,7 @@ module.exports = {
     executableName: channel === 'production' ? 'collie-writer' : 'collie-writer-beta',
     forceCodeSigning: true,
     signAndEditExecutable: true,
+    signExecutable: true,
     verifyUpdateCodeSignature: true,
     // EXEs are builder's default; Electron DLLs and the SQLite addon are also PE.
     signExts: ['.dll', '.node'],

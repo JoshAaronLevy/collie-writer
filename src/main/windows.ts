@@ -1,5 +1,7 @@
-import { BrowserWindow, Menu, type MenuItemConstructorOptions, type Session } from 'electron'
+import { app, BrowserWindow, Menu, type MenuItemConstructorOptions, type Session } from 'electron'
 import { join } from 'node:path'
+import appIcon from '../../build/icon.png?asset'
+import windowsIcon from '../../build/icon.ico?asset'
 import { APP_URL, allowedRequest, contentSecurityPolicy } from './security'
 
 export function protectSession(session: Session, devOrigin?: string): void {
@@ -27,8 +29,11 @@ export function protectWindow(window: BrowserWindow): void {
   window.webContents.on('will-attach-webview', (event) => event.preventDefault())
 }
 export function createWindow(devOrigin?: string): BrowserWindow {
+  // Packaged macOS uses its bundle's ICNS; development otherwise shows Electron's icon.
+  if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(appIcon)
   const window = new BrowserWindow({
     title: 'Collie Writer',
+    icon: process.platform === 'win32' ? windowsIcon : appIcon,
     width: 1280,
     height: 720,
     minWidth: 420,

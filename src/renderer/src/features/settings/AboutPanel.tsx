@@ -8,6 +8,7 @@ import { AppButton, TextareaField } from '../../components/ui/Controls'
 import { AppDialog } from '../../components/ui/AppDialog'
 import { ContentSurface, EmptyState, StatusBanner } from '../../components/ui/Feedback'
 import NativeHelpActions from './NativeHelpActions'
+import { AppLogo } from '../../components/AppLogo'
 import styles from './SettingsPanel.module.css'
 
 export default function AboutPanel({info,storage}:{info:AppInfo|null;storage:StorageStatus}):React.JSX.Element {
@@ -43,8 +44,13 @@ export default function AboutPanel({info,storage}:{info:AppInfo|null;storage:Sto
 
   return <>
     <ContentSurface labelledBy="about-title" className={styles['settings-panel']}>
-      <h1 id="about-title">About Collie Writer</h1>
-      <p>A local home for nonfiction writing and research. Ad-free, always.</p>
+      <div className={styles['about-branding']}>
+        <AppLogo size="about" />
+        <div className={styles['about-introduction']}>
+          <h1 id="about-title">About Collie Writer</h1>
+          <p>A local home for nonfiction writing and research. Ad-free, always.</p>
+        </div>
+      </div>
       <p>{info?`Version ${info.version} · ${info.channel} · ${info.platform}`:'Application information is unavailable.'}</p>
       <NativeHelpActions kind="licenses" />
       <AppButton variant="default" onClick={()=>void navigate({kind:'help',page:'tutorial'})}>Writing guide and optional tutorial</AppButton>

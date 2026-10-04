@@ -1,7 +1,6 @@
 .app-shell { min-height: 100dvh; display: flex; flex-direction: column; }
 .app-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--collie-space-3) var(--collie-space-6); padding: var(--collie-space-4) clamp(0.75rem, 3vw, 2rem); border-bottom: 1px solid var(--collie-border); background: var(--collie-surface); }
 .app-identity { display: flex; flex-wrap: wrap; align-items: center; gap: var(--collie-space-3); min-width: 0; }
-.app-symbol { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: var(--collie-radius-control); background: var(--collie-selected); color: var(--collie-accent); }
 .app-wordmark { font-weight: 650; font-size: 1.125rem; letter-spacing: -0.025em; }
 .build-label { color: var(--collie-text-secondary); font-size: 0.875rem; }
 .app-navigation { display: flex; flex-wrap: wrap; gap: var(--collie-space-2); }
