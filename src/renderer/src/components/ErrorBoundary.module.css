@@ -6,7 +6,13 @@
 .window-error h1 {
   font-size: 1.5rem;
 }
-.window-error button {
+.panel-error {
+  padding: var(--collie-space-4);
+  border: 1px solid var(--collie-control-border);
+  border-radius: var(--collie-radius-control);
+}
+.window-error button,
+.panel-error button {
   min-height: var(--collie-control-height);
   padding: var(--collie-space-2) var(--collie-space-4);
   border: 1px solid var(--collie-control-border);
@@ -14,4 +20,5 @@
   color: var(--collie-text);
   background: var(--collie-surface);
   cursor: pointer;
+  margin: var(--collie-space-2);
 }

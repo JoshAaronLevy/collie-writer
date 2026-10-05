@@ -2,7 +2,7 @@
 
 Audit conducted: October 4–5, 2026; document completed October 5, 2026  
 Source baseline: `8aa2fd7` — `Fixed prettier problems`  
-Status: **Plan reviewed; CA01 implementation complete — awaiting user testing. CA02–CA18 remain pending.**  
+Status: **Plan reviewed; CA01–CA02 implementation complete — awaiting user testing. CA03–CA18 remain pending.**  
 Release status: **NO-GO remains unchanged.**
 
 **Workflow amendment — October 5, 2026:** Josh now requires the assistant to run `npm run format`, `npm run lint` and `npm run typecheck` after code changes, fix all reported issues including warnings, and rerun until clean. The execution policy below reflects that amendment. The audit's original findings and historical record of commands not run are unchanged. Automated tests, builds and app launches remain prohibited; runtime acceptance remains user-owned.
@@ -272,7 +272,9 @@ As a user, after implementation:
 
 ### CA02 — Make renderer error recovery preserve available work
 
-**Finding:** F02. **Dependencies:** none. **Status:** not started.
+**Finding:** F02. **Dependencies:** none. **Status:** implementation complete — awaiting user testing.
+
+October 5, 2026: presentation boundaries now sit below selected draft owners and outside editor/PDF hosts. Main owns guarded window recovery; root ownership loss refuses automatic restart. Required format, lint and typecheck scripts pass with no warnings or errors. See the [implementation and limits](docs/validation/code-audit-CA02.md) and [manual guide](docs/manual-testing/code-audit-CA02.md). Runtime/error-path acceptance remains pending. CA03–CA18 are not advanced.
 
 Scope: error boundary placement, persistent workspace ownership, and the narrow recovery/lifecycle action. Keep a last-resort root boundary, but contain recoverable panel/render failures below draft owners. Replace raw reload with an honest main-owned recovery path. Distinguish recoverable live state from already-lost renderer memory; do not add a test-only crash switch.
 

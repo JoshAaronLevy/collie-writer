@@ -1,3 +1,4 @@
+import PresentationBoundary from '../../components/PresentationBoundary'
 import { useEffectEvent } from 'react'
 import { useLayoutEffect } from 'react'
 import { useSynchronousState } from '../../hooks/useSynchronousState'
@@ -785,314 +786,324 @@ export default function NotesPanel({
           )}
         </ResearchLayout>
       </div>
-      <div hidden={tab !== 'annotations'} inert={tab !== 'annotations'}>
-        <ResearchLayout
-          sidebar={
-            <>
-              <Checkbox
-                label="Show archived comments"
-                checked={showArchivedAnnotations}
-                onChange={(event) => setShowArchivedAnnotations(event.currentTarget.checked)}
-              />
-              <AppButton
-                variant="default"
-                disabled={commentDraft}
-                onClick={() => setAnnotationId(null)}
-              >
-                New selected-passage comment
-              </AppButton>
-              <ul className="research-item-list">
-                {view?.annotations
-                  .filter((item) => item.state === 'active' || showArchivedAnnotations)
-                  .map((item) => (
-                    <li key={item.id}>
-                      <AppButton
-                        variant="subtle"
-                        className="research-item-button"
-                        classNames={{ label: 'research-item-label', inner: 'research-item-inner' }}
-                        aria-current={annotationId === item.id ? 'true' : undefined}
-                        disabled={commentDraft || busy}
-                        onClick={() => setAnnotationId(item.id)}
-                      >
-                        {item.quote.slice(0, 100)}
-                        <small>
-                          {item.state} ·{' '}
-                          {item.anchorState === 'orphaned'
-                            ? 'Passage changed; quote retained'
-                            : 'Linked passage'}
-                        </small>
-                      </AppButton>
-                    </li>
-                  ))}
-              </ul>
-            </>
-          }
-        >
-          {annotation ? (
-            <>
-              <h2>Passage comment</h2>
-              <blockquote className="research-quote">{annotation.quote}</blockquote>
-              <p className="note-interpretation">{annotation.interpretation}</p>
-              <p>
-                {annotation.anchorState === 'orphaned'
-                  ? 'The original passage changed or was removed. This quote remains unchanged.'
-                  : 'Linked to the original passage.'}{' '}
-                · {annotation.state}
-              </p>
-              <div className="research-actions">
-                <AppButton
-                  variant="default"
-                  onClick={() => {
-                    void navigate(
-                      annotation.documentId,
-                      annotation.anchorState === 'active' ? annotation.blockId : undefined
-                    )
-                  }}
-                >
-                  {annotation.anchorState === 'active'
-                    ? 'Open passage'
-                    : 'Open section; passage is orphaned'}
-                </AppButton>
-                <AppButton
-                  variant="subtle"
-                  disabled={disabled || busy || !!pendingValue || commentDraft}
-                  onClick={() => {
-                    setAnnotationBaseValue(annotation)
-                    setEditingAnnotation(annotation.id)
-                    setEditText(annotation.interpretation)
-                  }}
-                >
-                  Edit interpretation
-                </AppButton>
-                <AppButton
-                  variant="subtle"
-                  disabled={disabled || busy || !!pendingValue || commentDraft}
-                  onClick={() => {
-                    void change({
-                      type: 'updateAnnotation',
-                      id: annotation.id,
-                      expectedRevisionId: annotation.revisionId,
-                      interpretation: annotation.interpretation,
-                      state: annotation.state === 'active' ? 'archived' : 'active'
-                    })
-                  }}
-                >
-                  {annotation.state === 'active' ? 'Archive comment' : 'Restore comment'}
-                </AppButton>
-              </div>
-              {editingAnnotation === annotation.id ? (
-                <div className="research-form">
-                  <Textarea
-                    label="Your interpretation"
-                    disabled={disabled || busy || !!pendingValue}
-                    value={editText}
-                    maxLength={100000}
-                    onChange={(event) => setEditText(event.currentTarget.value)}
-                  />
-                  <div className="research-actions">
-                    <AppButton
-                      disabled={disabled || busy || !!pendingValue}
-                      onClick={() => {
-                        void editAnnotation(annotation)
-                      }}
-                    >
-                      Save interpretation
-                    </AppButton>
+      <PresentationBoundary
+        label="Comments and labels"
+        render={() => (
+          <>
+            <div hidden={tab !== 'annotations'} inert={tab !== 'annotations'}>
+              <ResearchLayout
+                sidebar={
+                  <>
+                    <Checkbox
+                      label="Show archived comments"
+                      checked={showArchivedAnnotations}
+                      onChange={(event) => setShowArchivedAnnotations(event.currentTarget.checked)}
+                    />
                     <AppButton
                       variant="default"
-                      disabled={busy || !!unresolvedValue}
-                      onClick={() => {
-                        setEditingAnnotation(null)
-                        setEditText('')
-                      }}
+                      disabled={commentDraft}
+                      onClick={() => setAnnotationId(null)}
                     >
-                      Cancel interpretation changes
+                      New selected-passage comment
                     </AppButton>
+                    <ul className="research-item-list">
+                      {view?.annotations
+                        .filter((item) => item.state === 'active' || showArchivedAnnotations)
+                        .map((item) => (
+                          <li key={item.id}>
+                            <AppButton
+                              variant="subtle"
+                              className="research-item-button"
+                              classNames={{
+                                label: 'research-item-label',
+                                inner: 'research-item-inner'
+                              }}
+                              aria-current={annotationId === item.id ? 'true' : undefined}
+                              disabled={commentDraft || busy}
+                              onClick={() => setAnnotationId(item.id)}
+                            >
+                              {item.quote.slice(0, 100)}
+                              <small>
+                                {item.state} ·{' '}
+                                {item.anchorState === 'orphaned'
+                                  ? 'Passage changed; quote retained'
+                                  : 'Linked passage'}
+                              </small>
+                            </AppButton>
+                          </li>
+                        ))}
+                    </ul>
+                  </>
+                }
+              >
+                {annotation ? (
+                  <>
+                    <h2>Passage comment</h2>
+                    <blockquote className="research-quote">{annotation.quote}</blockquote>
+                    <p className="note-interpretation">{annotation.interpretation}</p>
+                    <p>
+                      {annotation.anchorState === 'orphaned'
+                        ? 'The original passage changed or was removed. This quote remains unchanged.'
+                        : 'Linked to the original passage.'}{' '}
+                      · {annotation.state}
+                    </p>
+                    <div className="research-actions">
+                      <AppButton
+                        variant="default"
+                        onClick={() => {
+                          void navigate(
+                            annotation.documentId,
+                            annotation.anchorState === 'active' ? annotation.blockId : undefined
+                          )
+                        }}
+                      >
+                        {annotation.anchorState === 'active'
+                          ? 'Open passage'
+                          : 'Open section; passage is orphaned'}
+                      </AppButton>
+                      <AppButton
+                        variant="subtle"
+                        disabled={disabled || busy || !!pendingValue || commentDraft}
+                        onClick={() => {
+                          setAnnotationBaseValue(annotation)
+                          setEditingAnnotation(annotation.id)
+                          setEditText(annotation.interpretation)
+                        }}
+                      >
+                        Edit interpretation
+                      </AppButton>
+                      <AppButton
+                        variant="subtle"
+                        disabled={disabled || busy || !!pendingValue || commentDraft}
+                        onClick={() => {
+                          void change({
+                            type: 'updateAnnotation',
+                            id: annotation.id,
+                            expectedRevisionId: annotation.revisionId,
+                            interpretation: annotation.interpretation,
+                            state: annotation.state === 'active' ? 'archived' : 'active'
+                          })
+                        }}
+                      >
+                        {annotation.state === 'active' ? 'Archive comment' : 'Restore comment'}
+                      </AppButton>
+                    </div>
+                    {editingAnnotation === annotation.id ? (
+                      <div className="research-form">
+                        <Textarea
+                          label="Your interpretation"
+                          disabled={disabled || busy || !!pendingValue}
+                          value={editText}
+                          maxLength={100000}
+                          onChange={(event) => setEditText(event.currentTarget.value)}
+                        />
+                        <div className="research-actions">
+                          <AppButton
+                            disabled={disabled || busy || !!pendingValue}
+                            onClick={() => {
+                              void editAnnotation(annotation)
+                            }}
+                          >
+                            Save interpretation
+                          </AppButton>
+                          <AppButton
+                            variant="default"
+                            disabled={busy || !!unresolvedValue}
+                            onClick={() => {
+                              setEditingAnnotation(null)
+                              setEditText('')
+                            }}
+                          >
+                            Cancel interpretation changes
+                          </AppButton>
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                ) : capture ? (
+                  <div className="research-form">
+                    <h2>Comment on selected passage</h2>
+                    <blockquote className="research-quote">{capture.quote}</blockquote>
+                    <Textarea
+                      label="Your interpretation"
+                      disabled={disabled || busy || !!pendingValue}
+                      value={annotationText}
+                      maxLength={100000}
+                      onChange={(event) => setAnnotationText(event.currentTarget.value)}
+                    />
+                    <div className="research-actions">
+                      <AppButton
+                        disabled={disabled || busy || !annotationText.trim()}
+                        onClick={() => {
+                          void saveAnnotation()
+                        }}
+                      >
+                        Save passage annotation
+                      </AppButton>
+                      <AppButton
+                        variant="default"
+                        disabled={busy || !!unresolvedValue}
+                        onClick={() => setAnnotationText('')}
+                      >
+                        Clear annotation draft
+                      </AppButton>
+                    </div>
                   </div>
-                </div>
-              ) : null}
-            </>
-          ) : capture ? (
-            <div className="research-form">
-              <h2>Comment on selected passage</h2>
-              <blockquote className="research-quote">{capture.quote}</blockquote>
-              <Textarea
-                label="Your interpretation"
-                disabled={disabled || busy || !!pendingValue}
-                value={annotationText}
-                maxLength={100000}
-                onChange={(event) => setAnnotationText(event.currentTarget.value)}
-              />
-              <div className="research-actions">
-                <AppButton
-                  disabled={disabled || busy || !annotationText.trim()}
-                  onClick={() => {
-                    void saveAnnotation()
-                  }}
-                >
-                  Save passage annotation
-                </AppButton>
-                <AppButton
-                  variant="default"
-                  disabled={busy || !!unresolvedValue}
-                  onClick={() => setAnnotationText('')}
-                >
-                  Clear annotation draft
-                </AppButton>
-              </div>
+                ) : (
+                  <EmptyState title="Comment on a passage">
+                    Select text in the manuscript and choose Annotate selection. Saved quotes remain
+                    separate from your interpretation.
+                  </EmptyState>
+                )}
+              </ResearchLayout>
             </div>
-          ) : (
-            <EmptyState title="Comment on a passage">
-              Select text in the manuscript and choose Annotate selection. Saved quotes remain
-              separate from your interpretation.
-            </EmptyState>
-          )}
-        </ResearchLayout>
-      </div>
-      <div hidden={tab !== 'labels'} inert={tab !== 'labels'}>
-        <h2>Tags and categories</h2>
-        <div className="research-actions">
-          {(['tag', 'category'] as const).map((kind) => (
-            <AppButton
-              key={kind}
-              disabled={disabled || busy}
-              onClick={() => {
-                setLabelDialog({ kind, action: 'create' })
-                setLabelName('')
-                setLabelTarget('')
-              }}
-            >
-              New {kind}
-            </AppButton>
-          ))}
-        </div>
-        <ul className="note-label-list">
-          {view?.labels
-            .filter((item) => item.state === 'active')
-            .map((item) => (
-              <li key={item.id}>
-                <strong>{item.name}</strong> · {item.kind}
-                <div className="research-actions">
+            <div hidden={tab !== 'labels'} inert={tab !== 'labels'}>
+              <h2>Tags and categories</h2>
+              <div className="research-actions">
+                {(['tag', 'category'] as const).map((kind) => (
                   <AppButton
-                    variant="subtle"
+                    key={kind}
                     disabled={disabled || busy}
                     onClick={() => {
-                      setLabelDialog({ kind: item.kind, action: 'rename', id: item.id })
-                      setLabelName(item.name)
-                    }}
-                  >
-                    Rename
-                  </AppButton>
-                  <AppButton
-                    variant="subtle"
-                    disabled={disabled || busy}
-                    onClick={() => {
-                      setLabelDialog({ kind: item.kind, action: 'merge', id: item.id })
+                      setLabelDialog({ kind, action: 'create' })
+                      setLabelName('')
                       setLabelTarget('')
                     }}
                   >
-                    Merge into…
+                    New {kind}
+                  </AppButton>
+                ))}
+              </div>
+              <ul className="note-label-list">
+                {view?.labels
+                  .filter((item) => item.state === 'active')
+                  .map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.name}</strong> · {item.kind}
+                      <div className="research-actions">
+                        <AppButton
+                          variant="subtle"
+                          disabled={disabled || busy}
+                          onClick={() => {
+                            setLabelDialog({ kind: item.kind, action: 'rename', id: item.id })
+                            setLabelName(item.name)
+                          }}
+                        >
+                          Rename
+                        </AppButton>
+                        <AppButton
+                          variant="subtle"
+                          disabled={disabled || busy}
+                          onClick={() => {
+                            setLabelDialog({ kind: item.kind, action: 'merge', id: item.id })
+                            setLabelTarget('')
+                          }}
+                        >
+                          Merge into…
+                        </AppButton>
+                        <AppButton
+                          variant="subtle"
+                          disabled={disabled || busy || !!pendingValue}
+                          onClick={() => {
+                            void flush().then((ok) => {
+                              if (ok) void change({ type: 'archiveLabel', id: item.id })
+                            })
+                          }}
+                        >
+                          Remove label
+                        </AppButton>
+                      </div>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+            <AppDialog
+              opened={labelDialog !== null}
+              title={
+                labelDialog?.action === 'merge'
+                  ? 'Merge labels'
+                  : labelDialog?.action === 'rename'
+                    ? 'Rename label'
+                    : 'Create label'
+              }
+              onClose={() => {
+                if (!busy && !unresolved.current && !labelComposing.current) setLabelDialog(null)
+              }}
+              dismissible={!busy && !unresolvedValue}
+            >
+              <form
+                className="note-label-form"
+                onCompositionStartCapture={() => {
+                  labelComposing.current = true
+                  registry.changed()
+                }}
+                onCompositionEndCapture={() => {
+                  labelComposing.current = false
+                  registry.changed()
+                }}
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void applyLabel()
+                }}
+              >
+                {labelDialog?.action === 'merge' ? (
+                  <SelectField
+                    label="Label to keep"
+                    required
+                    value={labelTarget}
+                    disabled={!!unresolvedValue}
+                    onChange={(event) => setLabelTarget(event.target.value)}
+                  >
+                    <option value="">Choose by name</option>
+                    {view?.labels
+                      .filter(
+                        (item) =>
+                          item.state === 'active' &&
+                          item.kind === labelDialog.kind &&
+                          item.id !== labelDialog.id
+                      )
+                      .map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                  </SelectField>
+                ) : (
+                  <TextInput
+                    label="Label name"
+                    required
+                    maxLength={100}
+                    value={labelName}
+                    disabled={!!unresolvedValue}
+                    onChange={(event) => setLabelName(event.currentTarget.value)}
+                    data-autofocus
+                  />
+                )}
+                {message ? <p role="status">{message}</p> : null}
+                {unresolvedValue ? (
+                  <AppButton disabled={disabled || busy} onClick={() => void retryPending()}>
+                    Retry pending label change
+                  </AppButton>
+                ) : null}
+                <div className="research-actions">
+                  <AppButton type="submit" disabled={disabled || busy || !!unresolvedValue}>
+                    Apply label change
                   </AppButton>
                   <AppButton
-                    variant="subtle"
-                    disabled={disabled || busy || !!pendingValue}
+                    variant="default"
+                    disabled={busy || !!unresolvedValue}
                     onClick={() => {
-                      void flush().then((ok) => {
-                        if (ok) void change({ type: 'archiveLabel', id: item.id })
-                      })
+                      if (!labelComposing.current) setLabelDialog(null)
                     }}
                   >
-                    Remove label
+                    Cancel
                   </AppButton>
                 </div>
-              </li>
-            ))}
-        </ul>
-      </div>
-      <AppDialog
-        opened={labelDialog !== null}
-        title={
-          labelDialog?.action === 'merge'
-            ? 'Merge labels'
-            : labelDialog?.action === 'rename'
-              ? 'Rename label'
-              : 'Create label'
-        }
-        onClose={() => {
-          if (!busy && !unresolved.current && !labelComposing.current) setLabelDialog(null)
-        }}
-        dismissible={!busy && !unresolvedValue}
-      >
-        <form
-          className="note-label-form"
-          onCompositionStartCapture={() => {
-            labelComposing.current = true
-            registry.changed()
-          }}
-          onCompositionEndCapture={() => {
-            labelComposing.current = false
-            registry.changed()
-          }}
-          onSubmit={(event) => {
-            event.preventDefault()
-            void applyLabel()
-          }}
-        >
-          {labelDialog?.action === 'merge' ? (
-            <SelectField
-              label="Label to keep"
-              required
-              value={labelTarget}
-              disabled={!!unresolvedValue}
-              onChange={(event) => setLabelTarget(event.target.value)}
-            >
-              <option value="">Choose by name</option>
-              {view?.labels
-                .filter(
-                  (item) =>
-                    item.state === 'active' &&
-                    item.kind === labelDialog.kind &&
-                    item.id !== labelDialog.id
-                )
-                .map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-            </SelectField>
-          ) : (
-            <TextInput
-              label="Label name"
-              required
-              maxLength={100}
-              value={labelName}
-              disabled={!!unresolvedValue}
-              onChange={(event) => setLabelName(event.currentTarget.value)}
-              data-autofocus
-            />
-          )}
-          {message ? <p role="status">{message}</p> : null}
-          {unresolvedValue ? (
-            <AppButton disabled={disabled || busy} onClick={() => void retryPending()}>
-              Retry pending label change
-            </AppButton>
-          ) : null}
-          <div className="research-actions">
-            <AppButton type="submit" disabled={disabled || busy || !!unresolvedValue}>
-              Apply label change
-            </AppButton>
-            <AppButton
-              variant="default"
-              disabled={busy || !!unresolvedValue}
-              onClick={() => {
-                if (!labelComposing.current) setLabelDialog(null)
-              }}
-            >
-              Cancel
-            </AppButton>
-          </div>
-        </form>
-      </AppDialog>
+              </form>
+            </AppDialog>
+          </>
+        )}
+      />
     </section>
   )
 }

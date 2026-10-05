@@ -1,5 +1,11 @@
 # Working in Collie Writer
 
+## CA02 renderer recovery checkpoint — October 5, 2026
+
+CA02 is **implementation complete — awaiting user testing**; see the [record](docs/validation/code-audit-CA02.md) and [manual guide](docs/manual-testing/code-audit-CA02.md). `PresentationBoundary` belongs inside retained draft owners, around presentation only. Do not wrap an editor/PDF host or another draft owner: React removes the failed subtree. Preserve the separate writing-tool/form boundaries and surviving manuscript/note hosts. Root failures cannot reconstruct renderer-only input.
+
+`app.windowRecovery` is a narrow main-owned action, not generic reload authority. Restart must use the existing close/protection handshake and AI decision, keep the outgoing renderer locked until replacement load, and refuse automatic close/restart once main has recorded lost renderer ownership. Do not clear that latch from renderer input or infer protection from unregistered drafts. No Save contract or persistent format changed. Format, lint and typecheck passed; runtime/error-path observations remain pending and release remains NO-GO. CA03–CA18 are separate requests.
+
 **Current quality-check policy — October 5, 2026:** after code changes, run `npm run format`, `npm run lint` and `npm run typecheck`, fix their reported issues (including warnings), and rerun until clean. This explicitly supersedes older blanket prohibitions on these checks throughout this repository and remembered guidance. Dated statements that checks were not performed remain historical evidence. Automated tests, builds, app launches and runtime acceptance remain user-owned under the standing instruction below.
 
 ## App branding checkpoint — October 3, 2026

@@ -1,7 +1,8 @@
 import { BrowserWindow, dialog, ipcMain, powerMonitor, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { isId } from '../domain/editor/schema'
-import { exact, record } from '../shared/projects'
+import { exact, record, projectFailure, type ProjectResult } from '../shared/projects'
+import { WINDOW_RECOVERY } from '../shared/commands'
 import { CLOSE_REPLY, fileBusy } from '../shared/project-files'
 import { isTrustedSender } from './ipc'
 import type { ProjectFileIpc } from './project-files-ipc'
@@ -10,6 +11,9 @@ import type { AiService } from './ai/service'
 /** Close never races a buffer flush, file replacement, or a still-pending local acknowledgment. */
 export class ProjectLifecycle {
   private request: Promise<boolean> | undefined
+  private intent: 'close' | 'restart' | undefined
+  private lostOwners = new WeakSet<WebContents>()
+  private restarting: WebContents | undefined
   private pending: { id: string; resolve: (outcome: string) => void } | undefined
   constructor(
     private readonly owner: () => WebContents | undefined,
@@ -20,6 +24,29 @@ export class ProjectLifecycle {
     private readonly conversationPending: () => boolean = () => false
   ) {}
   register(): void {
+    ipcMain.handle(
+      WINDOW_RECOVERY,
+      async (event, value: unknown): Promise<ProjectResult<boolean>> => {
+        const owner = this.owner()
+        if (!isTrustedSender(event, owner, this.devOrigin)) return projectFailure('', 'DENIED')
+        if (
+          !record(value) ||
+          !exact(value, ['requestId', 'input']) ||
+          !isId(value.requestId) ||
+          (value.input !== 'owner-lost' && value.input !== 'restart')
+        )
+          return projectFailure('', 'VALIDATION')
+        if (value.input === 'owner-lost') {
+          this.rendererLost(owner!)
+          return { ok: true, requestId: value.requestId, value: true }
+        }
+        try {
+          return { ok: true, requestId: value.requestId, value: await this.settle('restart') }
+        } catch {
+          return projectFailure(value.requestId, 'UNAVAILABLE')
+        }
+      }
+    )
     ipcMain.on(CLOSE_REPLY, (event, value: unknown) => {
       const pending = this.pending
       if (
@@ -45,24 +72,59 @@ export class ProjectLifecycle {
     })
   }
   close(): Promise<boolean> {
-    if (this.request) return this.request
+    return this.settle('close')
+  }
+  /** Losing a renderer owner is not evidence that its drafts were protected. */
+  rendererLost(owner: WebContents): void {
+    this.lostOwners.add(owner)
+    if (this.restarting === owner) this.restarting = undefined
+    this.pending?.resolve('failed')
+  }
+  rendererLoaded(owner: WebContents): void {
+    if (this.restarting !== owner) return
+    this.restarting = undefined
+    this.ai?.resume()
+    this.files.action('close-cancelled')
+  }
+  rendererLoadFailed(owner: WebContents): void {
+    if (this.restarting === owner) this.rendererLost(owner)
+  }
+  private settle(intent: 'close' | 'restart'): Promise<boolean> {
+    // A native close/update and a recovery request must never share permission
+    // to perform two different destructive transitions.
+    if (this.restarting) return Promise.resolve(false)
+    if (this.request)
+      return intent === 'close' && this.intent === 'close' ? this.request : Promise.resolve(false)
+    const owner = this.owner()
+    this.intent = intent
     this.request = this.closeOnce()
-      .then(
-        (allowed) => {
-          if (!allowed) {
-            this.ai?.resume()
-            this.files.action('close-cancelled')
+      .then((allowed) => {
+        if (owner && (owner.isDestroyed() || owner !== this.owner() || this.lostOwners.has(owner)))
+          allowed = false
+        if (allowed && intent === 'restart') {
+          if (!owner || owner.isDestroyed() || owner !== this.owner() || this.lostOwners.has(owner))
+            allowed = false
+          else {
+            // Keep the outgoing renderer locked until the replacement loads.
+            this.restarting = owner
+            owner.reload()
           }
-          return allowed
-        },
-        (error) => {
+        }
+        if (!allowed) {
           this.ai?.resume()
           this.files.action('close-cancelled')
-          throw error
         }
-      )
+        return allowed
+      })
+      .catch((error: unknown) => {
+        this.restarting = undefined
+        this.ai?.resume()
+        this.files.action('close-cancelled')
+        throw error
+      })
       .finally(() => {
         this.request = undefined
+        this.intent = undefined
       })
     return this.request
   }
@@ -73,6 +135,20 @@ export class ProjectLifecycle {
   private async closeOnce(): Promise<boolean> {
     const owner = this.owner(),
       window = owner ? BrowserWindow.fromWebContents(owner) : null
+    if (owner && this.lostOwners.has(owner)) {
+      const options = {
+        type: 'warning' as const,
+        title: 'Recovery needs attention',
+        message: 'Collie cannot confirm protection after the workspace stopped.',
+        detail:
+          'Previously protected local writing and saved project files remain on disk. Unsaved forms, composing text and other renderer-only changes may already be lost. Automatic restart and close are paused; reopening cannot reconstruct lost memory. Keep this window open and retain your local working folder for recovery.',
+        buttons: ['Keep window open'],
+        noLink: true
+      }
+      if (window && !window.isDestroyed()) await dialog.showMessageBox(window, options)
+      else await dialog.showMessageBox(options)
+      return false
+    }
     // Establish the barrier before a native dialog can yield to other IPC.
     // Keeping the window open must not implicitly stop an active request.
     this.ai?.beginClose()
@@ -121,7 +197,7 @@ export class ProjectLifecycle {
     const outcome = await response
     if (timer) clearTimeout(timer)
     this.pending = undefined
-    if (window.isDestroyed() || owner !== this.owner()) return false
+    if (window.isDestroyed() || owner !== this.owner() || this.lostOwners.has(owner)) return false
     // A protected local draft is sufficient. Closing never requires a portable-file Save.
     if ((outcome === 'saved' || outcome === 'local') && !this.dirty() && !this.hasFileWork())
       return !this.conversationPending() && (!this.ai || (await this.ai.prepareClose()))

@@ -35,6 +35,7 @@ import { aiApi } from './ai'
 import {
   GET_INFO,
   HELP_ACTION,
+  WINDOW_RECOVERY,
   EDITOR_ACTION,
   GET_STORAGE_STATUS,
   STORAGE_STATUS_CHANGED,
@@ -123,6 +124,8 @@ const api: CollieAPI = {
   ...conversationApi,
   ...proofreadingApi,
   helpAction: (input) => projectCall<boolean>(HELP_ACTION, (value) => value === true, input),
+  recoverWindow: (input) =>
+    projectCall<boolean>(WINDOW_RECOVERY, (value) => typeof value === 'boolean', input),
   readDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.read, isDirectView),
   beginDirectAccess: (input) => projectCall<DirectView>(DIRECT_CHANNELS.begin, isDirectView, input),
   resumeDirectAccess: () => projectCall<DirectView>(DIRECT_CHANNELS.resume, isDirectView),

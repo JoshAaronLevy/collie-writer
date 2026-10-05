@@ -1,3 +1,4 @@
+import PresentationBoundary from '../../components/PresentationBoundary'
 import { useEffectEvent, useEffect, useRef, useState } from 'react'
 import type { ProjectDetailsInput, OpenProject } from '../../../../shared/projects'
 import type { ProjectDetails } from '../../../../domain/projects/details'
@@ -170,53 +171,58 @@ export default function ProjectDetailsForm({
     }
   }
   return (
-    <form
-      ref={panel}
-      tabIndex={-1}
-      {...binding}
-      className={styles['project-details-form']}
-      aria-labelledby="project-details-heading"
-      noValidate
-      onSubmit={(event) => {
-        event.preventDefault()
-        if (!disabled && !readOnly && !busy) session.run(save)
-      }}
-    >
-      <h2 id="project-details-heading">Project details</h2>
-      <ProjectDetailsFields
-        value={value}
-        onChange={change}
-        creating={false}
-        disabled={disabled || readOnly || busy || !!pending}
-        showErrors={attempted}
-        originalTitle={baseline.title}
-      />
-      <div className={styles['project-details-actions']}>
-        <AppButton
-          type="submit"
-          disabled={
-            disabled ||
-            readOnly ||
-            busy ||
-            (JSON.stringify(value) === JSON.stringify(baseline) && !pending)
-          }
+    <PresentationBoundary
+      label="Project details"
+      render={() => (
+        <form
+          ref={panel}
+          tabIndex={-1}
+          {...binding}
+          className={styles['project-details-form']}
+          aria-labelledby="project-details-heading"
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (!disabled && !readOnly && !busy) session.run(save)
+          }}
         >
-          {pending ? 'Retry details save' : 'Save project details'}
-        </AppButton>
-        <AppButton
-          variant="default"
-          disabled={disabled || busy || !!pending}
-          onClick={() => session.run(reload)}
-        >
-          Replace form with saved details
-        </AppButton>
-      </div>
-      <p className={styles['project-type-description']}>
-        The project title is independent of its filename. Author and description stay with this
-        project, including its backups and independent copies.
-      </p>
-      {error ? <p role="alert">{error}</p> : null}
-      {message ? <p role="status">{message}</p> : null}
-    </form>
+          <h2 id="project-details-heading">Project details</h2>
+          <ProjectDetailsFields
+            value={value}
+            onChange={change}
+            creating={false}
+            disabled={disabled || readOnly || busy || !!pending}
+            showErrors={attempted}
+            originalTitle={baseline.title}
+          />
+          <div className={styles['project-details-actions']}>
+            <AppButton
+              type="submit"
+              disabled={
+                disabled ||
+                readOnly ||
+                busy ||
+                (JSON.stringify(value) === JSON.stringify(baseline) && !pending)
+              }
+            >
+              {pending ? 'Retry details save' : 'Save project details'}
+            </AppButton>
+            <AppButton
+              variant="default"
+              disabled={disabled || busy || !!pending}
+              onClick={() => session.run(reload)}
+            >
+              Replace form with saved details
+            </AppButton>
+          </div>
+          <p className={styles['project-type-description']}>
+            The project title is independent of its filename. Author and description stay with this
+            project, including its backups and independent copies.
+          </p>
+          {error ? <p role="alert">{error}</p> : null}
+          {message ? <p role="status">{message}</p> : null}
+        </form>
+      )}
+    />
   )
 }

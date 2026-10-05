@@ -11,6 +11,8 @@ import type { DirectAPI } from './direct-access'
 import type { AiAPI } from './ai'
 
 export const HELP_ACTION = 'app.helpAction'
+export const WINDOW_RECOVERY = 'app.windowRecovery'
+export type WindowRecoveryAction = 'owner-lost' | 'restart'
 export type HelpAction = 'licenses' | 'check-updates' | 'install-update'
 export const GET_INFO = 'app.getInfo'
 export const GET_STORAGE_STATUS = 'storage.getStatus'
@@ -41,6 +43,7 @@ export type CollieAPI = ProjectAPI &
   ConversationAPI &
   ProofreadingAPI & {
     helpAction: (action: HelpAction) => Promise<ProjectResult<boolean>>
+    recoverWindow: (action: WindowRecoveryAction) => Promise<ProjectResult<boolean>>
     onEditorAction: (
       callback: (action: 'undo' | 'redo' | 'find' | 'paste-plain') => void
     ) => () => void

@@ -47,3 +47,5 @@ These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience a
 ## Code audit CA01
 
 [Export publication and required-check cleanup](code-audit-CA01.md): fresh output in all four formats, Markdown image sidecars, existing-file preservation, partial/cancelled results, and editor/research/navigation continuity after the mandatory lint/type cleanup. See the [implementation record](../validation/code-audit-CA01.md). Format, lint and both typechecks pass; runtime acceptance remains pending.
+
+[CA02 — renderer error recovery](code-audit-CA02.md) covers retained presentation owners, normal draft/close behavior and naturally occurring recovery errors. Its [record](../validation/code-audit-CA02.md) distinguishes code checks from unobserved runtime behavior and lost renderer memory.

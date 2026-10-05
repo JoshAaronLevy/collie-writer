@@ -1,3 +1,4 @@
+import PresentationBoundary from '../../components/PresentationBoundary'
 import { useEffectEvent } from 'react'
 import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { replaceControlCharacters } from '../../../../shared/control-characters'
@@ -1125,148 +1126,160 @@ export default function SourceInspector({
           </>
         }
       >
-        {chosenExcerpt ? (
-          <section className="inspector-excerpt" aria-label="Selected exact excerpt">
-            <h2>{chosenExcerpt.label}</h2>
-            <blockquote className="research-quote">{chosenExcerpt.quote}</blockquote>
-            <p>
-              {chosenExcerpt.kind} · {versionName(chosenExcerpt.versionId)} ·{' '}
-              {chosenExcerpt.pageIndex === 0
-                ? 'plain text'
-                : chosenExcerpt.pageIndex === null
-                  ? 'page unavailable'
-                  : `PDF page ${chosenExcerpt.pageIndex}${chosenExcerpt.pageLabel ? ` (label ${chosenExcerpt.pageLabel})` : ''}`}
-            </p>
-            {view?.activeVersionId !== chosenExcerpt.versionId ? (
-              <p role="status">
-                This excerpt belongs to an earlier original. Its quote and original anchor have been
-                retained.
-              </p>
-            ) : null}
-            <div className="research-actions">
-              <AppButton
-                variant="light"
-                disabled={loading || readOnly}
-                onClick={() => {
-                  if (!allowInspectionTargetChange()) return
-                  setCorrectionFor(chosenExcerpt)
-                  setCorrectionQuote(chosenExcerpt.quote)
-                  setCorrectionLabel('Human correction')
-                }}
-              >
-                Correct as a new record
-              </AppButton>
-              <AppButton
-                variant="subtle"
-                disabled={loading || draftPending}
-                onClick={() => setExcerptId(null)}
-              >
-                Hide excerpt detail
-              </AppButton>
-            </div>
-            <details className="research-disclosure">
-              <summary>Exact context and provenance</summary>
-              <p className="inspector-context">
-                {chosenExcerpt.contextBefore}
-                <strong>{chosenExcerpt.quote}</strong>
-                {chosenExcerpt.contextAfter}
-              </p>
-              <p>
-                {chosenExcerpt.startOffset !== null
-                  ? `Saved text offsets ${chosenExcerpt.startOffset}–${chosenExcerpt.endOffset}.`
-                  : 'Human-authored text without extracted offsets.'}
-              </p>
-              <p>
-                Original SHA-256:{' '}
-                <code>
-                  {view?.versions.find((item) => item.id === chosenExcerpt.versionId)?.sha256 ??
-                    'unavailable'}
-                </code>
-              </p>
-              {chosenExcerpt.supersedesId ? (
-                <AppButton
-                  variant="subtle"
-                  disabled={loading}
-                  onClick={() => {
-                    const original = view?.excerpts.find(
-                      (item) => item.id === chosenExcerpt.supersedesId
-                    )
-                    if (original) void navigateExcerpt(original)
-                    else setError('The earlier excerpt is unavailable.')
+        <PresentationBoundary
+          label="Excerpt details"
+          render={() => (
+            <>
+              {chosenExcerpt ? (
+                <section className="inspector-excerpt" aria-label="Selected exact excerpt">
+                  <h2>{chosenExcerpt.label}</h2>
+                  <blockquote className="research-quote">{chosenExcerpt.quote}</blockquote>
+                  <p>
+                    {chosenExcerpt.kind} · {versionName(chosenExcerpt.versionId)} ·{' '}
+                    {chosenExcerpt.pageIndex === 0
+                      ? 'plain text'
+                      : chosenExcerpt.pageIndex === null
+                        ? 'page unavailable'
+                        : `PDF page ${chosenExcerpt.pageIndex}${chosenExcerpt.pageLabel ? ` (label ${chosenExcerpt.pageLabel})` : ''}`}
+                  </p>
+                  {view?.activeVersionId !== chosenExcerpt.versionId ? (
+                    <p role="status">
+                      This excerpt belongs to an earlier original. Its quote and original anchor
+                      have been retained.
+                    </p>
+                  ) : null}
+                  <div className="research-actions">
+                    <AppButton
+                      variant="light"
+                      disabled={loading || readOnly}
+                      onClick={() => {
+                        if (!allowInspectionTargetChange()) return
+                        setCorrectionFor(chosenExcerpt)
+                        setCorrectionQuote(chosenExcerpt.quote)
+                        setCorrectionLabel('Human correction')
+                      }}
+                    >
+                      Correct as a new record
+                    </AppButton>
+                    <AppButton
+                      variant="subtle"
+                      disabled={loading || draftPending}
+                      onClick={() => setExcerptId(null)}
+                    >
+                      Hide excerpt detail
+                    </AppButton>
+                  </div>
+                  <details className="research-disclosure">
+                    <summary>Exact context and provenance</summary>
+                    <p className="inspector-context">
+                      {chosenExcerpt.contextBefore}
+                      <strong>{chosenExcerpt.quote}</strong>
+                      {chosenExcerpt.contextAfter}
+                    </p>
+                    <p>
+                      {chosenExcerpt.startOffset !== null
+                        ? `Saved text offsets ${chosenExcerpt.startOffset}–${chosenExcerpt.endOffset}.`
+                        : 'Human-authored text without extracted offsets.'}
+                    </p>
+                    <p>
+                      Original SHA-256:{' '}
+                      <code>
+                        {view?.versions.find((item) => item.id === chosenExcerpt.versionId)
+                          ?.sha256 ?? 'unavailable'}
+                      </code>
+                    </p>
+                    {chosenExcerpt.supersedesId ? (
+                      <AppButton
+                        variant="subtle"
+                        disabled={loading}
+                        onClick={() => {
+                          const original = view?.excerpts.find(
+                            (item) => item.id === chosenExcerpt.supersedesId
+                          )
+                          if (original) void navigateExcerpt(original)
+                          else setError('The earlier excerpt is unavailable.')
+                        }}
+                      >
+                        Open the unchanged earlier excerpt
+                      </AppButton>
+                    ) : null}
+                  </details>
+                  {excerptLinks.length ? (
+                    <div>
+                      <h3>Used as evidence</h3>
+                      {excerptLinks.map((link) => (
+                        <AppButton
+                          key={link.id}
+                          variant="subtle"
+                          onClick={() =>
+                            session.research({
+                              kind: 'evidence',
+                              item: { kind: 'link', id: link.id }
+                            })
+                          }
+                        >
+                          {link.role.replace('_', ' ')} ·{' '}
+                          {link.claimId
+                            ? (research.view?.claims.find((item) => item.id === link.claimId)
+                                ?.text ?? 'Missing claim')
+                            : (research.view?.sections.find((item) => item.id === link.documentId)
+                                ?.title ?? 'Missing section')}{' '}
+                          · {link.state}
+                        </AppButton>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>No manual evidence links use this excerpt yet.</p>
+                  )}
+                </section>
+              ) : null}
+              {correctionFor ? (
+                <form
+                  className="research-form inspector-transcription"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void correct()
                   }}
                 >
-                  Open the unchanged earlier excerpt
-                </AppButton>
+                  <h3>Correction to retained excerpt</h3>
+                  <p>The original remains unchanged.</p>
+                  <TextareaField
+                    label="Corrected passage"
+                    disabled={readOnly || loading}
+                    value={correctionQuote}
+                    maxLength={10000}
+                    onChange={(event) => setCorrectionQuote(event.currentTarget.value)}
+                    rows={4}
+                  />
+                  <TextInput
+                    label="Required correction label"
+                    disabled={readOnly || loading}
+                    value={correctionLabel}
+                    maxLength={200}
+                    onChange={(event) => setCorrectionLabel(event.currentTarget.value)}
+                  />
+                  <div className="research-actions">
+                    <AppButton
+                      type="submit"
+                      disabled={
+                        loading || readOnly || !correctionQuote.trim() || !correctionLabel.trim()
+                      }
+                    >
+                      Save correction
+                    </AppButton>
+                    <AppButton
+                      variant="default"
+                      disabled={loading}
+                      onClick={() => setCorrectionFor(null)}
+                    >
+                      Cancel correction
+                    </AppButton>
+                  </div>
+                </form>
               ) : null}
-            </details>
-            {excerptLinks.length ? (
-              <div>
-                <h3>Used as evidence</h3>
-                {excerptLinks.map((link) => (
-                  <AppButton
-                    key={link.id}
-                    variant="subtle"
-                    onClick={() =>
-                      session.research({ kind: 'evidence', item: { kind: 'link', id: link.id } })
-                    }
-                  >
-                    {link.role.replace('_', ' ')} ·{' '}
-                    {link.claimId
-                      ? (research.view?.claims.find((item) => item.id === link.claimId)?.text ??
-                        'Missing claim')
-                      : (research.view?.sections.find((item) => item.id === link.documentId)
-                          ?.title ?? 'Missing section')}{' '}
-                    · {link.state}
-                  </AppButton>
-                ))}
-              </div>
-            ) : (
-              <p>No manual evidence links use this excerpt yet.</p>
-            )}
-          </section>
-        ) : null}
-        {correctionFor ? (
-          <form
-            className="research-form inspector-transcription"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void correct()
-            }}
-          >
-            <h3>Correction to retained excerpt</h3>
-            <p>The original remains unchanged.</p>
-            <TextareaField
-              label="Corrected passage"
-              disabled={readOnly || loading}
-              value={correctionQuote}
-              maxLength={10000}
-              onChange={(event) => setCorrectionQuote(event.currentTarget.value)}
-              rows={4}
-            />
-            <TextInput
-              label="Required correction label"
-              disabled={readOnly || loading}
-              value={correctionLabel}
-              maxLength={200}
-              onChange={(event) => setCorrectionLabel(event.currentTarget.value)}
-            />
-            <div className="research-actions">
-              <AppButton
-                type="submit"
-                disabled={loading || readOnly || !correctionQuote.trim() || !correctionLabel.trim()}
-              >
-                Save correction
-              </AppButton>
-              <AppButton
-                variant="default"
-                disabled={loading}
-                onClick={() => setCorrectionFor(null)}
-              >
-                Cancel correction
-              </AppButton>
-            </div>
-          </form>
-        ) : null}
+            </>
+          )}
+        />
         {selected ? (
           <section aria-label="Original reader">
             <h2>{versionName(selected.id)}</h2>

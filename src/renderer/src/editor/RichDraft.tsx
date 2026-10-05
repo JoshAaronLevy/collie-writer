@@ -1,3 +1,4 @@
+import PresentationBoundary from '../components/PresentationBoundary'
 import { useEffectEvent } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { TextInput, Textarea } from '@mantine/core'
@@ -445,240 +446,248 @@ export default function RichDraft({
   const tableSelected = !!current && inCell(current)
   return (
     <div className="rich-draft" data-writing-dialog-open={dialog !== null}>
-      <div className="editor-toolbar" role="group" aria-label="Writing tools">
-        {(['bold', 'italic', 'underline', 'strike'] as const).map((name) => (
-          <AppButton
-            key={name}
-            variant="subtle"
-            disabled={disabled}
-            aria-label={name}
-            aria-pressed={!!current?.isActive(name)}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => mark(name)}
-          >
-            {name[0].toUpperCase() + name.slice(1)}
-          </AppButton>
-        ))}
-        <ActionMenu
-          label="Style"
-          onOpen={captureTools}
-          actions={[
-            {
-              id: 'paragraph',
-              label: 'Paragraph',
-              disabled,
-              onSelect: () =>
-                menuAction(() =>
-                  command((e) => {
-                    setBlockType(e.state.schema.nodes.paragraph)(e.state, (tr) =>
-                      e.view.dispatch(tr)
-                    )
-                  })
-                )
-            },
-            ...([1, 2, 3] as const).map((level) => ({
-              id: `heading-${level}`,
-              label: `Heading ${level}`,
-              disabled: disabled || tableSelected,
-              onSelect: () =>
-                menuAction(() =>
-                  command((e) => {
-                    setBlockType(e.state.schema.nodes.heading, { level })(e.state, (tr) =>
-                      e.view.dispatch(tr)
-                    )
-                  })
-                )
-            })),
-            {
-              id: 'quote',
-              label: 'Block quotation',
-              disabled: disabled || tableSelected,
-              onSelect: () =>
-                menuAction(() =>
-                  command((e) => {
-                    e.chain().toggleWrap('blockquote').run()
-                  })
-                )
-            },
-            {
-              id: 'bullets',
-              label: 'Bulleted list',
-              disabled: disabled || tableSelected,
-              onSelect: () =>
-                menuAction(() =>
-                  command((e) => {
-                    wrapInList(e.state.schema.nodes.bulletList)(e.state, (tr) =>
-                      e.view.dispatch(tr)
-                    )
-                  })
-                )
-            },
-            {
-              id: 'numbers',
-              label: 'Numbered list',
-              disabled: disabled || tableSelected,
-              onSelect: () =>
-                menuAction(() =>
-                  command((e) => {
-                    wrapInList(e.state.schema.nodes.orderedList, { start: 1 })(e.state, (tr) =>
-                      e.view.dispatch(tr)
-                    )
-                  })
-                )
-            }
-          ]}
-        />
-        <ActionMenu
-          label="Insert"
-          onOpen={captureTools}
-          actions={[
-            {
-              id: 'link',
-              label: 'Link…',
-              disabled: disabled || tableSelected,
-              onSelect: () => menuAction(link)
-            },
-            {
-              id: 'unlink',
-              label: 'Remove link',
-              disabled: disabled || !current?.isActive('link'),
-              onSelect: () =>
-                menuAction(() =>
-                  command((e) => {
-                    e.commands.unsetMark('link')
-                  })
-                )
-            },
-            {
-              id: 'rule',
-              label: 'Horizontal rule',
-              disabled: disabled || tableSelected,
-              onSelect: () => menuAction(() => insertBlock('horizontalRule'))
-            },
-            ...(!noteMode
-              ? [
+      <PresentationBoundary
+        label="Writing tools"
+        render={() => (
+          <>
+            <div className="editor-toolbar" role="group" aria-label="Writing tools">
+              {(['bold', 'italic', 'underline', 'strike'] as const).map((name) => (
+                <AppButton
+                  key={name}
+                  variant="subtle"
+                  disabled={disabled}
+                  aria-label={name}
+                  aria-pressed={!!current?.isActive(name)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => mark(name)}
+                >
+                  {name[0].toUpperCase() + name.slice(1)}
+                </AppButton>
+              ))}
+              <ActionMenu
+                label="Style"
+                onOpen={captureTools}
+                actions={[
                   {
-                    id: 'page',
-                    label: 'Page break',
-                    disabled: disabled || tableSelected,
-                    onSelect: () => menuAction(() => insertBlock('pageBreak'))
+                    id: 'paragraph',
+                    label: 'Paragraph',
+                    disabled,
+                    onSelect: () =>
+                      menuAction(() =>
+                        command((e) => {
+                          setBlockType(e.state.schema.nodes.paragraph)(e.state, (tr) =>
+                            e.view.dispatch(tr)
+                          )
+                        })
+                      )
                   },
-                  {
-                    id: 'table',
-                    label: 'Table (2 × 2)',
-                    disabled: disabled || tableSelected,
-                    onSelect: () => menuAction(table)
-                  },
-                  {
-                    id: 'image',
-                    label: 'Image…',
+                  ...([1, 2, 3] as const).map((level) => ({
+                    id: `heading-${level}`,
+                    label: `Heading ${level}`,
                     disabled: disabled || tableSelected,
                     onSelect: () =>
-                      menuAction(() => {
-                        setAlt('')
-                        setCaption('')
-                        openDialog('image')
-                      })
-                  }
-                ]
-              : []),
-            ...(references
-              ? [
+                      menuAction(() =>
+                        command((e) => {
+                          setBlockType(e.state.schema.nodes.heading, { level })(e.state, (tr) =>
+                            e.view.dispatch(tr)
+                          )
+                        })
+                      )
+                  })),
                   {
-                    id: 'references',
-                    label: 'Citations and footnotes',
-                    disabled: false,
-                    onSelect: () => menuAction(() => setReferencesOpen(true))
+                    id: 'quote',
+                    label: 'Block quotation',
+                    disabled: disabled || tableSelected,
+                    onSelect: () =>
+                      menuAction(() =>
+                        command((e) => {
+                          e.chain().toggleWrap('blockquote').run()
+                        })
+                      )
+                  },
+                  {
+                    id: 'bullets',
+                    label: 'Bulleted list',
+                    disabled: disabled || tableSelected,
+                    onSelect: () =>
+                      menuAction(() =>
+                        command((e) => {
+                          wrapInList(e.state.schema.nodes.bulletList)(e.state, (tr) =>
+                            e.view.dispatch(tr)
+                          )
+                        })
+                      )
+                  },
+                  {
+                    id: 'numbers',
+                    label: 'Numbered list',
+                    disabled: disabled || tableSelected,
+                    onSelect: () =>
+                      menuAction(() =>
+                        command((e) => {
+                          wrapInList(e.state.schema.nodes.orderedList, { start: 1 })(
+                            e.state,
+                            (tr) => e.view.dispatch(tr)
+                          )
+                        })
+                      )
                   }
-                ]
-              : [])
-          ]}
-        />
-        <AppButton
-          variant="subtle"
-          disabled={disabled}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() =>
-            command((e) => {
-              undo(e.state, (tr) => e.view.dispatch(tr))
-            })
-          }
-        >
-          Undo
-        </AppButton>
-        <AppButton
-          variant="subtle"
-          disabled={disabled}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() =>
-            command((e) => {
-              redo(e.state, (tr) => e.view.dispatch(tr))
-            })
-          }
-        >
-          Redo
-        </AppButton>
-        <ActionMenu
-          label="More tools"
-          onOpen={captureTools}
-          actions={[
-            { id: 'find', label: 'Find and replace…', onSelect: openFind },
-            {
-              id: 'paste',
-              label: 'Paste plain text',
-              disabled,
-              onSelect: () =>
-                menuAction(() => {
-                  void pastePlain()
-                })
-            },
-            {
-              id: 'copy',
-              label: 'Select all for copying',
-              onSelect: () => {
-                if (current && !editorIsComposing(current)) {
-                  current.commands.selectAll()
-                  current.commands.focus()
+                ]}
+              />
+              <ActionMenu
+                label="Insert"
+                onOpen={captureTools}
+                actions={[
+                  {
+                    id: 'link',
+                    label: 'Link…',
+                    disabled: disabled || tableSelected,
+                    onSelect: () => menuAction(link)
+                  },
+                  {
+                    id: 'unlink',
+                    label: 'Remove link',
+                    disabled: disabled || !current?.isActive('link'),
+                    onSelect: () =>
+                      menuAction(() =>
+                        command((e) => {
+                          e.commands.unsetMark('link')
+                        })
+                      )
+                  },
+                  {
+                    id: 'rule',
+                    label: 'Horizontal rule',
+                    disabled: disabled || tableSelected,
+                    onSelect: () => menuAction(() => insertBlock('horizontalRule'))
+                  },
+                  ...(!noteMode
+                    ? [
+                        {
+                          id: 'page',
+                          label: 'Page break',
+                          disabled: disabled || tableSelected,
+                          onSelect: () => menuAction(() => insertBlock('pageBreak'))
+                        },
+                        {
+                          id: 'table',
+                          label: 'Table (2 × 2)',
+                          disabled: disabled || tableSelected,
+                          onSelect: () => menuAction(table)
+                        },
+                        {
+                          id: 'image',
+                          label: 'Image…',
+                          disabled: disabled || tableSelected,
+                          onSelect: () =>
+                            menuAction(() => {
+                              setAlt('')
+                              setCaption('')
+                              openDialog('image')
+                            })
+                        }
+                      ]
+                    : []),
+                  ...(references
+                    ? [
+                        {
+                          id: 'references',
+                          label: 'Citations and footnotes',
+                          disabled: false,
+                          onSelect: () => menuAction(() => setReferencesOpen(true))
+                        }
+                      ]
+                    : [])
+                ]}
+              />
+              <AppButton
+                variant="subtle"
+                disabled={disabled}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() =>
+                  command((e) => {
+                    undo(e.state, (tr) => e.view.dispatch(tr))
+                  })
                 }
-              }
-            }
-          ]}
-        />
-      </div>
-      {tableSelected && !noteMode ? (
-        <div className="editor-context-tools" role="group" aria-label="Table actions">
-          <span>Table</span>
-          <AppButton
-            variant="subtle"
-            disabled={disabled}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => growTable('row')}
-          >
-            Add row
-          </AppButton>
-          <AppButton
-            variant="subtle"
-            disabled={disabled}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => growTable('column')}
-          >
-            Add column
-          </AppButton>
-        </div>
-      ) : null}
-      {imageSelected && !noteMode ? (
-        <div className="editor-context-tools">
-          <span>Selected image</span>
-          <AppButton
-            variant="subtle"
-            disabled={disabled}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={imageDetails}
-          >
-            Image details…
-          </AppButton>
-        </div>
-      ) : null}
+              >
+                Undo
+              </AppButton>
+              <AppButton
+                variant="subtle"
+                disabled={disabled}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() =>
+                  command((e) => {
+                    redo(e.state, (tr) => e.view.dispatch(tr))
+                  })
+                }
+              >
+                Redo
+              </AppButton>
+              <ActionMenu
+                label="More tools"
+                onOpen={captureTools}
+                actions={[
+                  { id: 'find', label: 'Find and replace…', onSelect: openFind },
+                  {
+                    id: 'paste',
+                    label: 'Paste plain text',
+                    disabled,
+                    onSelect: () =>
+                      menuAction(() => {
+                        void pastePlain()
+                      })
+                  },
+                  {
+                    id: 'copy',
+                    label: 'Select all for copying',
+                    onSelect: () => {
+                      if (current && !editorIsComposing(current)) {
+                        current.commands.selectAll()
+                        current.commands.focus()
+                      }
+                    }
+                  }
+                ]}
+              />
+            </div>
+            {tableSelected && !noteMode ? (
+              <div className="editor-context-tools" role="group" aria-label="Table actions">
+                <span>Table</span>
+                <AppButton
+                  variant="subtle"
+                  disabled={disabled}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => growTable('row')}
+                >
+                  Add row
+                </AppButton>
+                <AppButton
+                  variant="subtle"
+                  disabled={disabled}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => growTable('column')}
+                >
+                  Add column
+                </AppButton>
+              </div>
+            ) : null}
+            {imageSelected && !noteMode ? (
+              <div className="editor-context-tools">
+                <span>Selected image</span>
+                <AppButton
+                  variant="subtle"
+                  disabled={disabled}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={imageDetails}
+                >
+                  Image details…
+                </AppButton>
+              </div>
+            ) : null}
+          </>
+        )}
+      />
       <div className="editor-reference-region" hidden={!referencesOpen} inert={!referencesOpen}>
         <AppButton
           variant="subtle"
@@ -724,112 +733,124 @@ export default function RichDraft({
           if (!event.currentTarget.contains(event.relatedTarget)) onBlur()
         }}
       />
-      <p className="word-count" aria-live="off">
-        {words.toLocaleString()} words in this section
-      </p>
-      <div
-        className="editor-find"
-        hidden={!findOpen}
-        inert={!findOpen}
-        role="search"
-        aria-label="Case-sensitive find and replace in this section"
-      >
-        <TextInput
-          label="Find (case-sensitive)"
-          ref={findField}
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value)
-            setMatch('')
-          }}
-        />
-        <TextInput
-          label="Replace with"
-          value={replacement}
-          onChange={(event) => setReplacement(event.target.value)}
-        />
-        <div className="editor-dialog-actions">
-          <AppButton variant="default" onClick={selectFound}>
-            Find next
-          </AppButton>
-          <AppButton variant="default" disabled={disabled} onClick={() => replace(false)}>
-            Replace
-          </AppButton>
-          <AppButton variant="default" disabled={disabled} onClick={() => replace(true)}>
-            Replace all
-          </AppButton>
-          <AppButton
-            variant="subtle"
-            onClick={() => {
-              setFindOpen(false)
-              current?.commands.focus()
-            }}
-          >
-            Close find
-          </AppButton>
-        </div>
-        {match ? <p role="status">{match}</p> : null}
-      </div>
-      <AppDialog
-        opened={dialog !== null}
-        title={
-          dialog === 'link' ? 'Link' : dialog === 'image-details' ? 'Image details' : 'Insert image'
-        }
-        onClose={closeDialog}
-        returnFocus={false}
-        onExited={() => {
-          const action = afterDialog.current
-          afterDialog.current = null
-          if (action) action()
-          else if (editor.current && !editor.current.isDestroyed) editor.current.commands.focus()
-        }}
-      >
-        <form
-          className="editor-dialog-form"
-          {...formDraft.events}
-          onSubmit={(event) => {
-            event.preventDefault()
-            applyDialog()
-          }}
-        >
-          {dialog === 'link' ? (
-            <TextInput
-              label="Web address"
-              description="Use an http or https address."
-              value={href}
-              onChange={(event) => setHref(event.currentTarget.value)}
-              required
-              data-autofocus
-            />
-          ) : (
-            <>
-              <Textarea
-                label="Image description"
-                description="Describe the image for assistive technology. Leave empty only for a decorative image."
-                value={alt}
-                maxLength={2000}
-                onChange={(event) => setAlt(event.currentTarget.value)}
-                data-autofocus
+      <PresentationBoundary
+        label="Find and writing dialogs"
+        render={() => (
+          <>
+            <p className="word-count" aria-live="off">
+              {words.toLocaleString()} words in this section
+            </p>
+            <div
+              className="editor-find"
+              hidden={!findOpen}
+              inert={!findOpen}
+              role="search"
+              aria-label="Case-sensitive find and replace in this section"
+            >
+              <TextInput
+                label="Find (case-sensitive)"
+                ref={findField}
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value)
+                  setMatch('')
+                }}
               />
-              <Textarea
-                label="Caption (optional)"
-                value={caption}
-                maxLength={10000}
-                onChange={(event) => setCaption(event.currentTarget.value)}
+              <TextInput
+                label="Replace with"
+                value={replacement}
+                onChange={(event) => setReplacement(event.target.value)}
               />
-            </>
-          )}
-          {dialogIssue ? <p role="alert">{dialogIssue}</p> : null}
-          <div className="editor-dialog-actions">
-            <AppButton type="submit" disabled={disabled}>
-              {dialog === 'image' ? 'Choose image file…' : 'Apply'}
-            </AppButton>
-            <AppButton variant="default" onClick={closeDialog}>
-              Cancel
-            </AppButton>
-          </div>
-        </form>
-      </AppDialog>
+              <div className="editor-dialog-actions">
+                <AppButton variant="default" onClick={selectFound}>
+                  Find next
+                </AppButton>
+                <AppButton variant="default" disabled={disabled} onClick={() => replace(false)}>
+                  Replace
+                </AppButton>
+                <AppButton variant="default" disabled={disabled} onClick={() => replace(true)}>
+                  Replace all
+                </AppButton>
+                <AppButton
+                  variant="subtle"
+                  onClick={() => {
+                    setFindOpen(false)
+                    current?.commands.focus()
+                  }}
+                >
+                  Close find
+                </AppButton>
+              </div>
+              {match ? <p role="status">{match}</p> : null}
+            </div>
+            <AppDialog
+              opened={dialog !== null}
+              title={
+                dialog === 'link'
+                  ? 'Link'
+                  : dialog === 'image-details'
+                    ? 'Image details'
+                    : 'Insert image'
+              }
+              onClose={closeDialog}
+              returnFocus={false}
+              onExited={() => {
+                const action = afterDialog.current
+                afterDialog.current = null
+                if (action) action()
+                else if (editor.current && !editor.current.isDestroyed)
+                  editor.current.commands.focus()
+              }}
+            >
+              <form
+                className="editor-dialog-form"
+                {...formDraft.events}
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  applyDialog()
+                }}
+              >
+                {dialog === 'link' ? (
+                  <TextInput
+                    label="Web address"
+                    description="Use an http or https address."
+                    value={href}
+                    onChange={(event) => setHref(event.currentTarget.value)}
+                    required
+                    data-autofocus
+                  />
+                ) : (
+                  <>
+                    <Textarea
+                      label="Image description"
+                      description="Describe the image for assistive technology. Leave empty only for a decorative image."
+                      value={alt}
+                      maxLength={2000}
+                      onChange={(event) => setAlt(event.currentTarget.value)}
+                      data-autofocus
+                    />
+                    <Textarea
+                      label="Caption (optional)"
+                      value={caption}
+                      maxLength={10000}
+                      onChange={(event) => setCaption(event.currentTarget.value)}
+                    />
+                  </>
+                )}
+                {dialogIssue ? <p role="alert">{dialogIssue}</p> : null}
+                <div className="editor-dialog-actions">
+                  <AppButton type="submit" disabled={disabled}>
+                    {dialog === 'image' ? 'Choose image file…' : 'Apply'}
+                  </AppButton>
+                  <AppButton variant="default" onClick={closeDialog}>
+                    Cancel
+                  </AppButton>
+                </div>
+              </form>
+            </AppDialog>
+          </>
+        )}
+      />
     </div>
   )
 }

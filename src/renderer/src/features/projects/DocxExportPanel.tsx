@@ -1,3 +1,4 @@
+import PresentationBoundary from '../../components/PresentationBoundary'
 import { useLayoutEffect } from 'react'
 import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { hasControlCharacters } from '../../../../shared/control-characters'
@@ -421,402 +422,412 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
     !preview.losses.length &&
     (!metadata.length || ack)
   return (
-    <section className={styles['export-workspace']} aria-labelledby="docx-export-heading">
-      <header>
-        <p className={styles['export-eyebrow']}>Share your writing</p>
-        <h1 id="docx-export-heading">Export</h1>
-        <p>
-          Make a reading copy from protected writing. Export is separate from saving your Collie
-          project.
-        </p>
-      </header>
-      <nav className={styles['export-steps']} aria-label="Export steps">
-        <AppButton
-          variant={step === 'options' ? 'filled' : 'subtle'}
-          disabled={busy}
-          aria-current={step === 'options' ? 'step' : undefined}
-          onClick={() => setStep('options')}
-        >
-          1. Sections and options
-        </AppButton>
-        <AppButton
-          variant={step === 'review' ? 'filled' : 'subtle'}
-          disabled={busy}
-          aria-current={step === 'review' ? 'step' : undefined}
-          onClick={() => setStep('review')}
-        >
-          2. Review and destination
-        </AppButton>
-        <AppButton
-          variant={step === 'result' ? 'filled' : 'subtle'}
-          disabled={busy || !operation}
-          aria-current={step === 'result' ? 'step' : undefined}
-          onClick={() => setStep('result')}
-        >
-          3. Export results
-        </AppButton>
-      </nav>
-      <h2 ref={heading} tabIndex={-1}>
-        {step === 'options'
-          ? 'Choose what to export'
-          : step === 'review'
-            ? 'Review before choosing a destination'
-            : 'Your export results'}
-      </h2>
-      {step === 'options' ? (
-        <div className={styles['export-options']}>
-          <fieldset className={styles['export-section-list']} disabled={locked}>
-            <legend>Include sections</legend>
-            {!texts.length ? (
-              <p>No active writing sections. Add a section in Write before exporting.</p>
-            ) : null}
-            {orderedOutline.map((d) => (
-              <div key={d.id} style={{ paddingInlineStart: `${d.depth * 1.25}rem` }}>
-                <ChoiceField
-                  label={`${d.kind === 'text' ? 'Section' : d.kind === 'chapter' ? 'Chapter' : 'Part'}: ${d.title}`}
-                  checked={
-                    d.kind === 'text'
-                      ? selected.includes(d.id)
-                      : texts.some((x) => belongsTo(x.id, d.id)) &&
-                        texts
-                          .filter((x) => belongsTo(x.id, d.id))
-                          .every((x) => selected.includes(x.id))
-                  }
-                  onChange={() => toggle(d.id)}
-                />
-              </div>
-            ))}
-          </fieldset>
-          <details className={styles['export-disclosure']}>
-            <summary>Selected order · {selected.length} sections</summary>
-            <ol className={styles['export-order']}>
-              {selected.map((id, index) => (
-                <li key={id}>
-                  <span>
-                    {props.project.documents.find((d) => d.id === id)?.title ??
-                      'Missing section — remove or replace this recipe selection'}
-                  </span>
-                  <div className={styles['export-actions']}>
-                    <AppButton
-                      variant="subtle"
-                      disabled={locked || index === 0}
-                      onClick={() => move(id, -1)}
-                      aria-label={`Move section ${index + 1} up`}
-                    >
-                      Move up
-                    </AppButton>
-                    <AppButton
-                      variant="subtle"
-                      disabled={locked || index === selected.length - 1}
-                      onClick={() => move(id, 1)}
-                      aria-label={`Move section ${index + 1} down`}
-                    >
-                      Move down
-                    </AppButton>
-                    <AppButton
-                      variant="subtle"
-                      disabled={locked}
-                      onClick={() => setSelected((old) => old.filter((item) => item !== id))}
-                    >
-                      Remove from export
-                    </AppButton>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </details>
-          <fieldset className={styles['export-format-options']} disabled={locked}>
-            <legend>Output format{props.paid ? 's' : ''}</legend>
-            {(['docx', 'pdf', 'markdown', 'text'] as ExportFormat[]).map((format) =>
-              props.paid ? (
-                <ChoiceField
-                  key={format}
-                  label={
-                    format === 'text'
-                      ? 'Plain text'
-                      : format === 'markdown'
-                        ? 'Markdown'
-                        : format.toUpperCase()
-                  }
-                  checked={formats.includes(format)}
-                  onChange={() => toggleFormat(format)}
-                />
-              ) : (
-                <Radio
-                  key={format}
-                  name="export-format"
-                  label={
-                    format === 'text'
-                      ? 'Plain text'
-                      : format === 'markdown'
-                        ? 'Markdown'
-                        : format.toUpperCase()
-                  }
-                  checked={formats.includes(format)}
-                  onChange={() => toggleFormat(format)}
-                />
-              )
-            )}
+    <PresentationBoundary
+      label="Export"
+      render={() => (
+        <section className={styles['export-workspace']} aria-labelledby="docx-export-heading">
+          <header>
+            <p className={styles['export-eyebrow']}>Share your writing</p>
+            <h1 id="docx-export-heading">Export</h1>
             <p>
-              {props.paid
-                ? 'Choose one format or a batch of formats.'
-                : 'Choose one format at a time. Multi-format batches require paid Collie access.'}
+              Make a reading copy from protected writing. Export is separate from saving your Collie
+              project.
             </p>
-          </fieldset>
-          <div className={styles['export-fields']}>
-            <SelectField
-              label="Page preset"
-              value={paper}
-              disabled={locked}
-              onChange={(e) => setPaper(e.currentTarget.value as 'Letter' | 'A4')}
-              data={[
-                { value: 'Letter', label: 'US Letter' },
-                { value: 'A4', label: 'A4' }
-              ]}
-            />
-            <TextInput
-              label="Output name"
-              value={baseName}
-              disabled={locked}
-              maxLength={100}
-              error={
-                !validBaseName
-                  ? 'Use a filename without path separators, reserved characters or a trailing dot.'
-                  : undefined
-              }
-              onChange={(e) => setBaseName(e.currentTarget.value)}
-            />
-          </div>
-          <ChoiceField
-            label="Include a title page with title and byline"
-            disabled={locked}
-            checked={titlePage}
-            onChange={(event) => setTitlePage(event.currentTarget.checked)}
-          />
-          <details className={styles['export-disclosure']}>
-            <summary>Document properties and format limits</summary>
-            <p>
-              DOCX and PDF properties include “{props.project.title}” and{' '}
-              {props.project.byline || 'an empty author field'}. The title page contains only the
-              title and byline.
-            </p>
-            <ChoiceField
-              label="Include the project description in DOCX/PDF document properties"
-              disabled={locked}
-              checked={includeDescription}
-              onChange={(event) => setIncludeDescription(event.currentTarget.checked)}
-            />
-            <p>
-              Descriptions are never printed on the title page or added to Markdown/text.
-              Markdown/text opening title and byline have no guaranteed page break. Markdown copies
-              images into an adjacent asset folder. Plain text omits image pixels and layout; each
-              result reports format losses.
-            </p>
-          </details>
-          <details className={styles['export-disclosure']} open={!!pendingRecipeValue || undefined}>
-            <summary>Saved compilation recipes</summary>
-            <p>
-              Recipes remember section IDs, order, paper and formats. They contain no second
-              manuscript. Loading resets title-page and description choices.
-            </p>
-            {!props.paid ? (
-              <p>
-                Load existing recipes and export one format at a time. Creating or editing recipes
-                requires paid Collie access.
-              </p>
-            ) : null}
-            <SelectField
-              label="Saved recipes"
-              disabled={locked}
-              value={recipeId ?? ''}
-              onChange={(e) => {
-                const found = recipes?.recipes.find((r) => r.id === e.currentTarget.value)
-                if (found) selectRecipe(found)
-                else {
-                  setRecipeId(null)
-                  setRecipeName('')
-                }
-              }}
-            >
-              <option value="">New recipe</option>
-              {recipes?.recipes.map((r) => (
-                <option value={r.id} key={r.id}>
-                  {r.name}
-                  {r.missingIds.length ? ' — missing sections' : ''}
-                </option>
-              ))}
-            </SelectField>
-            {selected.some((id) => !texts.some((t) => t.id === id)) ? (
-              <p role="alert">
-                This selection contains missing or inactive sections. Remove them from Selected
-                order or choose active sections before reviewing.
-              </p>
-            ) : null}
-            <TextInput
-              label="Recipe name"
-              disabled={!props.paid || locked}
-              value={recipeName}
-              maxLength={120}
-              onChange={(e) => setRecipeName(e.currentTarget.value)}
-            />
+          </header>
+          <nav className={styles['export-steps']} aria-label="Export steps">
             <AppButton
-              variant="default"
-              disabled={
-                !props.paid ||
-                props.disabled ||
-                busy ||
-                (!pendingRecipeValue &&
-                  (!recipeName.trim() ||
-                    !selected.length ||
-                    !formats.length ||
-                    selected.some((id) => !texts.some((t) => t.id === id))))
-              }
-              onClick={() => void saveRecipe()}
+              variant={step === 'options' ? 'filled' : 'subtle'}
+              disabled={busy}
+              aria-current={step === 'options' ? 'step' : undefined}
+              onClick={() => setStep('options')}
             >
-              {pendingRecipeValue
-                ? 'Retry same recipe save'
-                : recipeId
-                  ? 'Update recipe'
-                  : 'Save new recipe'}
+              1. Sections and options
             </AppButton>
-          </details>
-          <AppButton disabled={locked || !canReview} onClick={() => void refresh()}>
-            Protect drafts and review export
-          </AppButton>
-        </div>
-      ) : null}
-      {step === 'review' ? (
-        <div className={styles['export-review']}>
-          {!preview ? (
-            <>
-              <p role="status">
-                The writing or export choices changed. Prepare a new review and acknowledge any
-                remaining metadata omissions.
-              </p>
-              <AppButton disabled={locked || !canReview} onClick={() => void refresh()}>
-                Prepare fresh review
-              </AppButton>
-            </>
-          ) : (
-            <>
-              <p>
-                {preview.sections.length} sections ·{' '}
-                {formats.map((f) => (f === 'text' ? 'Plain text' : f.toUpperCase())).join(', ')} ·{' '}
-                {preview.style === 'apa' ? 'APA 7' : 'Chicago 18'} · {preview.paper}
-              </p>
-              <details>
-                <summary>Captured writing details</summary>
-                <p>
-                  Revision {preview.headCommitId.slice(0, 8)} · {preview.counts.paragraphs}{' '}
-                  paragraphs · {preview.counts.tables} tables · {preview.counts.images} images ·{' '}
-                  {preview.counts.footnotes} footnotes · {preview.counts.citations} citation
-                  clusters · {preview.counts.bibliography} bibliography entries.
-                </p>
-                <ol>
-                  {preview.sections.map((section) => (
-                    <li key={section.documentId}>{section.title}</li>
+            <AppButton
+              variant={step === 'review' ? 'filled' : 'subtle'}
+              disabled={busy}
+              aria-current={step === 'review' ? 'step' : undefined}
+              onClick={() => setStep('review')}
+            >
+              2. Review and destination
+            </AppButton>
+            <AppButton
+              variant={step === 'result' ? 'filled' : 'subtle'}
+              disabled={busy || !operation}
+              aria-current={step === 'result' ? 'step' : undefined}
+              onClick={() => setStep('result')}
+            >
+              3. Export results
+            </AppButton>
+          </nav>
+          <h2 ref={heading} tabIndex={-1}>
+            {step === 'options'
+              ? 'Choose what to export'
+              : step === 'review'
+                ? 'Review before choosing a destination'
+                : 'Your export results'}
+          </h2>
+          {step === 'options' ? (
+            <div className={styles['export-options']}>
+              <fieldset className={styles['export-section-list']} disabled={locked}>
+                <legend>Include sections</legend>
+                {!texts.length ? (
+                  <p>No active writing sections. Add a section in Write before exporting.</p>
+                ) : null}
+                {orderedOutline.map((d) => (
+                  <div key={d.id} style={{ paddingInlineStart: `${d.depth * 1.25}rem` }}>
+                    <ChoiceField
+                      label={`${d.kind === 'text' ? 'Section' : d.kind === 'chapter' ? 'Chapter' : 'Part'}: ${d.title}`}
+                      checked={
+                        d.kind === 'text'
+                          ? selected.includes(d.id)
+                          : texts.some((x) => belongsTo(x.id, d.id)) &&
+                            texts
+                              .filter((x) => belongsTo(x.id, d.id))
+                              .every((x) => selected.includes(x.id))
+                      }
+                      onChange={() => toggle(d.id)}
+                    />
+                  </div>
+                ))}
+              </fieldset>
+              <details className={styles['export-disclosure']}>
+                <summary>Selected order · {selected.length} sections</summary>
+                <ol className={styles['export-order']}>
+                  {selected.map((id, index) => (
+                    <li key={id}>
+                      <span>
+                        {props.project.documents.find((d) => d.id === id)?.title ??
+                          'Missing section — remove or replace this recipe selection'}
+                      </span>
+                      <div className={styles['export-actions']}>
+                        <AppButton
+                          variant="subtle"
+                          disabled={locked || index === 0}
+                          onClick={() => move(id, -1)}
+                          aria-label={`Move section ${index + 1} up`}
+                        >
+                          Move up
+                        </AppButton>
+                        <AppButton
+                          variant="subtle"
+                          disabled={locked || index === selected.length - 1}
+                          onClick={() => move(id, 1)}
+                          aria-label={`Move section ${index + 1} down`}
+                        >
+                          Move down
+                        </AppButton>
+                        <AppButton
+                          variant="subtle"
+                          disabled={locked}
+                          onClick={() => setSelected((old) => old.filter((item) => item !== id))}
+                        >
+                          Remove from export
+                        </AppButton>
+                      </div>
+                    </li>
                   ))}
                 </ol>
               </details>
-              {blocking.map((issue, index) => (
-                <p role="alert" key={index}>
-                  {issue.message}
-                </p>
-              ))}
-              {metadata.length ? (
-                <div>
-                  <h3>Source metadata needs review</h3>
-                  <ul>
-                    {metadata.map((issue, index) => (
-                      <li key={index}>{issue.message}</li>
-                    ))}
-                  </ul>
-                  <ChoiceField
-                    label="Export this captured revision with these listed metadata omissions"
-                    disabled={locked}
-                    checked={ack}
-                    onChange={(e) => setAck(e.currentTarget.checked)}
-                  />
-                </div>
-              ) : null}
-              {preview.issues.length ? (
-                <AppButton
-                  variant="default"
-                  disabled={busy}
-                  onClick={() => research({ kind: 'sources' })}
-                >
-                  Review sources in Research
-                </AppButton>
-              ) : null}
-              {preview.losses.length ? (
-                <p role="alert">Unsupported compilation conversions: {preview.losses.join('; ')}</p>
-              ) : (
+              <fieldset className={styles['export-format-options']} disabled={locked}>
+                <legend>Output format{props.paid ? 's' : ''}</legend>
+                {(['docx', 'pdf', 'markdown', 'text'] as ExportFormat[]).map((format) =>
+                  props.paid ? (
+                    <ChoiceField
+                      key={format}
+                      label={
+                        format === 'text'
+                          ? 'Plain text'
+                          : format === 'markdown'
+                            ? 'Markdown'
+                            : format.toUpperCase()
+                      }
+                      checked={formats.includes(format)}
+                      onChange={() => toggleFormat(format)}
+                    />
+                  ) : (
+                    <Radio
+                      key={format}
+                      name="export-format"
+                      label={
+                        format === 'text'
+                          ? 'Plain text'
+                          : format === 'markdown'
+                            ? 'Markdown'
+                            : format.toUpperCase()
+                      }
+                      checked={formats.includes(format)}
+                      onChange={() => toggleFormat(format)}
+                    />
+                  )
+                )}
                 <p>
-                  No compilation-blocking conversion is planned. Format-specific losses appear in
-                  each file result.
+                  {props.paid
+                    ? 'Choose one format or a batch of formats.'
+                    : 'Choose one format at a time. Multi-format batches require paid Collie access.'}
                 </p>
-              )}
-              <p>
-                {formats.length === 1
-                  ? 'Next, choose a file in the native Save dialog.'
-                  : 'Next, choose a folder for the selected formats.'}{' '}
-                Existing outputs are kept; choose a new name to retry a collision. Cancelling the
-                picker keeps this review.
-              </p>
-              <AppButton
-                disabled={!canExport || !canReview}
-                onClick={() => void startCompilation()}
-              >
-                Choose {formats.length === 1 ? 'file' : 'folder'} and export…
-              </AppButton>
+              </fieldset>
+              <div className={styles['export-fields']}>
+                <SelectField
+                  label="Page preset"
+                  value={paper}
+                  disabled={locked}
+                  onChange={(e) => setPaper(e.currentTarget.value as 'Letter' | 'A4')}
+                  data={[
+                    { value: 'Letter', label: 'US Letter' },
+                    { value: 'A4', label: 'A4' }
+                  ]}
+                />
+                <TextInput
+                  label="Output name"
+                  value={baseName}
+                  disabled={locked}
+                  maxLength={100}
+                  error={
+                    !validBaseName
+                      ? 'Use a filename without path separators, reserved characters or a trailing dot.'
+                      : undefined
+                  }
+                  onChange={(e) => setBaseName(e.currentTarget.value)}
+                />
+              </div>
+              <ChoiceField
+                label="Include a title page with title and byline"
+                disabled={locked}
+                checked={titlePage}
+                onChange={(event) => setTitlePage(event.currentTarget.checked)}
+              />
               <details className={styles['export-disclosure']}>
-                <summary>Replace an existing DOCX</summary>
+                <summary>Document properties and format limits</summary>
                 <p>
-                  This separate DOCX-only flow asks for explicit replacement confirmation and
-                  retains the previous DOCX beside the new output.
+                  DOCX and PDF properties include “{props.project.title}” and{' '}
+                  {props.project.byline || 'an empty author field'}. The title page contains only
+                  the title and byline.
                 </p>
+                <ChoiceField
+                  label="Include the project description in DOCX/PDF document properties"
+                  disabled={locked}
+                  checked={includeDescription}
+                  onChange={(event) => setIncludeDescription(event.currentTarget.checked)}
+                />
+                <p>
+                  Descriptions are never printed on the title page or added to Markdown/text.
+                  Markdown/text opening title and byline have no guaranteed page break. Markdown
+                  copies images into an adjacent asset folder. Plain text omits image pixels and
+                  layout; each result reports format losses.
+                </p>
+              </details>
+              <details
+                className={styles['export-disclosure']}
+                open={!!pendingRecipeValue || undefined}
+              >
+                <summary>Saved compilation recipes</summary>
+                <p>
+                  Recipes remember section IDs, order, paper and formats. They contain no second
+                  manuscript. Loading resets title-page and description choices.
+                </p>
+                {!props.paid ? (
+                  <p>
+                    Load existing recipes and export one format at a time. Creating or editing
+                    recipes requires paid Collie access.
+                  </p>
+                ) : null}
+                <SelectField
+                  label="Saved recipes"
+                  disabled={locked}
+                  value={recipeId ?? ''}
+                  onChange={(e) => {
+                    const found = recipes?.recipes.find((r) => r.id === e.currentTarget.value)
+                    if (found) selectRecipe(found)
+                    else {
+                      setRecipeId(null)
+                      setRecipeName('')
+                    }
+                  }}
+                >
+                  <option value="">New recipe</option>
+                  {recipes?.recipes.map((r) => (
+                    <option value={r.id} key={r.id}>
+                      {r.name}
+                      {r.missingIds.length ? ' — missing sections' : ''}
+                    </option>
+                  ))}
+                </SelectField>
+                {selected.some((id) => !texts.some((t) => t.id === id)) ? (
+                  <p role="alert">
+                    This selection contains missing or inactive sections. Remove them from Selected
+                    order or choose active sections before reviewing.
+                  </p>
+                ) : null}
+                <TextInput
+                  label="Recipe name"
+                  disabled={!props.paid || locked}
+                  value={recipeName}
+                  maxLength={120}
+                  onChange={(e) => setRecipeName(e.currentTarget.value)}
+                />
                 <AppButton
                   variant="default"
-                  disabled={!canExport || formats.length !== 1 || formats[0] !== 'docx'}
-                  onClick={() => void start()}
+                  disabled={
+                    !props.paid ||
+                    props.disabled ||
+                    busy ||
+                    (!pendingRecipeValue &&
+                      (!recipeName.trim() ||
+                        !selected.length ||
+                        !formats.length ||
+                        selected.some((id) => !texts.some((t) => t.id === id))))
+                  }
+                  onClick={() => void saveRecipe()}
                 >
-                  Choose DOCX with replacement option…
+                  {pendingRecipeValue
+                    ? 'Retry same recipe save'
+                    : recipeId
+                      ? 'Update recipe'
+                      : 'Save new recipe'}
                 </AppButton>
               </details>
+              <AppButton disabled={locked || !canReview} onClick={() => void refresh()}>
+                Protect drafts and review export
+              </AppButton>
+            </div>
+          ) : null}
+          {step === 'review' ? (
+            <div className={styles['export-review']}>
+              {!preview ? (
+                <>
+                  <p role="status">
+                    The writing or export choices changed. Prepare a new review and acknowledge any
+                    remaining metadata omissions.
+                  </p>
+                  <AppButton disabled={locked || !canReview} onClick={() => void refresh()}>
+                    Prepare fresh review
+                  </AppButton>
+                </>
+              ) : (
+                <>
+                  <p>
+                    {preview.sections.length} sections ·{' '}
+                    {formats.map((f) => (f === 'text' ? 'Plain text' : f.toUpperCase())).join(', ')}{' '}
+                    · {preview.style === 'apa' ? 'APA 7' : 'Chicago 18'} · {preview.paper}
+                  </p>
+                  <details>
+                    <summary>Captured writing details</summary>
+                    <p>
+                      Revision {preview.headCommitId.slice(0, 8)} · {preview.counts.paragraphs}{' '}
+                      paragraphs · {preview.counts.tables} tables · {preview.counts.images} images ·{' '}
+                      {preview.counts.footnotes} footnotes · {preview.counts.citations} citation
+                      clusters · {preview.counts.bibliography} bibliography entries.
+                    </p>
+                    <ol>
+                      {preview.sections.map((section) => (
+                        <li key={section.documentId}>{section.title}</li>
+                      ))}
+                    </ol>
+                  </details>
+                  {blocking.map((issue, index) => (
+                    <p role="alert" key={index}>
+                      {issue.message}
+                    </p>
+                  ))}
+                  {metadata.length ? (
+                    <div>
+                      <h3>Source metadata needs review</h3>
+                      <ul>
+                        {metadata.map((issue, index) => (
+                          <li key={index}>{issue.message}</li>
+                        ))}
+                      </ul>
+                      <ChoiceField
+                        label="Export this captured revision with these listed metadata omissions"
+                        disabled={locked}
+                        checked={ack}
+                        onChange={(e) => setAck(e.currentTarget.checked)}
+                      />
+                    </div>
+                  ) : null}
+                  {preview.issues.length ? (
+                    <AppButton
+                      variant="default"
+                      disabled={busy}
+                      onClick={() => research({ kind: 'sources' })}
+                    >
+                      Review sources in Research
+                    </AppButton>
+                  ) : null}
+                  {preview.losses.length ? (
+                    <p role="alert">
+                      Unsupported compilation conversions: {preview.losses.join('; ')}
+                    </p>
+                  ) : (
+                    <p>
+                      No compilation-blocking conversion is planned. Format-specific losses appear
+                      in each file result.
+                    </p>
+                  )}
+                  <p>
+                    {formats.length === 1
+                      ? 'Next, choose a file in the native Save dialog.'
+                      : 'Next, choose a folder for the selected formats.'}{' '}
+                    Existing outputs are kept; choose a new name to retry a collision. Cancelling
+                    the picker keeps this review.
+                  </p>
+                  <AppButton
+                    disabled={!canExport || !canReview}
+                    onClick={() => void startCompilation()}
+                  >
+                    Choose {formats.length === 1 ? 'file' : 'folder'} and export…
+                  </AppButton>
+                  <details className={styles['export-disclosure']}>
+                    <summary>Replace an existing DOCX</summary>
+                    <p>
+                      This separate DOCX-only flow asks for explicit replacement confirmation and
+                      retains the previous DOCX beside the new output.
+                    </p>
+                    <AppButton
+                      variant="default"
+                      disabled={!canExport || formats.length !== 1 || formats[0] !== 'docx'}
+                      onClick={() => void start()}
+                    >
+                      Choose DOCX with replacement option…
+                    </AppButton>
+                  </details>
+                </>
+              )}
+            </div>
+          ) : null}
+          {step === 'result' ? (
+            <>
+              <p>
+                Completed files remain available even when another format fails or cancellation
+                stops the remaining work. No project-file Save is implied.
+              </p>
+              {exports
+                .filter(
+                  (item) =>
+                    item.scope.projectId === scope.projectId &&
+                    item.scope.workspaceId === scope.workspaceId
+                )
+                .slice()
+                .reverse()
+                .map((item) => (
+                  <ExportResults
+                    key={item.job.id}
+                    operation={item}
+                    cancel={() => void cancel(item.job)}
+                  />
+                ))}
+              <AppButton variant="default" disabled={busy} onClick={() => setStep('options')}>
+                Prepare another export
+              </AppButton>
             </>
-          )}
-        </div>
-      ) : null}
-      {step === 'result' ? (
-        <>
-          <p>
-            Completed files remain available even when another format fails or cancellation stops
-            the remaining work. No project-file Save is implied.
-          </p>
-          {exports
-            .filter(
-              (item) =>
-                item.scope.projectId === scope.projectId &&
-                item.scope.workspaceId === scope.workspaceId
-            )
-            .slice()
-            .reverse()
-            .map((item) => (
-              <ExportResults
-                key={item.job.id}
-                operation={item}
-                cancel={() => void cancel(item.job)}
-              />
-            ))}
-          <AppButton variant="default" disabled={busy} onClick={() => setStep('options')}>
-            Prepare another export
-          </AppButton>
-        </>
-      ) : null}
-      {busy ? (
-        <p role="status">Preparing export or waiting for the native destination dialog…</p>
-      ) : null}
-      {error ? <p role="alert">{error}</p> : null}
-    </section>
+          ) : null}
+          {busy ? (
+            <p role="status">Preparing export or waiting for the native destination dialog…</p>
+          ) : null}
+          {error ? <p role="alert">{error}</p> : null}
+        </section>
+      )}
+    />
   )
 }

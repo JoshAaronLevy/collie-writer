@@ -1,3 +1,4 @@
+import PresentationBoundary from '../../components/PresentationBoundary'
 import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { AppButton, ChoiceField } from '../../components/ui/Controls'
 import styles from './InterchangeImportPanel.module.css'
@@ -111,57 +112,62 @@ export default function InterchangeImportPanel({
     })
   })
   return (
-    <section className={styles['writing-import']} aria-labelledby="interchange-import-heading">
-      <h2 id="interchange-import-heading">Import writing</h2>
-      <p>
-        Import UTF-8 text or Markdown as a new section in this project. Existing drafts are never
-        matched or replaced by filename. HTML is rejected.
-      </p>
-      <AppButton
-        variant="default"
-        type="button"
-        disabled={disabled || busy || !!pendingValue}
-        onClick={() => {
-          void choose()
-        }}
-      >
-        Choose text or Markdown file
-      </AppButton>
-      {preview ? (
-        <div role="status">
+    <PresentationBoundary
+      label="Document import"
+      render={() => (
+        <section className={styles['writing-import']} aria-labelledby="interchange-import-heading">
+          <h2 id="interchange-import-heading">Import writing</h2>
           <p>
-            {pick?.name}: {preview.blocks} blocks, {preview.bytes} bytes. New section:{' '}
-            {preview.title}.
+            Import UTF-8 text or Markdown as a new section in this project. Existing drafts are
+            never matched or replaced by filename. HTML is rejected.
           </p>
-          {preview.losses.length ? (
-            <ul>
-              {preview.losses.map((loss, i) => (
-                <li key={i}>{loss}</li>
-              ))}
-            </ul>
-          ) : (
-            <p>No mapped-structure losses reported for this file.</p>
-          )}
-          <p>Preview: {preview.excerpt}</p>
-          <ChoiceField
-            label="Keep the exact original bytes in this project"
-            checked={preserve}
-            disabled={!!pendingValue || busy}
-            onChange={(e) => setPreserve(e.currentTarget.checked)}
-          />
           <AppButton
             variant="default"
             type="button"
-            disabled={disabled || busy}
+            disabled={disabled || busy || !!pendingValue}
             onClick={() => {
-              void commit()
+              void choose()
             }}
           >
-            Add as new section
+            Choose text or Markdown file
           </AppButton>
-        </div>
-      ) : null}
-      {error ? <p role="alert">{error}</p> : null}
-    </section>
+          {preview ? (
+            <div role="status">
+              <p>
+                {pick?.name}: {preview.blocks} blocks, {preview.bytes} bytes. New section:{' '}
+                {preview.title}.
+              </p>
+              {preview.losses.length ? (
+                <ul>
+                  {preview.losses.map((loss, i) => (
+                    <li key={i}>{loss}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No mapped-structure losses reported for this file.</p>
+              )}
+              <p>Preview: {preview.excerpt}</p>
+              <ChoiceField
+                label="Keep the exact original bytes in this project"
+                checked={preserve}
+                disabled={!!pendingValue || busy}
+                onChange={(e) => setPreserve(e.currentTarget.checked)}
+              />
+              <AppButton
+                variant="default"
+                type="button"
+                disabled={disabled || busy}
+                onClick={() => {
+                  void commit()
+                }}
+              >
+                Add as new section
+              </AppButton>
+            </div>
+          ) : null}
+          {error ? <p role="alert">{error}</p> : null}
+        </section>
+      )}
+    />
   )
 }

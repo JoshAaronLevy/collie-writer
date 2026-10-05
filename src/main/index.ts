@@ -184,12 +184,21 @@ function openWindow(): void {
   ai.resumeSession()
   window = createWindow(devOrigin)
   const opened = window
-  opened.webContents.on('render-process-gone', () => ai.suspend())
+  opened.webContents.on('render-process-gone', () => {
+    lifecycle.rendererLost(opened.webContents)
+    ai.suspend()
+  })
   opened.webContents.once('did-finish-load', () => {
     if (shellOpenQueue.length) files.offerShellPath(shellOpenQueue.shift()!)
     else files.nudgeShellOpen()
   })
-  opened.webContents.on('did-finish-load', () => ai.resumeSession())
+  opened.webContents.on('did-finish-load', () => {
+    lifecycle.rendererLoaded(opened.webContents)
+    ai.resumeSession()
+  })
+  opened.webContents.on('did-fail-load', (_event, code, _description, _url, isMainFrame) => {
+    if (isMainFrame && code !== -3) lifecycle.rendererLoadFailed(opened.webContents)
+  })
   opened.on('close', (event) => {
     if (closeApproved || shutdownFinished) return
     event.preventDefault()
