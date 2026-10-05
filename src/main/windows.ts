@@ -4,22 +4,39 @@ import appIcon from '../../build/icon.png?asset'
 import windowsIcon from '../../build/icon.ico?asset'
 import { APP_URL, allowedRequest, contentSecurityPolicy } from './security'
 
+function bundledDevToolsRequest(raw: string): boolean {
+  if (app.isPackaged) return false
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'devtools:' && url.host === 'devtools' &&
+      !url.username && !url.password && url.pathname.startsWith('/bundled/')
+  } catch {
+    return false
+  }
+}
+
 export function protectSession(session: Session, devOrigin?: string): void {
   session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   session.setPermissionCheckHandler(() => false)
   session.setDevicePermissionHandler(() => false)
   session.on('will-download', (event) => event.preventDefault())
+  // Electron's bundled DevTools shares this session with the inspected page.
+  // Keep its local frontend separate from Collie's renderer network policy.
   session.webRequest.onBeforeRequest((details, callback) =>
-    callback({ cancel: !allowedRequest(details.url, devOrigin) })
+    callback({ cancel: !bundledDevToolsRequest(details.url) && !allowedRequest(details.url, devOrigin) })
   )
-  session.webRequest.onHeadersReceived((details, callback) =>
+  session.webRequest.onHeadersReceived((details, callback) => {
+    if (bundledDevToolsRequest(details.url)) {
+      callback({})
+      return
+    }
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [contentSecurityPolicy(devOrigin)]
       }
     })
-  )
+  })
 }
 export function protectWindow(window: BrowserWindow): void {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))

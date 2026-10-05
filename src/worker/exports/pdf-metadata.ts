@@ -3,7 +3,11 @@ import type { CompilationMetadata, Frozen } from '../../domain/compilation/model
 import { ProjectError } from '../../domain/projects/errors'
 
 /** Applies only to this export's freshly rendered bytes, never imported PDFs. */
-export async function addPdfMetadata(bytes: Buffer, metadata: Frozen<CompilationMetadata>, signal: AbortSignal): Promise<Buffer> {
+export async function addPdfMetadata(
+  bytes: Buffer,
+  metadata: Frozen<CompilationMetadata>,
+  signal: AbortSignal
+): Promise<Buffer> {
   if (signal.aborted) throw new ProjectError('CANCELLED')
   if (bytes.length > 512 * 1024 * 1024) throw new ProjectError('LIMIT_EXCEEDED')
   const document = await PDFDocument.load(bytes, { updateMetadata: false })

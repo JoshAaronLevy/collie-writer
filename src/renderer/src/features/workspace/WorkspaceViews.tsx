@@ -28,90 +28,462 @@ import { useWorkspaceSession } from './WorkspaceSession'
 import { RetainedRegion } from './RetainedRegion'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
 export default function WorkspaceViews(): React.JSX.Element {
-  const { composition, drafts, destination, storage, location, setLocation, list, project, access,
-    busy, setBusy, acting, closing, committing, setError, setNotice, history, annotationCapture, noteDirty,
-    sourceDirty, inspectionTarget, setCitationContext, outlineRetry, data, startupPending, current,
-    dirty, files, fileActive, accessReadOnly, accessTransition, available, updateProject, refreshData,
-    navigateSection, navigateSearch, loadHistory, performOutline, flush, run, waitActive, lifecycleFile,
-    manage, resetLocal, afterNoteCommit, changeAccess, openTutorial, chooseProject, research, navigating,
-    setData, setList, goBack, backDestination } = useWorkspaceSession()
-  return <>
-<RetainedRegion name="setup" label="New project">
-  {startupPending && storage.state !== 'unavailable' && location?.state !== 'required' ? <p role="status">Opening local projects…</p> : <OnboardingWizard />}
-</RetainedRegion>
-<RetainedRegion name="library" label="Projects">
-  <ProjectLibrary />
-</RetainedRegion>
-<div className="projects"><WorkspaceNavigation /></div>
-<div inert={navigating || closing} onCompositionStartCapture={() => { composition.current = true; drafts.changed() }} onCompositionEndCapture={() => { composition.current = false; drafts.changed() }}>
-<RetainedRegion name="write" label="Writing"><WritingWorkspace /></RetainedRegion>
-<RetainedRegion name="history" label="Manuscript history">
-{project ? <HistoryPanel key={project.projectId} project={project} readOnly={accessReadOnly||accessTransition} history={history} disabled={busy || acting || closing || committing || fileActive} change={change => run(() => performOutline(change))} read={id => run(() => loadHistory(id))} navigate={(doc,anchor) => run(() => navigateSection(doc,anchor))} /> : null}
-</RetainedRegion>
-</div>
-<div className="research-destinations">
-<div inert={navigating || closing} onCompositionStartCapture={() => { composition.current = true; drafts.changed() }} onCompositionEndCapture={() => { composition.current = false; drafts.changed() }}>
-<RetainedRegion name="research-inspector" label="Source inspector">
-{project && inspectionTarget ?<SourceInspector readOnly={accessReadOnly||accessTransition} key={`${project.projectId}-${inspectionTarget.sourceId}`} project={project} sourceId={inspectionTarget.sourceId} focusExcerptId={inspectionTarget.excerptId} focusVersionId={inspectionTarget.versionId} focusPageIndex={inspectionTarget.pageIndex} disabled={busy||closing||outlineRetry||sourceDirty||storage.state!=='ready'} onCommitted={afterNoteCommit} close={() => { if(backDestination)void goBack();else research({ kind: 'sources',sourceId:inspectionTarget.sourceId,page:'usage' }) }} />:null}
-</RetainedRegion>
-<RetainedRegion name="research-notes" label="Notes and annotations">
-{project ? <NotesPanel key={project.projectId} project={project} capture={annotationCapture} focusAnnotationId={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='notes'?destination.target.annotationId??null:null} focusNoteId={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='notes'?destination.target.noteId??null:null} disabled={accessReadOnly || accessTransition || busy || closing || outlineRetry || storage.state !== 'ready'} onCommitted={afterNoteCommit} navigate={(id,anchor) => navigateSection(id,anchor)} /> : null}
-</RetainedRegion>
-<RetainedRegion name="research-sources" label="Sources">
-{project ? <SourcesPanel readOnly={accessReadOnly||accessTransition} key={project.projectId} project={project} focusPage={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='sources'?destination.target.page:undefined} focusSourceId={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='sources'?destination.target.sourceId??null:null} disabled={busy || closing || outlineRetry || storage.state !== 'ready'} onCommitted={afterNoteCommit} onInspect={sourceId=>research({kind:'inspector',sourceId})} /> : null}
-</RetainedRegion>
-<RetainedRegion name="research-evidence" label="Questions and claims">
-{project ? <EvidencePanel readOnly={accessReadOnly||accessTransition} key={project.projectId} project={project} focusSourceId={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='evidence'?destination.target.sourceId:undefined} focusItem={destination.kind==='workspace'&&destination.view==='research'&&destination.target.kind==='evidence'?destination.target.item??null:null} disabled={busy || closing || outlineRetry || noteDirty || sourceDirty || storage.state !== 'ready'} onCommitted={afterNoteCommit} navigate={(id,anchor)=>navigateSection(id,anchor)} inspect={(sourceId,excerptId)=>research({kind:'inspector',sourceId,excerptId})} /> : null}
-</RetainedRegion>
-<RetainedRegion name="search" label="Project search">
-{project ? <SearchPanel key={project.projectId} project={project} navigate={navigateSearch} /> : null}
-</RetainedRegion>
-</div></div>
-<div className={styles['workspace-utility-views']}><div inert={navigating || closing} onCompositionStartCapture={() => { composition.current = true; drafts.changed() }} onCompositionEndCapture={() => { composition.current = false; drafts.changed() }}>
-<RetainedRegion name="export" label="Export">
-{project ? <DocxExportPanel paid={access?.paid??false} key={project.projectId} project={project} disabled={busy||closing||acting||fileActive||storage.state!=='ready'} flush={flush} onProject={updateProject} /> : null}
-<details className={exportStyles['export-reference-tools']}><summary>Citation style and bibliography preview</summary>
-{project ? <CitationsPanel readOnly={accessReadOnly||accessTransition} key={project.projectId} project={project} dirty={dirty} disabled={busy||closing||acting||fileActive||storage.state!=='ready'} flush={flush} onCommitted={afterNoteCommit} onContext={(sources,view)=>setCitationContext({projectId:project.projectId,sources,view})} navigate={navigateSection} source={sourceId=>research({kind:'sources',sourceId})} /> : null}
-</details>
-</RetainedRegion>
+  const {
+    composition,
+    drafts,
+    destination,
+    storage,
+    location,
+    setLocation,
+    list,
+    project,
+    access,
+    busy,
+    setBusy,
+    acting,
+    closing,
+    committing,
+    setError,
+    setNotice,
+    history,
+    annotationCapture,
+    noteDirty,
+    sourceDirty,
+    inspectionTarget,
+    setCitationContext,
+    outlineRetry,
+    data,
+    startupPending,
+    current,
+    dirty,
+    files,
+    fileActive,
+    accessReadOnly,
+    accessTransition,
+    available,
+    updateProject,
+    refreshData,
+    navigateSection,
+    navigateSearch,
+    loadHistory,
+    performOutline,
+    flush,
+    run,
+    waitActive,
+    lifecycleFile,
+    manage,
+    resetLocal,
+    afterNoteCommit,
+    changeAccess,
+    openTutorial,
+    chooseProject,
+    research,
+    navigating,
+    setData,
+    setList,
+    goBack,
+    backDestination
+  } = useWorkspaceSession()
+  return (
+    <>
+      <RetainedRegion name="setup" label="New project">
+        {startupPending && storage.state !== 'unavailable' && location?.state !== 'required' ? (
+          <p role="status">Opening local projects…</p>
+        ) : (
+          <OnboardingWizard />
+        )}
+      </RetainedRegion>
+      <RetainedRegion name="library" label="Projects">
+        <ProjectLibrary />
+      </RetainedRegion>
+      <div className="projects">
+        <WorkspaceNavigation />
+      </div>
+      <div
+        inert={navigating || closing}
+        onCompositionStartCapture={() => {
+          composition.current = true
+          drafts.changed()
+        }}
+        onCompositionEndCapture={() => {
+          composition.current = false
+          drafts.changed()
+        }}
+      >
+        <RetainedRegion name="write" label="Writing">
+          <WritingWorkspace />
+        </RetainedRegion>
+        <RetainedRegion name="history" label="Manuscript history">
+          {project ? (
+            <HistoryPanel
+              key={project.projectId}
+              project={project}
+              readOnly={accessReadOnly || accessTransition}
+              history={history}
+              disabled={busy || acting || closing || committing || fileActive}
+              change={(change) => run(() => performOutline(change))}
+              read={(id) => run(() => loadHistory(id))}
+              navigate={(doc, anchor) => run(() => navigateSection(doc, anchor))}
+            />
+          ) : null}
+        </RetainedRegion>
+      </div>
+      <div className="research-destinations">
+        <div
+          inert={navigating || closing}
+          onCompositionStartCapture={() => {
+            composition.current = true
+            drafts.changed()
+          }}
+          onCompositionEndCapture={() => {
+            composition.current = false
+            drafts.changed()
+          }}
+        >
+          <RetainedRegion name="research-inspector" label="Source inspector">
+            {project && inspectionTarget ? (
+              <SourceInspector
+                readOnly={accessReadOnly || accessTransition}
+                key={`${project.projectId}-${inspectionTarget.sourceId}`}
+                project={project}
+                sourceId={inspectionTarget.sourceId}
+                focusExcerptId={inspectionTarget.excerptId}
+                focusVersionId={inspectionTarget.versionId}
+                focusPageIndex={inspectionTarget.pageIndex}
+                disabled={
+                  busy || closing || outlineRetry || sourceDirty || storage.state !== 'ready'
+                }
+                onCommitted={afterNoteCommit}
+                close={() => {
+                  if (backDestination) void goBack()
+                  else
+                    research({
+                      kind: 'sources',
+                      sourceId: inspectionTarget.sourceId,
+                      page: 'usage'
+                    })
+                }}
+              />
+            ) : null}
+          </RetainedRegion>
+          <RetainedRegion name="research-notes" label="Notes and annotations">
+            {project ? (
+              <NotesPanel
+                key={project.projectId}
+                project={project}
+                capture={annotationCapture}
+                focusAnnotationId={
+                  destination.kind === 'workspace' &&
+                  destination.view === 'research' &&
+                  destination.target.kind === 'notes'
+                    ? (destination.target.annotationId ?? null)
+                    : null
+                }
+                focusNoteId={
+                  destination.kind === 'workspace' &&
+                  destination.view === 'research' &&
+                  destination.target.kind === 'notes'
+                    ? (destination.target.noteId ?? null)
+                    : null
+                }
+                disabled={
+                  accessReadOnly ||
+                  accessTransition ||
+                  busy ||
+                  closing ||
+                  outlineRetry ||
+                  storage.state !== 'ready'
+                }
+                onCommitted={afterNoteCommit}
+                navigate={(id, anchor) => navigateSection(id, anchor)}
+              />
+            ) : null}
+          </RetainedRegion>
+          <RetainedRegion name="research-sources" label="Sources">
+            {project ? (
+              <SourcesPanel
+                readOnly={accessReadOnly || accessTransition}
+                key={project.projectId}
+                project={project}
+                focusPage={
+                  destination.kind === 'workspace' &&
+                  destination.view === 'research' &&
+                  destination.target.kind === 'sources'
+                    ? destination.target.page
+                    : undefined
+                }
+                focusSourceId={
+                  destination.kind === 'workspace' &&
+                  destination.view === 'research' &&
+                  destination.target.kind === 'sources'
+                    ? (destination.target.sourceId ?? null)
+                    : null
+                }
+                disabled={busy || closing || outlineRetry || storage.state !== 'ready'}
+                onCommitted={afterNoteCommit}
+                onInspect={(sourceId) => research({ kind: 'inspector', sourceId })}
+              />
+            ) : null}
+          </RetainedRegion>
+          <RetainedRegion name="research-evidence" label="Questions and claims">
+            {project ? (
+              <EvidencePanel
+                readOnly={accessReadOnly || accessTransition}
+                key={project.projectId}
+                project={project}
+                focusSourceId={
+                  destination.kind === 'workspace' &&
+                  destination.view === 'research' &&
+                  destination.target.kind === 'evidence'
+                    ? destination.target.sourceId
+                    : undefined
+                }
+                focusItem={
+                  destination.kind === 'workspace' &&
+                  destination.view === 'research' &&
+                  destination.target.kind === 'evidence'
+                    ? (destination.target.item ?? null)
+                    : null
+                }
+                disabled={
+                  busy ||
+                  closing ||
+                  outlineRetry ||
+                  noteDirty ||
+                  sourceDirty ||
+                  storage.state !== 'ready'
+                }
+                onCommitted={afterNoteCommit}
+                navigate={(id, anchor) => navigateSection(id, anchor)}
+                inspect={(sourceId, excerptId) =>
+                  research({ kind: 'inspector', sourceId, excerptId })
+                }
+              />
+            ) : null}
+          </RetainedRegion>
+          <RetainedRegion name="search" label="Project search">
+            {project ? (
+              <SearchPanel key={project.projectId} project={project} navigate={navigateSearch} />
+            ) : null}
+          </RetainedRegion>
+        </div>
+      </div>
+      <div className={styles['workspace-utility-views']}>
+        <div
+          inert={navigating || closing}
+          onCompositionStartCapture={() => {
+            composition.current = true
+            drafts.changed()
+          }}
+          onCompositionEndCapture={() => {
+            composition.current = false
+            drafts.changed()
+          }}
+        >
+          <RetainedRegion name="export" label="Export">
+            {project ? (
+              <DocxExportPanel
+                paid={access?.paid ?? false}
+                key={project.projectId}
+                project={project}
+                disabled={busy || closing || acting || fileActive || storage.state !== 'ready'}
+                flush={flush}
+                onProject={updateProject}
+              />
+            ) : null}
+            <details className={exportStyles['export-reference-tools']}>
+              <summary>Citation style and bibliography preview</summary>
+              {project ? (
+                <CitationsPanel
+                  readOnly={accessReadOnly || accessTransition}
+                  key={project.projectId}
+                  project={project}
+                  dirty={dirty}
+                  disabled={busy || closing || acting || fileActive || storage.state !== 'ready'}
+                  flush={flush}
+                  onCommitted={afterNoteCommit}
+                  onContext={(sources, view) =>
+                    setCitationContext({ projectId: project.projectId, sources, view })
+                  }
+                  navigate={navigateSection}
+                  source={(sourceId) => research({ kind: 'sources', sourceId })}
+                />
+              ) : null}
+            </details>
+          </RetainedRegion>
 
-<RetainedRegion name="details" label="Project actions">
-{project ? <><h1>Project actions</h1><p>Manage details, the selected project file, separate copies, and local organization for “{project.title}”.</p></> : null}
-{project?<ProjectDetailsForm key={project.projectId} project={project} disabled={busy||acting||closing||fileActive||storage.state!=='ready'} readOnly={accessReadOnly||accessTransition}/>:null}
-{project && sameScope(project,files.scope) && !fileActive && !['checking','external-change','unavailable','interrupted'].includes(files.state) ? <ProjectFileActions /> : null}
-{project ? <ProjectManagement key={`${project.projectId}-${project.title}`} project={project} disabled={!available || acting || fileActive || closing} archive={() => run(() => manage())} backup={() => run(() => lifecycleFile('backup'))} move={() => run(() => lifecycleFile('move'))} duplicate={() => run(() => lifecycleFile('duplicate'))} restore={() => run(() => lifecycleFile('restore'))} /> : null}
-{project ? <InterchangeImportPanel key={`import-${project.projectId}`} project={project} disabled={busy||closing||acting||fileActive||accessReadOnly||accessTransition||storage.state!=='ready'} flush={flush} onProject={updateProject} /> : null}
-</RetainedRegion>
-<RetainedRegion name="settings-appearance" label="Appearance and accessibility">
-<SettingsPanel />
-</RetainedRegion>
-<RetainedRegion name="settings-ai" label="AI connections"><ConnectionSettings /></RetainedRegion>
-<RetainedRegion name="settings-updates" label="Updates"><UpdateSettings /></RetainedRegion>
-<RetainedRegion name="settings-access" label="Collie access">
-<AccessPanel access={access} project={project} list={list} disabled={!available||busy||acting||fileActive||closing} designate={()=>run(()=>changeAccess('designate'))} finish={()=>run(()=>changeAccess('finish'))} importGrant={()=>run(()=>changeAccess('import'))}/>
-</RetainedRegion>
-<RetainedRegion name="settings-data" label="Data and recovery">
-<h1>Data and recovery</h1><p>Local protection, selected project files and separate backups are different copies. Recovery material stays retained until you explicitly manage it; clearing picker history removes no content.</p>
-    {!location ? <p role="status">Finding the local working folder…</p> : <details className={styles['working-location']} open={location.state === 'required'}>
-      <summary>Working-data location</summary><p>{location.message}</p>
-      {location.path ? <p className={styles['location-path']}>{location.path}</p> : <AppButton variant="default" disabled={acting} onClick={() => run(async () => { const result = await window.collie.chooseWorkingLocation(); if (result.ok) setLocation(result.value); else setError(result.error.message) })}>Choose local working folder…</AppButton>}
-      <p>Keep this folder outside sync or mirroring tools. Portable files can go in your chosen local cloud folders.</p>
-    </details>}
-    {storage.state === 'unavailable' ? <p role="alert">The storage process is unavailable. Keep this window open and copy any unprotected text before quitting.</p> : null}
-    <RecoveryPanel data={data} openProject={scope => run(async () => { await chooseProject(scope); await waitActive(); await refreshData() })} disabled={!available || acting || fileActive || closing} refresh={() => run(refreshData)} reveal={()=>run(async()=>{const result=await window.collie.revealWorkingData();if(!result.ok)setError(result.error.message)})} inspect={id => run(() => lifecycleFile('recover', id))} reset={review => run(() => resetLocal(review))} recoverReset={id => run(async () => {
-      setBusy(true); if (current.current && !await flush(false, 'replace')) return
-      const result = await window.collie.recoverReset(id)
-      if (result.ok) { setData(result.value); setList(result.value.projects) } else setError(result.error.message)
-    })} cleanup={() => run(async () => {
-      const result = await window.collie.clearPickerHistory()
-      if (result.ok) { setData(result.value); setList(result.value.projects); setNotice('Picker history cleared. All work and retained recovery were kept.') } else setError(result.error.message)
-    })} />
-
-</RetainedRegion>
-<RetainedRegion name="help-tutorial" label="Tutorial">
-<TutorialPanel ready={!!access?.sampleProject&&list.projects.some(p=>sameProject(p,access?.sampleProject??null))} active={!!project&&sameProject(project,access?.sampleProject??null)} disabled={!available||busy||acting||fileActive||closing} start={()=>run(()=>openTutorial(false))} reset={()=>run(()=>openTutorial(true))}/>
-</RetainedRegion>
-</div>
-</div>
-  </>
+          <RetainedRegion name="details" label="Project actions">
+            {project ? (
+              <>
+                <h1>Project actions</h1>
+                <p>
+                  Manage details, the selected project file, separate copies, and local organization
+                  for “{project.title}”.
+                </p>
+              </>
+            ) : null}
+            {project ? (
+              <ProjectDetailsForm
+                key={project.projectId}
+                project={project}
+                disabled={busy || acting || closing || fileActive || storage.state !== 'ready'}
+                readOnly={accessReadOnly || accessTransition}
+              />
+            ) : null}
+            {project &&
+            sameScope(project, files.scope) &&
+            !fileActive &&
+            !['checking', 'external-change', 'unavailable', 'interrupted'].includes(files.state) ? (
+              <ProjectFileActions />
+            ) : null}
+            {project ? (
+              <ProjectManagement
+                key={`${project.projectId}-${project.title}`}
+                project={project}
+                disabled={!available || acting || fileActive || closing}
+                archive={() => run(() => manage())}
+                backup={() => run(() => lifecycleFile('backup'))}
+                move={() => run(() => lifecycleFile('move'))}
+                duplicate={() => run(() => lifecycleFile('duplicate'))}
+                restore={() => run(() => lifecycleFile('restore'))}
+              />
+            ) : null}
+            {project ? (
+              <InterchangeImportPanel
+                key={`import-${project.projectId}`}
+                project={project}
+                disabled={
+                  busy ||
+                  closing ||
+                  acting ||
+                  fileActive ||
+                  accessReadOnly ||
+                  accessTransition ||
+                  storage.state !== 'ready'
+                }
+                flush={flush}
+                onProject={updateProject}
+              />
+            ) : null}
+          </RetainedRegion>
+          <RetainedRegion name="settings-appearance" label="Appearance and accessibility">
+            <SettingsPanel />
+          </RetainedRegion>
+          <RetainedRegion name="settings-ai" label="AI connections">
+            <ConnectionSettings />
+          </RetainedRegion>
+          <RetainedRegion name="settings-updates" label="Updates">
+            <UpdateSettings />
+          </RetainedRegion>
+          <RetainedRegion name="settings-access" label="Collie access">
+            <AccessPanel
+              access={access}
+              project={project}
+              list={list}
+              disabled={!available || busy || acting || fileActive || closing}
+              designate={() => run(() => changeAccess('designate'))}
+              finish={() => run(() => changeAccess('finish'))}
+              importGrant={() => run(() => changeAccess('import'))}
+            />
+          </RetainedRegion>
+          <RetainedRegion name="settings-data" label="Data and recovery">
+            <h1>Data and recovery</h1>
+            <p>
+              Local protection, selected project files and separate backups are different copies.
+              Recovery material stays retained until you explicitly manage it; clearing picker
+              history removes no content.
+            </p>
+            {!location ? (
+              <p role="status">Finding the local working folder…</p>
+            ) : (
+              <details className={styles['working-location']} open={location.state === 'required'}>
+                <summary>Working-data location</summary>
+                <p>{location.message}</p>
+                {location.path ? (
+                  <p className={styles['location-path']}>{location.path}</p>
+                ) : (
+                  <AppButton
+                    variant="default"
+                    disabled={acting}
+                    onClick={() =>
+                      run(async () => {
+                        const result = await window.collie.chooseWorkingLocation()
+                        if (result.ok) setLocation(result.value)
+                        else setError(result.error.message)
+                      })
+                    }
+                  >
+                    Choose local working folder…
+                  </AppButton>
+                )}
+                <p>
+                  Keep this folder outside sync or mirroring tools. Portable files can go in your
+                  chosen local cloud folders.
+                </p>
+              </details>
+            )}
+            {storage.state === 'unavailable' ? (
+              <p role="alert">
+                The storage process is unavailable. Keep this window open and copy any unprotected
+                text before quitting.
+              </p>
+            ) : null}
+            <RecoveryPanel
+              data={data}
+              openProject={(scope) =>
+                run(async () => {
+                  await chooseProject(scope)
+                  await waitActive()
+                  await refreshData()
+                })
+              }
+              disabled={!available || acting || fileActive || closing}
+              refresh={() => run(refreshData)}
+              reveal={() =>
+                run(async () => {
+                  const result = await window.collie.revealWorkingData()
+                  if (!result.ok) setError(result.error.message)
+                })
+              }
+              inspect={(id) => run(() => lifecycleFile('recover', id))}
+              reset={(review) => run(() => resetLocal(review))}
+              recoverReset={(id) =>
+                run(async () => {
+                  setBusy(true)
+                  if (current.current && !(await flush(false, 'replace'))) return
+                  const result = await window.collie.recoverReset(id)
+                  if (result.ok) {
+                    setData(result.value)
+                    setList(result.value.projects)
+                  } else setError(result.error.message)
+                })
+              }
+              cleanup={() =>
+                run(async () => {
+                  const result = await window.collie.clearPickerHistory()
+                  if (result.ok) {
+                    setData(result.value)
+                    setList(result.value.projects)
+                    setNotice('Picker history cleared. All work and retained recovery were kept.')
+                  } else setError(result.error.message)
+                })
+              }
+            />
+          </RetainedRegion>
+          <RetainedRegion name="help-tutorial" label="Tutorial">
+            <TutorialPanel
+              ready={
+                !!access?.sampleProject &&
+                list.projects.some((p) => sameProject(p, access?.sampleProject ?? null))
+              }
+              active={!!project && sameProject(project, access?.sampleProject ?? null)}
+              disabled={!available || busy || acting || fileActive || closing}
+              start={() => run(() => openTutorial(false))}
+              reset={() => run(() => openTutorial(true))}
+            />
+          </RetainedRegion>
+        </div>
+      </div>
+    </>
+  )
 }

@@ -1,4 +1,13 @@
-import { Button, Checkbox, createTheme, Input, InputWrapper, Menu, Modal, Paper } from '@mantine/core'
+import {
+  Button,
+  Checkbox,
+  createTheme,
+  Input,
+  InputWrapper,
+  Menu,
+  Modal,
+  Paper
+} from '@mantine/core'
 import styles from '../components/ui/controls.module.css'
 
 // Static counterparts live in tokens.css: runtime CSS-variable injection is deliberately disabled.
@@ -6,7 +15,18 @@ export const collieTheme = createTheme({
   primaryColor: 'green',
   primaryShade: { light: 7, dark: 3 },
   colors: {
-    green: ['#f2f7f3', '#e7f0e9', '#c8e2d2', '#a7d7bd', '#7cb49a', '#559278', '#397b62', '#2f6757', '#285547', '#204438']
+    green: [
+      '#f2f7f3',
+      '#e7f0e9',
+      '#c8e2d2',
+      '#a7d7bd',
+      '#7cb49a',
+      '#559278',
+      '#397b62',
+      '#2f6757',
+      '#285547',
+      '#204438'
+    ]
   },
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   fontFamilyMonospace: 'ui-monospace, SFMono-Regular, Consolas, monospace',
@@ -17,28 +37,58 @@ export const collieTheme = createTheme({
   defaultRadius: 'sm',
   focusRing: 'auto',
   respectReducedMotion: true,
-  headings: { fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', fontWeight: '600' },
+  headings: {
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontWeight: '600'
+  },
   components: {
     Button: Button.extend({
       defaultProps: { size: 'md', variant: 'filled' },
-      classNames: { root: styles['action-button'], inner: styles['action-button-content'], label: styles['action-button-label'] }
+      classNames: {
+        root: styles['action-button'],
+        inner: styles['action-button-content'],
+        label: styles['action-button-label']
+      }
     }),
     Input: Input.extend({
       defaultProps: { size: 'md' },
       classNames: { input: styles['field-input'], section: styles['field-adornment'] }
     }),
     InputWrapper: InputWrapper.extend({
-      classNames: { root: styles['field-container'], label: styles['field-label'], description: styles['field-description'], error: styles['field-error'] }
+      classNames: {
+        root: styles['field-container'],
+        label: styles['field-label'],
+        description: styles['field-description'],
+        error: styles['field-error']
+      }
     }),
     Checkbox: Checkbox.extend({
       defaultProps: { size: 'md' },
-      classNames: { root: styles['choice-field'], input: styles['choice-input'], label: styles['choice-label'], description: styles['choice-description'], icon: styles['choice-icon'] }
+      classNames: {
+        root: styles['choice-field'],
+        input: styles['choice-input'],
+        label: styles['choice-label'],
+        description: styles['choice-description'],
+        icon: styles['choice-icon']
+      }
     }),
     Menu: Menu.extend({
-      classNames: { dropdown: styles['action-menu'], item: styles['action-menu-item'], itemLabel: styles['action-menu-label'] }
+      classNames: {
+        dropdown: styles['action-menu'],
+        item: styles['action-menu-item'],
+        itemLabel: styles['action-menu-label']
+      }
     }),
     Modal: Modal.extend({
-      classNames: { content: styles['dialog-content'], header: styles['dialog-header'], title: styles['dialog-title'], body: styles['dialog-body'], close: styles['dialog-close'], overlay: styles['dialog-overlay'], inner: styles['dialog-position'] }
+      classNames: {
+        content: styles['dialog-content'],
+        header: styles['dialog-header'],
+        title: styles['dialog-title'],
+        body: styles['dialog-body'],
+        close: styles['dialog-close'],
+        overlay: styles['dialog-overlay'],
+        inner: styles['dialog-position']
+      }
     }),
     Paper: Paper.extend({ classNames: { root: styles['content-surface'] } })
   }

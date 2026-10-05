@@ -4,7 +4,7 @@
 .app-wordmark { font-weight: 650; font-size: 1.125rem; letter-spacing: -0.025em; }
 .build-label { color: var(--collie-text-secondary); font-size: 0.875rem; }
 .app-navigation { display: flex; flex-wrap: wrap; gap: var(--collie-space-2); }
-.workspace-content { width: 100%; max-width: 68rem; min-width: 0; margin-inline: auto; flex: 1; padding: var(--collie-space-6) clamp(0.75rem, 3vw, 2rem) var(--collie-space-12); }
+.workspace-content { width: 100%; max-width: 90vw; min-width: 0; margin-inline: auto; flex: 1; padding: var(--collie-space-6) clamp(0.75rem, 3vw, 2rem) var(--collie-space-12); }
 .citation-attribution { margin-bottom: var(--collie-space-8); padding-bottom: var(--collie-space-6); border-bottom: 1px solid var(--collie-border); overflow-wrap: anywhere; font-size: 1rem; }
 .citation-attribution p { margin: 0; }
 .app-notice { margin-block: var(--collie-space-4); }

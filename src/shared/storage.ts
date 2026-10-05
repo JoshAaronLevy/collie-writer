@@ -11,15 +11,16 @@ export type StorageStatus =
   | { state: 'ready'; sequence: number; runtime: StorageRuntime }
 
 export type StorageWorkerMessage =
-  | { kind: 'ready'; runtime: StorageRuntime }
-  | { kind: 'unavailable' }
+  { kind: 'ready'; runtime: StorageRuntime } | { kind: 'unavailable' }
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function exactKeys(value: Record<string, unknown>, names: string[]): boolean {
-  return Object.keys(value).length === names.length && names.every((name) => Object.hasOwn(value, name))
+  return (
+    Object.keys(value).length === names.length && names.every((name) => Object.hasOwn(value, name))
+  )
 }
 
 export function isStorageRuntime(value: unknown): value is StorageRuntime {

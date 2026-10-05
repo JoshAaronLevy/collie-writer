@@ -27,7 +27,7 @@
 .saved-project-details div { display: grid; gap: var(--collie-space-1); }
 .saved-project-details dt { color: var(--collie-text-secondary); font-size: var(--mantine-font-size-sm); }
 .saved-project-details dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.connection-content { display: grid; gap: var(--collie-space-4); max-width: 35rem; }
+.connection-content { display: grid; gap: var(--collie-space-4); max-width: 100%; }
 .connection-content p { margin: 0; }
 .created-confirmation { font-size: 1.125rem; }
 .editing-choice { border-top: 1px solid var(--collie-border); padding-top: var(--collie-space-6); }

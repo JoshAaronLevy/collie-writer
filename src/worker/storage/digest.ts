@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import { createHash } from 'node:crypto'
 /** Canonical JSON key ordering makes retry identity independent of object construction order. */
 export function requestDigest(value: unknown): string {

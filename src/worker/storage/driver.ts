@@ -24,8 +24,7 @@ export function storageRuntime(nativeBinding?: string): string {
   const database = new Database(':memory:', options(nativeBinding))
   try {
     const version = database.prepare('SELECT sqlite_version() AS version').get() as
-      | { version?: unknown }
-      | undefined
+      { version?: unknown } | undefined
     if (typeof version?.version !== 'string' || !supportedSqlite(version.version))
       throw new Error('Unsupported SQLite version')
     const fts5 = database
@@ -91,12 +90,15 @@ export async function backupStorageDatabase(
     throw new Error('A new absolute SQLite backup path is required')
   let copied = 0
   const pageSize = Number(database.pragma('page_size', { simple: true }))
-  await database.backup(destination, { progress: ({ totalPages, remainingPages }) => {
-    activity?.signal?.throwIfAborted()
-    const next = (totalPages - remainingPages) * pageSize
-    activity?.progress?.(Math.max(0, next - copied)); copied = next
-    return 256
-  } })
+  await database.backup(destination, {
+    progress: ({ totalPages, remainingPages }) => {
+      activity?.signal?.throwIfAborted()
+      const next = (totalPages - remainingPages) * pageSize
+      activity?.progress?.(Math.max(0, next - copied))
+      copied = next
+      return 256
+    }
+  })
   const copy = new Database(destination, {
     ...options(nativeBinding),
     readonly: true,

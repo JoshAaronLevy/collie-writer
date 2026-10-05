@@ -4,14 +4,30 @@ import { ChevronDown } from 'lucide-react'
 import { useVisualPreferences } from '../../theme/VisualPreferencesProvider'
 import { AppButton } from './Controls'
 
-type MenuAction = { id: string; label: string; icon?: ReactNode; onSelect: () => void; disabled?: boolean }
+type MenuAction = {
+  id: string
+  label: string
+  icon?: ReactNode
+  onSelect: () => void
+  disabled?: boolean
+}
 
-export function ActionMenu({ label, accessibleLabel, actions, onOpen }: { label: string; accessibleLabel?: string; actions: MenuAction[]; onOpen?: () => void }): React.JSX.Element {
+export function ActionMenu({
+  label,
+  accessibleLabel,
+  actions,
+  onOpen
+}: {
+  label: string
+  accessibleLabel?: string
+  actions: MenuAction[]
+  onOpen?: () => void
+}): React.JSX.Element {
   const [opened, setOpened] = useState(false)
   const selectedAction = useRef<(() => void) | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const { reducedMotion } = useVisualPreferences()
-  const firstEnabled = actions.findIndex(action => !action.disabled)
+  const firstEnabled = actions.findIndex((action) => !action.disabled)
   useEffect(() => {
     if (!opened && selectedAction.current) {
       const action = selectedAction.current
@@ -23,20 +39,43 @@ export function ActionMenu({ label, accessibleLabel, actions, onOpen }: { label:
   }, [opened])
 
   return (
-    <Menu opened={opened} onChange={next => { if (next) onOpen?.(); setOpened(next) }} withinPortal position="bottom-end" loop
-      returnFocus={selectedAction.current === null} withInitialFocusPlaceholder={false}
-      transitionProps={{ transition: 'fade', duration: reducedMotion ? 0 : 120 }}>
+    <Menu
+      opened={opened}
+      onChange={(next) => {
+        if (next) onOpen?.()
+        setOpened(next)
+      }}
+      withinPortal
+      position="bottom-end"
+      loop
+      returnFocus={selectedAction.current === null}
+      withInitialFocusPlaceholder={false}
+      transitionProps={{ transition: 'fade', duration: reducedMotion ? 0 : 120 }}
+    >
       <Menu.Target>
-        <AppButton ref={trigger} variant="default" aria-label={accessibleLabel ?? label} rightSection={<ChevronDown size={16} aria-hidden="true" />}>
+        <AppButton
+          ref={trigger}
+          variant="default"
+          aria-label={accessibleLabel ?? label}
+          rightSection={<ChevronDown size={16} aria-hidden="true" />}
+        >
           {label}
         </AppButton>
       </Menu.Target>
       <Menu.Dropdown>
-        {actions.map((action, index) => <Menu.Item key={action.id} leftSection={action.icon}
-          data-autofocus={index === firstEnabled || undefined}
-          disabled={action.disabled} onClick={() => { selectedAction.current = action.onSelect }}>
-          {action.label}
-        </Menu.Item>)}
+        {actions.map((action, index) => (
+          <Menu.Item
+            key={action.id}
+            leftSection={action.icon}
+            data-autofocus={index === firstEnabled || undefined}
+            disabled={action.disabled}
+            onClick={() => {
+              selectedAction.current = action.onSelect
+            }}
+          >
+            {action.label}
+          </Menu.Item>
+        ))}
       </Menu.Dropdown>
     </Menu>
   )

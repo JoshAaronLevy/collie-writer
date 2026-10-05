@@ -11,11 +11,23 @@ export function captureSelection(editor: Editor | null): CapturedSelection | nul
 }
 
 /** A dialog may restore selection, but cannot guess a new target after writing changes. */
-export function restoreSelection(captured: CapturedSelection | null, editor: Editor | null): boolean {
-  if (!captured || !editor || captured.editor !== editor || editor.isDestroyed || editorIsComposing(editor)
-    || !captured.document.eq(editor.state.doc)) return false
+export function restoreSelection(
+  captured: CapturedSelection | null,
+  editor: Editor | null
+): boolean {
+  if (
+    !captured ||
+    !editor ||
+    captured.editor !== editor ||
+    editor.isDestroyed ||
+    editorIsComposing(editor) ||
+    !captured.document.eq(editor.state.doc)
+  )
+    return false
   try {
     editor.view.dispatch(editor.state.tr.setSelection(captured.bookmark.resolve(editor.state.doc)))
     return true
-  } catch { return false }
+  } catch {
+    return false
+  }
 }

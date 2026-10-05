@@ -87,26 +87,83 @@ const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase(
 
 export function createProjectSchema(db: Database.Database): void {
   for (const statement of projectTables) db.exec(statement)
-  db.prepare('INSERT INTO format VALUES (1,?,?,?)').run(PROJECT_SCHEMA_VERSION, PROJECT_SCHEMA_VERSION, 1)
+  db.prepare('INSERT INTO format VALUES (1,?,?,?)').run(
+    PROJECT_SCHEMA_VERSION,
+    PROJECT_SCHEMA_VERSION,
+    1
+  )
   db.pragma(`application_id = ${PROJECT_APPLICATION_ID}`)
   db.pragma(`user_version = ${PROJECT_SCHEMA_VERSION}`)
 }
 export function inspectVersion(db: Database.Database): number {
   db.pragma('trusted_schema = OFF')
-  if (db.pragma('application_id', { simple: true }) !== PROJECT_APPLICATION_ID) throw new ProjectError('CORRUPT_PROJECT')
+  if (db.pragma('application_id', { simple: true }) !== PROJECT_APPLICATION_ID)
+    throw new ProjectError('CORRUPT_PROJECT')
   const version = db.pragma('user_version', { simple: true }) as number
   if (!Number.isInteger(version) || version < 1) throw new ProjectError('CORRUPT_PROJECT')
   if (version > PROJECT_SCHEMA_VERSION) throw new ProjectError('FORMAT_TOO_NEW')
   return version
 }
-export function validateProjectSchema(db: Database.Database, expectedVersion = PROJECT_SCHEMA_VERSION): void {
+export function validateProjectSchema(
+  db: Database.Database,
+  expectedVersion = PROJECT_SCHEMA_VERSION
+): void {
   const version = inspectVersion(db)
   if (version !== expectedVersion) throw new ProjectError('MIGRATION_FAILED')
-  const objects = db.prepare("SELECT sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all() as { sql: string | null }[]
-  const expected = new Set((expectedVersion === 1 ? projectTablesV1 : expectedVersion === 2 ? projectTablesV2 : expectedVersion === 3 ? projectTablesV3 : expectedVersion === 4 ? projectTablesV4 : expectedVersion === 5 ? projectTablesV5 : expectedVersion === 6 ? projectTablesV6 : expectedVersion === 7 ? projectTablesV7 : expectedVersion === 8 ? projectTablesV8 : expectedVersion === 9 ? projectTablesV9 : expectedVersion === 10 ? projectTablesV10 : expectedVersion === 11 ? projectTablesV11 : projectTables).map(sqlKey))
-  if (objects.length !== expected.size || objects.some(o => !o.sql || !expected.has(sqlKey(o.sql)))) throw new ProjectError('CORRUPT_PROJECT')
-  const format = db.prepare('SELECT * FROM format').all() as { schema_version: number; minimum_reader: number; editor_version: number }[]
-  if (format.length !== 1 || format[0].minimum_reader > PROJECT_SCHEMA_VERSION || format[0].editor_version > 1) throw new ProjectError('FORMAT_TOO_NEW')
-  if (format[0].schema_version !== version || format[0].editor_version !== 1 || format[0].minimum_reader !== expectedVersion) throw new ProjectError('CORRUPT_PROJECT')
-  if (db.pragma('integrity_check', { simple: true }) !== 'ok' || (db.pragma('foreign_key_check') as unknown[]).length) throw new ProjectError('CORRUPT_PROJECT')
+  const objects = db
+    .prepare("SELECT sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name")
+    .all() as { sql: string | null }[]
+  const expected = new Set(
+    (expectedVersion === 1
+      ? projectTablesV1
+      : expectedVersion === 2
+        ? projectTablesV2
+        : expectedVersion === 3
+          ? projectTablesV3
+          : expectedVersion === 4
+            ? projectTablesV4
+            : expectedVersion === 5
+              ? projectTablesV5
+              : expectedVersion === 6
+                ? projectTablesV6
+                : expectedVersion === 7
+                  ? projectTablesV7
+                  : expectedVersion === 8
+                    ? projectTablesV8
+                    : expectedVersion === 9
+                      ? projectTablesV9
+                      : expectedVersion === 10
+                        ? projectTablesV10
+                        : expectedVersion === 11
+                          ? projectTablesV11
+                          : projectTables
+    ).map(sqlKey)
+  )
+  if (
+    objects.length !== expected.size ||
+    objects.some((o) => !o.sql || !expected.has(sqlKey(o.sql)))
+  )
+    throw new ProjectError('CORRUPT_PROJECT')
+  const format = db.prepare('SELECT * FROM format').all() as {
+    schema_version: number
+    minimum_reader: number
+    editor_version: number
+  }[]
+  if (
+    format.length !== 1 ||
+    format[0].minimum_reader > PROJECT_SCHEMA_VERSION ||
+    format[0].editor_version > 1
+  )
+    throw new ProjectError('FORMAT_TOO_NEW')
+  if (
+    format[0].schema_version !== version ||
+    format[0].editor_version !== 1 ||
+    format[0].minimum_reader !== expectedVersion
+  )
+    throw new ProjectError('CORRUPT_PROJECT')
+  if (
+    db.pragma('integrity_check', { simple: true }) !== 'ok' ||
+    (db.pragma('foreign_key_check') as unknown[]).length
+  )
+    throw new ProjectError('CORRUPT_PROJECT')
 }
