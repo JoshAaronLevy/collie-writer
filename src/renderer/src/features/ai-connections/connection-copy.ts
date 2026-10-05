@@ -1,9 +1,46 @@
 import type { AiReason, AiStatus } from '../../../../shared/ai'
+import type { AiConnectionHealthReason } from '../../../../shared/ai-connection-health'
 import type {
   AiActionAvailability,
   AiConnectionReason,
   AiFunding
 } from '../../../../shared/ai-route'
+
+export const connectionHealthDescription: Record<AiConnectionHealthReason, string> = {
+  ready: 'Connected and ready for reviewed conversation requests.',
+  preparing: 'Setting up ChatGPT…',
+  'model-preference-pending':
+    'Your model choice could not be saved. Retry saving it on this device.',
+  'model-preference-unreadable':
+    'Saved model choices could not be read. Retry reading them on this device.',
+  checking: 'Checking the connection or loading models.',
+  'status-unavailable': 'Connection status is unconfirmed. Check status to try again.',
+  'signed-out': 'Connect your ChatGPT account to use AI across your projects.',
+  'signing-in': 'Signing in. Finish connecting in your browser.',
+  renewing: 'Updating the account connection.',
+  disconnecting: 'Disconnecting the account.',
+  'reconnect-required': 'Your saved account needs renewal or reconnection.',
+  'permission-required': 'Reconnect to give this account permission to use ChatGPT.',
+  'resume-required': 'Resume your saved account connection.',
+  'models-required': 'Your account is connected. Finish setting up its models to continue.',
+  'model-required': 'Choose a model to finish setup.',
+  'model-unavailable': 'Your previous model is unavailable. Choose a replacement.',
+  'no-models': 'No supported models are available. Try again later.',
+  'catalog-failed': 'Models could not be loaded. Your account has been kept; try again.',
+  offline: 'ChatGPT could not be reached. Your account has been kept; try again when online.',
+  'usage-limited':
+    'ChatGPT reported a usage limit. Review your account’s usage before making another request.',
+  'provider-unavailable': 'ChatGPT reported a temporary service problem.',
+  'account-unavailable': 'ChatGPT refused access for this account. Review the connection details.',
+  'setup-required': 'Your account is saved, but this connection needs further setup.',
+  'registration-invalid': 'ChatGPT rejected this app registration. Review the connection details.',
+  'credential-storage-unavailable':
+    'Protected account storage is unavailable. Review local storage settings.',
+  'credential-protection-required':
+    'Account state could not be saved. Retry saving it on this device.',
+  'route-unavailable': 'ChatGPT connection is unavailable in this build.',
+  'runtime-unavailable': 'The account runtime is unavailable in this build.'
+}
 
 export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
   'local-login-not-implemented':
@@ -67,9 +104,9 @@ export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
   'output-protection-required':
     'Wait for local AI work to be protected. If protection needs attention, use the global work notice to return to its owner and retry local protection. This does not resend a request.',
   'operation-capacity-full':
-    'All 64 active AI slots are occupied. Open the original projects shown under Local AI capacity, finish local protection, and acknowledge any retained uncertain outcomes in the AI work notice. These actions do not resend requests. Saved history and local saving remain available.',
+    'All 64 active AI slots are occupied. Open the original projects under AI work → Local AI capacity and recovery, finish local protection, and acknowledge any retained uncertain outcomes in the AI work notice. These actions do not resend requests. Saved history and local saving remain available.',
   'local-workspace-identity-unavailable':
-    'Codex has not supplied a usable account and workspace identity. Open connection settings and explicitly resume or reconnect the intended account; no request has been sent.',
+    'Codex has not supplied a usable account and workspace identity. Open Manage ChatGPT and explicitly resume or reconnect the intended account; no request has been sent.',
   'plan-authorization-required':
     'Sign-in succeeded, but ChatGPT plan use is not authorized. Use Continue with ChatGPT for this saved account and review the plan-use consent.',
   'configuration-required': 'Sign-in has not been configured for this build.',
@@ -141,9 +178,14 @@ export function connectionLabel(
     | 'resume'
     | 'cleanup'
     | 'protectConnection'
+    | 'prepareConnection'
     | 'refreshModels'
     | 'selectModel'
 ): string {
+  if (action === 'prepareConnection' || status?.direct?.preparation === 'running')
+    return 'Setting up ChatGPT…'
+  if (status?.direct?.preparation === 'waiting')
+    return 'ChatGPT setup will continue when current work is protected.'
   if (action === 'cancel') return 'Cancelling sign-in…'
   if (action === 'select') return 'Selecting account…'
   if (action === 'resume') return 'Resuming Codex connection…'

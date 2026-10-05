@@ -125,12 +125,14 @@ type WorkspaceControllerState = {
   afterNoteCommit: () => Promise<void>
   changeAccess: (kind: 'designate' | 'finish' | 'import') => Promise<void>
   openTutorial: (reset: boolean) => Promise<void>
-  prepareSetupCreation: () => Promise<boolean>
+  prepareSetupCreation: () => Promise<SetupCompletion>
   createSetupProject: (input: CreateInput) => Promise<ProjectResult<OpenProject>>
-  resumeSetupProject: (
-    receipt: { projectId: string; workspaceId: string; documentId: string },
-    target: 'write' | 'details' | 'setup'
-  ) => Promise<boolean>
+  readSetupAccess: () => Promise<ProjectResult<AccessView>>
+  completeSetupProject: (
+    receipt: SetupReceipt,
+    intent: SetupEditingIntent | null,
+    mode: 'write' | 'read'
+  ) => Promise<SetupCompletion>
   chooseProject: (scope: OpenInput, after?: 'write' | 'details') => Promise<void>
   exports: ExportOperation[]
   trackExport: (scope: OpenInput, job: ExportJob) => void
@@ -192,7 +194,12 @@ import {
 } from '../../../../shared/project-files'
 import type { DocumentPayload } from '../../../../domain/editor/schema'
 import type { Editor } from '@tiptap/core'
-import { hasResumableSetup } from '../onboarding/setup-draft'
+import {
+  hasResumableSetup,
+  type SetupReceipt,
+  type SetupEditingIntent,
+  type SetupCompletion
+} from '../onboarding/setup-draft'
 import { forgetLastProject, readLastProject, rememberLastProject } from '../library/last-project'
 import type { AnnotationCapture } from '../projects/NotesPanel'
 import type { CitationsView } from '../../../../shared/citations'
@@ -2081,45 +2088,167 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
   useLayoutEffect(() => {
     drafts.changed()
   })
-  async function prepareSetupCreation(): Promise<boolean> {
-    if (!available || closingRef.current) {
-      setError('Choose a safe local working folder before creating a project.')
-      return false
+  async function prepareSetupCreation(): Promise<SetupCompletion> {
+    const blocked = (message: string): SetupCompletion => {
+      setError(message)
+      return { ok: false, message }
     }
-    if (!(await waitActive())) return false
+    if (!available || closingRef.current)
+      return blocked(
+        'Choose a safe local working folder and finish closing before creating a project.'
+      )
+    if (
+      navigationTask.current ||
+      composition.current ||
+      outlinePending.current ||
+      proofreadingBusy.current ||
+      proofreadingApplication.current
+    )
+      return blocked(
+        'Finish composing or reconcile the pending navigation, outline, or proofreading action before creating a project.'
+      )
+    if (!(await waitActive()))
+      return blocked('Finish the pending file action before creating a project.')
     setBusy(true)
-    return !current.current || !!(await flush(false, 'replace'))
+    if (current.current && !(await flush(false, 'replace')))
+      return {
+        ok: false,
+        message: 'Protect the pending project work shown above, then continue creation.'
+      }
+    return { ok: true }
   }
   async function createSetupProject(input: CreateInput): Promise<ProjectResult<OpenProject>> {
+    // Return the receipt before any renderer opening work can fail. The wizard
+    // persists it before designation or selecting a new draft owner.
     const result = await window.collie.createProject(input)
-    if (result.ok) {
-      await select(result.value, 'setup')
-      await refresh()
-    } else setError(result.error.message)
+    if (!result.ok) setError(result.error.message)
     return result
   }
-  async function resumeSetupProject(
-    receipt: { projectId: string; workspaceId: string; documentId: string },
-    target: 'write' | 'details' | 'setup'
-  ): Promise<boolean> {
+  async function readSetupAccess(): Promise<ProjectResult<AccessView>> {
+    const result = await window.collie.readAccess()
+    if (result.ok) applyAccess(result.value)
+    else setAccess(null)
+    return result
+  }
+  async function completeSetupProject(
+    receipt: SetupReceipt,
+    intent: SetupEditingIntent | null,
+    mode: 'write' | 'read'
+  ): Promise<SetupCompletion> {
+    const blocked = (message: string): SetupCompletion => ({ ok: false, message })
+    if (
+      !available ||
+      closingRef.current ||
+      navigationTask.current ||
+      composition.current ||
+      outlinePending.current ||
+      proofreadingBusy.current ||
+      proofreadingApplication.current
+    )
+      return blocked(
+        'Finish the current action and check local storage, then continue with this saved project.'
+      )
+    if (!(await waitActive()))
+      return blocked('Finish the pending file action before opening this project.')
+    setBusy(true)
+    // This includes explicit form drafts and pending AI outcomes. Do not replace
+    // a retained owner or revoke its edit rights before protection succeeds.
+    if (current.current && !(await flush(false, 'replace')))
+      return blocked('Protect the pending work shown above, then continue with this saved project.')
+    window.collie.setUnprotectedChanges(isDirty())
+    if (isDirty()) return blocked('Protect every pending draft before continuing.')
+    const inventory = await window.collie.listProjects()
+    if (!inventory.ok) return blocked(inventory.error.message)
+    setList(inventory.value)
+    const found = inventory.value.projects.find((item) => sameProject(item, receipt))
+    if (!found)
+      return blocked(
+        'This saved project could not be found. Review Projects or Data & recovery; its project record is kept.'
+      )
+    if (found.archived)
+      return blocked(
+        'This project is archived. Restore it from Projects before continuing; its project record is kept.'
+      )
     const scope = scopeOf(receipt)
-    if (current.current && !sameScope(current.current, scope) && !(await flush(false, 'replace')))
-      return false
-    if (!sameScope(current.current, scope)) {
-      const result = await window.collie.openSection({ ...scope, documentId: receipt.documentId })
-      if (!result.ok) {
-        setError(result.error.message)
-        return false
-      }
-      await select(result.value, target === 'setup' ? 'setup' : 'write')
-      if (target === 'details') showDestination({ kind: 'workspace', scope, view: 'details' })
-      return true
+    if (mode === 'read') {
+      await readSetupAccess()
     }
-    if (target === 'details') return await navigate({ kind: 'workspace', scope, view: 'details' })
-    else if (target === 'write')
-      return await navigate(writingDestination(scope, receipt.documentId))
-    else showDestination({ kind: 'setup' })
-    return true
+    if (mode === 'write') {
+      const latest = await readSetupAccess()
+      if (!latest.ok)
+        return blocked(
+          'Editing access could not be read. Check access and retry; your project is kept.'
+        )
+      if (
+        latest.value.state === 'unavailable' ||
+        latest.value.storageWarning ||
+        latest.value.transition
+      )
+        return blocked(
+          'Resolve Collie access in Settings before continuing. Your project is kept and can be opened for reading.'
+        )
+      if (!canEditProject(latest.value, scope)) {
+        const sameFree =
+          intent &&
+          ((intent.freeProject === null && latest.value.freeProject === null) ||
+            sameProject(intent.freeProject, latest.value.freeProject))
+        if (
+          !intent ||
+          intent.mode !== 'designate' ||
+          intent.expectedRevision !== latest.value.revision ||
+          !sameFree
+        )
+          return blocked(
+            'The editing choice needs confirmation. Review the current choice below, then choose Write in this project, or open for reading.'
+          )
+        const designated = await window.collie.designateFreeProject({
+          scope,
+          expectedRevision: intent.expectedRevision
+        })
+        // Read authoritative access even after an uncertain reply, before another
+        // mutation. A confirmed designation can finish without sending it again.
+        const confirmed = await readSetupAccess()
+        if (!confirmed.ok)
+          return blocked(
+            'The editing change could not be confirmed. Retry with this saved project; no new project will be created.'
+          )
+        if (
+          confirmed.value.storageWarning ||
+          confirmed.value.transition ||
+          !canEditProject(confirmed.value, scope)
+        )
+          return blocked(
+            designated.ok
+              ? 'Editing access changed. Review the current choice and try again.'
+              : designated.error.message
+          )
+      }
+    }
+    if (closingRef.current) return blocked('Finish closing or return to setup to continue.')
+    if (!sameScope(current.current, scope)) {
+      const opened = await window.collie.openSection({ ...scope, documentId: receipt.documentId })
+      if (!opened.ok) return blocked(opened.error.message)
+      if (opened.value.archived)
+        return blocked('This project was archived. Restore it from Projects before continuing.')
+      await select(opened.value, 'setup')
+    }
+    if (mode === 'write') {
+      const confirmed = await readSetupAccess()
+      if (
+        !confirmed.ok ||
+        confirmed.value.storageWarning ||
+        confirmed.value.transition ||
+        !canEditProject(confirmed.value, scope)
+      )
+        return blocked(
+          'Editing access could not be confirmed after opening. Your project is kept; check access and continue again.'
+        )
+    }
+    const opened = current.current
+    if (closingRef.current || !opened || !sameScope(opened, scope))
+      return blocked('Opening could not be confirmed. Continue with this same saved project.')
+    showDestination(writingDestination(scope, opened.documentId))
+    return { ok: true }
   }
   async function chooseProject(
     scope: OpenInput,
@@ -2252,7 +2381,8 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     openTutorial,
     prepareSetupCreation,
     createSetupProject,
-    resumeSetupProject,
+    readSetupAccess,
+    completeSetupProject,
     chooseProject
   }
 }

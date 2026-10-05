@@ -1,5 +1,7 @@
 # I11 — AI connections and local continuation
 
+> UI01–UI06 supersession, October 5, 2026: this dated record is preserved as history. For current setup/account actions use the [combined UI walkthrough](../manual-testing/ui-improvements-UI06.md). Creation now has two steps and integrates confirmed editing access. ChatGPT setup is one app-wide dialog, models prepare automatically, and capacity recovery belongs to AI work. The older third-step/manual-refresh/designation instructions below are superseded only for that changed behavior; provider constraints, request review/protection, and unobserved results remain.
+
 **Implementation complete — awaiting user testing.** Live provider sign-in and inference remain unavailable. Registration is unset; I10's funding/isolation/packaging requirements remain pending. No account, successful authentication, model or ready state should appear unless main has actual evidence. Use disposable nonfiction content and files.
 
 Stage I11 complete. As a user:

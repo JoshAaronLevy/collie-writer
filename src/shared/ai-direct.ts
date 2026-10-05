@@ -10,6 +10,7 @@ export const DIRECT_STAGES = [
   'plan-authorization',
   'renewal',
   'model-discovery',
+  'model-preference',
   'inference-http',
   'inference-stream',
   'credential-storage'
@@ -39,6 +40,8 @@ export type AiDirectStatus = {
     | 'unknown'
     | 'cancelled'
   issue: DirectIssue | null
+  preparation: 'idle' | 'waiting' | 'running'
+  preferences: 'ready' | 'unreadable' | 'pending'
   protectionPending: boolean
 }
 const identifier = (v: unknown): boolean =>
@@ -78,6 +81,8 @@ export function isAiDirectStatus(v: unknown): v is AiDirectStatus {
       'planAuthorized',
       'inference',
       'issue',
+      'preparation',
+      'preferences',
       'protectionPending'
     ]) &&
     (v.stage === null || DIRECT_STAGES.includes(v.stage as DirectStage)) &&
@@ -94,6 +99,8 @@ export function isAiDirectStatus(v: unknown): v is AiDirectStatus {
       'cancelled'
     ].includes(String(v.inference)) &&
     (v.issue === null || isDirectIssue(v.issue)) &&
+    ['idle', 'waiting', 'running'].includes(String(v.preparation)) &&
+    ['ready', 'unreadable', 'pending'].includes(String(v.preferences)) &&
     typeof v.protectionPending === 'boolean'
   )
 }

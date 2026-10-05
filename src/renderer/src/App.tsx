@@ -144,13 +144,7 @@ function AppShell({
               Return to work
             </AppButton>
           ) : null}
-          <AiProviderIndicator
-            global
-            active={destination.kind === 'settings' && destination.page === 'ai'}
-            onOpen={() => {
-              void navigate({ kind: 'settings', page: 'ai' })
-            }}
-          />
+          <AiProviderIndicator global />
           <AppButton
             variant="subtle"
             leftSection={<Settings size={18} aria-hidden="true" />}

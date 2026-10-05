@@ -1,5 +1,6 @@
 import { isId } from '../domain/editor/schema'
 import { isAiDirectStatus, type AiDirectStatus } from './ai-direct'
+import { isAiConnectionHealth, type AiConnectionHealth } from './ai-connection-health'
 import { exact, isOpenInput, record, type OpenInput } from './projects'
 import {
   isAiCatalog,
@@ -23,6 +24,7 @@ import {
 
 export const AI_CHANNELS = {
   status: 'ai.status',
+  startup: 'ai.startup',
   connect: 'ai.connect',
   cancelConnect: 'ai.cancelConnect',
   refresh: 'ai.refresh',
@@ -32,6 +34,7 @@ export const AI_CHANNELS = {
   resumeConnection: 'ai.resumeConnection',
   cleanupConnection: 'ai.cleanupConnection',
   protectConnection: 'ai.protectConnection',
+  prepareConnection: 'ai.prepareConnection',
   refreshModels: 'ai.refreshModels',
   selectModel: 'ai.selectModel',
   prepare: 'ai.prepare',
@@ -124,6 +127,7 @@ export type AiContentWork = {
 }
 export type AiStatus = {
   sequence: number
+  connectionHealth: AiConnectionHealth
   /** Opaque transient review invalidation, never a runtime ID or send grant. */
   reviewRevision: string
   proofreadReviewRevision: string
@@ -218,8 +222,35 @@ export type AiOperation = {
 export type AiEvent =
   { kind: 'connection'; status: AiStatus } | { kind: 'operation'; operation: AiOperation }
 export type AiOperationRecord = { input: AiPrepareInput; operation: AiOperation }
+/** Main-lifetime coordination only; neither a persistent preference nor an AI grant. */
+export type AiStartupInput = { action: 'prepare' | 'claim-prompt' | 'acknowledge' }
+export type AiStartup = {
+  prepared: boolean
+  promptHandled: boolean
+  promptGranted: boolean
+  status: AiStatus
+}
+export function isAiStartupInput(value: unknown): value is AiStartupInput {
+  return (
+    record(value) &&
+    exact(value, ['action']) &&
+    ['prepare', 'claim-prompt', 'acknowledge'].includes(value.action as string)
+  )
+}
+function isAiStartup(value: unknown): value is AiStartup {
+  return (
+    record(value) &&
+    exact(value, ['prepared', 'promptHandled', 'promptGranted', 'status']) &&
+    typeof value.prepared === 'boolean' &&
+    typeof value.promptHandled === 'boolean' &&
+    typeof value.promptGranted === 'boolean' &&
+    (!value.promptGranted || value.promptHandled) &&
+    isAiStatus(value.status)
+  )
+}
 export type AiAPI = {
   aiStatus: () => Promise<AiResult<AiStatus>>
+  aiStartup: (input: AiStartupInput) => Promise<AiResult<AiStartup>>
   connectAi: (input: AiConnectInput) => Promise<AiResult<AiStatus>>
   cancelAiConnection: (input: AiAttemptInput) => Promise<AiResult<AiStatus>>
   refreshAiConnection: (input: AiConnectionInput) => Promise<AiResult<AiStatus>>
@@ -228,6 +259,7 @@ export type AiAPI = {
   resumeAiConnection: (input: AiConnectionInput) => Promise<AiResult<AiStatus>>
   cleanupAiConnection: () => Promise<AiResult<AiStatus>>
   protectAiConnection: () => Promise<AiResult<AiStatus>>
+  prepareAiConnection: (input: AiConnectionInput) => Promise<AiResult<AiStatus>>
   refreshAiModels: (input: AiConnectionInput) => Promise<AiResult<AiStatus>>
   selectAiModel: (input: AiSelectModelInput) => Promise<AiResult<AiStatus>>
   aiModels: (input: AiConnectionInput) => Promise<AiResult<AiModel[]>>
@@ -363,6 +395,7 @@ export function isAiStatus(v: unknown): v is AiStatus {
     record(v) &&
     exact(v, [
       'sequence',
+      'connectionHealth',
       'reviewRevision',
       'proofreadReviewRevision',
       'work',
@@ -392,6 +425,7 @@ export function isAiStatus(v: unknown): v is AiStatus {
     ]) &&
     Number.isSafeInteger(v.sequence) &&
     Number(v.sequence) >= 0 &&
+    isAiConnectionHealth(v.connectionHealth) &&
     typeof v.reviewRevision === 'string' &&
     /^[a-f0-9]{64}$/.test(v.reviewRevision) &&
     typeof v.proofreadReviewRevision === 'string' &&
@@ -577,6 +611,8 @@ export function isAiChannelValue(
   value: unknown
 ): boolean {
   switch (channel) {
+    case AI_CHANNELS.startup:
+      return isAiStartup(value)
     case AI_CHANNELS.status:
     case AI_CHANNELS.connect:
     case AI_CHANNELS.cancelConnect:
@@ -586,6 +622,7 @@ export function isAiChannelValue(
     case AI_CHANNELS.resumeConnection:
     case AI_CHANNELS.cleanupConnection:
     case AI_CHANNELS.protectConnection:
+    case AI_CHANNELS.prepareConnection:
     case AI_CHANNELS.refreshModels:
     case AI_CHANNELS.selectModel:
       return isAiStatus(value)

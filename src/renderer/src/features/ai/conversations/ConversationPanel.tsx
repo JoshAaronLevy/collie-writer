@@ -23,9 +23,9 @@ const outcomes = {
 }
 function requestReason(reason: AiReason): string {
   if (reason === 'auth-failed' || reason === 'session-expired' || reason === 'signed-out')
-    return 'The provider could not authorize this request. Open connection settings and renew or reconnect your account. A further request needs a new review; this one will not resend.'
+    return 'The provider could not authorize this request. Open Manage ChatGPT and renew or reconnect your account. A further request needs a new review; this one will not resend.'
   if (reason === 'model-unavailable')
-    return 'The provider refused the selected model. Refresh models and explicitly choose an available model before reviewing a new request. No model was substituted.'
+    return 'The provider refused the selected model. Choose an available model in Manage ChatGPT before reviewing a new request. No model was substituted.'
   if (reason === 'invalid-request')
     return 'The provider could not accept this request. Narrow the prompt or context and review a new request. This attempt is retained and will not resend.'
   if (reason === 'storage-unavailable')
@@ -549,9 +549,8 @@ export function ConversationPanel(): React.JSX.Element {
             Retry local recovery
           </AppButton>
           <p className={styles['conversation-caption']}>
-            AI responses are available only through your own supported account. This foundation
-            retains at most {c.capacity} provider operations across the app; a full journal refuses
-            new AI requests. Saved conversations remain readable and exportable.
+            Reviewed requests use your own account and its usage settings. Saved conversations
+            remain readable and exportable without a connection.
           </p>
         </section>
       )}

@@ -1,5 +1,7 @@
 # I05 — Guided local project setup
 
+> UI01–UI06 supersession, October 5, 2026: this dated record is preserved as history. For current setup/account actions use the [combined UI walkthrough](../manual-testing/ui-improvements-UI06.md). Creation now has two steps and integrates confirmed editing access. ChatGPT setup is one app-wide dialog, models prepare automatically, and capacity recovery belongs to AI work. The older third-step/manual-refresh/designation instructions below are superseded only for that changed behavior; provider constraints, request review/protection, and unobserved results remain.
+
 October 1, 2026. **Implementation complete — awaiting user testing.** This decision covers the explicitly requested creation flow. It does not approve a provider adapter, change the free/paid matrix, or establish native acceptance.
 
 ## Flow and ownership

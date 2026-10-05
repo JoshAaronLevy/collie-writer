@@ -17,6 +17,12 @@ import {
   isPlanCredentials,
   type PlanCredentials
 } from './direct-credentials'
+import {
+  PLAN_PREFERENCES_FILE,
+  emptyPlanPreferences,
+  isPlanPreferences,
+  type PlanPreferences
+} from './direct-preferences'
 import { isRetainedOperation, type RetainedOperation } from './local-operation'
 export type { RetainedOperation } from './local-operation'
 import {
@@ -213,6 +219,16 @@ export class AiStorage {
   async saveCredentials(value: Credentials): Promise<void> {
     if (!isCredentials(value)) throw new AiError('storage-unavailable')
     await this.write('credentials-v1.json', value)
+  }
+  async planPreferences(): Promise<PlanPreferences> {
+    const value = await this.read(PLAN_PREFERENCES_FILE, 16 * 1024)
+    if (value === null) return emptyPlanPreferences()
+    if (!isPlanPreferences(value)) throw new AiError('storage-unavailable')
+    return value
+  }
+  async savePlanPreferences(value: PlanPreferences): Promise<void> {
+    if (!isPlanPreferences(value)) throw new AiError('storage-unavailable')
+    await this.write(PLAN_PREFERENCES_FILE, value)
   }
   async planCredentials(): Promise<PlanCredentials> {
     const value = await this.read(DIRECT_CREDENTIAL_FILE)

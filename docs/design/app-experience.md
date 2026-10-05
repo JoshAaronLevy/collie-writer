@@ -2,24 +2,26 @@
 
 October 1, 2026. **Specification implementation complete — awaiting user review.** This document specifies future screens; none of the wireframes is a running interface or an observed result. Read it with the [improvement plan](../../app-improvement-plan.md), [architecture decision](../decisions/improvement-01-experience.md), and [provider evidence](../ai/provider-eligibility.md). I02–I15 own the application changes.
 
+**Current UI01–UI06 guidance, October 5:** the [UI plan](../../ui-improvements-plan.md) and [combined walkthrough](../manual-testing/ui-improvements-UI06.md) supersede the original I05/I11 setup and account presentation below. Creation has two steps; an app-wide ChatGPT dialog owns connection setup. Implementation awaits user testing; original dated evidence remains historical. The changed screen/journey descriptions below reflect that implementation.
+
 ## Product baseline
 
 The opening experience should communicate care through typography, space, and a clear next action. Writing gets the largest, quietest surface. Research remains deep but appears in focused views. Each screen has one primary task; routine success stays quiet, while failures that threaten work remain visible.
 
-| Settled choice                                  | Design consequence                                                                                                                                                                                                       |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Nonfiction edition; fiction is separate         | Five primary categories and two secondary choices below; no novel/story option.                                                                                                                                          |
-| Mantine and semantic scoped CSS                 | Use one themed component system. Classes describe product roles; feature styles live with their owner.                                                                                                                   |
-| Warm editorial identity                         | Warm neutral surround, paper surfaces, graphite text, deep green accents, system sans controls, bundled Source Serif prose.                                                                                              |
-| Light, dark, system; accessibility retained     | Each surface/state has theme tokens; high contrast, 100–200% interface zoom, reduced motion, and keyboard paths remain available.                                                                                        |
-| Title and byline required; description optional | No account identity becomes the author. Remember the author only through an unchecked opt-in preference.                                                                                                                 |
-| Short empty starter outlines                    | No instructional/example prose inside a personal manuscript. Existing projects retain their outlines.                                                                                                                    |
-| Local writing works without accounts            | Connection is optional, and the project exists before connection begins. No shared AI account, API-key form, or paid-token fallback.                                                                                     |
-| Conversations and proofreading                  | Conversations are optional beside writing. Proofreading produces reviewable, reversible suggestions after an explicitly selected scope.                                                                                  |
-| Portable ownership                              | Writing, research, conversations, and proposals travel with projects when implemented; credentials, live sessions, and view preferences do not.                                                                          |
-| Free/paid access                                | One explicitly designated free editable project; paid unrestricted editing. Reading/export/backup/recovery remain available across projects. Eligible AI follows editable scope without an additional Collie AI paywall. |
-| Tutorial and help                               | Optional separate synthetic nonfiction sample; dismissible three-point orientation; no blocking tour.                                                                                                                    |
-| Permanent ad-free product                       | No promotions, upsell cards, sponsor slots, analytics, or remote decorative assets. Factual access controls belong in Settings.                                                                                          |
+| Settled choice                                  | Design consequence                                                                                                                                                                                                                           |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nonfiction edition; fiction is separate         | Five primary categories and two secondary choices below; no novel/story option.                                                                                                                                                              |
+| Mantine and semantic scoped CSS                 | Use one themed component system. Classes describe product roles; feature styles live with their owner.                                                                                                                                       |
+| Warm editorial identity                         | Warm neutral surround, paper surfaces, graphite text, deep green accents, system sans controls, bundled Source Serif prose.                                                                                                                  |
+| Light, dark, system; accessibility retained     | Each surface/state has theme tokens; high contrast, 100–200% interface zoom, reduced motion, and keyboard paths remain available.                                                                                                            |
+| Title and byline required; description optional | No account identity becomes the author. Remember the author only through an unchecked opt-in preference.                                                                                                                                     |
+| Short empty starter outlines                    | No instructional/example prose inside a personal manuscript. Existing projects retain their outlines.                                                                                                                                        |
+| Local writing works without accounts            | Startup connection prompting is dismissible; local project creation never waits for sign-in. No shared AI account, API-key form, or paid-token fallback.                                                                                     |
+| Conversations and proofreading                  | Conversations are optional beside writing. Proofreading produces reviewable, reversible suggestions after an explicitly selected scope.                                                                                                      |
+| Portable ownership                              | Writing, research, conversations, and proposals travel with projects when implemented; credentials, live sessions, and view preferences do not.                                                                                              |
+| Free/paid access                                | One free editable project, designated as part of confirmed creation; paid unrestricted editing. Reading/export/backup/recovery remain available across projects. Eligible AI follows editable scope without an additional Collie AI paywall. |
+| Tutorial and help                               | Optional separate synthetic nonfiction sample; dismissible three-point orientation; no blocking tour.                                                                                                                                        |
+| Permanent ad-free product                       | No promotions, upsell cards, sponsor slots, analytics, or remote decorative assets. Factual access controls belong in Settings.                                                                                                              |
 
 ## Navigation and visual hierarchy
 
@@ -96,7 +98,7 @@ Legacy template IDs map as recorded in I04. New outlines are empty text sections
 
 ## Annotated screen specifications
 
-`[Action]` is a button, `( )` is a selection, and `[field]` is an input. Wide/narrow drawings show hierarchy, not exact screenshots. Shared state/focus rules above apply to each screen. AI drawings describe conditional I11–I13 behavior; I05 shows the explicitly unavailable state until a real eligible adapter exists.
+`[Action]` is a button, `( )` is a selection, and `[field]` is an input. Wide/narrow drawings show hierarchy, not exact screenshots. Shared state/focus rules above apply to each screen. S01–S03 reflect UI01–UI06. Provider eligibility and each tool’s availability remain separate from the shared connection state.
 
 ### S01 — First run / choose a project type
 
@@ -129,13 +131,13 @@ Readable citation attribution
 
 Primary action: Continue. Step indicator: “1 of 3 · Project type.” Focus after the heading follows the category group, More starting points, secondary choices if expanded, Open existing, Explore example, then Continue; responsive CSS preserves this DOM order even when the button is visually aligned right. No category is preselected on a new wizard. A returning draft restores its selection.
 
-Empty/default: seven known choices need no network. Loading: storage starts without replacing the cards; creation-dependent actions wait if needed. Error: a safe working-folder interruption uses S09; a cancelled Open picker returns here. Read-only access does not prevent entering setup or creating another local project; designation is separate. Cancelling New project returns to its origin; first-run users may remain here or open an existing file.
+Empty/default: seven known choices need no network. Loading: storage starts without replacing the cards; creation-dependent actions wait if needed. Error: a safe working-folder interruption uses S09; a cancelled Open picker returns here. Read-only access does not prevent entering setup or creating another local project; creation confirms editing access through the trusted access service. Cancelling New project returns to its origin; first-run users may remain here or open an existing file.
 
 ### S02 — Project details
 
 ```text
 WIDE
-[Back]  2 of 3 · Project details
+[Back]  2 of 2 · Project details
                  Give your project a name
                  Academic essay · [Change type]
                  Title (required)       [                    ]
@@ -161,40 +163,23 @@ Description (optional)
 [Create project]
 ```
 
-Primary action: Create project. Focus order: Back/change type, Title, Byline, remember checkbox, Description, Cancel, Create. Initial focus is the heading; a failed submission focuses the first invalid input. Enter submits from single-line fields; Enter inserts a newline in Description. Back retains values.
+Primary action: Create project, or Create and write here when switching the free writing project. In the latter case, explain before confirmation that other projects remain readable/exportable. Focus order: Back/change type, Title, Byline, remember checkbox, Description, Cancel, Create. Initial focus is the heading; a failed submission focuses the first invalid input. Enter submits from single-line fields; Enter inserts a newline in Description. Back retains values.
 
 New title/byline: trim, require 1–500 UTF-16 code units consistently with current JavaScript text validators. Description: optional up to 10,000 code units, preserving Unicode and line breaks; reject forbidden controls per I04. Explain limits near an invalid field and never truncate legacy values. Pen names and collective bylines are ordinary text. Remember-author preference starts off, is device-local, and is independently editable in Settings; it never reads purchase/provider identity.
 
-Loading: “Creating project…” freezes the dispatched payload and exact operation identity. Error/unknown outcome: retain fields and reconcile/retry that operation before allowing changed input. Empty required fields never dispatch. After a durable receipt, the next screen is connection; later Back opens Project details for that same identity rather than recreating it. Leaving after creation retains the project. Storage failure keeps the draft and offers the applicable recovery action. Existing projects may retain an empty legacy author without being sent through setup.
+Loading: “Creating project…” freezes the dispatched payload and exact operation identity. Error/unknown outcome: retain fields and reconcile/retry that operation before allowing changed input. Empty required fields never dispatch. After a durable receipt, confirm editing access and open writing directly. Failed access/opening retains that project for recovery; it never starts another identity. Leaving after creation retains the project. Storage failure keeps the draft and offers the applicable recovery action. Existing projects may retain an empty legacy author without being sent through setup.
 
-### S03 — Optional AI connection
+### S03 — Shared ChatGPT dialog (outside project creation)
 
-```text
-WIDE
-3 of 3 · AI connection                         Project created locally
-                 Connect your AI account
-                 Use your own eligible subscription. Optional.
-                 [Eligible provider card]
-                 Account sign-in opens in your default browser.
-                 Later requests send only the context you choose.
-                 [Continue with provider]
-                 [Continue without AI]
+The global header shows **ChatGPT** and one red/yellow/green dot with an accessible status explanation. Red means disconnected or a hard connection error, yellow means checking/setup/attention, green means configured connection readiness for reviewed conversation requests. Feature availability, project edit rights, capacity, and request outcomes remain separate.
 
-NARROW / NO ELIGIBLE ADAPTER IN THIS BUILD
-AI connection
-Your project is ready.
-AI connections are not available in this build.
-You can write, research, save, and export offline.
-[Continue without AI]
-```
+On launch, restore the normal project/library/setup destination independently of account preparation. Main schedules the saved account's bounded metadata preparation once per app launch. Healthy users receive no prompt. Otherwise, offer one dismissible dialog at a safe point, unless **Don't show this automatically again** is checked. The checkbox saves immediately and is reversible from the manually opened dialog; a failed write explains that only the current launch is covered. Main-owned markers survive renderer recovery. Defer behind recovery, other dialogs, close/navigation, IME and background focus.
 
-Primary action while signed out: the actual supported provider sign-in; local continuation remains immediately visible. When no provider qualifies, Continue without AI is primary and there are no working-looking provider cards. For a permitted Sign in with ChatGPT route, use its required “Continue with ChatGPT” branding; Codex execution can be explained underneath. Final branding follows the eligible route's requirements.
+The dialog gives one relevant next action, ordinary dismissal, and collapsed Model, Manage account, and Connection details disclosures. Model discovery and restoration are automatic on successful connection/selection/renewal and returning startup; unavailable remembered choices require an explicit replacement. No setup action sends writing or probes inference. Detailed provider restrictions and spending information stay accessible. A completed request is not required for a green connection and green does not guarantee all feature requests will succeed.
 
-Focus: heading → provider choice if there is more than one → sign-in → Continue without AI. Browser opening does not replace the app window. Waiting shows Cancel sign-in and Continue without AI; leaving setup cancels its attempt unless the user explicitly chooses to keep waiting. Late callbacks cannot change a cancelled connection. Returning to the app focuses connection status, then the applicable Continue action.
+Header, Settings → ChatGPT, tutorial, and each tool's Manage ChatGPT action open this same dialog over the current destination. Write → AI instead toggles the retained companion; Conversations and Proofreading remain distinct tools with their own reviewed-request controls and availability. Capacity and original-project recovery live in the global AI work notice's Local AI capacity and recovery disclosure, not in routine account setup.
 
-States: signed out; opening browser/waiting; checking eligibility; ready with recognizable account/workspace; expired; offline; quota blocked; funding unknown; unavailable. “Signed in” is distinct from “Ready.” Error text explains the next action without credentials or SDK output. A ready existing connection offers Continue to writing, Change, and Disconnect. Sign-in sends no manuscript and makes no inference probe. A signed-in but ineligible account offers retry/manage connection or local continuation. Collie read-only status is separate and never resolved by AI login.
-
-If the approved provider route requires a first-use plan disclosure, show that concise acknowledgment once as part of connection completion, following the route's branding requirements in the provider record. It is distinct from the optional product orientation and must not become a recurring tour or a credit-purchase prompt.
+Dismissal never cancels sign-in, disconnects, changes editing rights, navigates, or discards writing. During browser sign-in the notice offers Manage ChatGPT and a separate Cancel sign-in. Focus returns to a visible opener or current destination heading/region; late callbacks and retained navigation do not pull focus from writing or another modal. Disconnect still requires its own confirmation. The direct route remains conversation-only and owner/unpackaged; no provider or commercial restriction is relaxed.
 
 ### S04 — Returning Projects library
 
@@ -254,7 +239,7 @@ Empty section shows a quiet prompt outside persisted content, e.g. “Start your
 
 Common toolbar: block style, bold/italic, lists, Insert, More. More includes remaining supported formatting and Find/replace; Insert includes references, footnotes, managed images, tables, links, and supported breaks. Image/table controls appear contextually. Section status/synopsis move to Section details. History and outline restore remain reachable. Selection-dependent dialogs capture a valid target before stealing focus and recheck it on apply.
 
-AI is closed by default. Until implemented it shows a short availability explanation, not a composer. When implemented, the panel shows provider/account, context summary with inspectable exact content and prior messages, messages, a composer, Send, and Stop during generation. Chat input never implies an edit. Expanded chat provides Return to writing. Proofreading separately previews section/chapter scope and offers before/after proposals with Accept, Reject, explicit grouped Apply, and stale-target explanations. Reading stored conversations/proposals needs no provider session; no hidden reasoning is shown.
+AI is closed by default. The retained companion shows provider/account, context summary with inspectable exact content and prior messages, messages, a composer, Send, and Stop during generation. Chat input never implies an edit. Expanded chat provides Return to writing. Proofreading separately previews section/chapter scope and offers before/after proposals with Accept, Reject, explicit grouped Apply, and stale-target explanations. Reading stored conversations/proposals needs no provider session; no hidden reasoning is shown.
 
 ### S06 — Research
 
@@ -319,7 +304,7 @@ Read-only/free mode retains standard single-format exports and use of existing r
 WIDE
 [Return to project] Settings
 Appearance & accessibility     Theme [System ▾]
-AI connections                 Interface zoom [100% ▾]
+ChatGPT                        Interface zoom [100% ▾]
 Collie access                  [ ] High contrast
 Data & recovery                [ ] Reduce motion
 Updates                        New-project author preference [Manage]
@@ -336,7 +321,7 @@ Interface zoom [100% ▾]
 
 Primary action: the selected setting's explicit action; appearance applies immediately and has no misleading global Save button. Focus: return control → settings navigation → page heading → controls/status. Preferences apply from the persistent root before Settings mounts. Malformed preferences fall back safely without blocking project access.
 
-AI connections shows only real availability; stored transcript access remains in Workspace. Collie access is separately labeled with free designation/purchase restore facts. Data & recovery exposes paths through trusted reveal commands, retained candidates, backup/restore, reset recovery, and the narrowly defined Clear picker history. Updates are explicit and preserve flush-before-restart. Support previews remain content-free with no automatic upload. About includes runtime versions, notices, and readable bundled source access. Loading/errors are local to the requested action; an unavailable service does not replace Settings or revoke offline access.
+ChatGPT shows a short account summary and Manage ChatGPT; stored transcript access remains in Workspace. Collie access is separately labeled with free designation/purchase restore facts. Data & recovery exposes paths through trusted reveal commands, retained candidates, backup/restore, reset recovery, and the narrowly defined Clear picker history. Updates are explicit and preserve flush-before-restart. Support previews remain content-free with no automatic upload. About includes runtime versions, notices, and readable bundled source access. Loading/errors are local to the requested action; an unavailable service does not replace Settings or revoke offline access.
 
 Help is a parallel simple list: Getting started, Explore an example, Data and saving, Keyboard help, Third-party licenses, About/support. On narrow windows each article has Back to Help. The optional orientation has three points—Write, keep sources in Research, Save a project file—and a Dismiss action stored locally. Resetting the synthetic sample creates a new trusted sample and keeps the old one; it does not reset personal work. Read-only project access never hides Help, preferences, export/recovery guidance, or licenses.
 
@@ -373,11 +358,11 @@ Primary action is issue-specific, not always Retry. Focus the interruption headi
 
 | Journey                  | Sequence and observable design outcome                                                                                                                                                                                                | Owning stages     |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| First run                | Safe storage initializes → S01 → S02 atomic local create → S03 optional connection → first empty section in S05. First Save chooses a file natively.                                                                                  | I02–I05, I07, I11 |
+| First run                | Safe storage initializes → S01/S02 creation and confirmed access → writing in S05. S03 is independent, once-per-launch account prompting. First Save chooses a file natively.                                                         | I02–I05, I07, I11 |
 | Returning                | Restore preferences → resolve last trusted nonarchived workspace/section → S05; otherwise S04 with actionable unavailable/recovery state. No repeated tour/login.                                                                     | I03, I06, I09     |
-| New project during work  | Guard active drafts/jobs → S01/S02 → reconcile one creation → connection → new workspace. Cancelling before dispatch discards only setup; after dispatch reconcile first and retain any created project.                              | I03–I05           |
+| New project during work  | Guard active drafts/jobs → S01/S02 → reconcile one creation → confirmed editing access → new workspace. Cancelling before dispatch discards only setup; after dispatch reconcile first and retain any created project.                | I03–I05           |
 | Free project switch      | Protect current edits → explicitly designate chosen project through existing main policy → open/edit. Create/Open never silently change designation. If no designation exists, offer Use this project for free editing before typing. | I03, I05–I07      |
-| Offline / AI unavailable | Local setup/write/research/save/export continue. Connection explains offline/unavailable and offers Continue without AI. Existing chats remain readable when delivered. No background inference retry.                                | I05, I09–I12      |
+| Offline / AI unavailable | Local setup/write/research/save/export continue. The connection dialog explains offline/unavailable and can be dismissed or suppressed. Existing chats remain readable when delivered. No background inference retry.                 | I05, I09–I12      |
 | Access loss mid-draft    | Freeze new edits → preserve eligible in-flight buffers → offer protection/return to same project's free designation → retain visible unresolved drafts. Reading/export/backup/recovery remain.                                        | I03, I07–I09      |
 | Source-backed writing    | S05 → S06 add source/inspect original/excerpt/link evidence → return to the exact manuscript position; opening a companion panel shares the same source/note draft.                                                                   | I07–I08           |
 | Recovery                 | Persistent issue → inspect current/retained material → independent recovery copy or Save As → retain original/candidates until an explicit supported action says otherwise.                                                           | I06, I09          |

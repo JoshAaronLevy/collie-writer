@@ -111,30 +111,12 @@
   color: var(--collie-accent);
   font-weight: 650;
 }
-.saved-project-details {
-  display: grid;
-  gap: var(--collie-space-4);
-  width: min(100%, 35rem);
-}
-.saved-project-details div {
-  display: grid;
-  gap: var(--collie-space-1);
-}
-.saved-project-details dt {
-  color: var(--collie-text-secondary);
-  font-size: var(--mantine-font-size-sm);
-}
-.saved-project-details dd {
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.connection-content {
+.setup-completion {
   display: grid;
   gap: var(--collie-space-4);
   max-width: 100%;
 }
-.connection-content p {
+.setup-completion p {
   margin: 0;
 }
 .created-confirmation {

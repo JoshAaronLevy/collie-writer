@@ -6,6 +6,7 @@ import { AppDialog } from '../../components/ui/AppDialog'
 import { StatusBanner } from '../../components/ui/Feedback'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useRetainedDraft } from '../workspace/DraftOwner'
+import { AiCapacity } from '../ai-connections/AiCapacity'
 import { useAiConnections } from '../ai-connections/connectionState'
 import { useConversations } from './conversations/conversationState'
 import { useProofreading } from './proofreading/proofreadingState'
@@ -38,6 +39,9 @@ export function AiWorkNotice(): React.JSX.Element | null {
     locked = useRef(false),
     region = useRef<HTMLDivElement>(null)
   const work = connections.status?.work ?? []
+  const capacity = connections.status?.capacity
+  const capacityNeedsAttention =
+    !!capacity && (capacity.used === null || capacity.used > 0 || capacity.projects.length > 0)
   useRetainedDraft('ai-work-action', {
     read: () => ({
       scope: pending?.work.scope ?? { projectId: '', workspaceId: '' },
@@ -92,19 +96,26 @@ export function AiWorkNotice(): React.JSX.Element | null {
       setBusy(false)
     }
   }
-  if (!work.length && !pending && !issue && !acknowledge) return null
+  if (!work.length && !pending && !issue && !acknowledge && !capacityNeedsAttention) return null
   return (
     <div ref={region} tabIndex={-1} className={styles['ai-work-notice']}>
       <StatusBanner
         title="AI work"
         tone={
-          issue || work.some((item) => item.state === 'protection-required') ? 'warning' : 'info'
+          issue ||
+          capacity?.used === null ||
+          capacity?.used === capacity?.limit ||
+          work.some(
+            (item) => item.state === 'protection-required' || item.state === 'record-unavailable'
+          )
+            ? 'warning'
+            : 'info'
         }
       >
         <p>
-          Running requests and unprotected output must settle before account changes. Stop preserves
-          actual partial output and does not guarantee restored usage. Retaining an outcome releases
-          local capacity only; its saved status and text stay unchanged.
+          {work.length
+            ? 'Running requests and unprotected output must settle before account changes. Stop keeps partial output and does not guarantee restored usage.'
+            : 'Local AI work needs review. Open the recovery details below; saved history remains available.'}
         </p>
         {issue ? <p role="alert">{issue}</p> : null}
         {pending ? (
@@ -190,7 +201,7 @@ export function AiWorkNotice(): React.JSX.Element | null {
               </div>
               {!sameScope(session.project, item.scope) ? (
                 <p>
-                  Open this original project from Local AI capacity in connection settings to
+                  Open the original project from Local AI capacity and recovery in this notice to
                   recover its saved request.
                 </p>
               ) : null}
@@ -204,6 +215,12 @@ export function AiWorkNotice(): React.JSX.Element | null {
             </li>
           ))}
         </ul>
+        {capacityNeedsAttention || work.length ? (
+          <details className={styles['ai-work-details']}>
+            <summary>Local AI capacity and recovery</summary>
+            <AiCapacity />
+          </details>
+        ) : null}
         <AppButton
           variant="subtle"
           disabled={connections.checking}

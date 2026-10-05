@@ -27,6 +27,7 @@ async function call<T>(
 }
 export const aiApi: AiAPI = {
   aiStatus: () => call(AI_CHANNELS.status),
+  aiStartup: (input) => call(AI_CHANNELS.startup, input),
   connectAi: (input) => call(AI_CHANNELS.connect, input),
   cancelAiConnection: (input) => call(AI_CHANNELS.cancelConnect, input),
   refreshAiConnection: (input) => call(AI_CHANNELS.refresh, input),
@@ -36,6 +37,7 @@ export const aiApi: AiAPI = {
   cleanupAiConnection: () => call(AI_CHANNELS.cleanupConnection),
   protectAiConnection: () => call(AI_CHANNELS.protectConnection),
   aiModels: (input) => call(AI_CHANNELS.models, input),
+  prepareAiConnection: (input) => call(AI_CHANNELS.prepareConnection, input),
   refreshAiModels: (input) => call(AI_CHANNELS.refreshModels, input),
   selectAiModel: (input) => call(AI_CHANNELS.selectModel, input),
   prepareAiOperation: (input) => call(AI_CHANNELS.prepare, input),

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { AppButton, ChoiceField } from '../../components/ui/Controls'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
+import { useAiConnections } from '../ai-connections/connectionState'
 import styles from '../help/WritingGuide.module.css'
 
 export default function TutorialPanel({
@@ -16,6 +17,7 @@ export default function TutorialPanel({
   start: () => void
   reset: () => void
 }): React.JSX.Element {
+  const connections = useAiConnections()
   const [acknowledged, setAcknowledged] = useState(false)
   const { navigate, workspace, research, project } = useWorkspaceSession()
   function go(view: 'write' | 'details' | 'export'): void {
@@ -27,8 +29,9 @@ export default function TutorialPanel({
       <h1 id="tutorial-title">A first writing path</h1>
       <p>
         Start with your own nonfiction idea, or explore a separate sample about evaluating a
-        research claim. Its study and data are synthetic teaching material, not real findings.
-        Everything in the sample stays local until you choose Save or export.
+        research claim. Its study and data are synthetic teaching material, not real findings. The
+        sample starts on this device. Saving a file, exporting, and sending a reviewed AI request
+        are separate actions you choose.
       </p>
       <div className={styles['guide-actions']}>
         <AppButton disabled={disabled} onClick={start}>
@@ -52,7 +55,9 @@ export default function TutorialPanel({
           <strong>Choose a project and make it yours.</strong>
           <p>
             Projects → New project starts with a nonfiction type, title and author. Description is
-            optional. AI connection is unavailable in this build; continue to writing.
+            optional. These are the two setup steps; creating the project opens writing. If another
+            project uses your free writing slot, the details step explains the switch before you
+            confirm.
           </p>
           <AppButton
             variant="subtle"
@@ -60,6 +65,23 @@ export default function TutorialPanel({
             onClick={() => void navigate({ kind: 'setup' })}
           >
             Create a personal project
+          </AppButton>
+        </li>
+        <li>
+          <strong>Manage ChatGPT once for all projects.</strong>
+          <p>
+            ChatGPT in the header shows your account status and opens the connection dialog. You can
+            dismiss its startup prompt or turn automatic prompting off there. In Write, AI opens
+            conversations and proofreading; each tool shows its own availability. Connecting sends
+            no writing. Review each request before sending it.
+          </p>
+          <AppButton
+            variant="subtle"
+            disabled={disabled}
+            aria-haspopup="dialog"
+            onClick={(event) => connections.openDialog(event.currentTarget)}
+          >
+            Manage ChatGPT
           </AppButton>
         </li>
         <li>
@@ -89,7 +111,7 @@ export default function TutorialPanel({
           </AppButton>
         </li>
         <li>
-          <strong>Connect and revise.</strong>
+          <strong>Link evidence and revise.</strong>
           <p>
             Research → Questions and claims lets you link excerpts as support or challenge. These
             assessments are distinct from citations inserted in Write. Notes and annotations keep

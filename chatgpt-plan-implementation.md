@@ -1,5 +1,7 @@
 # Direct ChatGPT-plan conversation milestone — DP01
 
+**Current UI checkpoint — UI01–UI06, October 5:** the [UI plan](ui-improvements-plan.md) and [combined walkthrough](docs/manual-testing/ui-improvements-UI06.md) own the implemented two-step creation and app-wide ChatGPT experience, awaiting user testing. They supersede I05/I11's third creation step and DP01's routine manual model setup. The header/status modal, automatic preparation, remembered model and prompt preferences, and retained setup v2 recovery do not change DP01's provider architecture, account eligibility, reviewed dispatch, or commercial gates. Operational capacity/protection remains in AI work. Dated results below are preserved; implementation is not runtime acceptance.
+
 October 3, 2026. **Implementation complete — awaiting Josh’s manual testing. No runtime success is claimed.** This is the active architecture decision for the requested personal, unpackaged proof of concept. It supersedes the Codex dependency for this milestone; the dated CD/I records remain historical. The [diagnostic reassessment](ai-integration-reassessment.md) describes the preceding state.
 
 The acceptance target is one reviewed, synthetic claim-and-evidence conversation that completes through the user’s own ChatGPT plan authorization, remains saved, and can be reopened. This is not the P06 source-faithfulness implementation or a release milestone. The [manual guide](docs/manual-testing/chatgpt-plan-DP01.md) provides the exact request and expected observations.

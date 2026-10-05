@@ -1,20 +1,70 @@
+import { Tooltip } from '@mantine/core'
+import { connectionHealth } from '../../../../shared/ai-connection-health'
 import { AppButton } from '../../components/ui/Controls'
 import { useAiConnections } from './connectionState'
-import { connectionLabel } from './connection-copy'
+import { connectionHealthDescription } from './connection-copy'
 import styles from './AiConnections.module.css'
 
 export function AiProviderIndicator({
   onOpen,
-  active,
+  active = false,
   global = false
 }: {
-  onOpen: () => void
-  active: boolean
+  onOpen?: () => void
+  active?: boolean
   global?: boolean
 }): React.JSX.Element {
-  const { status, checking } = useAiConnections()
-  const account = status?.connections.find((item) => item.id === status.activeConnectionId)
-  const direct = status?.route.kind === 'local-chatgpt-plan'
+  const { status, statusUnavailable, dialogOpen, openDialog } = useAiConnections()
+  if (global) {
+    const health = statusUnavailable
+      ? connectionHealth('status-unavailable')
+      : (status?.connectionHealth ?? connectionHealth('checking'))
+    const summary =
+      health.state === 'ready'
+        ? 'connected'
+        : health.state === 'disconnected'
+          ? 'not connected'
+          : health.state === 'error'
+            ? 'connection error'
+            : health.state === 'progress'
+              ? health.reason === 'disconnecting'
+                ? 'disconnecting'
+                : health.reason === 'renewing'
+                  ? 'updating connection'
+                  : health.reason === 'signing-in'
+                    ? 'signing in'
+                    : 'checking connection'
+              : 'needs attention'
+    return (
+      <Tooltip
+        label={connectionHealthDescription[health.reason]}
+        events={{ hover: true, focus: true, touch: false }}
+        interactive
+        position="bottom"
+        multiline
+        transitionProps={{ duration: 0 }}
+        classNames={{ tooltip: styles['ai-provider-tooltip'] }}
+      >
+        <AppButton
+          variant={dialogOpen ? 'default' : 'subtle'}
+          aria-haspopup="dialog"
+          aria-expanded={dialogOpen}
+          data-chatgpt-trigger
+          aria-label={`ChatGPT — ${summary}. Open connection dialog.`}
+          onClick={(event) => openDialog(event.currentTarget)}
+          className={styles['chatgpt-status-button']}
+          classNames={{ label: styles['chatgpt-status-label'] }}
+        >
+          ChatGPT
+          <span
+            aria-hidden="true"
+            className={styles['chatgpt-status-dot']}
+            data-state={health.state}
+          />
+        </AppButton>
+      </Tooltip>
+    )
+  }
   return (
     <AppButton
       variant={active ? 'default' : 'subtle'}
@@ -22,36 +72,9 @@ export function AiProviderIndicator({
       onClick={onOpen}
       className={styles['ai-provider-indicator']}
       classNames={{ label: styles['ai-provider-indicator-label'] }}
-      title={`${direct ? 'ChatGPT plan' : 'ChatGPT · Codex'}: ${connectionLabel(status, checking)}${account ? ` · ${account.label}` : ''}`}
+      title={active ? 'AI assistance is open' : 'Open AI assistance'}
     >
-      {global
-        ? direct
-          ? account
-            ? 'ChatGPT connection'
-            : 'Connect ChatGPT'
-          : account
-            ? 'Codex connection'
-            : 'Connect Codex'
-        : 'AI'}{' '}
-      <span className={styles['ai-provider-indicator-state']}>
-        {!status && checking
-          ? 'Checking…'
-          : status?.state === 'signing-in'
-            ? 'Signing in…'
-            : status?.session.state === 'saved-needs-resume'
-              ? 'Resume required'
-              : status?.session.state === 'resuming'
-                ? 'Resuming…'
-                : status?.session.state === 'reconnect-required'
-                  ? 'Reconnect required'
-                  : status?.features.conversation.state === 'available'
-                    ? 'Reviewed requests available'
-                    : account?.state === 'signed-in'
-                      ? 'Connected · AI unavailable'
-                      : direct || status?.route.kind === 'local-codex-chatgpt'
-                        ? 'Local development'
-                        : 'Unavailable'}
-      </span>
+      AI
     </AppButton>
   )
 }

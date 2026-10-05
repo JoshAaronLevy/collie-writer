@@ -369,7 +369,7 @@ export default function WorkspaceViews(): React.JSX.Element {
           <RetainedRegion name="settings-appearance" label="Appearance and accessibility">
             <SettingsPanel />
           </RetainedRegion>
-          <RetainedRegion name="settings-ai" label="AI connections">
+          <RetainedRegion name="settings-ai" label="ChatGPT">
             <ConnectionSettings />
           </RetainedRegion>
           <RetainedRegion name="settings-updates" label="Updates">

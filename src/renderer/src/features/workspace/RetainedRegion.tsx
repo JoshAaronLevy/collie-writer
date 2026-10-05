@@ -24,21 +24,38 @@ export function RetainedRegion({
     lastFocus = useRef<HTMLElement | null>(null)
   useLayoutEffect(() => {
     if (!visible || !focusRevision || navigating) return
-    const requested = focusRequestRef.current
-    if (requested) {
-      focusRequestRef.current = null
-      requested()
-      return
+    // Defer the existing navigation focus request until the dialog exits. Do
+    // not consume it behind a focus trap or leave a stale request for a later route.
+    const restoreFocus = (): boolean => {
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return false
+      const requested = focusRequestRef.current
+      if (requested) {
+        focusRequestRef.current = null
+        requested()
+      } else {
+        const previous = lastFocus.current
+        if (
+          previous?.isConnected &&
+          root.current?.contains(previous) &&
+          !previous.matches(':disabled')
+        )
+          previous.focus({ preventScroll: true })
+        else root.current?.focus({ preventScroll: true })
+        root.current?.scrollIntoView({ block: 'start' })
+      }
+      return true
     }
-    const previous = lastFocus.current
-    if (previous?.isConnected && root.current?.contains(previous) && !previous.matches(':disabled'))
-      previous.focus({ preventScroll: true })
-    else root.current?.focus({ preventScroll: true })
-    root.current?.scrollIntoView({ block: 'start' })
+    if (restoreFocus()) return
+    const observer = new MutationObserver(() => {
+      if (restoreFocus()) observer.disconnect()
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
   }, [visible, focusRevision, navigating, focusRequestRef])
   return (
     <section
       ref={root}
+      data-destination-region={name}
       className={styles['destination-region']}
       hidden={!visible}
       inert={!visible}

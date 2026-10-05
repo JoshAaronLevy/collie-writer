@@ -4,6 +4,10 @@ The user performs runtime/manual testing. Under the October 5, 2026 amendment in
 
 For a fully implemented stage, start its guide with `Stage X complete. As a user:` and a numbered action/expected-outcome list. A blocked or incomplete stage must say so instead. Include only implemented behavior and relevant user-owned setup steps. Implementation complete does not mean user acceptance or release gates passed; record those separately in the plan and stage record. If a feature cannot yet be observed, identify it as unverified instead of inventing a testing interface.
 
+## Current simplified UI journey
+
+[UI06 — combined UI01–UI06 walkthrough](ui-improvements-UI06.md) is the current guide for startup ChatGPT setup/dismissal, two-step creation, shared account/model use, contextual conversation/proofreading access and AI work recovery. All six stages are implemented, awaiting user testing. The [UI plan](../../ui-improvements-plan.md) and [UI06 record](../validation/ui-improvements-UI06.md) separate required code checks from manual acceptance. I05/I11 and DP01 manual account-setup instructions below are preserved as dated checkpoints and superseded for this journey.
+
 ## App improvement stages
 
 These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience and provider specifications](improvement-I01.md) is a document-review guide; it requires no app launch or provider account. Its [completion record](../validation/improvement-I01.md) tracks pending feedback.

@@ -1,6 +1,7 @@
 type ConnectionControllerState = {
   status: AiStatus | null
   checking: boolean
+  statusUnavailable: boolean
   issue: AiReason | null
   pending: Action | null
   waiting: boolean
@@ -10,7 +11,7 @@ type ConnectionControllerState = {
   connect: (connectionId: string | null, trigger: HTMLElement | null) => Promise<boolean>
   cancel: () => Promise<boolean>
   accountAction: (
-    kind: 'refresh' | 'disconnect' | 'select' | 'resume' | 'refreshModels',
+    kind: 'refresh' | 'disconnect' | 'select' | 'resume' | 'refreshModels' | 'prepareConnection',
     connectionId: string,
     trigger: HTMLElement | null
   ) => Promise<boolean>
@@ -19,7 +20,14 @@ type ConnectionControllerState = {
     trigger: HTMLElement | null
   ) => Promise<boolean>
   selectModel: (input: AiSelectModelInput, trigger: HTMLElement | null) => Promise<boolean>
+  dialogOpen: boolean
+  openDialog: (trigger?: HTMLElement | null) => void
+  closeDialog: () => void
+  returnDialogFocus: () => void
   showOrigin: () => void
+  suppressAutomatic: boolean
+  promptPreferenceIssue: string | null
+  setSuppressAutomatic: (value: boolean) => void
 }
 import { useLayoutEffect } from 'react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
@@ -29,6 +37,8 @@ import type { AppDestination } from '../../app/navigation'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import { connectionProblemReasons } from './connection-copy'
+import { usePromptPreference } from './promptPreference'
+import { useChatGptStartup } from './useChatGptStartup'
 
 type Action = {
   id: number
@@ -41,6 +51,7 @@ type Action = {
     | 'resume'
     | 'cleanup'
     | 'protectConnection'
+    | 'prepareConnection'
     | 'refreshModels'
     | 'selectModel'
   connectionId: string | null
@@ -50,12 +61,35 @@ type Origin = {
   destination: AppDestination
   trigger: HTMLElement | null
   surface: HTMLElement | null
+  dialogGeneration: number | null
 }
 
 export function useConnectionController(): ConnectionControllerState {
   const session = useWorkspaceSession()
+  const preference = usePromptPreference()
+  const { setSuppression } = preference
+  const startupDismissed = useRef(false)
+  const acknowledgeStartup = useCallback(() => {
+    startupDismissed.current = true
+    void window.collie.aiStartup({ action: 'acknowledge' })
+  }, [])
+  const setSuppressAutomatic = useCallback(
+    (value: boolean) => {
+      acknowledgeStartup()
+      setSuppression(value)
+    },
+    [acknowledgeStartup, setSuppression]
+  )
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const dialog = useRef({
+    open: false,
+    generation: 0,
+    trigger: null as HTMLElement | null,
+    destination: ''
+  })
   const [status, setStatus] = useState<AiStatus | null>(null)
   const [checking, setChecking] = useState(false)
+  const [readUnavailable, setReadUnavailable] = useState(false)
   const [issue, setIssue] = useState<AiReason | null>(null)
   const [pending, setPending] = useState<Action | null>(null)
   const snapshot = useRef<AiStatus | null>(null)
@@ -72,15 +106,95 @@ export function useConnectionController(): ConnectionControllerState {
     latestSession.current = session
   })
 
+  const openConnectionDialog = useCallback((trigger: HTMLElement | null): boolean => {
+    const current = latestSession.current
+    if (current.closing || current.navigating || current.composition.current || dialog.current.open)
+      return false
+    // Do not stack a second modal over a recovery, editor or native-close decision.
+    if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return false
+    dialog.current = {
+      open: true,
+      generation: dialog.current.generation + 1,
+      trigger,
+      destination: JSON.stringify(current.destination)
+    }
+    setDialogOpen(true)
+    return true
+  }, [])
+  const openDialog = useCallback(
+    (trigger?: HTMLElement | null) => {
+      if (
+        openConnectionDialog(
+          trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
+        )
+      )
+        acknowledgeStartup()
+    },
+    [openConnectionDialog, acknowledgeStartup]
+  )
+  const closeDialog = useCallback(() => {
+    acknowledgeStartup()
+    dialog.current.open = false
+    setDialogOpen(false)
+    // Dismiss presentation only. Keep attempts, unconfirmed replies and drafts.
+  }, [acknowledgeStartup])
+  const returnDialogFocus = useCallback(() => {
+    const captured = dialog.current
+    if (captured.open) return
+    requestAnimationFrame(() => {
+      const current = latestSession.current
+      if (
+        dialog.current !== captured ||
+        captured.open ||
+        current.composition.current ||
+        current.closing ||
+        current.navigating ||
+        document.querySelector('[role="dialog"], [role="alertdialog"]')
+      )
+        return
+      if (
+        document.activeElement !== document.body &&
+        document.activeElement instanceof HTMLElement &&
+        !document.activeElement.closest('[hidden], [inert]')
+      )
+        return
+      const target =
+        captured.destination === JSON.stringify(current.destination) &&
+        captured.trigger?.isConnected &&
+        !captured.trigger.matches(':disabled') &&
+        !captured.trigger.closest('[hidden], [inert]') &&
+        captured.trigger.getClientRects().length > 0
+          ? captured.trigger
+          : (document.querySelector<HTMLElement>('[data-destination-region]:not([hidden])') ??
+            document.querySelector<HTMLElement>('[data-chatgpt-trigger]'))
+      if (target?.hasAttribute('data-destination-region')) {
+        const heading = Array.from(target.querySelectorAll<HTMLElement>('h1, h2')).find(
+          (item) => !item.closest('[hidden], [inert]') && item.getClientRects().length > 0
+        )
+        if (heading) {
+          heading.tabIndex = -1
+          heading.focus({ preventScroll: true })
+          return
+        }
+      }
+      target?.focus({ preventScroll: true })
+    })
+  }, [])
+
   const restoreOriginFocus = useCallback(() => {
     const captured = origin.current,
       current = latestSession.current
     if (
       !captured ||
+      (dialog.current.open && captured.dialogGeneration === null) ||
       JSON.stringify(captured.destination) !== JSON.stringify(current.destination) ||
-      current.composition.current
+      current.composition.current ||
+      (captured.dialogGeneration !== null &&
+        (!dialog.current.open || captured.dialogGeneration !== dialog.current.generation))
     )
       return
+    const modal = document.querySelector('[role="dialog"], [role="alertdialog"]')
+    if (modal && !modal.contains(captured.surface)) return
     const surface = captured.surface
     const trigger = captured.trigger
     const target =
@@ -95,7 +209,15 @@ export function useConnectionController(): ConnectionControllerState {
       if (
         origin.current !== captured ||
         JSON.stringify(captured.destination) !== JSON.stringify(current.destination) ||
-        current.composition.current
+        current.composition.current ||
+        (captured.dialogGeneration !== null &&
+          (!dialog.current.open || captured.dialogGeneration !== dialog.current.generation))
+      )
+        return
+      const modal = document.querySelector('[role="dialog"], [role="alertdialog"]')
+      if (
+        (dialog.current.open && captured.dialogGeneration === null) ||
+        (modal && !modal.contains(surface))
       )
         return
       if (document.activeElement !== document.body && !surface?.contains(document.activeElement))
@@ -103,7 +225,8 @@ export function useConnectionController(): ConnectionControllerState {
       if (
         target.isConnected &&
         !target.matches(':disabled') &&
-        !target.closest('[hidden], [inert]')
+        !target.closest('[hidden], [inert]') &&
+        target.getClientRects().length > 0
       )
         target.focus({ preventScroll: true })
     })
@@ -116,6 +239,7 @@ export function useConnectionController(): ConnectionControllerState {
       const wasSigningIn = snapshot.current?.state === 'signing-in'
       snapshot.current = next
       setStatus(next)
+      setReadUnavailable(!!unconfirmed.current)
       if (unconfirmed.current) setIssue('outcome-unknown')
       if (wasSigningIn && next.state !== 'signing-in') {
         ownedAttempt.current = null
@@ -138,6 +262,7 @@ export function useConnectionController(): ConnectionControllerState {
         return Promise.resolve()
       }
       const reconciling = unconfirmed.current
+      const startedSequence = snapshot.current?.sequence
       setChecking(true)
       const task = (async () => {
         try {
@@ -151,6 +276,7 @@ export function useConnectionController(): ConnectionControllerState {
             const reconciled =
               !!reconciling && unconfirmed.current === reconciling && action.current === null
             if (reconciled) unconfirmed.current = null
+            if (!unconfirmed.current) setReadUnavailable(false)
             if (
               action.current === null &&
               !unconfirmed.current &&
@@ -163,9 +289,15 @@ export function useConnectionController(): ConnectionControllerState {
               action.current?.kind !== 'connect'
             )
               ownedAttempt.current = null
-          } else setIssue(result.reason)
+          } else {
+            if (snapshot.current?.sequence === startedSequence) setReadUnavailable(true)
+            setIssue(result.reason)
+          }
         } catch {
-          if (mounted.current) setIssue('outcome-unknown')
+          if (mounted.current) {
+            if (snapshot.current?.sequence === startedSequence) setReadUnavailable(true)
+            setIssue('outcome-unknown')
+          }
         } finally {
           statusRead.current = null
           acknowledgeStatusRead.current = false
@@ -237,7 +369,8 @@ export function useConnectionController(): ConnectionControllerState {
       origin.current = {
         destination: latestSession.current.destination,
         trigger,
-        surface: trigger?.closest<HTMLElement>('[data-ai-connection-surface]') ?? null
+        surface: trigger?.closest<HTMLElement>('[data-ai-connection-surface]') ?? null,
+        dialogGeneration: dialog.current.open ? dialog.current.generation : null
       }
       const next: Action = {
         id: ++nextAction.current,
@@ -266,11 +399,15 @@ export function useConnectionController(): ConnectionControllerState {
           if (current.kind !== 'connect') restoreOriginFocus()
         } else if (action.current?.id === current.id) {
           setIssue(result.reason)
-          if (result.reason === 'outcome-unknown') unconfirmed.current = current
+          if (result.reason === 'outcome-unknown') {
+            unconfirmed.current = current
+            setReadUnavailable(true)
+          }
         }
       } catch {
         if (mounted.current && action.current?.id === current.id) {
           unconfirmed.current = current
+          setReadUnavailable(true)
           setIssue('outcome-unknown')
         }
       } finally {
@@ -312,24 +449,27 @@ export function useConnectionController(): ConnectionControllerState {
 
   const accountAction = useCallback(
     (
-      kind: 'refresh' | 'disconnect' | 'select' | 'resume' | 'refreshModels',
+      kind: 'refresh' | 'disconnect' | 'select' | 'resume' | 'refreshModels' | 'prepareConnection',
       connectionId: string,
       trigger: HTMLElement | null
     ): Promise<boolean> => {
-      if (!snapshot.current?.actions[kind]) return Promise.resolve(false)
+      if (!snapshot.current?.actions[kind === 'prepareConnection' ? 'refreshModels' : kind])
+        return Promise.resolve(false)
       const next = begin(kind, connectionId, trigger)
       if (!next) return Promise.resolve(false)
       const input = { connectionId }
       return finish(next, () =>
-        kind === 'refresh'
-          ? window.collie.refreshAiConnection(input)
-          : kind === 'refreshModels'
-            ? window.collie.refreshAiModels(input)
-            : kind === 'resume'
-              ? window.collie.resumeAiConnection(input)
-              : kind === 'disconnect'
-                ? window.collie.disconnectAi(input)
-                : window.collie.selectAiConnection(input)
+        kind === 'prepareConnection'
+          ? window.collie.prepareAiConnection(input)
+          : kind === 'refresh'
+            ? window.collie.refreshAiConnection(input)
+            : kind === 'refreshModels'
+              ? window.collie.refreshAiModels(input)
+              : kind === 'resume'
+                ? window.collie.resumeAiConnection(input)
+                : kind === 'disconnect'
+                  ? window.collie.disconnectAi(input)
+                  : window.collie.selectAiConnection(input)
       )
     },
     [begin, finish]
@@ -359,26 +499,28 @@ export function useConnectionController(): ConnectionControllerState {
     [begin, finish]
   )
 
-  const showOrigin = useCallback(() => {
-    const captured = origin.current?.destination,
-      current = latestSession.current
-    // Returning never switches projects or recreates a completed setup wizard.
-    if (
-      captured?.kind === 'workspace' &&
-      current.project?.projectId === captured.scope.projectId &&
-      current.project.workspaceId === captured.scope.workspaceId
-    )
-      void current.navigate(captured)
-    else if (captured?.kind === 'setup' && current.destination.kind === 'setup')
-      restoreOriginFocus()
-    else void current.navigate({ kind: 'settings', page: 'ai' })
-  }, [restoreOriginFocus])
+  const showOrigin = useCallback(() => openDialog(), [openDialog])
 
   const busy =
     !!pending ||
     status?.state === 'signing-in' ||
     status?.state === 'refreshing' ||
-    status?.state === 'disconnecting'
+    status?.state === 'disconnecting' ||
+    status?.direct?.preparation === 'running' ||
+    status?.direct?.preparation === 'waiting'
+  const startupFailure = useCallback(() => {
+    setReadUnavailable(true)
+    setIssue('outcome-unknown')
+  }, [])
+  useChatGptStartup({
+    status,
+    suppressAutomatic: preference.suppressAutomatic,
+    dismissed: startupDismissed,
+    busy,
+    apply,
+    openAutomatically: openConnectionDialog,
+    onFailure: startupFailure
+  })
   useRetainedDraft('ai-connection-action', {
     read: () => ({
       scope: session.project
@@ -396,10 +538,12 @@ export function useConnectionController(): ConnectionControllerState {
     }),
     focus: showOrigin
   })
+  const statusUnavailable = readUnavailable || !session.available
   return useMemo(
     () => ({
       status,
       checking,
+      statusUnavailable,
       issue,
       pending,
       waiting,
@@ -411,11 +555,19 @@ export function useConnectionController(): ConnectionControllerState {
       accountAction,
       localAction,
       selectModel,
+      dialogOpen,
+      openDialog,
+      closeDialog,
+      returnDialogFocus,
+      suppressAutomatic: preference.suppressAutomatic,
+      promptPreferenceIssue: preference.issue,
+      setSuppressAutomatic,
       showOrigin
     }),
     [
       status,
       checking,
+      statusUnavailable,
       issue,
       pending,
       waiting,
@@ -427,6 +579,13 @@ export function useConnectionController(): ConnectionControllerState {
       accountAction,
       localAction,
       selectModel,
+      dialogOpen,
+      openDialog,
+      closeDialog,
+      returnDialogFocus,
+      preference.suppressAutomatic,
+      preference.issue,
+      setSuppressAutomatic,
       showOrigin
     ]
   )

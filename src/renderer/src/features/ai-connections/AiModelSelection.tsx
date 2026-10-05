@@ -36,42 +36,51 @@ export function AiModelSelection({
     issue === 'outcome-unknown'
   return (
     <section className={styles['ai-model-selection']} aria-labelledby={heading}>
-      <h3 id={heading}>{direct ? 'ChatGPT plan models' : 'Codex models'}</h3>
+      <h3 id={heading}>{direct ? 'Model' : 'Codex models'}</h3>
       <p>
         {direct
-          ? 'Refresh reads your selected account’s current model choices from OpenAI. It sends no writing and starts no inference. Model access and usage limits are checked again on each request.'
+          ? 'Collie sets up models after you connect and remembers your choice for this account. Setup sends no writing and starts no AI request.'
           : 'Refresh reads the catalog reported by your connected Codex runtime. It sends no writing and does not run a model. A listed model may still be refused by your account.'}
       </p>
       <AppButton
         variant="default"
         disabled={!connectionId || !status.actions.refreshModels || blocked}
-        pending={pending?.kind === 'refreshModels'}
+        pending={pending?.kind === 'refreshModels' || pending?.kind === 'prepareConnection'}
         onClick={(event) => {
           if (connectionId)
-            void connections.accountAction('refreshModels', connectionId, event.currentTarget)
+            void connections.accountAction(
+              direct ? 'prepareConnection' : 'refreshModels',
+              connectionId,
+              event.currentTarget
+            )
         }}
       >
-        Refresh models
+        {direct && (catalog.state !== 'loaded' || !catalog.models.length)
+          ? 'Try again'
+          : 'Refresh models'}
       </AppButton>
       {catalog.state === 'not-loaded' ? (
         <p>
           {direct
-            ? 'Sign in and authorize plan use, then refresh models.'
+            ? 'Connect ChatGPT to set up models automatically. For a saved account, choose Try again.'
             : 'Connect or resume, then refresh models.'}{' '}
-          Choices stay in memory for this connection.
+          {direct ? '' : 'Choices stay in memory for this connection.'}
         </p>
       ) : null}
-      {catalog.state === 'loading' ? <p role="status">Reading the model catalog…</p> : null}
+      {catalog.state === 'loading' ? (
+        <p role="status">{direct ? 'Setting up ChatGPT…' : 'Reading the model catalog…'}</p>
+      ) : null}
+      {status.connectionHealth.reason === 'model-unavailable' ? (
+        <p role="status">Your previous model is unavailable. Choose a replacement below.</p>
+      ) : null}
       {catalog.state === 'failed' ? <p role="alert">{connectionReason[catalog.reason]}</p> : null}
       {catalog.state === 'loaded' && catalog.models.length === 0 ? (
-        <p role="status">
-          No supported visible models were returned. Refresh later to request another catalog read.
-        </p>
+        <p role="status">No supported models are available. Try again later.</p>
       ) : null}
       {catalog.state === 'loaded' && catalog.models.length > 0 ? (
         <>
           <SelectField
-            label="Model for future reviewed requests"
+            label={direct ? 'Model for this account' : 'Model for future reviewed requests'}
             value={catalog.selectedModelId ?? ''}
             disabled={!status.actions.selectModel || blocked}
             data={[
@@ -93,7 +102,7 @@ export function AiModelSelection({
           {selected ? (
             <p>
               {direct
-                ? `Selected: ${selected.label}. This choice starts no request.`
+                ? `Selected: ${selected.label}. Saved for this account. Changing it starts no request.`
                 : `Selected: ${selected.label}. Runtime default effort: ${selected.defaultReasoningEffort}. Reported efforts: ${selected.reasoningEfforts.join(', ')}. Collie uses the runtime default; this choice starts no request.`}
             </p>
           ) : null}

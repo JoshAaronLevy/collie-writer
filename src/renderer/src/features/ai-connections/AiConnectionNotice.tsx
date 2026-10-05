@@ -1,21 +1,29 @@
 import { AppButton } from '../../components/ui/Controls'
 import { StatusBanner } from '../../components/ui/Feedback'
 import { useAiConnections } from './connectionState'
-import { connectionLabel, connectionReason } from './connection-copy'
+import { connectionReason } from './connection-copy'
+import { connectionPresentation } from './connectionPresentation'
 import styles from './AiConnections.module.css'
 
 /** Account progress remains visible when its original panel is hidden. */
 export function AiConnectionNotice(): React.JSX.Element | null {
   const connections = useAiConnections()
+  const view = connectionPresentation(
+    connections.status,
+    connections.statusUnavailable,
+    connections.issue,
+    connections.busy
+  )
   const localIssue = connections.status?.local?.issue
   const directIssue = connections.status?.direct?.issue
   const cleanup = connections.status?.local?.cleanupCount ?? 0
+  if (connections.dialogOpen) return null
   if (!connections.busy && !connections.issue && !localIssue && !directIssue && !cleanup)
     return null
   return (
     <div className={styles['ai-connection-notice']}>
       <StatusBanner
-        title="AI account connection"
+        title="ChatGPT"
         tone={connections.issue || localIssue || directIssue ? 'warning' : 'info'}
       >
         <p>
@@ -26,16 +34,15 @@ export function AiConnectionNotice(): React.JSX.Element | null {
               : directIssue
                 ? connectionReason[directIssue.reason]
                 : connections.busy
-                  ? connectionLabel(
-                      connections.status,
-                      connections.checking,
-                      connections.pending?.kind
-                    )
+                  ? view.description
                   : 'Inactive Codex sessions are waiting for local sign-out.'}
         </p>
         <div className={styles['ai-account-actions']}>
-          <AppButton variant="subtle" onClick={connections.showOrigin}>
-            Return to connection
+          <AppButton
+            variant="subtle"
+            onClick={(event) => connections.openDialog(event.currentTarget)}
+          >
+            Manage ChatGPT
           </AppButton>
           {connections.waiting ? (
             <AppButton

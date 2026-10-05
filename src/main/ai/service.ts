@@ -16,6 +16,8 @@ import {
   type AiPrepared,
   type AiReason,
   type AiStartInput,
+  type AiStartup,
+  type AiStartupInput,
   type AiStatus
 } from '../../shared/ai'
 import { sameProject } from '../../shared/access'
@@ -54,6 +56,7 @@ import {
   type DispatchExecution
 } from './local-operation'
 import { DirectPlanSession } from './direct-session'
+import { deriveConnectionHealth } from './connection-health'
 import { directFits, operationDigestV4 } from './direct-operation'
 import { LocalCodexSession } from './local-codex-session'
 import { localExecutionReadiness, localFeatureAvailability } from './codex-local-policy'
@@ -101,9 +104,12 @@ function providerSettled(work: Promise<unknown>): Promise<boolean> {
 
 /** Main owns sessions and jobs independently of any mounted renderer panel. */
 export class AiService {
+  private startupPrepared = false
+  private startupPromptHandled = false
   private credentials: Credentials | null = null
   private initialization: Promise<void> | null = null
   private storageFailure = false
+  private accountStorageState: 'starting' | 'ready' | 'failed' = 'starting'
   private journalFailure = false
   private unprotectedOperationId: string | null = null
   private busy = false
@@ -133,6 +139,7 @@ export class AiService {
   private retentionWriting = false
   private attempted = new Map<string, string | null>()
   private cancelledAttempts = new Set<string>()
+  private preparationScheduled = false
   private publishTimer: ReturnType<typeof setTimeout> | null = null
   private listeners = new Set<(event: AiEvent) => void>()
   private contentPending: () => boolean = () => false
@@ -194,6 +201,7 @@ export class AiService {
       await task
     } finally {
       if (this.handoffWork === task) this.handoffWork = null
+      this.publish()
     }
   }
   async settleOperation(operationId: string): Promise<void> {
@@ -294,7 +302,33 @@ export class AiService {
       }
   }
   private publish(): void {
-    this.emit({ kind: 'connection', status: this.status() })
+    const status = this.status()
+    // A healthy startup consumes prompting even if no renderer survives to
+    // acknowledge the event. Later failures remain manually actionable.
+    if (this.startupPrepared && status.connectionHealth.state === 'ready')
+      this.startupPromptHandled = true
+    this.emit({ kind: 'connection', status })
+    // Settlement-driven drain of one explicit intent. Status reads/polls never
+    // schedule preparation, and waiting does not reserve the owner it awaits.
+    if (this.preparationScheduled) return
+    this.preparationScheduled = true
+    queueMicrotask(() => {
+      this.preparationScheduled = false
+      if (selectAiRoute().kind !== 'local-chatgpt-plan') return
+      if (this.isSettling()) {
+        this.direct.cancelPreparation()
+        return
+      }
+      if (
+        this.accountStorageState !== 'ready' ||
+        !this.retentionLoaded ||
+        this.storageFailure ||
+        this.hasPendingWork() ||
+        this.contentPending()
+      )
+        return
+      this.direct.startPreparation()
+    })
   }
   private async ensure(): Promise<void> {
     if (!this.initialization) {
@@ -302,9 +336,15 @@ export class AiService {
         this.retentionLoaded = false
         this.retained.clear()
         this.protectedRecords.clear()
-        if (selectAiRoute().kind === 'local-chatgpt-plan') await this.direct.initialize()
-        else this.credentials = await this.storage.credentials()
-        if (selectAiRoute().kind === 'local-codex-chatgpt') await this.local.initialize()
+        try {
+          if (selectAiRoute().kind === 'local-chatgpt-plan') await this.direct.initialize()
+          else this.credentials = await this.storage.credentials()
+          if (selectAiRoute().kind === 'local-codex-chatgpt') await this.local.initialize()
+          this.accountStorageState = 'ready'
+        } catch (error) {
+          this.accountStorageState = 'failed'
+          throw error
+        }
         const operations = await this.storage.operations()
         for (const item of operations) {
           // Storage validates the record using its own version and frozen digest.
@@ -349,7 +389,66 @@ export class AiService {
     }
     return this.status()
   }
+  async startup(input: AiStartupInput): Promise<AiStartup> {
+    // These markers survive renderer replacement, but reset with the main process.
+    if (input.action === 'acknowledge') this.startupPromptHandled = true
+    const before = input.action === 'acknowledge' ? this.status() : await this.readStatus()
+    if (input.action === 'prepare' && !this.startupPrepared && !this.isSettling()) {
+      this.startupPrepared = true
+      if (
+        before.route.kind === 'local-chatgpt-plan' &&
+        before.activeConnectionId &&
+        before.connectionHealth.state !== 'ready' &&
+        before.connectionHealth.state !== 'progress' &&
+        this.accountStorageState === 'ready' &&
+        !this.storageFailure &&
+        !this.journalFailure
+      ) {
+        try {
+          this.direct.requestPreparation(before.activeConnectionId)
+        } catch {
+          // Missing credentials/permission remain actionable in the authoritative status.
+          // Startup never initiates sign-in or loops on a failed preparation.
+        }
+      }
+    }
+    const status = this.status()
+    if (this.startupPrepared && status.connectionHealth.state === 'ready')
+      this.startupPromptHandled = true
+    let promptGranted = false
+    if (
+      input.action === 'claim-prompt' &&
+      this.startupPrepared &&
+      !this.startupPromptHandled &&
+      !this.isSettling() &&
+      status.connectionHealth.state !== 'progress' &&
+      (!status.direct || status.direct.preparation === 'idle') &&
+      !['signing-in', 'refreshing', 'disconnecting'].includes(status.state)
+    ) {
+      // Reserve before replying: a lost reply/replaced renderer cannot prompt twice.
+      this.startupPromptHandled = true
+      promptGranted = status.connectionHealth.state !== 'ready'
+    }
+    return {
+      prepared: this.startupPrepared,
+      promptHandled: this.startupPromptHandled,
+      promptGranted,
+      status
+    }
+  }
   status(): AiStatus {
+    const snapshot = this.statusSnapshot()
+    return {
+      ...snapshot,
+      connectionHealth: deriveConnectionHealth(
+        snapshot,
+        this.accountStorageState,
+        secureAiStorage(),
+        snapshot.route.kind === 'local-chatgpt-plan' ? this.direct.connectionIssue() : null
+      )
+    }
+  }
+  private statusSnapshot(): Omit<AiStatus, 'connectionHealth'> {
     const route = selectAiRoute()
     if (route.kind === 'local-chatgpt-plan') {
       const available = secureAiStorage() && !this.storageFailure && !this.journalFailure
@@ -624,6 +723,7 @@ export class AiService {
       await this.storage.saveCredentials(this.credentials!)
     } catch (error) {
       this.storageFailure = true
+      this.accountStorageState = 'failed'
       throw error
     }
   }
@@ -710,6 +810,7 @@ export class AiService {
         await this.storage.saveCredentials(next)
       } catch {
         this.storageFailure = true
+        this.accountStorageState = 'failed'
         throw new AiError('storage-unavailable')
       }
       if (this.attempt !== attempt || attempt.abort.signal.aborted || this.closing) {
@@ -717,6 +818,7 @@ export class AiService {
           await this.storage.saveCredentials(this.credentials!)
         } catch {
           this.storageFailure = true
+          this.accountStorageState = 'failed'
           throw new AiError('storage-unavailable')
         }
         throw new AiError('cancelled')
@@ -765,6 +867,7 @@ export class AiService {
     else this.requireAccountIdle()
     if (selectAiRoute().kind === 'local-chatgpt-plan') {
       await this.direct.renew(id)
+      if (!reservedContent && !this.isSettling()) this.direct.requestPreparation(id)
       return this.status()
     }
     const config = registration()
@@ -893,8 +996,8 @@ export class AiService {
     await this.local.protect()
     return this.status()
   }
-  /** Choosing an already protected account is a local explicit action. It never
-   * reopens OAuth, refreshes a token, sends context or establishes AI eligibility. */
+  /** Selecting a protected direct account schedules metadata preparation. It
+   * never opens a browser or sends project context. Historical routes stay local. */
   async select(id: string): Promise<AiStatus> {
     await this.ensure()
     this.requireAccountIdle()
@@ -957,13 +1060,18 @@ export class AiService {
       this.busy = false
     }
   }
+  async prepareConnection(id: string): Promise<AiStatus> {
+    await this.ensure()
+    if (selectAiRoute().kind !== 'local-chatgpt-plan')
+      throw new AiError('development-access-unavailable')
+    if (this.isSettling()) throw new AiError('busy')
+    this.direct.requestPreparation(id)
+    return this.status()
+  }
   async refreshModels(id: string): Promise<AiStatus> {
     await this.ensure()
+    if (selectAiRoute().kind === 'local-chatgpt-plan') return this.prepareConnection(id)
     this.requireAccountIdle()
-    if (selectAiRoute().kind === 'local-chatgpt-plan') {
-      await this.direct.refreshModels(id)
-      return this.status()
-    }
     if (selectAiRoute().kind !== 'local-codex-chatgpt')
       throw new AiError('development-access-unavailable')
     this.invalidateReviews()
@@ -974,7 +1082,7 @@ export class AiService {
     await this.ensure()
     this.requireAccountIdle()
     if (selectAiRoute().kind === 'local-chatgpt-plan') {
-      this.direct.selectModel(input)
+      await this.direct.selectModel(input)
       return this.status()
     }
     if (selectAiRoute().kind !== 'local-codex-chatgpt')
@@ -1504,6 +1612,7 @@ export class AiService {
    * shutdown. It does not discard a pending draft or silently replay an operation. */
   beginClose(): void {
     this.closeRequested = true
+    this.direct.cancelPreparation()
     this.invalidateReviews()
     this.publish()
   }

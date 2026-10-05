@@ -1,5 +1,7 @@
 # DP01 manual guide — one ChatGPT-plan conversation
 
+> UI01–UI06 supersession, October 5, 2026: this dated record is preserved as history. For current setup/account actions use the [combined UI walkthrough](../manual-testing/ui-improvements-UI06.md). Creation now has two steps and integrates confirmed editing access. ChatGPT setup is one app-wide dialog, models prepare automatically, and capacity recovery belongs to AI work. The older third-step/manual-refresh/designation instructions below are superseded only for that changed behavior; provider constraints, request review/protection, and unobserved results remain.
+
 **Implementation complete — awaiting your observations.** The assistant has not launched the app or performed these steps. This guide concerns your personal unpackaged application and your own account.
 
 1. In your existing development environment, open a terminal in `/Users/joshlevy/Desktop/collie-writer` and run `npm run dev`. Use the normal development profile, not test or packaged mode. The repository specifies Node 24.21.0 and npm 11.19.0; existing dependencies are unchanged. Expected: the Electron app opens with local writing available. If startup fails, report the displayed error and stop here; no AI account prerequisite has yet been tested.

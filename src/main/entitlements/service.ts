@@ -429,7 +429,7 @@ export class AccessService {
     if (revision !== this.settings.revision) throw new ProjectError('STALE_REVISION')
     const listed = await this.storage.request(randomUUID(), { kind: 'list' })
     if (!listed.ok) throw new ProjectError(listed.error.code)
-    if (!(listed.value as ProjectList).projects.some((p) => sameProject(p, scope)))
+    if (!(listed.value as ProjectList).projects.some((p) => sameProject(p, scope) && !p.archived))
       throw new ProjectError('NOT_FOUND')
     if (sameProject(scope, this.settings.sampleProject)) throw new ProjectError('VALIDATION')
     this.requireSettled(keepActive)

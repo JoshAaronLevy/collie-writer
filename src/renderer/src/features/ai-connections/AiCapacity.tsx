@@ -2,14 +2,15 @@ import { sameScope } from '../../../../shared/project-files'
 import { AppButton } from '../../components/ui/Controls'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useAiConnections } from './connectionState'
-import styles from './AiConnections.module.css'
+import styles from './AiCapacity.module.css'
 
 /** One main-owned capacity count for both tools, including closed originals. */
 export function AiCapacity(): React.JSX.Element | null {
   const session = useWorkspaceSession(),
     { status } = useAiConnections(),
     capacity = status?.capacity
-  if (!capacity) return null
+  if (!capacity || (capacity.used === 0 && !capacity.projects.length && !status?.work.length))
+    return null
   const scopes = new Map(
     [...capacity.projects, ...(status?.work ?? []).map((item) => item.scope)].map((scope) => [
       `${scope.projectId}:${scope.workspaceId}`,
@@ -50,8 +51,12 @@ export function AiCapacity(): React.JSX.Element | null {
                   {project ? (
                     <AppButton
                       variant="subtle"
-                      disabled={session.busy || session.closing || session.navigating}
-                      onClick={() => void session.chooseProject(scope)}
+                      disabled={
+                        session.busy || session.acting || session.closing || session.navigating
+                      }
+                      onClick={() => {
+                        session.run(() => session.chooseProject(scope))
+                      }}
                     >
                       Open {project.title}
                       {project.archived ? ' (archived)' : ''}
@@ -59,7 +64,7 @@ export function AiCapacity(): React.JSX.Element | null {
                   ) : (
                     <span>
                       An original project is unavailable in this library. Keep its local working
-                      files and use Settings → Recovery.
+                      files and use Settings → Data & recovery.
                     </span>
                   )}
                 </li>

@@ -8,10 +8,11 @@ export default function ConnectionSettings(): React.JSX.Element {
   const session = useWorkspaceSession()
   return (
     <ContentSurface labelledBy="ai-settings-title" className={styles['settings-panel']}>
-      <h1 id="ai-settings-title">AI connections</h1>
+      <h1 id="ai-settings-title">ChatGPT</h1>
       <p>
-        Use your own supported account for AI when it is available. Writing, research, Save and
-        export work without one.
+        Your ChatGPT connection is shared across all projects on this device. Manage it here or from
+        ChatGPT in the header. The dialog also lets you change whether Collie prompts you at
+        startup.
       </p>
       <AiConnectionPanel />
       <AppButton
@@ -25,8 +26,8 @@ export default function ConnectionSettings(): React.JSX.Element {
         {session.backDestination
           ? 'Return to previous view'
           : session.project
-            ? 'Continue writing without AI'
-            : 'Continue without AI'}
+            ? 'Return to writing'
+            : 'Return to Projects'}
       </AppButton>
     </ContentSurface>
   )

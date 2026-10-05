@@ -1,16 +1,31 @@
 import { isId } from '../../../../domain/editor/schema'
 import { projectText, requiredProjectName } from '../../../../domain/projects/details'
 import { isProjectTemplate, type ProjectTemplate } from '../../../../domain/projects/templates'
-import { exact, isCreateInput, record, type CreateInput } from '../../../../shared/projects'
+import {
+  exact,
+  isCreateInput,
+  isOpenInput,
+  record,
+  type OpenInput,
+  type CreateInput
+} from '../../../../shared/projects'
 
-const DRAFT_KEY = 'collie.project-setup.v1'
+const LEGACY_KEY = 'collie.project-setup.v1'
+const DRAFT_KEY = 'collie.project-setup.v2'
 const AUTHOR_KEY = 'collie.project-author.v1'
 export const AUTHOR_CHANGED = 'collie-project-author-changed'
 
 export type SetupReceipt = { projectId: string; workspaceId: string; documentId: string }
-export type SetupStep = 'type' | 'details' | 'creating' | 'connection'
+export type SetupStep = 'type' | 'details' | 'creating' | 'opening' | 'completed'
+export type SetupEditingIntent = {
+  mode: 'keep' | 'designate'
+  expectedRevision: string
+  freeProject: OpenInput | null
+}
+export type SetupCompletion = { ok: true } | { ok: false; message: string }
+
 export type SetupDraft = {
-  version: 1
+  version: 2
   step: SetupStep
   template: ProjectTemplate | null
   title: string
@@ -19,6 +34,8 @@ export type SetupDraft = {
   rememberAuthor: boolean
   request: CreateInput | null
   receipt: SetupReceipt | null
+  editingIntent: SetupEditingIntent | null
+  completion: 'write' | 'read' | null
 }
 
 export function readAuthorPreference(): { byline: string; issue: string | null } {
@@ -57,7 +74,7 @@ export function writeAuthorPreference(byline: string): boolean {
 export function emptySetupDraft(): SetupDraft {
   const author = readAuthorPreference().byline
   return {
-    version: 1,
+    version: 2,
     step: 'type',
     template: null,
     title: '',
@@ -65,7 +82,9 @@ export function emptySetupDraft(): SetupDraft {
     description: '',
     rememberAuthor: !!author,
     request: null,
-    receipt: null
+    receipt: null,
+    editingIntent: null,
+    completion: null
   }
 }
 
@@ -77,7 +96,17 @@ function isReceipt(value: unknown): value is SetupReceipt {
   )
 }
 
-function isSetupDraft(value: unknown): value is SetupDraft {
+function validIntent(value: unknown): value is SetupEditingIntent {
+  return (
+    record(value) &&
+    exact(value, ['mode', 'expectedRevision', 'freeProject']) &&
+    (value.mode === 'keep' || value.mode === 'designate') &&
+    isId(value.expectedRevision) &&
+    (value.freeProject === null || isOpenInput(value.freeProject))
+  )
+}
+
+function validDraft(value: unknown, legacy: boolean): boolean {
   if (
     !record(value) ||
     !exact(value, [
@@ -89,22 +118,35 @@ function isSetupDraft(value: unknown): value is SetupDraft {
       'description',
       'rememberAuthor',
       'request',
-      'receipt'
+      'receipt',
+      ...(legacy ? [] : ['editingIntent', 'completion'])
     ]) ||
-    value.version !== 1 ||
-    !['type', 'details', 'creating', 'connection'].includes(String(value.step)) ||
+    value.version !== (legacy ? 1 : 2) ||
+    !(
+      legacy
+        ? ['type', 'details', 'creating', 'connection']
+        : ['type', 'details', 'creating', 'opening', 'completed']
+    ).includes(String(value.step)) ||
     (value.template !== null && !isProjectTemplate(value.template)) ||
     !projectText(value.title, 4000) ||
     !projectText(value.byline, 4000) ||
     !projectText(value.description, 12000) ||
     typeof value.rememberAuthor !== 'boolean' ||
     (value.request !== null && !isCreateInput(value.request)) ||
-    (value.receipt !== null && !isReceipt(value.receipt))
+    (value.receipt !== null && !isReceipt(value.receipt)) ||
+    (!legacy &&
+      ((value.editingIntent !== null && !validIntent(value.editingIntent)) ||
+        ![null, 'write', 'read'].includes(value.completion as string | null)))
   )
     return false
+  if (!legacy && (value.step === 'completed') !== (value.completion !== null)) return false
   if (value.step !== 'type' && value.template === null) return false
   if (value.request === null)
-    return value.receipt === null && (value.step === 'type' || value.step === 'details')
+    return (
+      value.receipt === null &&
+      (value.step === 'type' || value.step === 'details') &&
+      (legacy || value.editingIntent === null)
+    )
   const request = value.request as CreateInput
   if (
     value.template !== request.template ||
@@ -113,20 +155,34 @@ function isSetupDraft(value: unknown): value is SetupDraft {
     value.description !== request.description
   )
     return false
-  if (value.step === 'type') return false
   return value.receipt === null
     ? value.step === 'creating'
-    : value.step === 'connection' || value.step === 'details'
+    : legacy
+      ? value.step === 'connection' || value.step === 'details'
+      : value.step === 'opening' || value.step === 'completed'
 }
 
 export function readSetupDraft(): { draft: SetupDraft | null; issue: string | null } {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY)
+    // An unreadable v2 must never fall back to a potentially conflicting v1 request.
+    const current = localStorage.getItem(DRAFT_KEY)
+    const raw = current ?? localStorage.getItem(LEGACY_KEY)
     if (raw === null) return { draft: null, issue: null }
     if (raw.length > 40000) throw new Error('LIMIT')
     const parsed: unknown = JSON.parse(raw)
-    if (!isSetupDraft(parsed)) throw new Error('INVALID_DRAFT')
-    return { draft: parsed, issue: null }
+    if (!validDraft(parsed, current === null) || !record(parsed)) throw new Error('INVALID_DRAFT')
+    if (current !== null) return { draft: parsed as SetupDraft, issue: null }
+    // Conversion preserves the exact request and receipt, without inventing switch consent.
+    return {
+      draft: {
+        ...parsed,
+        version: 2,
+        step: parsed.receipt ? 'opening' : parsed.step,
+        editingIntent: null,
+        completion: null
+      } as SetupDraft,
+      issue: null
+    }
   } catch {
     return {
       draft: null,
@@ -142,9 +198,12 @@ export function hasResumableSetup(): boolean {
 }
 
 export function writeSetupDraft(draft: SetupDraft): boolean {
-  if (!isSetupDraft(draft)) return false
+  if (!validDraft(draft, false)) return false
   try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+    const serialized = JSON.stringify(draft)
+    if (serialized.length > 40000) return false
+    localStorage.setItem(DRAFT_KEY, serialized)
+    localStorage.removeItem(LEGACY_KEY)
     return true
   } catch {
     return false
@@ -153,6 +212,8 @@ export function writeSetupDraft(draft: SetupDraft): boolean {
 
 export function discardSetupDraft(): boolean {
   try {
+    // Keep the v2 completion tombstone until the old active key is gone.
+    localStorage.removeItem(LEGACY_KEY)
     localStorage.removeItem(DRAFT_KEY)
     return true
   } catch {

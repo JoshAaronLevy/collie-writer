@@ -1,0 +1,23 @@
+.ai-capacity {
+  display: grid;
+  gap: var(--collie-space-2);
+  border-block-start: 1px solid var(--collie-border);
+  padding-block-start: var(--collie-space-3);
+}
+.ai-capacity p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ai-capacity h3 {
+  margin: 0;
+  font-size: 0.875rem;
+}
+.ai-capacity ul {
+  margin: 0;
+  padding-inline-start: var(--collie-space-4);
+}
+.ai-capacity button {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+}

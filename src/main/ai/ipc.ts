@@ -11,6 +11,7 @@ import {
   isAiOperationInput,
   isAiPrepare,
   isAiStart,
+  isAiStartupInput,
   isAiChannelValue,
   type AiResult
 } from '../../shared/ai'
@@ -45,6 +46,7 @@ export function registerAiIpc(
       try {
         let value: unknown
         if (kind === 'status') value = await service.readStatus()
+        else if (kind === 'startup' && isAiStartupInput(input)) value = await service.startup(input)
         else if (kind === 'connect' && isAiConnect(input)) value = await service.connect(input)
         else if (kind === 'cancelConnect' && isAiAttempt(input))
           value = await service.cancelConnect(input.attemptId)
@@ -60,6 +62,8 @@ export function registerAiIpc(
         else if (kind === 'protectConnection') value = await service.protectConnection()
         else if (kind === 'models' && isAiConnection(input))
           value = await service.models(input.connectionId)
+        else if (kind === 'prepareConnection' && isAiConnection(input))
+          value = await service.prepareConnection(input.connectionId)
         else if (kind === 'refreshModels' && isAiConnection(input))
           value = await service.refreshModels(input.connectionId)
         else if (kind === 'selectModel' && isAiSelectModel(input))

@@ -75,7 +75,7 @@ export function WorkspaceNavigation(): React.JSX.Element {
               {
                 {
                   appearance: 'Appearance & accessibility',
-                  ai: 'AI connections',
+                  ai: 'ChatGPT',
                   access: 'Collie access',
                   data: 'Data & recovery',
                   updates: 'Updates'

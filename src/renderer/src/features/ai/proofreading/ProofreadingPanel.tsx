@@ -30,9 +30,9 @@ const outcomes: Record<string, string> = {
 }
 function proofreadReason(reason: AiReason): string {
   if (reason === 'auth-failed' || reason === 'signed-out' || reason === 'session-expired')
-    return 'Codex could not authorize this review. Open connection settings to explicitly resume or reconnect. Running again requires a new captured and reviewed request.'
+    return 'Codex could not authorize this review. Open Manage ChatGPT to explicitly resume or reconnect. Running again requires a new captured and reviewed request.'
   if (reason === 'model-unavailable')
-    return 'Codex refused the selected model. Refresh models and explicitly select one before reviewing a new request. No model was substituted.'
+    return 'Codex refused the selected model. Choose an available model in Manage ChatGPT before reviewing a new request. No model was substituted.'
   if (reason === 'invalid-request')
     return 'Codex could not accept this request or result contract. The retained outcome is unchanged. A new request requires another explicit review; there is no automatic fallback or repair.'
   if (reason === 'cancelled')
@@ -445,9 +445,8 @@ export function ProofreadingPanel(): React.JSX.Element {
         Retry local recovery
       </AppButton>
       <p className={styles['proofreading-caption']}>
-        Reviewed requests use your own supported account and its spending settings. Conversations
-        and proofreading share 64 active slots. Saved outcomes release capacity through local
-        handoff; retained history remains available.
+        Reviewed requests use your own account and its usage settings. Saved reviews remain
+        available without a connection.
       </p>
     </section>
   )

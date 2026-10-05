@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Radio } from '@mantine/core'
 import { BookOpen, FileText, GraduationCap, PenLine, Search } from 'lucide-react'
-import { canEditProject, sameProject } from '../../../../shared/access'
+import { canEditProject, sameProject, type AccessView } from '../../../../shared/access'
 import type { CreateInput } from '../../../../shared/projects'
 import {
   projectTemplates,
@@ -14,7 +14,6 @@ import { detailsErrors } from '../project-details/detailsErrors'
 import { AppButton, ChoiceField } from '../../components/ui/Controls'
 import { StatusBanner } from '../../components/ui/Feedback'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
-import { AiConnectionPanel } from '../ai-connections/AiConnectionPanel'
 import {
   emptySetupDraft,
   readSetupDraft,
@@ -22,7 +21,8 @@ import {
   discardSetupDraft,
   writeAuthorPreference,
   type SetupDraft,
-  type SetupReceipt
+  type SetupReceipt,
+  type SetupEditingIntent
 } from './setup-draft'
 import styles from './OnboardingWizard.module.css'
 
@@ -47,15 +47,31 @@ const icons = {
 const primary = projectTemplates.filter((template) => projectTypes[template].primary)
 const secondary = projectTemplates.filter((template) => !projectTypes[template].primary)
 const persistenceMessage =
-  'Setup changes could not be saved in this app profile. Keep this window open and retry saving them before creating a project.'
+  'Setup progress could not be saved in this app profile. Keep this window open and retry saving before continuing.'
+
+const completionSaveMessage =
+  'The project opened, but setup completion could not be saved. Your project is kept; return to New project to finish setup.'
+const completionCleanupMessage =
+  'Your project opened. Setup cleanup could not finish; return to New project to retry without creating another project.'
+
+function editingIntent(access: AccessView | null): SetupEditingIntent | null {
+  if (!access || access.state === 'unavailable' || access.storageWarning || access.transition)
+    return null
+  return {
+    mode: access.paid ? 'keep' : 'designate',
+    expectedRevision: access.revision,
+    freeProject: access.freeProject ? { ...access.freeProject } : null
+  }
+}
 
 export default function OnboardingWizard(): React.JSX.Element {
   const session = useWorkspaceSession()
   const [initial] = useState(readSetupDraft)
   const [draft, setDraft] = useState<SetupDraft>(() => initial.draft ?? emptySetupDraft())
   const latest = useRef(draft)
-  // eslint-disable-next-line react-hooks/refs
-  latest.current = draft
+  useLayoutEffect(() => {
+    latest.current = draft
+  }, [draft])
   const [unreadable, setUnreadable] = useState(initial.issue)
   const [persistenceIssue, setPersistenceIssue] = useState<string | null>(null)
   const [issue, setIssue] = useState<string | null>(null)
@@ -72,17 +88,36 @@ export default function OnboardingWizard(): React.JSX.Element {
   const selected = draft.template
   const created = draft.receipt
   const scope = created ? { projectId: created.projectId, workspaceId: created.workspaceId } : null
-  const editable = !!scope && canEditProject(session.access, scope)
-  const existingFree = session.list.projects.find((item) =>
-    sameProject(item, session.access?.freeProject ?? null)
-  )
+  const editable =
+    !!scope && !!editingIntent(session.access) && canEditProject(session.access, scope)
+  const switching =
+    !!session.access &&
+    !session.access.paid &&
+    !!session.access.freeProject &&
+    !sameProject(scope, session.access.freeProject)
   const busy =
-    working || session.acting || session.closing || session.fileActive || session.navigating
+    working ||
+    session.busy ||
+    session.acting ||
+    session.closing ||
+    session.fileActive ||
+    session.navigating
 
   useEffect(() => {
-    if (session.destination.kind === 'setup' && !session.navigating)
+    if (
+      session.destination.kind === 'setup' &&
+      !session.navigating &&
+      !session.composition.current &&
+      !document.querySelector('[role="dialog"], [role="alertdialog"]')
+    )
       heading.current?.focus({ preventScroll: true })
-  }, [session.destination.kind, session.focusRevision, draft.step, session.navigating])
+  }, [
+    session.destination.kind,
+    session.focusRevision,
+    draft.step,
+    session.navigating,
+    session.composition
+  ])
 
   function save(next: SetupDraft): boolean {
     latest.current = next
@@ -139,7 +174,7 @@ export default function OnboardingWizard(): React.JSX.Element {
     if (workingRef.current) return
     const moved = await session.navigate({ kind: 'library' })
     if (!moved) return
-    if (latest.current.request && !latest.current.receipt) return // The exact request remains available on return.
+    if (latest.current.request) return // Keep dispatched requests and receipts until completion is confirmed.
     if (!discardSetupDraft()) {
       setPersistenceIssue(
         'The setup draft could not be cleared. It will remain available when you return.'
@@ -173,7 +208,7 @@ export default function OnboardingWizard(): React.JSX.Element {
     }
     const next: SetupDraft = {
       ...latest.current,
-      step: 'connection',
+      step: 'opening',
       template: input.template,
       title: input.title,
       byline: input.byline,
@@ -187,14 +222,16 @@ export default function OnboardingWizard(): React.JSX.Element {
       )
       return
     }
-    if (!writeAuthorPreference(rememberAuthor ? input.byline : ''))
-      setIssue(
-        'The project was created. The author preference could not be saved; you can review it in Settings.'
+    const authorRemembered = writeAuthorPreference(rememberAuthor ? input.byline : '')
+    setIssue(null)
+    await finishCreated('write')
+    if (!authorRemembered)
+      session.setNotice(
+        'Your project is kept. The author preference could not be saved; review it in Settings.'
       )
-    else setIssue(null)
   }
   function beginCreate(): void {
-    if (workingRef.current || unreadable) return
+    if (workingRef.current || session.actionTask.current || unreadable) return
     setAttempted(true)
     const current = latest.current
     if (!current.template) return
@@ -222,13 +259,35 @@ export default function OnboardingWizard(): React.JSX.Element {
       )
       return
     }
+    const intent = editingIntent(session.access)
+    if (!intent) {
+      setIssue('Check editing access before creating this project. Your details are kept.')
+      return
+    }
     workingRef.current = true
     setWorking(true)
     setIssue(null)
     session.run(async () => {
       try {
-        if (!(await session.prepareSetupCreation())) {
-          setIssue('Finish the pending project work shown above, then create this project.')
+        const preparation = await session.prepareSetupCreation()
+        if (!preparation.ok) {
+          setIssue(preparation.message)
+          return
+        }
+        const checked = await session.readSetupAccess()
+        const freshIntent = checked.ok ? editingIntent(checked.value) : null
+        if (
+          !freshIntent ||
+          freshIntent.mode !== intent.mode ||
+          freshIntent.expectedRevision !== intent.expectedRevision ||
+          !(
+            (intent.freeProject === null && freshIntent.freeProject === null) ||
+            sameProject(intent.freeProject, freshIntent.freeProject)
+          )
+        ) {
+          setIssue(
+            'Editing access changed or could not be read. Review the current choice, then confirm creation again.'
+          )
           return
         }
         const input: CreateInput = {
@@ -244,7 +303,8 @@ export default function OnboardingWizard(): React.JSX.Element {
           title: input.title,
           byline: input.byline,
           request: input,
-          receipt: null
+          receipt: null,
+          editingIntent: intent
         }
         if (!save(next)) {
           setIssue(persistenceMessage)
@@ -262,17 +322,26 @@ export default function OnboardingWizard(): React.JSX.Element {
     })
   }
   function resumeCreation(): void {
-    if (workingRef.current || !draft.request || draft.receipt || persistenceIssue || unreadable)
+    if (
+      workingRef.current ||
+      session.actionTask.current ||
+      !draft.request ||
+      draft.receipt ||
+      persistenceIssue ||
+      unreadable
+    )
       return
     workingRef.current = true
     setWorking(true)
     setIssue(null)
     session.run(async () => {
       try {
-        if (!(await session.prepareSetupCreation())) {
-          setIssue('Finish the pending project work shown above, then resume creation.')
+        const preparation = await session.prepareSetupCreation()
+        if (!preparation.ok) {
+          setIssue(preparation.message)
           return
         }
+        if (!save(latest.current)) return
         await sendCreate(latest.current.request!, latest.current.rememberAuthor)
       } catch {
         setIssue('The result remains unknown. This exact request is kept for another retry.')
@@ -282,63 +351,72 @@ export default function OnboardingWizard(): React.JSX.Element {
       }
     })
   }
-  function openCreated(target: 'write' | 'details'): void {
-    if (workingRef.current || !latest.current.receipt) return
+  async function finishCreated(mode: 'write' | 'read'): Promise<void> {
+    const saved = latest.current
+    if (!saved.receipt || !save(saved)) return
+    const result = await session.completeSetupProject(saved.receipt, saved.editingIntent, mode)
+    if (!result.ok) {
+      setIssue(result.message)
+      return
+    }
+    // Persist a completion tombstone before cleanup. Retire v1 first so partial
+    // cleanup cannot resurrect an older operation or its retired AI screen.
+    if (!save({ ...saved, step: 'completed', completion: saved.completion ?? mode })) {
+      session.setError(completionSaveMessage)
+      return
+    }
+    if (!discardSetupDraft()) {
+      setPersistenceIssue(
+        'The completed setup record could not be cleared. Your project remains available.'
+      )
+      session.setError(completionCleanupMessage)
+      return
+    }
+    const next = emptySetupDraft()
+    latest.current = next
+    setDraft(next)
+    setAttempted(false)
+    setIssue(null)
+    session.setError((message) =>
+      message === completionSaveMessage || message === completionCleanupMessage ? '' : message
+    )
+  }
+  function openCreated(mode: 'write' | 'read'): void {
+    if (workingRef.current || session.actionTask.current || !latest.current.receipt || unreadable)
+      return
+    const current = latest.current
+    // A recovery click is a fresh deliberate choice, with its consequence shown
+    // beside the action. A restored legacy receipt carries no prior switch consent.
+    if (mode === 'write') {
+      const intent = editingIntent(session.access)
+      if (!intent) {
+        setIssue('Check editing access before continuing. Your project is kept.')
+        return
+      }
+      if (!save({ ...current, editingIntent: intent })) return
+    }
     workingRef.current = true
     setWorking(true)
     setIssue(null)
     session.run(async () => {
       try {
-        const opened = await session.resumeSetupProject(latest.current.receipt!, target)
-        if (!opened) {
-          setIssue(
-            'The project could not be opened. Its setup record is kept; review Projects or local recovery.'
-          )
-          return
-        }
-        if (target === 'write') {
-          if (!discardSetupDraft()) {
-            setPersistenceIssue(
-              'The completed setup record could not be cleared. Your project is available in Projects.'
-            )
-            session.setError(
-              'The completed setup record could not be cleared from this app profile. Your project remains available.'
-            )
-            return
-          }
-          const next = emptySetupDraft()
-          latest.current = next
-          setDraft(next)
-          setAttempted(false)
-        }
+        await finishCreated(mode)
       } catch {
-        setIssue('The project could not be opened. Its local record is still available.')
+        setIssue('Opening could not be confirmed. This same project is kept for retry.')
       } finally {
         workingRef.current = false
         setWorking(false)
       }
     })
   }
-  function designate(): void {
-    if (workingRef.current || !created) return
-    workingRef.current = true
-    setWorking(true)
-    setIssue(null)
+  function checkAccess(): void {
     session.run(async () => {
-      try {
-        if (!(await session.resumeSetupProject(created, 'setup'))) {
-          setIssue('Open the created project before changing its free editing designation.')
-          return
-        }
-        await session.changeAccess('designate')
-      } catch {
-        setIssue(
-          'The free editing choice could not be saved. The project remains available for reading.'
-        )
-      } finally {
-        workingRef.current = false
-        setWorking(false)
-      }
+      const result = await session.readSetupAccess()
+      setIssue(
+        result.ok
+          ? null
+          : 'Editing access could not be read. Your setup and any created project are kept.'
+      )
     })
   }
 
@@ -362,7 +440,7 @@ export default function OnboardingWizard(): React.JSX.Element {
         </Radio.Card>
       )
     })
-  const stage = draft.step === 'type' ? 1 : draft.step === 'details' ? 2 : 3
+  const stage = draft.step === 'type' ? 1 : 2
   const headingText =
     draft.step === 'type'
       ? 'What are you working on?'
@@ -370,14 +448,17 @@ export default function OnboardingWizard(): React.JSX.Element {
         ? 'Give your project a name'
         : draft.step === 'creating'
           ? 'Creating your project'
-          : 'Your project is ready'
+          : working
+            ? 'Opening your project'
+            : 'Finish opening your project'
 
   return (
     <section className={styles['project-selection-container']} aria-labelledby="setup-heading">
       <div className={styles['setup-introduction']}>
         <p className={styles['setup-step']}>
-          Step {stage} of 3 ·{' '}
-          {stage === 1 ? 'Project type' : stage === 2 ? 'Project details' : 'AI connection'}
+          {draft.step === 'type' || draft.step === 'details'
+            ? `Step ${stage} of 2 · ${stage === 1 ? 'Project type' : 'Project details'}`
+            : 'Project setup'}
         </p>
         <h1 id="setup-heading" ref={heading} tabIndex={-1}>
           {headingText}
@@ -389,7 +470,9 @@ export default function OnboardingWizard(): React.JSX.Element {
               ? 'Add the details you want to carry with this project.'
               : draft.step === 'creating'
                 ? 'Your request is kept on this device while Collie creates the project.'
-                : 'Write, research, save, and export locally. AI is optional.'}
+                : working
+                  ? 'Finishing setup locally…'
+                  : 'Your project is kept. Continue opening it or review Projects and recovery.'}
         </p>
       </div>
       {unreadable ? (
@@ -508,130 +591,121 @@ export default function OnboardingWizard(): React.JSX.Element {
               </AppButton>
             ) : null}
           </div>
-          {created ? (
-            <>
-              <p>
-                This project has already been created. Its title, author and writing remain with the
-                same project.
-              </p>
-              <dl className={styles['saved-project-details']}>
-                <div>
-                  <dt>Title</dt>
-                  <dd>{draft.title}</dd>
-                </div>
-                <div>
-                  <dt>Author</dt>
-                  <dd>{draft.byline}</dd>
-                </div>
-                {draft.description ? (
-                  <div>
-                    <dt>Description</dt>
-                    <dd>{draft.description}</dd>
-                  </div>
-                ) : null}
-              </dl>
-              <div className={styles['setup-actions']}>
-                <AppButton variant="default" disabled={busy} onClick={() => openCreated('details')}>
-                  Edit saved project details
-                </AppButton>
-                <AppButton
-                  disabled={busy}
-                  onClick={() => save({ ...latest.current, step: 'connection' })}
-                >
-                  Return to AI step
-                </AppButton>
-              </div>
-            </>
-          ) : (
-            <form
-              className={styles['project-setup-form']}
-              noValidate
-              onSubmit={(event) => {
-                event.preventDefault()
-                beginCreate()
+          <form
+            className={styles['project-setup-form']}
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault()
+              beginCreate()
+            }}
+          >
+            <ProjectDetailsFields
+              value={{
+                title: draft.title,
+                byline: draft.byline,
+                description: draft.description,
+                projectKind: projectTypes[selected].kind
               }}
-            >
-              <ProjectDetailsFields
-                value={{
-                  title: draft.title,
-                  byline: draft.byline,
-                  description: draft.description,
-                  projectKind: projectTypes[selected].kind
-                }}
-                showType={false}
-                creating
-                showErrors={attempted}
-                disabled={busy || !!unreadable || !!draft.request}
-                titleRef={title}
-                bylineRef={byline}
-                descriptionId="project-setup-description"
-                onChange={(value) =>
-                  change({
-                    title: value.title,
-                    byline: value.byline,
-                    description: value.description
-                  })
-                }
-                afterByline={
-                  <ChoiceField
-                    label="Remember this author on this computer"
-                    description="You can change or clear this preference in Settings. It stays out of project files until you create a project with it."
-                    checked={draft.rememberAuthor}
-                    disabled={busy || !!unreadable}
-                    onChange={(event) => change({ rememberAuthor: event.currentTarget.checked })}
-                  />
-                }
-              />
-              <p className={styles['setup-hint']}>
-                Your description stays with this project. It is not sent to an AI provider or added
-                to manuscript pages automatically.
-              </p>
-              {!session.available ? (
-                <StatusBanner tone="warning" title="Local storage is needed">
-                  Choose a safe device-local working folder before Create. Your setup details remain
-                  here.{' '}
-                  <AppButton
-                    variant="default"
-                    onClick={() => {
-                      void session.navigate({ kind: 'settings', page: 'data' })
-                    }}
-                  >
-                    Open Data and recovery
-                  </AppButton>
-                </StatusBanner>
-              ) : null}
-              <div className={styles['setup-actions']}>
+              showType={false}
+              creating
+              showErrors={attempted}
+              disabled={busy || !!unreadable || !!draft.request}
+              titleRef={title}
+              bylineRef={byline}
+              descriptionId="project-setup-description"
+              onChange={(value) =>
+                change({
+                  title: value.title,
+                  byline: value.byline,
+                  description: value.description
+                })
+              }
+              afterByline={
+                <ChoiceField
+                  label="Remember this author on this computer"
+                  description="You can change or clear this preference in Settings. It stays out of project files until you create a project with it."
+                  checked={draft.rememberAuthor}
+                  disabled={busy || !!unreadable}
+                  onChange={(event) => change({ rememberAuthor: event.currentTarget.checked })}
+                />
+              }
+            />
+            <p className={styles['setup-hint']}>
+              Your description stays with this project. It is not sent to an AI provider or added to
+              manuscript pages automatically.
+            </p>
+            {!session.available ? (
+              <StatusBanner tone="warning" title="Local storage is needed">
+                Choose a safe device-local working folder before Create. Your setup details remain
+                here.{' '}
                 <AppButton
                   variant="default"
-                  disabled={busy}
-                  onClick={() => save({ ...latest.current, step: 'type' })}
+                  onClick={() => {
+                    void session.navigate({ kind: 'settings', page: 'data' })
+                  }}
                 >
-                  Back
+                  Open Data and recovery
+                </AppButton>
+              </StatusBanner>
+            ) : null}
+            {switching ? (
+              <p className={styles['editing-choice']}>
+                Creating this project will make it your free writing project. Your other projects
+                will remain available to read and export.
+              </p>
+            ) : null}
+            {!editingIntent(session.access) ? (
+              <StatusBanner tone="warning" title="Editing access needs attention">
+                <p>Check Collie access before creating this project. Your details are kept.</p>
+                <AppButton variant="default" disabled={busy} onClick={checkAccess}>
+                  Check editing access
                 </AppButton>
                 <AppButton
                   variant="subtle"
                   disabled={busy}
-                  onClick={() => {
-                    void leave()
-                  }}
+                  onClick={() => void session.navigate({ kind: 'settings', page: 'access' })}
                 >
-                  Cancel
+                  Open Collie access
                 </AppButton>
-                <AppButton
-                  type="submit"
-                  className={styles['setup-primary-action']}
-                  disabled={busy || !!unreadable || !!persistenceIssue}
-                >
-                  {working ? 'Creating project…' : 'Create project'}
-                </AppButton>
-              </div>
-            </form>
-          )}
+              </StatusBanner>
+            ) : null}
+            <div className={styles['setup-actions']}>
+              <AppButton
+                variant="default"
+                disabled={busy}
+                onClick={() => save({ ...latest.current, step: 'type' })}
+              >
+                Back
+              </AppButton>
+              <AppButton
+                variant="subtle"
+                disabled={busy}
+                onClick={() => {
+                  void leave()
+                }}
+              >
+                Cancel
+              </AppButton>
+              <AppButton
+                type="submit"
+                className={styles['setup-primary-action']}
+                disabled={
+                  busy || !!unreadable || !!persistenceIssue || !editingIntent(session.access)
+                }
+              >
+                {working
+                  ? 'Creating project…'
+                  : switching
+                    ? 'Create and write here'
+                    : 'Create project'}
+              </AppButton>
+            </div>
+          </form>
         </>
       ) : null}
 
       {draft.step === 'creating' ? (
-        <div className={styles['connection-content']}>
+        <div className={styles['setup-completion']}>
           <p>
             {working
               ? 'Creating your project locally…'
@@ -658,60 +732,56 @@ export default function OnboardingWizard(): React.JSX.Element {
         </div>
       ) : null}
 
-      {draft.step === 'connection' && created ? (
-        <div className={styles['connection-content']}>
+      {working && created ? <p role="status">Opening your project…</p> : null}
+      {!working && (draft.step === 'opening' || draft.step === 'completed') && created ? (
+        <div className={styles['setup-completion']}>
           <p className={styles['created-confirmation']}>
-            “{draft.title}” was created on this device. It has no selected project-file destination
-            yet.
+            “{draft.title}” is already created. Continuing uses this same project.
           </p>
-          <AiConnectionPanel />
-          {!editable ? (
-            <div className={styles['editing-choice']}>
-              <h2>Choose where to edit</h2>
-              <p>
-                {existingFree
-                  ? `“${existingFree.title}” is currently your free editable project. Choose this project if you want to write here instead; protect its pending work first.`
-                  : 'Choose this project as your free editable project to write here.'}{' '}
-                Reading, export, and backup remain available either way.
-              </p>
-              <AppButton
-                variant="default"
-                disabled={busy || !session.access || !session.available}
-                onClick={designate}
-              >
-                Use this project for free writing
-              </AppButton>
-            </div>
-          ) : null}
-          {editable ? (
-            <p role="status">This project is ready for writing under your current Collie access.</p>
-          ) : null}
-          {!editable ? (
-            <p>You can also open this project for reading now and choose editing access later.</p>
-          ) : null}
+          {draft.step === 'completed' ? (
+            <p>
+              The project was opened successfully. Finish opening it again and clearing the retained
+              setup record.
+            </p>
+          ) : editable ? (
+            <p>This project is editable under your current Collie access.</p>
+          ) : (
+            <p className={styles['editing-choice']}>
+              {switching
+                ? 'Writing here will make this your free writing project. Your other projects will remain available to read and export.'
+                : 'Continue writing in this project, or open it for reading while you resolve editing access.'}
+            </p>
+          )}
           <div className={styles['setup-actions']}>
             <AppButton
-              variant="default"
-              disabled={busy}
-              onClick={() => save({ ...latest.current, step: 'details' })}
+              disabled={
+                busy ||
+                !!unreadable ||
+                !!persistenceIssue ||
+                (draft.step !== 'completed' && !editingIntent(session.access))
+              }
+              onClick={() => openCreated(draft.step === 'completed' ? 'read' : 'write')}
             >
-              Back to project details
+              {draft.step === 'completed'
+                ? 'Open project and finish setup'
+                : editable
+                  ? 'Continue to writing'
+                  : 'Write in this project'}
             </AppButton>
-            <AppButton
-              variant="subtle"
-              disabled={busy}
-              onClick={() => {
-                void leave()
-              }}
-            >
-              Leave setup; keep project
+            {draft.step !== 'completed' ? (
+              <AppButton
+                variant="default"
+                disabled={busy || !!unreadable || !!persistenceIssue}
+                onClick={() => openCreated('read')}
+              >
+                Open for reading
+              </AppButton>
+            ) : null}
+            <AppButton variant="subtle" disabled={busy} onClick={checkAccess}>
+              Check editing access
             </AppButton>
-            <AppButton
-              className={styles['setup-primary-action']}
-              disabled={busy}
-              onClick={() => openCreated('write')}
-            >
-              Continue without AI
+            <AppButton variant="subtle" disabled={busy} onClick={() => void leave()}>
+              Review Projects; keep setup
             </AppButton>
           </div>
         </div>

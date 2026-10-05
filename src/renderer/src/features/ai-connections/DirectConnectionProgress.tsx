@@ -11,6 +11,7 @@ const stages: Record<DirectStage, string> = {
   'plan-authorization': 'ChatGPT plan authorization',
   renewal: 'Session renewal',
   'model-discovery': 'Account model discovery',
+  'model-preference': 'Saving model choice',
   'inference-http': 'Request admission',
   'inference-stream': 'Response stream',
   'credential-storage': 'Protected credential storage'
@@ -55,6 +56,17 @@ export function DirectConnectionProgress({
   return (
     <div className={styles['ai-execution-availability']}>
       <h3>ChatGPT plan connection</h3>
+      {direct.preparation === 'running' ? <p role="status">Setting up ChatGPT…</p> : null}
+      {direct.preparation === 'waiting' ? (
+        <p role="status">Setup will continue when current work is protected.</p>
+      ) : null}
+      {direct.preferences !== 'ready' ? (
+        <p role="alert">
+          {direct.preferences === 'pending'
+            ? 'Your model choice is waiting to be saved. Keep Collie open and retry saving it on this device.'
+            : 'Saved model choices could not be read. Your account has been kept. Retry reading the choices; Collie will not replace them automatically.'}
+        </p>
+      ) : null}
       <dl>
         <div>
           <dt>Account sign-in</dt>

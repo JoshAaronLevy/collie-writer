@@ -31,12 +31,21 @@ import {
   type DirectExecution
 } from './direct-operation'
 import type { AiDispatchSession } from './dispatch-session'
+import { DirectConnectionIssues } from './connection-health'
+import type { AiConnectionHealthReason } from '../../shared/ai-connection-health'
+import { emptyPlanPreferences, type PlanPreferences } from './direct-preferences'
 
 /** Owner-only SIWC public client. No managed Codex profile is opened or read. */
 export class DirectPlanSession {
   private data: PlanCredentials = emptyPlanCredentials()
   private catalog: AiCatalog = { state: 'not-loaded' }
   private epoch = randomUUID()
+  private preferences = emptyPlanPreferences()
+  private preferencesUnreadable = false
+  private pendingPreferences: PlanPreferences | null = null
+  private preparation: { id: string; generation: string } | null = null
+  private preparing = false
+  private rejectedModels = new Map<string, string>()
   private pendingWrite: PlanCredentials | null = null
   private work: Promise<void> | null = null
   private controller: AbortController | null = null
@@ -46,12 +55,15 @@ export class DirectPlanSession {
   private connectionState: AiStatus['state'] | null = null
   private actionId: string | null = null
   private revocation: AiStatus['remoteRevocation'] = 'none'
+  private readonly healthIssues = new DirectConnectionIssues()
   private detail: AiDirectStatus = {
     stage: null,
     authentication: 'signed-out',
     planAuthorized: false,
     inference: 'not-run',
     issue: null,
+    preparation: 'idle',
+    preferences: 'ready',
     protectionPending: false
   }
   constructor(
@@ -60,9 +72,27 @@ export class DirectPlanSession {
   ) {}
   async initialize(): Promise<void> {
     this.data = await this.storage.planCredentials()
+    try {
+      await this.readPreferences()
+    } catch {
+      // A separate preference failure must not discard a protected account.
+      this.preferencesUnreadable = true
+    }
+  }
+  connectionIssue(): AiConnectionHealthReason | null {
+    const issue = this.healthIssues.reason(this.data.activeId)
+    if (issue) return issue
+    const remembered = this.preferences.accounts.find((a) => a.connectionId === this.data.activeId)
+    return remembered &&
+      this.catalog.state === 'loaded' &&
+      this.catalog.models.length &&
+      (!this.catalog.models.some((m) => m.id === remembered.modelId) ||
+        this.rejectedModels.get(remembered.connectionId) === remembered.modelId)
+      ? 'model-unavailable'
+      : null
   }
   hasPendingWork(): boolean {
-    return !!(this.work || this.pendingWrite)
+    return !!(this.work || this.pendingWrite || this.pendingPreferences)
   }
   hasAccountWork(): boolean {
     return !!this.work
@@ -82,6 +112,7 @@ export class DirectPlanSession {
   }
   private reset(): void {
     this.epoch = randomUUID()
+    this.preparation = null
     this.catalog = { state: 'not-loaded' }
     this.detail.inference = 'not-run'
     this.changed(true)
@@ -102,15 +133,95 @@ export class DirectPlanSession {
       throw error
     }
   }
+  private async readPreferences(): Promise<void> {
+    const next = await this.storage.planPreferences()
+    if (next.accounts.some((entry) => !this.data.accounts.some((a) => a.id === entry.connectionId)))
+      throw new AiError('storage-unavailable')
+    this.preferences = next
+    this.preferencesUnreadable = false
+  }
+  private rememberedModel(id: string): string | null {
+    return this.preferences.accounts.find((a) => a.connectionId === id)?.modelId ?? null
+  }
+  private async saveModel(id: string, modelId: string): Promise<void> {
+    if (this.preferencesUnreadable) throw new AiError('storage-unavailable')
+    if (this.rememberedModel(id) === modelId) return
+    const next: PlanPreferences = {
+      version: 1,
+      accounts: [
+        ...this.preferences.accounts.filter((a) => a.connectionId !== id),
+        { connectionId: id, modelId }
+      ]
+    }
+    try {
+      await this.storage.savePlanPreferences(next)
+      this.preferences = next
+    } catch (error) {
+      this.pendingPreferences = next
+      this.changed(true)
+      throw error
+    }
+  }
   async protect(): Promise<void> {
     if (this.work) throw new AiError('busy')
-    if (!this.pendingWrite) return
-    const next = this.pendingWrite
-    await this.storage.savePlanCredentials(next)
-    this.data = next
-    this.pendingWrite = null
-    this.detail.issue = null
-    this.reset()
+    // Reserve the owner throughout local writes, too. A second click cannot race
+    // a model/account change or report close-safe while the write is outstanding.
+    const work = (async () => {
+      if (this.pendingWrite) {
+        await this.storage.savePlanCredentials(this.pendingWrite)
+        this.data = this.pendingWrite
+        this.pendingWrite = null
+        this.reset()
+      }
+      if (this.pendingPreferences) {
+        await this.storage.savePlanPreferences(this.pendingPreferences)
+        this.preferences = this.pendingPreferences
+        this.pendingPreferences = null
+        const id = this.data.activeId
+        const modelId = id ? this.rememberedModel(id) : null
+        if (this.catalog.state === 'loaded' && this.catalog.models.some((m) => m.id === modelId)) {
+          this.catalog = { ...this.catalog, selectedModelId: modelId }
+          if (id && this.rejectedModels.get(id) !== modelId) {
+            this.rejectedModels.delete(id)
+            this.healthIssues.replaceModel(id)
+          }
+        }
+      }
+      if (this.preferencesUnreadable) await this.readPreferences()
+      this.detail.issue = null
+      this.changed(true)
+    })()
+    this.work = work
+    this.changed(false)
+    try {
+      await work
+    } finally {
+      if (this.work === work) this.work = null
+      this.changed(false)
+    }
+  }
+  /** One queued intent for the current account generation, never a polling trigger. */
+  requestPreparation(id: string): void {
+    if (this.data.activeId !== id) throw new AiError('signed-out')
+    if (this.preparing || this.preparation?.generation === this.epoch) return
+    const account = this.account(id)
+    if (!account.subject || !account.tokens || account.pending) throw new AiError('session-expired')
+    if (this.pendingWrite || this.pendingPreferences || this.preferencesUnreadable) return
+    if (!planAuthorized(account))
+      throw new DirectError(directIssue('plan-authorization', 'consent-required'))
+    this.preparation = { id, generation: this.epoch }
+    this.changed(false)
+  }
+  cancelPreparation(): void {
+    this.preparation = null
+  }
+  /** Called only by the service's settlement notifications after its guards pass. */
+  startPreparation(): void {
+    const requested = this.preparation
+    if (!requested || this.hasPendingWork()) return
+    this.preparation = null
+    if (requested.generation !== this.epoch || requested.id !== this.data.activeId) return
+    void this.refreshModels(requested.id).catch(() => undefined) // Status owns the outcome.
   }
   private begin(
     stage: DirectStage,
@@ -131,6 +242,7 @@ export class DirectPlanSession {
         this.detail.issue = this.pendingWrite
           ? directIssue('credential-storage', 'storage-unavailable')
           : directFailure(this.detail.stage ?? stage, error)
+        if (id) this.healthIssues.record(id, this.detail.issue)
         throw error
       })
       .finally(() => {
@@ -210,10 +322,12 @@ export class DirectPlanSession {
         accounts: this.data.accounts.map((a) => (a.id === account.id ? account : a))
       })
       this.revocation = 'none'
+      this.healthIssues.confirm(account.id, 'authorization')
       this.reset()
       this.stage('plan-authorization')
       if (!planAuthorized(account))
         this.detail.issue = directIssue('plan-authorization', 'consent-required')
+      else if (!signal.aborted) this.requestPreparation(account.id)
     })
     void work.catch(() => undefined) // Status owns the asynchronous browser outcome.
   }
@@ -268,6 +382,7 @@ export class DirectPlanSession {
         ...this.data,
         accounts: this.data.accounts.map((a) => (a.id === id ? replacement : a))
       })
+      this.healthIssues.confirm(id, 'authorization')
       if (tokens.scopes.join(' ') !== next.tokens.scopes.join(' ')) this.reset()
     } catch (error) {
       if (this.pendingWrite) throw error // Preserve the exact latest credential candidate.
@@ -301,6 +416,7 @@ export class DirectPlanSession {
       )
     })
     this.epoch = randomUUID()
+    this.preparation = null
     this.catalog = { state: 'not-loaded' }
     this.changed(true)
   }
@@ -314,6 +430,7 @@ export class DirectPlanSession {
     await this.begin('plan-authorization', null, id, async () => {
       await this.save({ ...this.data, activeId: id })
       this.reset()
+      this.requestPreparation(id)
     })
   }
   async disconnect(id: string): Promise<void> {
@@ -358,35 +475,98 @@ export class DirectPlanSession {
   async refreshModels(id: string): Promise<void> {
     this.requireIdle()
     if (this.data.activeId !== id) throw new AiError('signed-out')
+    this.preparation = null
+    this.preparing = true
     this.catalog = { state: 'loading' }
     this.changed(true)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let timedOut = false
     try {
       await this.begin('model-discovery', null, id, async (signal) => {
+        // Transport deadlines still apply. Abort through the credential owner;
+        // never race away from a possibly rotated token or a pending local write.
+        const owner = this.controller
+        timer = setTimeout(() => {
+          timedOut = true
+          owner?.abort()
+        }, 45000)
+        if (this.preferencesUnreadable) throw new AiError('storage-unavailable')
+        if (signal.aborted) throw new AiError('cancelled')
         await this.renewOnce(id, signal)
+        if (signal.aborted) throw new AiError('cancelled')
         const account = this.requireAccount(id)
+        const generation = this.epoch
         this.stage('model-discovery')
         const models = await planModels(account.tokens!.access, signal).catch(async (error) => {
           if (error instanceof DirectError) await this.discardConfirmedInvalid(id, error.issue.code)
           throw error
         })
+        if (signal.aborted || generation !== this.epoch || id !== this.data.activeId)
+          throw new AiError('cancelled')
+        this.healthIssues.confirm(id, 'catalog')
+        const remembered = this.rememberedModel(id)
+        const defaults = models.filter((m) => m.isDefault)
+        const modelId =
+          remembered ?? (defaults.length === 1 ? defaults[0].id : models[0]?.id) ?? null
+        const selectedModelId =
+          modelId && models.some((m) => m.id === modelId) && this.rejectedModels.get(id) !== modelId
+            ? modelId
+            : null
         this.catalog = { state: 'loaded', revision: randomUUID(), models, selectedModelId: null }
+        if (selectedModelId) {
+          this.stage('model-preference')
+          await this.saveModel(id, selectedModelId)
+          if (signal.aborted || generation !== this.epoch || id !== this.data.activeId)
+            throw new AiError('cancelled')
+          this.catalog = { ...this.catalog, selectedModelId }
+        }
         this.changed(true)
       })
     } catch (error) {
-      this.catalog = { state: 'failed', reason: 'model-catalog-unavailable' }
+      // A failed preference write retains the fresh catalog and exact candidate
+      // for disk-only protection; model discovery must not be repeated to save it.
+      if (timedOut && !this.pendingWrite && !this.pendingPreferences) {
+        this.detail.issue = directIssue(
+          this.detail.stage ?? 'model-discovery',
+          'offline',
+          'interrupted'
+        )
+        this.healthIssues.record(id, this.detail.issue)
+      }
+      if (!this.pendingPreferences)
+        this.catalog = {
+          state: 'failed',
+          reason: timedOut ? 'model-catalog-timeout' : 'model-catalog-unavailable'
+        }
       this.changed(true)
       throw error
+    } finally {
+      clearTimeout(timer)
+      this.preparing = false
+      this.changed(false)
     }
   }
-  selectModel(input: AiSelectModelInput): void {
+  async selectModel(input: AiSelectModelInput): Promise<void> {
     this.requireIdle()
     this.requireAccount(input.connectionId)
-    if (this.catalog.state !== 'loaded' || this.catalog.revision !== input.catalogRevision)
+    const catalog = this.catalog
+    if (catalog.state !== 'loaded' || catalog.revision !== input.catalogRevision)
       throw new AiError('context-changed')
-    if (!this.catalog.models.some((m) => m.id === input.modelId))
+    if (
+      !catalog.models.some((m) => m.id === input.modelId) ||
+      this.rejectedModels.get(input.connectionId) === input.modelId
+    )
       throw new AiError('model-unavailable')
-    this.catalog = { ...this.catalog, selectedModelId: input.modelId }
     this.changed(true)
+    await this.begin('model-preference', null, input.connectionId, async () => {
+      await this.saveModel(input.connectionId, input.modelId)
+      this.catalog = { ...catalog, selectedModelId: input.modelId }
+      if (this.rejectedModels.get(input.connectionId) !== input.modelId) {
+        this.rejectedModels.delete(input.connectionId)
+        this.healthIssues.replaceModel(input.connectionId)
+      }
+      this.changed(true)
+    })
   }
   private requireAccount(id: string): PlanAccount {
     if (selectAiRoute().kind !== 'local-chatgpt-plan' || this.pendingWrite)
@@ -457,6 +637,8 @@ export class DirectPlanSession {
               update(value)
               if (value.state === 'completed') {
                 this.detail.inference = 'completed'
+                this.healthIssues.confirm(input.connectionId, 'response')
+                this.rejectedModels.delete(input.connectionId)
                 this.changed(false)
               }
             },
@@ -467,6 +649,11 @@ export class DirectPlanSession {
           )
         } catch (error) {
           const issue = directFailure(this.detail.stage ?? 'inference-http', error)
+          if (sent) {
+            this.healthIssues.record(input.connectionId, issue)
+            if (issue.reason === 'model-unavailable')
+              this.rejectedModels.set(input.connectionId, input.model)
+          }
           const uncertain =
             sent &&
             (controller.signal.aborted ||
@@ -549,7 +736,7 @@ export class DirectPlanSession {
               : { state: 'signed-out' }
     const reason: AiConnectionReason | null = !available
       ? 'secure-session-unavailable'
-      : this.pendingWrite
+      : this.pendingWrite || this.pendingPreferences || this.preferencesUnreadable
         ? 'output-protection-required'
         : (blocked ??
           (this.work
@@ -595,6 +782,12 @@ export class DirectPlanSession {
         ...this.detail,
         authentication: usable ? 'verified' : a?.tokens ? 'reconnect-required' : 'signed-out',
         planAuthorized: authorized,
+        preparation: this.preparing ? 'running' : this.preparation ? 'waiting' : 'idle',
+        preferences: this.pendingPreferences
+          ? 'pending'
+          : this.preferencesUnreadable
+            ? 'unreadable'
+            : 'ready',
         protectionPending: !!this.pendingWrite
       },
       features: {
@@ -608,19 +801,31 @@ export class DirectPlanSession {
         select: accountIdle,
         resume: false,
         cleanup: false,
-        protectConnection: available && canProtect && !this.work && !!this.pendingWrite,
-        refreshModels: accountIdle && !!a?.tokens && !a.pending && authorized,
-        selectModel: accountIdle && usable && authorized && this.catalog.state === 'loaded'
+        protectConnection:
+          available &&
+          canProtect &&
+          !this.work &&
+          !!(this.pendingWrite || this.pendingPreferences || this.preferencesUnreadable),
+        refreshModels:
+          accountIdle && !this.preferencesUnreadable && !!a?.tokens && !a.pending && authorized,
+        selectModel:
+          accountIdle &&
+          !this.preferencesUnreadable &&
+          usable &&
+          authorized &&
+          this.catalog.state === 'loaded'
       }
     }
   }
   async close(): Promise<boolean> {
+    this.cancelPreparation()
     this.controller?.abort()
     this.login?.cancel()
     await this.work?.catch(() => undefined)
-    return !this.pendingWrite
+    return !this.pendingWrite && !this.pendingPreferences
   }
   suspend(): void {
+    this.cancelPreparation()
     this.controller?.abort()
     this.login?.cancel()
     this.changed(true)

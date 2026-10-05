@@ -1,5 +1,7 @@
 # I11 — AI connection presentation and account ownership
 
+> UI01–UI06 supersession, October 5, 2026: this dated record is preserved as history. For current setup/account actions use the [combined UI walkthrough](../manual-testing/ui-improvements-UI06.md). Creation now has two steps and integrates confirmed editing access. ChatGPT setup is one app-wide dialog, models prepare automatically, and capacity recovery belongs to AI work. The older third-step/manual-refresh/designation instructions below are superseded only for that changed behavior; provider constraints, request review/protection, and unobserved results remain.
+
 October 2, 2026. **Implementation complete — awaiting user testing.** This is the local UI implementation over I10's delivered service. Real provider sign-in/inference remain unavailable: registration is unset, funding and isolation enforcement are incomplete, and packaged runtime delivery is pending. No approval, account, AI readiness or native result is implied.
 
 ## One persistent owner
