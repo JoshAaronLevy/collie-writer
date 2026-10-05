@@ -22,14 +22,14 @@ Provider registration/funding/isolation/model readiness/distribution remain unre
 
 ## Division of work
 
-| Delivery | Included | Deliberately left for later |
-| --- | --- | --- |
+| Delivery       | Included                                                                                                                                                                                                                                                                           | Deliberately left for later                                                                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | I12 foundation | Stable portable conversations/messages/captures/attempts; recent list/title search; new/rename/archive/restore; retained plain-text composer/transcript; passage OR current-section context and reviewed prior messages; actual run/stop/recovery wiring; native transcript export | Organization graph, research context picker, rich evidence discussion, AI assignment, branching/summaries, operational journal retention and feature polish |
-| C01–C02 | Manual many-to-many organization, retrieval and backlinks | Sending linked content or automatic assignment |
-| C03–C04 | Explicit multi-item research/manuscript context, trustworthy evidence presentation and Save as note | Autonomous retrieval, verified-evidence claims and automatic manuscript changes |
-| C04A–C04B | Discoverable conversation source list, reversible review decisions, duplicate-aware batch addition to Research and conversation provenance | Automatic Research additions, automatic citation insertion, automatic downloads or claims that suggested references were retrieved/verified |
-| C05–C06 | Reviewed AI organization, deliberate history summaries and branches | Silent metadata changes, hidden context or automatic inference replay |
-| C07–C08 | Sustained use, retained outcomes, lifecycle recovery, coherent interaction and manual acceptance | Automatic deletion of recovery or a claim that provider/release gates are resolved |
+| C01–C02        | Manual many-to-many organization, retrieval and backlinks                                                                                                                                                                                                                          | Sending linked content or automatic assignment                                                                                                              |
+| C03–C04        | Explicit multi-item research/manuscript context, trustworthy evidence presentation and Save as note                                                                                                                                                                                | Autonomous retrieval, verified-evidence claims and automatic manuscript changes                                                                             |
+| C04A–C04B      | Discoverable conversation source list, reversible review decisions, duplicate-aware batch addition to Research and conversation provenance                                                                                                                                         | Automatic Research additions, automatic citation insertion, automatic downloads or claims that suggested references were retrieved/verified                 |
+| C05–C06        | Reviewed AI organization, deliberate history summaries and branches                                                                                                                                                                                                                | Silent metadata changes, hidden context or automatic inference replay                                                                                       |
+| C07–C08        | Sustained use, retained outcomes, lifecycle recovery, coherent interaction and manual acceptance                                                                                                                                                                                   | Automatic deletion of recovery or a claim that provider/release gates are resolved                                                                          |
 
 I12 must be useful without these stages. Build on its IDs, strict schemas, capture/attempt owner and storage consumers. Do not put organization into comma-separated strings, use UI array positions as identity or store the only transcript in provider session files. Conversely, I12 need not create unused future tables or a generic extensibility framework.
 
@@ -103,18 +103,18 @@ Use prompts such as **“Implement C03 from conversation-implementation-plan.md.
 
 Model headings use the improvement plan's existing names: Astra for coupled architecture/data integrity work and Sol for bounded UI work; High/Extra High are workload recommendations, selected by Josh in his client. They do not select the writer's AI or authorize agent delegation.
 
-| Stage | Outcome | Depends on | Status |
-| --- | --- | --- | --- |
-| C01 | Categories and typed many-to-many links | Delivered I12 | Not started |
-| C02 | Search, filters, related-conversation entry points | C01 | Not started |
-| C03 | Explicit research and multi-section context | I12; C01 for related-item suggestions | Not started |
-| C04 | Evidence-aware discussion and adopted notes | C03 | Not started |
-| C04A | Conversation source candidates and discoverable review list | I12, C02/C04 presentation and reference contracts | Not started; inserted stage, required |
-| C04B | Explicit batch save/link to Research with provenance | C01, C04A, existing source repository | Not started; inserted stage, required |
-| C05 | User-reviewed AI organization suggestions | C01–C03 | Not started |
-| C06 | Deliberate summaries and conversation branches | C03; I12 attempt storage | Not started |
-| C07 | Shared durable outcome handoff and sustained use | I12/I13 actual schemas; explicit CD08 overlap | Implementation complete — awaiting user testing; [shared record](docs/validation/conversation-C07.md); live use blocked by CD03 |
-| C08 | Integrated conversation polish and acceptance handoff | C01–C07, explicitly including C04A/C04B | Not started |
+| Stage | Outcome                                                     | Depends on                                        | Status                                                                                                                          |
+| ----- | ----------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| C01   | Categories and typed many-to-many links                     | Delivered I12                                     | Not started                                                                                                                     |
+| C02   | Search, filters, related-conversation entry points          | C01                                               | Not started                                                                                                                     |
+| C03   | Explicit research and multi-section context                 | I12; C01 for related-item suggestions             | Not started                                                                                                                     |
+| C04   | Evidence-aware discussion and adopted notes                 | C03                                               | Not started                                                                                                                     |
+| C04A  | Conversation source candidates and discoverable review list | I12, C02/C04 presentation and reference contracts | Not started; inserted stage, required                                                                                           |
+| C04B  | Explicit batch save/link to Research with provenance        | C01, C04A, existing source repository             | Not started; inserted stage, required                                                                                           |
+| C05   | User-reviewed AI organization suggestions                   | C01–C03                                           | Not started                                                                                                                     |
+| C06   | Deliberate summaries and conversation branches              | C03; I12 attempt storage                          | Not started                                                                                                                     |
+| C07   | Shared durable outcome handoff and sustained use            | I12/I13 actual schemas; explicit CD08 overlap     | Implementation complete — awaiting user testing; [shared record](docs/validation/conversation-C07.md); live use blocked by CD03 |
+| C08   | Integrated conversation polish and acceptance handoff       | C01–C07, explicitly including C04A/C04B           | Not started                                                                                                                     |
 
 ### Stage C01 — Add categories and many-to-many associations
 
@@ -290,15 +290,15 @@ Model headings use the improvement plan's existing names: Astra for coupled arch
 
 ## Handoff and completion ledger
 
-The standing manual-testing policy applies throughout: no assistant test code, fixtures/mocks, harnesses, check/build/lint/typecheck/audit commands, app/SDK/browser launch, screenshots, benchmarks or delegated verification. Ordinary source/Git reading and production edits are allowed. No assistant login, inference, registration or publication is authorized by a stage request. Manual guides describe ordinary user actions with synthetic/public material or disposable copies; they are not executable verification scripts.
+The standing [AGENTS.md policy](AGENTS.md#user-owned-manual-testing--standing-instruction), amended October 5, 2026, applies throughout. After code changes, run `npm run format`, `npm run lint` and `npm run typecheck`, fix reported issues including warnings, rerun until clean, and record actual outcomes separately from runtime acceptance. Documentation-only edits do not require these checks. No assistant test code, fixtures/mocks, harnesses, automated test runs, builds, dependency audits, app/SDK/browser launch, screenshots, benchmarks or delegated runtime verification. Ordinary source/Git reading and production edits are allowed. No assistant login, inference, registration or publication is authorized by a stage request. Manual guides describe ordinary user actions with synthetic/public material or disposable copies; they are not executable verification scripts.
 
 Each requested C stage delivers its production changes, a decision where needed, `docs/validation/conversation-Cxx.md` recording changed paths/schema/limits, and `docs/manual-testing/conversation-Cxx.md` with setup/actions/observable outcomes. Use the complete inserted IDs in filenames and prompts, for example `conversation-C04A.md` and “Implement C04B from conversation-implementation-plan.md.” Update this index and the app plan's expansion ledger without changing earlier acceptance. Distinguish **implementation complete — awaiting user testing**, user-confirmed acceptance, missing dependent code and live/provider/release gates. Finish “Stage Cxx complete. As a user:” with the ordered guide only when implementation is complete; stop before the next stage.
 
-| Milestone | Status |
-| --- | --- |
-| Planning and scope split | Feature expansion remains planned; explicit CD08 request authorizes the shared C07 overlap only |
-| I12 baseline | Implementation complete — awaiting user testing; I13 owns current portable schema 12 |
-| C01–C08, including inserted C04A/C04B | C07 implemented through CD08 — awaiting user testing; remaining nine stages not started |
-| Conversation sources → approved Research records | Required; C04A collects/reviews, C04B promotes; neither implemented |
-| User acceptance and live conversation quality | Unobserved; provider prerequisites remain unresolved |
-| Release readiness | Existing NO-GO remains independent |
+| Milestone                                        | Status                                                                                          |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| Planning and scope split                         | Feature expansion remains planned; explicit CD08 request authorizes the shared C07 overlap only |
+| I12 baseline                                     | Implementation complete — awaiting user testing; I13 owns current portable schema 12            |
+| C01–C08, including inserted C04A/C04B            | C07 implemented through CD08 — awaiting user testing; remaining nine stages not started         |
+| Conversation sources → approved Research records | Required; C04A collects/reviews, C04B promotes; neither implemented                             |
+| User acceptance and live conversation quality    | Unobserved; provider prerequisites remain unresolved                                            |
+| Release readiness                                | Existing NO-GO remains independent                                                              |

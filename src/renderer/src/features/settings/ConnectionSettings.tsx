@@ -1,7 +1,7 @@
 import { ContentSurface } from '../../components/ui/Feedback'
 import { AppButton } from '../../components/ui/Controls'
 import { AiConnectionPanel } from '../ai-connections/AiConnectionPanel'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import styles from './SettingsPanel.module.css'
 
 export default function ConnectionSettings(): React.JSX.Element {

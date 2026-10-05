@@ -18,11 +18,11 @@ The full CPAL text, original dual-license notice and unmodified readable process
 
 The exact downloaded bytes, upstream commit URLs, SHA-256 identifiers and lengths are in `resources/asset-manifest.json`. No app startup fetch or implicit style update exists.
 
-| Asset | Selected version / identity | Attribution |
-| --- | --- | --- |
-| `styles/apa.csl` | APA Style 7th edition; CSL update 2026-02-07; `http://www.zotero.org/styles/apa` | Brenton M. Wiernik and Andrew Dunning; complete XML notices retained |
-| `styles/chicago-notes-bibliography.csl` | Chicago Manual of Style **18th edition**, notes and bibliography; CSL update 2025-02-09; `http://www.zotero.org/styles/chicago-notes-bibliography` | Andrew Dunning; complete XML notices retained |
-| `locales/locales-en-US.xml` | Pinned en-US locale | CSL project and contributors; notices retained |
+| Asset                                   | Selected version / identity                                                                                                                        | Attribution                                                          |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `styles/apa.csl`                        | APA Style 7th edition; CSL update 2026-02-07; `http://www.zotero.org/styles/apa`                                                                   | Brenton M. Wiernik and Andrew Dunning; complete XML notices retained |
+| `styles/chicago-notes-bibliography.csl` | Chicago Manual of Style **18th edition**, notes and bibliography; CSL update 2025-02-09; `http://www.zotero.org/styles/chicago-notes-bibliography` | Andrew Dunning; complete XML notices retained                        |
+| `locales/locales-en-US.xml`             | Pinned en-US locale                                                                                                                                | CSL project and contributors; notices retained                       |
 
 Styles and locale use CC BY-SA 3.0. Keep author/license links and notices with copies, and license adaptations of those assets accordingly; this does not put user-authored manuscripts under CC BY-SA. The files are unmodified. Their licenses are separate from citeproc's license. Source repository licensing statements ship as local READMEs. [CSL styles licensing](https://github.com/citation-style-language/styles#licensing), [CSL locale licensing](https://github.com/citation-style-language/locales#licensing).
 

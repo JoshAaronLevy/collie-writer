@@ -35,7 +35,7 @@ export function ProjectManagement({
         <div className={styles['project-management-action']}>
           <h3>Keep another copy</h3>
           <p>
-            Backup writes a separate file without changing this project's Save destination.
+            Backup writes a separate file without changing this project&apos;s Save destination.
             Duplicate creates a new local project with its own identity and no file destination.
           </p>
           <div className={styles['project-management-buttons']}>

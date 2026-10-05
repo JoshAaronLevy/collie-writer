@@ -13,14 +13,14 @@ Stage I04 complete. As a user:
 11. View a different read-only personal project. Its details should remain readable and its export/backup actions available; saving detail changes should be unavailable until I explicitly designate it or have authentic paid edit access. Open the tutorial through Help: it should still use its separate sample privileges and explicit tutorial byline. Naming a personal project like the sample must not grant those privileges.
 12. Repeat the fields and options using keyboard only, Light/Dark, high contrast, a narrow window and 200% zoom. Labels/errors/buttons should remain readable and reachable. With VoiceOver/NVDA if available, fields and errors should be identified. For a separate packaged observation, I may run `npm run build:unpack` myself with the pinned toolchain and open the local development artifact; it should retain the fields/styles, bundled licenses, native Save and local export behavior. This does not constitute signing or release approval.
 
-| Type | New empty sections |
-| --- | --- |
-| Nonfiction book | Introduction / Chapter 1 |
-| Academic essay | Introduction / Argument / Conclusion |
-| Article | Draft |
-| Report | Summary / Findings / Recommendations |
-| Study critique | Study overview / Argument / Supporting research |
-| Research paper | Abstract / Introduction / Methods / Results / Discussion |
-| Blank nonfiction project | Draft |
+| Type                     | New empty sections                                       |
+| ------------------------ | -------------------------------------------------------- |
+| Nonfiction book          | Introduction / Chapter 1                                 |
+| Academic essay           | Introduction / Argument / Conclusion                     |
+| Article                  | Draft                                                    |
+| Report                   | Summary / Findings / Recommendations                     |
+| Study critique           | Study overview / Argument / Supporting research          |
+| Research paper           | Abstract / Introduction / Methods / Results / Discussion |
+| Blank nonfiction project | Draft                                                    |
 
 **Implementation complete — awaiting user testing.** No assistant tests/checks/builds/launches were run. These are expected outcomes, not recorded passes. Keep migration failure, interruption, large-output/native/accessibility and viewer-specific results pending unless observed. Report platform, action and actual result; no automated suite, raw IPC, credentials or private manuscript is needed. The [I03 guide](improvement-I03.md) covers the navigation prerequisite; the [I04 record](../validation/improvement-I04.md) will record feedback. Stop here before I05.

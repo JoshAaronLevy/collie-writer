@@ -1,3 +1,4 @@
+import { hasControlCharacters } from './control-characters'
 import { isId } from '../domain/editor/schema'
 import { exact, record } from './projects'
 
@@ -44,7 +45,7 @@ export function isAiCatalogModel(v: unknown): v is AiCatalogModel {
     typeof v.label === 'string' &&
     v.label.trim().length > 0 &&
     v.label.length <= 200 &&
-    !/[\u0000-\u001f\u007f]/u.test(v.label) &&
+    !hasControlCharacters(v.label, false, 0x7f) &&
     typeof v.isDefault === 'boolean' &&
     Array.isArray(v.inputModalities) &&
     v.inputModalities.length > 0 &&

@@ -1,3 +1,4 @@
+import { hasControlCharacters } from './control-characters'
 import { isId } from '../domain/editor/schema'
 import type { OpenInput } from './projects'
 
@@ -56,7 +57,7 @@ const exact = (x: Record<string, unknown>, keys: string[]): boolean =>
 const scope = (x: Record<string, unknown>): boolean => isId(x.projectId) && isId(x.workspaceId)
 const nullableId = (x: unknown): boolean => x === null || isId(x)
 const text = (x: unknown, max: number): x is string =>
-  typeof x === 'string' && x.length <= max && !/[\u0000-\u001f]/u.test(x)
+  typeof x === 'string' && x.length <= max && !hasControlCharacters(x)
 const count = (x: unknown, max: number): boolean =>
   Number.isSafeInteger(x) && Number(x) >= 0 && Number(x) <= max
 export function isSearchInput(x: unknown): x is SearchInput {

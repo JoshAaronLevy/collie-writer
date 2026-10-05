@@ -11,13 +11,13 @@ Josh conducts consented sessions with a proposed minimum of five nonfiction writ
 5. Confirm their understanding of permanent ad-free use, no automatic conversion, offline limits, all-project recovery/export, and customer ownership of files. Record misunderstandings and needed wording/usability changes.
 6. Summarize the number of completed sessions, capability comprehension, strongest recurring present-day value, payment preferences/reasons and unresolved friction. Propose a product-owner decision: credible present value, improve usability/positioning and reassess, or defer selling. Any change to the approved capability matrix needs a new recorded product decision.
 
-| Decision evidence | Current record |
-| --- | --- |
-| Consented target-writer sessions | 0 reported |
-| Free-switching and recovery comprehension | Pending |
-| Recipe/batch value demonstrated | Pending authentic paid configuration and observations |
-| Monthly/lifetime willingness and reasons | Pending |
-| Ad-free, edition-update and offline understanding | Pending |
-| Product-owner commercial decision | Pending; Stage 20 checkout gate closed |
+| Decision evidence                                 | Current record                                        |
+| ------------------------------------------------- | ----------------------------------------------------- |
+| Consented target-writer sessions                  | 0 reported                                            |
+| Free-switching and recovery comprehension         | Pending                                               |
+| Recipe/batch value demonstrated                   | Pending authentic paid configuration and observations |
+| Monthly/lifetime willingness and reasons          | Pending                                               |
+| Ad-free, edition-update and offline understanding | Pending                                               |
+| Product-owner commercial decision                 | Pending; Stage 20 checkout gate closed                |
 
 Update this record only with actual user-supplied evidence, including the date and anonymous aggregate findings. Five sessions is a proposed qualitative minimum, not a statistical guarantee or automatic pass.

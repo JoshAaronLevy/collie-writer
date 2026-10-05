@@ -16,18 +16,18 @@ Main uses Node HTTPS fetch to the configured origin and a fixed route list, deni
 
 Every action is POST JSON with an exact input shape and small bounded body; request/response bodies are never logged. App actions reject an Origin header. Browser actions require the exact configured Origin and a session-specific browser bearer secret. CORS is not enabled. No arbitrary user metadata is accepted.
 
-| Route | Authority/input | Result |
-| --- | --- | --- |
-| `/v1/sessions` | App-generated UUID, SHA-256 claim/browser/device-secret digests, finite kind; optional current device bearer | Twenty-minute expiry; repeated identical ID/digests reuse the session |
-| `/v1/browser/read` | Browser secret + session ID | Kind, sandbox/live environment, public checkout token |
-| `/v1/browser/checkout` | Browser secret + session ID; both checkout/configuration gates | Exact server-created transaction ID; no grant |
-| `/v1/browser/restore` | Browser secret + session ID + recovery code | Binds the session to the purchase customer after canonical reconciliation |
-| `/v1/browser/recovery` | Browser secret + paid session ID | New recovery code, shown only to purchaser; prior code invalidated |
-| `/v1/session/claim` | App-only claim secret + session ID | Pending or authenticated signed-grant batch and subscription flag; one device authority with idempotent retries |
-| `/v1/access` | Device bearer, empty body | Current authenticated grant batch; connection lifetime renewed |
-| `/v1/manage` | Device bearer, empty body | Short-lived provider portal URL, consumed only by main |
-| `/v1/disconnect` | Device bearer, empty body | Deletes that credential and its claimed session |
-| `/webhooks/paddle` | Paddle-Signature over timestamp/raw bytes | Durable receipt acknowledgment; asynchronous canonical reconciliation |
+| Route                  | Authority/input                                                                                              | Result                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `/v1/sessions`         | App-generated UUID, SHA-256 claim/browser/device-secret digests, finite kind; optional current device bearer | Twenty-minute expiry; repeated identical ID/digests reuse the session                                           |
+| `/v1/browser/read`     | Browser secret + session ID                                                                                  | Kind, sandbox/live environment, public checkout token                                                           |
+| `/v1/browser/checkout` | Browser secret + session ID; both checkout/configuration gates                                               | Exact server-created transaction ID; no grant                                                                   |
+| `/v1/browser/restore`  | Browser secret + session ID + recovery code                                                                  | Binds the session to the purchase customer after canonical reconciliation                                       |
+| `/v1/browser/recovery` | Browser secret + paid session ID                                                                             | New recovery code, shown only to purchaser; prior code invalidated                                              |
+| `/v1/session/claim`    | App-only claim secret + session ID                                                                           | Pending or authenticated signed-grant batch and subscription flag; one device authority with idempotent retries |
+| `/v1/access`           | Device bearer, empty body                                                                                    | Current authenticated grant batch; connection lifetime renewed                                                  |
+| `/v1/manage`           | Device bearer, empty body                                                                                    | Short-lived provider portal URL, consumed only by main                                                          |
+| `/v1/disconnect`       | Device bearer, empty body                                                                                    | Deletes that credential and its claimed session                                                                 |
+| `/webhooks/paddle`     | Paddle-Signature over timestamp/raw bytes                                                                    | Durable receipt acknowledgment; asynchronous canonical reconciliation                                           |
 
 A claim response does not carry a new bearer token: main generated and securely retained the credential before beginning, and the server stores its hash upon verified claim. A lost claim response can therefore be retried without losing the authority. Ambiguous transaction-creation failures are not retried under a new hidden idempotency key: the session reports an unknown outcome. The user starts a new session; an unreturned draft transaction cannot charge by itself. An actual paid receipt remains recoverable through support.
 

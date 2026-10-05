@@ -20,7 +20,9 @@ export function useRetainedDraft(
   const registry = useDraftRegistry()
   const latest = useRef(handle),
     composing = useRef(false)
-  latest.current = handle
+  useLayoutEffect(() => {
+    latest.current = handle
+  })
   useLayoutEffect(
     () =>
       registry.register(id, {

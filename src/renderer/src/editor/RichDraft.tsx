@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffectEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { TextInput, Textarea } from '@mantine/core'
 import { AppButton } from '../components/ui/Controls'
 import { ActionMenu } from '../components/ui/ActionMenu'
@@ -58,13 +59,17 @@ export default function RichDraft({
   references
 }: Props): React.JSX.Element {
   const referenceRef = useRef(references)
-  referenceRef.current = references
+  useLayoutEffect(() => {
+    referenceRef.current = references
+  })
   const host = useRef<HTMLDivElement>(null)
   const findField = useRef<HTMLInputElement>(null)
   const editor = useRef<Editor | null>(null)
   const countTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const disabledRef = useRef(disabled)
-  disabledRef.current = disabled
+  useLayoutEffect(() => {
+    disabledRef.current = disabled
+  })
   const [, setRevision] = useState(0)
   const [words, setWords] = useState(0)
   const [editorReady, setEditorReady] = useState(false)
@@ -156,81 +161,96 @@ export default function RichDraft({
       }
     setDialog(null)
   }
-  useEffect(() => {
-    if (!host.current) return
-    try {
-      const next = createManuscriptEditor({
-        element: host.current,
-        payload,
-        imageUrl,
-        projectId: references?.projectId,
-        ariaLabel: noteMode ? 'Note body' : 'Manuscript',
-        citationLabel: (id) => referenceRef.current?.labels.get(id) ?? '[citation]',
-        onChange: () => {
-          setRevision((value) => value + 1)
-          onChange()
-          if (editor.current) refreshCitationLabels(editor.current, new Map())
+  // The keyed owner supplies the initial document; later renders must not recreate its editor.
+  const [initialEditor] = useState(() => ({
+    payload,
+    projectId: references?.projectId,
+    noteMode,
+    onReady
+  }))
+  const callbacks = useRef({ onChange, onIssue, imageUrl })
+  useLayoutEffect(() => {
+    callbacks.current = { onChange, onIssue, imageUrl }
+  })
+  const mountEditor = useCallback(
+    (element: HTMLDivElement | null) => {
+      host.current = element
+      if (!element) return
+      try {
+        const next = createManuscriptEditor({
+          element,
+          payload: initialEditor.payload,
+          imageUrl: (id) => callbacks.current.imageUrl(id),
+          projectId: initialEditor.projectId,
+          ariaLabel: initialEditor.noteMode ? 'Note body' : 'Manuscript',
+          citationLabel: (id) => referenceRef.current?.labels.get(id) ?? '[citation]',
+          onChange: () => {
+            setRevision((value) => value + 1)
+            callbacks.current.onChange()
+            if (editor.current) refreshCitationLabels(editor.current, new Map())
+            if (countTimer.current) clearTimeout(countTimer.current)
+            countTimer.current = setTimeout(() => {
+              if (editor.current)
+                setWords((editor.current.state.doc.textContent.match(/\S+/gu) ?? []).length)
+            }, 450)
+          },
+          onIssue: (message) => callbacks.current.onIssue(message)
+        })
+        const updateSelection = (): void => setRevision((value) => value + 1)
+        next.on('selectionUpdate', updateSelection)
+        editor.current = next
+        setEditorReady(true)
+        initialEditor.onReady(next)
+        setWords((next.state.doc.textContent.match(/\S+/gu) ?? []).length)
+        setRevision((value) => value + 1)
+        return () => {
           if (countTimer.current) clearTimeout(countTimer.current)
-          countTimer.current = setTimeout(() => {
-            if (editor.current)
-              setWords((editor.current.state.doc.textContent.match(/\S+/gu) ?? []).length)
-          }, 450)
-        },
-        onIssue
-      })
-      const updateSelection = (): void => setRevision((value) => value + 1)
-      next.on('selectionUpdate', updateSelection)
-      editor.current = next
-      setEditorReady(true)
-      onReady(next)
-      setWords((next.state.doc.textContent.match(/\S+/gu) ?? []).length)
-      setRevision((value) => value + 1)
-      return () => {
-        if (countTimer.current) clearTimeout(countTimer.current)
-        next.off('selectionUpdate', updateSelection)
-        onReady(null)
-        editor.current = null
-        next.destroy()
+          next.off('selectionUpdate', updateSelection)
+          initialEditor.onReady(null)
+          editor.current = null
+          next.destroy()
+        }
+      } catch {
+        callbacks.current.onIssue(
+          'The stored document cannot be opened for editing without loss. Keep its original file and local recovery for repair.'
+        )
       }
-    } catch {
-      onIssue(
-        'The stored document cannot be opened for editing without loss. Keep its original file and local recovery for repair.'
-      )
-    }
-  }, [])
+      return undefined
+    },
+    [initialEditor]
+  )
   useEffect(() => {
     editor.current?.setEditable(!disabled, false)
   }, [disabled])
-  useEffect(
-    () =>
-      window.collie.onEditorAction((action) => {
-        if (
-          noteMode ||
-          !host.current ||
-          host.current.closest('[hidden], [inert]') ||
-          host.current.closest('[data-writing-dialog-open="true"]')
-        )
-          return
-        const active = document.activeElement
-        if (
-          active instanceof HTMLElement &&
-          (active.closest('[role="dialog"]') ||
-            ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName))
-        )
-          return
-        const instance = editor.current ? focusedManuscriptEditor(editor.current) : null
-        if (!instance) return
-        if (action === 'find') {
-          openFind()
-          return
-        }
-        if (disabledRef.current || editorIsComposing(instance)) return
-        if (action === 'undo') undo(instance.state, (tr) => instance.view.dispatch(tr))
-        else if (action === 'redo') redo(instance.state, (tr) => instance.view.dispatch(tr))
-        else void pastePlain(instance)
-      }),
-    []
+  const onNativeEditorAction = useEffectEvent(
+    (action: Parameters<Parameters<typeof window.collie.onEditorAction>[0]>[0]) => {
+      if (
+        noteMode ||
+        !host.current ||
+        host.current.closest('[hidden], [inert]') ||
+        host.current.closest('[data-writing-dialog-open="true"]')
+      )
+        return
+      const active = document.activeElement
+      if (
+        active instanceof HTMLElement &&
+        (active.closest('[role="dialog"]') ||
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName))
+      )
+        return
+      const instance = editor.current ? focusedManuscriptEditor(editor.current) : null
+      if (!instance) return
+      if (action === 'find') {
+        openFind()
+        return
+      }
+      if (disabledRef.current || editorIsComposing(instance)) return
+      if (action === 'undo') undo(instance.state, (tr) => instance.view.dispatch(tr))
+      else if (action === 'redo') redo(instance.state, (tr) => instance.view.dispatch(tr))
+      else void pastePlain(instance)
+    }
   )
+  useEffect(() => window.collie.onEditorAction(onNativeEditorAction), [])
   useEffect(() => {
     if (editor.current) refreshCitationLabels(editor.current, references?.labels ?? new Map())
   }, [references?.labels])
@@ -681,7 +701,7 @@ export default function RichDraft({
         ) : null}
       </div>
       <div
-        ref={host}
+        ref={mountEditor}
         className="editor-host"
         onCompositionEnd={() => {
           setTimeout(onBlur, 0)

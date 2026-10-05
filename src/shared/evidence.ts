@@ -1,3 +1,4 @@
+import { hasControlCharacters } from './control-characters'
 import { isId } from '../domain/editor/schema'
 import type { OpenInput } from './projects'
 
@@ -137,7 +138,7 @@ const object = (v: unknown): v is Record<string, unknown> =>
 const exact = (v: Record<string, unknown>, keys: string[]): boolean =>
   Object.keys(v).length === keys.length && keys.every((k) => Object.hasOwn(v, k))
 const line = (v: unknown, max: number): v is string =>
-  typeof v === 'string' && v.length <= max && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(v)
+  typeof v === 'string' && v.length <= max && !hasControlCharacters(v, true)
 const nullableId = (v: unknown): boolean => v === null || isId(v)
 const role = (v: unknown): v is EvidenceRole =>
   ['support', 'challenge', 'background', 'potential_use'].includes(String(v))

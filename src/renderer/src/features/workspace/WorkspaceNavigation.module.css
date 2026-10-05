@@ -1,18 +1,59 @@
-.workspace-navigation, .research-navigation, .settings-navigation, .session-actions {
+.workspace-navigation,
+.research-navigation,
+.settings-navigation,
+.session-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--collie-space-2, 0.5rem);
 }
-.workspace-navigation { margin-block: 1rem; border-bottom: 1px solid var(--collie-border); padding-bottom: 0.75rem; }
-.research-navigation, .settings-navigation { margin-block: 0.75rem 1.25rem; }
-.destination-region[hidden] { display: none; }
-.destination-region { min-width: 0; scroll-margin-top: 1rem; }
-.destination-region:focus { outline-offset: 0.25rem; }
-.session-status { display: grid; gap: 0.75rem; margin-block: 1rem; }
-.session-status p { margin-block: 0.25rem; }
-.operation-notice { border-left: 3px solid var(--collie-accent); padding: 0.5rem 0.75rem; background: var(--collie-surface); }
-.session-actions { margin-top: 0.5rem; }
-.current-project { font-weight: 600; margin-bottom: 0.5rem; overflow-wrap: anywhere; }
-.file-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--collie-space-3); }
-.file-summary p { flex: 1 1 18rem; color: var(--collie-text-secondary); }
+.workspace-navigation {
+  margin-block: 1rem;
+  border-bottom: 1px solid var(--collie-border);
+  padding-bottom: 0.75rem;
+}
+.research-navigation,
+.settings-navigation {
+  margin-block: 0.75rem 1.25rem;
+}
+.destination-region[hidden] {
+  display: none;
+}
+.destination-region {
+  min-width: 0;
+  scroll-margin-top: 1rem;
+}
+.destination-region:focus {
+  outline-offset: 0.25rem;
+}
+.session-status {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 1rem;
+}
+.session-status p {
+  margin-block: 0.25rem;
+}
+.operation-notice {
+  border-left: 3px solid var(--collie-accent);
+  padding: 0.5rem 0.75rem;
+  background: var(--collie-surface);
+}
+.session-actions {
+  margin-top: 0.5rem;
+}
+.current-project {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  overflow-wrap: anywhere;
+}
+.file-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--collie-space-3);
+}
+.file-summary p {
+  flex: 1 1 18rem;
+  color: var(--collie-text-secondary);
+}

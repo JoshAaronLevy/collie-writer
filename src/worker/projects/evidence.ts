@@ -470,7 +470,7 @@ export function changeEvidence(db: Database.Database, input: EvidenceChangeInput
       db.prepare(
         'UPDATE evidence_links SET revision_id=?,identity_key=?,target_revision_id=?,role=?,review=?,state=?,updated_at=? WHERE project_id=? AND id=?'
       ).run(randomUUID(), identity, targetRevision, c.role, c.review, c.state, now, projectId, c.id)
-    } else {
+    } else if (c.type === 'decide') {
       if (item(db, projectId, 'research_questions', c.questionId).state !== 'active')
         throw new ProjectError('STALE_REVISION')
       source(db, projectId, c.sourceId, false)

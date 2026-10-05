@@ -15,10 +15,24 @@ export default defineConfig(
       '**/.tools',
       '**/test-results',
       '**/output',
-      '**/playwright-report'
+      '**/playwright-report',
+      // Bundled upstream code, generated data and historical testing infrastructure.
+      'resources/vendor/**',
+      'resources/licenses/**',
+      'src/renderer/public/pdfjs/**',
+      'services/entitlements/runtime/**',
+      'tests/**',
+      'src/main/test-root.ts',
+      'src/main/test-network.ts',
+      'scripts/build-integration.mjs',
+      'scripts/test-unpacked.mjs',
+      'playwright.config.ts',
+      'vitest.config.ts',
+      '.github/disabled-workflows/**'
     ]
   },
-  tseslint.configs.recommended,
+  tseslint.configs.base,
+  { files: ['**/*.{ts,tsx}'], extends: [tseslint.configs.recommended] },
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],
   {

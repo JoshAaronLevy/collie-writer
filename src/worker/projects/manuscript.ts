@@ -98,8 +98,8 @@ export function validateManuscript(value: unknown): asserts value is ManuscriptS
     )
       throw new ProjectError('CORRUPT_PROJECT')
     if (d.state === 'merged') {
-      let replacement = d,
-        seen = new Set<string>()
+      let replacement = d
+      const seen = new Set<string>()
       while (replacement.replacementId) {
         if (seen.has(replacement.id)) throw new ProjectError('CORRUPT_PROJECT')
         seen.add(replacement.id)

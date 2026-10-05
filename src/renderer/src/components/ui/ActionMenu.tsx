@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Menu } from '@mantine/core'
 import { ChevronDown } from 'lucide-react'
-import { useVisualPreferences } from '../../theme/VisualPreferencesProvider'
+import { useVisualPreferences } from '../../theme/visualPreferencesContext'
 import { AppButton } from './Controls'
 
 type MenuAction = {
@@ -24,6 +24,7 @@ export function ActionMenu({
   onOpen?: () => void
 }): React.JSX.Element {
   const [opened, setOpened] = useState(false)
+  const [selectionMade, setSelectionMade] = useState(false)
   const selectedAction = useRef<(() => void) | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const { reducedMotion } = useVisualPreferences()
@@ -42,13 +43,16 @@ export function ActionMenu({
     <Menu
       opened={opened}
       onChange={(next) => {
-        if (next) onOpen?.()
+        if (next) {
+          setSelectionMade(false)
+          onOpen?.()
+        }
         setOpened(next)
       }}
       withinPortal
       position="bottom-end"
       loop
-      returnFocus={selectedAction.current === null}
+      returnFocus={!selectionMade}
       withInitialFocusPlaceholder={false}
       transitionProps={{ transition: 'fade', duration: reducedMotion ? 0 : 120 }}
     >
@@ -71,6 +75,7 @@ export function ActionMenu({
             disabled={action.disabled}
             onClick={() => {
               selectedAction.current = action.onSelect
+              setSelectionMade(true)
             }}
           >
             {action.label}

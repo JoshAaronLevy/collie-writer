@@ -5,7 +5,10 @@ import type { OpenInput } from '../../../../shared/projects'
 export type ExportOperation = { scope: OpenInput; job: ExportJob; issue: string | null }
 
 /** The session owns polling and results even after the export screen or project is left. */
-export function useExportOperations() {
+export function useExportOperations(): {
+  exports: ExportOperation[]
+  trackExport: (scope: OpenInput, job: ExportJob) => void
+} {
   const [exports, setExports] = useState<ExportOperation[]>([])
   function trackExport(scope: OpenInput, job: ExportJob): void {
     setExports((previous) => [
@@ -14,8 +17,11 @@ export function useExportOperations() {
     ])
   }
   const running = exports.filter((item) => ['rendering', 'publishing'].includes(item.job.state))
-  const runningKey = running.map((item) => item.job.id).join('|')
+  const runningKey = JSON.stringify(
+    running.map((item) => ({ scope: item.scope, jobId: item.job.id }))
+  )
   useEffect(() => {
+    const running: { scope: OpenInput; jobId: string }[] = JSON.parse(runningKey)
     if (!running.length) return
     let stopped = false
     let timer: ReturnType<typeof setTimeout>
@@ -25,12 +31,12 @@ export function useExportOperations() {
           try {
             const result = await window.collie.docxStatus({
               ...operation.scope,
-              jobId: operation.job.id
+              jobId: operation.jobId
             })
             if (stopped) return
             setExports((previous) =>
               previous.map((item) =>
-                item.job.id === operation.job.id
+                item.job.id === operation.jobId
                   ? result.ok
                     ? { ...item, job: result.value, issue: null }
                     : { ...item, issue: result.error.message }
@@ -41,7 +47,7 @@ export function useExportOperations() {
             if (!stopped)
               setExports((previous) =>
                 previous.map((item) =>
-                  item.job.id === operation.job.id
+                  item.job.id === operation.jobId
                     ? {
                         ...item,
                         issue:

@@ -70,7 +70,10 @@ export function linkWarnings(view: EvidenceView, link: EvidenceLink): string[] {
   if (link.review === 'needs_review') issues.push('marked for review')
   return issues
 }
-export function sourceCounts(view: EvidenceView, sourceId: string) {
+export function sourceCounts(
+  view: EvidenceView,
+  sourceId: string
+): { citations: number; sections: number; evidence: number; decisions: number } {
   const citations = view.citations.filter((item) => item.sourceId === sourceId)
   return {
     citations: new Set(citations.map((item) => `${item.documentId}:${item.citationId}`)).size,

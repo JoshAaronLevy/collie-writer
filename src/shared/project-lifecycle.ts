@@ -1,3 +1,4 @@
+import { hasControlCharacters } from './control-characters'
 import { isId } from '../domain/editor/schema'
 import {
   exact,
@@ -56,7 +57,7 @@ export function isRenameInput(v: unknown): v is RenameInput {
     v.title.trim() === v.title &&
     v.title.length > 0 &&
     v.title.length <= 500 &&
-    !/[\u0000-\u001f]/.test(v.title)
+    !hasControlCharacters(v.title)
   )
 }
 export function isArchiveInput(v: unknown): v is ArchiveInput {

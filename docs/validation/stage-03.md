@@ -6,18 +6,18 @@ The full implementation plan and its cross-stage contracts were read alongside c
 
 ## Changed paths and decisions
 
-| Paths | Implementation |
-| --- | --- |
-| `src/domain/editor/schema.ts` | Versioned application AST, strict input validation, owned footnote bodies, copy identity remapping |
-| `src/renderer/src/editor/adapter.ts` | Unmounted Tiptap community schema, stable block IDs, native ProseMirror history, composition guard, plain-text paste / explicit unsupported-paste handling |
-| `src/domain/compilation/model.ts` | Frozen editor-independent compilation, ordered citation/note numbering, stable source references, no project mutation |
-| `src/worker/citations/` | Pinned local citeproc styles/locale, ordered citation updates, safe formatted-run conversion, bounded errors |
-| `src/worker/exports/` | Native DOCX structure and escaped paginated HTML, managed image byte boundary and font selection |
-| `src/main/printing/pdf.ts`, `resources.ts`, `index.ts` | Internal isolated print adapter; exact private resource URLs, no Node/preload/network, fonts/images/pagination readiness, timeout/abort cleanup; trusted bundle-root selection |
-| `resources/{styles,locales,fonts,vendor,licenses}/`, `asset-manifest.json` | Pinned local assets/source/notices with provenance; version-qualified dependency license inventory |
-| `src/main/menus.ts`, `src/renderer/src/App.tsx`, shell CSS | Required visible initial-session attribution and a real third-party licenses menu |
-| `package.json`, lockfile, builder config, TS includes | Exact direct pins, resource allowlist, shared domain compilation coverage; existing test files/scripts unchanged |
-| Plan, README, AGENTS, decisions/manual guides/license inventory | Status, selected subset, current handoff and pending downstream gates |
+| Paths                                                                      | Implementation                                                                                                                                                                 |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/domain/editor/schema.ts`                                              | Versioned application AST, strict input validation, owned footnote bodies, copy identity remapping                                                                             |
+| `src/renderer/src/editor/adapter.ts`                                       | Unmounted Tiptap community schema, stable block IDs, native ProseMirror history, composition guard, plain-text paste / explicit unsupported-paste handling                     |
+| `src/domain/compilation/model.ts`                                          | Frozen editor-independent compilation, ordered citation/note numbering, stable source references, no project mutation                                                          |
+| `src/worker/citations/`                                                    | Pinned local citeproc styles/locale, ordered citation updates, safe formatted-run conversion, bounded errors                                                                   |
+| `src/worker/exports/`                                                      | Native DOCX structure and escaped paginated HTML, managed image byte boundary and font selection                                                                               |
+| `src/main/printing/pdf.ts`, `resources.ts`, `index.ts`                     | Internal isolated print adapter; exact private resource URLs, no Node/preload/network, fonts/images/pagination readiness, timeout/abort cleanup; trusted bundle-root selection |
+| `resources/{styles,locales,fonts,vendor,licenses}/`, `asset-manifest.json` | Pinned local assets/source/notices with provenance; version-qualified dependency license inventory                                                                             |
+| `src/main/menus.ts`, `src/renderer/src/App.tsx`, shell CSS                 | Required visible initial-session attribution and a real third-party licenses menu                                                                                              |
+| `package.json`, lockfile, builder config, TS includes                      | Exact direct pins, resource allowlist, shared domain compilation coverage; existing test files/scripts unchanged                                                               |
+| Plan, README, AGENTS, decisions/manual guides/license inventory            | Status, selected subset, current handoff and pending downstream gates                                                                                                          |
 
 Decisions: [D3 editor/compilation](../decisions/D3-editor-and-compilation.md), [D4 citations/licenses](../decisions/D4-citations-and-licenses.md), [D5 local PDF](../decisions/D5-local-pdf-pagination.md). Dependency/license inventory: [Stage 3 licenses](../licenses/stage-03.md). Model recommendations and stable stage numbers are unchanged.
 
@@ -31,16 +31,16 @@ No data migration or storage adoption occurred. Schema version 1 is an implement
 
 ## Pending acceptance and ownership
 
-| Gate | Status / owner |
-| --- | --- |
-| Current shell attribution and bundled-notice flow | Pending user; [current manual guide](../manual-testing/stage-03.md) |
-| Build/type compatibility and packaged resource paths | Unverified; user-owned build/launch on native targets |
-| Editor loading, IME/paste/undo, stable anchors and clipboard ownership | Unverified; Stage 8 production UI integration and user results |
-| APA/Chicago output, repeated references and disambiguation | Unverified; Stage 15 product path / independent user style review |
-| DOCX content, native notes/tables/images and Word/LibreOffice compatibility | Unverified; Stage 16 capture/destination workflow and user outputs |
-| PDF long/boundary notes, table splitting, fonts and 300-page behavior | Unverified; D5 stays pending until Stage 17 user results; bounded correction then Typst fallback if necessary |
-| macOS arm64/x64, Windows x64; Windows arm64 candidate | No Stage 3 artifacts built or launched; no target accepted |
-| Final legal notices, font embedding and source delivery in signed artifacts | Engineering obligations implemented; actual artifact/release review remains pending |
+| Gate                                                                        | Status / owner                                                                                                |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Current shell attribution and bundled-notice flow                           | Pending user; [current manual guide](../manual-testing/stage-03.md)                                           |
+| Build/type compatibility and packaged resource paths                        | Unverified; user-owned build/launch on native targets                                                         |
+| Editor loading, IME/paste/undo, stable anchors and clipboard ownership      | Unverified; Stage 8 production UI integration and user results                                                |
+| APA/Chicago output, repeated references and disambiguation                  | Unverified; Stage 15 product path / independent user style review                                             |
+| DOCX content, native notes/tables/images and Word/LibreOffice compatibility | Unverified; Stage 16 capture/destination workflow and user outputs                                            |
+| PDF long/boundary notes, table splitting, fonts and 300-page behavior       | Unverified; D5 stays pending until Stage 17 user results; bounded correction then Typst fallback if necessary |
+| macOS arm64/x64, Windows x64; Windows arm64 candidate                       | No Stage 3 artifacts built or launched; no target accepted                                                    |
+| Final legal notices, font embedding and source delivery in signed artifacts | Engineering obligations implemented; actual artifact/release review remains pending                           |
 
 The adapters are not wired to worker job IPC, a writing screen or export menu. That is the explicit Stage 3 boundary, not a test-only interface gap to fill. Limits include one-level lists, paragraph-only quotations, plain table cells, two fixed English styles, bounded in-memory image/export handling and unproven glyph/pagination behavior. Production toolbar/clipboard/source metadata warnings, snapshot capture/blob leases, job progress and safe destination replacement remain their owning stages.
 

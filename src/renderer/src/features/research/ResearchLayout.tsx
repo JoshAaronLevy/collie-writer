@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { AppButton } from '../../components/ui/Controls'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import './ResearchLayout.css'
 
 export function ResearchHeader({

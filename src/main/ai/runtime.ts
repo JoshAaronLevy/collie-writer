@@ -9,7 +9,12 @@ export type RuntimeUpdate = {
 
 export interface TextRuntime {
   models(): Promise<AiModel[]>
-  execute(model: string, prompt: string, authorize: () => Promise<void>, update: (value: RuntimeUpdate) => void): Promise<RuntimeUpdate>
+  execute(
+    model: string,
+    prompt: string,
+    authorize: () => Promise<void>,
+    update: (value: RuntimeUpdate) => void
+  ): Promise<RuntimeUpdate>
   interrupt(): Promise<void>
   close(): Promise<void>
 }

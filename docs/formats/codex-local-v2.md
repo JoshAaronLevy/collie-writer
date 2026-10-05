@@ -4,13 +4,13 @@ October 2, 2026. **Implementation complete — awaiting user testing.** No porta
 
 `ai/codex-local-session-v2.json` uses `AiStorage`'s existing exact outer envelope `{version:1,encrypted:<OS-encrypted bytes as base64>}`. The decrypted payload has exactly:
 
-| Field | Meaning |
-| --- | --- |
-| `version: 2` | Distinct from CD01's reserved metadata v1 and from future operation v2. |
-| `route: local-codex-chatgpt`, `policyRevision: 1` | Trusted route/policy identity, never supplied by a portable project. |
-| `active` | Null or `{profileId,account:{connectionId,label}}`. IDs are UUIDs. Label is nonempty trimmed account display text, bounded to 200 UTF-16 units without controls. It does not grant live authentication. |
-| `retired` | Up to eight unique profile UUIDs, excluding active. These can only be logged out, never resumed or adopted. Includes candidate login namespaces from before dispatch and incomplete disconnects. |
-| `lastAttempt` | Null or exact `{attemptId,connectionId}` from the most recently protected sign-in, where connectionId may be null. A repeated attempt does not restart login. |
+| Field                                             | Meaning                                                                                                                                                                                                 |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version: 2`                                      | Distinct from CD01's reserved metadata v1 and from future operation v2.                                                                                                                                 |
+| `route: local-codex-chatgpt`, `policyRevision: 1` | Trusted route/policy identity, never supplied by a portable project.                                                                                                                                    |
+| `active`                                          | Null or `{profileId,account:{connectionId,label}}`. IDs are UUIDs. Label is nonempty trimmed account display text, bounded to 200 UTF-16 units without controls. It does not grant live authentication. |
+| `retired`                                         | Up to eight unique profile UUIDs, excluding active. These can only be logged out, never resumed or adopted. Includes candidate login namespaces from before dispatch and incomplete disconnects.        |
+| `lastAttempt`                                     | Null or exact `{attemptId,connectionId}` from the most recently protected sign-in, where connectionId may be null. A repeated attempt does not restart login.                                           |
 
 No tokens, client IDs, provider subjects/workspaces, runtime IDs, authorization URLs, arbitrary paths or project content are serialized. The profile path is derived beneath the verified working-root AI directory. Browser completion creates a fresh Collie connection UUID even when reconnecting the same label; old records are not rebound.
 

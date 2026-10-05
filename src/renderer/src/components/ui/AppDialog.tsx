@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Modal } from '@mantine/core'
-import { useVisualPreferences } from '../../theme/VisualPreferencesProvider'
+import { useVisualPreferences } from '../../theme/visualPreferencesContext'
 
 export function AppDialog({
   opened,

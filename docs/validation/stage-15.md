@@ -17,13 +17,13 @@ Worker preview uses the existing frozen compilation/citeproc pipeline, active ou
 
 The exact offline profile remains `csl-v1`:
 
-| Asset | SHA-256 |
-| --- | --- |
-| APA 7 (`apa-7`) | `1ece4fb3c295e66d04b4394e295aa58a87741ceeef1658192437eb9953c2f13e` |
+| Asset                                        | SHA-256                                                            |
+| -------------------------------------------- | ------------------------------------------------------------------ |
+| APA 7 (`apa-7`)                              | `1ece4fb3c295e66d04b4394e295aa58a87741ceeef1658192437eb9953c2f13e` |
 | Chicago 18 (`chicago-18-notes-bibliography`) | `4b6be4bceaf8f3c31b49331c9f9e38c977f666d6ab80e19a2ac8482c7511abeb` |
-| English US locale (`en-US`) | `ac864c7c21166b4390d82c31792cdc509400727fa0060b43d8aa17e07f9cb079` |
-| Style notices | `eeda35e6ab1c71ef74ba98e8d63f3f5c07e1b1c458b92d54cdd7515afcb1b04e` |
-| Locale notices | `f8e1b34d3e1b66f101b45bc45e5fca0397aa923fe4abeab6f98139c8f731c320` |
+| English US locale (`en-US`)                  | `ac864c7c21166b4390d82c31792cdc509400727fa0060b43d8aa17e07f9cb079` |
+| Style notices                                | `eeda35e6ab1c71ef74ba98e8d63f3f5c07e1b1c458b92d54cdd7515afcb1b04e` |
+| Locale notices                               | `f8e1b34d3e1b66f101b45bc45e5fca0397aa923fe4abeab6f98139c8f731c320` |
 
 These are existing source-declared pins, not new assistant-measured results. Runtime product code validates retained bytes, and both previews and archives use them. Pinned citeproc 2.4.63, CPAL attribution/source redistribution and CC BY-SA notices remain unchanged. No new dependencies, remote requests or arbitrary styles were added.
 

@@ -1,3 +1,5 @@
+import { useEffectEvent } from 'react'
+import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { Checkbox, TextInput } from '@mantine/core'
 import { useEffect, useRef, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
@@ -10,11 +12,11 @@ import type {
 import { AppButton, SelectField, TextareaField } from '../../components/ui/Controls'
 import { EmptyState } from '../../components/ui/Feedback'
 import { ResearchHeader, ResearchLayout } from '../research/ResearchLayout'
-import { useResearchData } from '../research/ResearchData'
+import { useResearchData } from '../research/researchContext'
 import { UsageStatus } from '../research/SourceUsage'
 import { linkWarnings } from '../research/usage'
 import { useRetainedDraft } from '../workspace/DraftOwner'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import './EvidencePanel.css'
 
 type ItemKind = 'question' | 'claim'
@@ -69,7 +71,10 @@ export default function EvidencePanel({
   const scope = { projectId: project.projectId, workspaceId: project.workspaceId }
   const panel = useRef<HTMLElement>(null),
     focused = useRef(''),
-    pending = useRef<{ operationId: string; change: EvidenceChange } | null>(null)
+    [pendingValue, setPendingValue, pending] = useSynchronousState<{
+      operationId: string
+      change: EvidenceChange
+    } | null>(null)
   const [tab, setTab] = useState<ItemKind | 'link'>('question'),
     [query, setQuery] = useState(''),
     [includeRemoved, setIncludeRemoved] = useState(false)
@@ -101,7 +106,7 @@ export default function EvidencePanel({
     !!linkExcerpt ||
     !!targetId ||
     (newLink && role !== 'support')
-  const locked = disabled || busy || !!pending.current || !data.fresh
+  const locked = disabled || busy || !!pendingValue || !data.fresh
   const link = view?.links.find((item) => item.id === linkId)
   const item = draft?.original
     ? (draft.kind === 'question' ? view?.questions : view?.claims)?.find(
@@ -150,7 +155,7 @@ export default function EvidencePanel({
     setRole('support')
     setError('')
   }
-  useEffect(() => {
+  const onEvidenceNavigation = useEffectEvent(() => {
     if (!focusItem) {
       focused.current = ''
       return
@@ -189,7 +194,12 @@ export default function EvidencePanel({
       setDecisionBase(saved)
       setDecisionReason(saved?.reason ?? '')
     }
-  }, [focusItem?.id, focusItem?.kind, focusSourceId, session.focusRevision, view, dirty, busy])
+  })
+  // Present only the latest committed navigation request, after retained regions update.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => onEvidenceNavigation())
+    return () => cancelAnimationFrame(frame)
+  }, [focusItem, focusSourceId, session.focusRevision, view, dirty, busy, pendingValue])
 
   async function mutate(change: EvidenceChange, retry = false): Promise<void> {
     if (readOnly || disabled) {
@@ -201,19 +211,19 @@ export default function EvidencePanel({
       return
     }
     if (session.composition.current) return
-    pending.current ??= { operationId: crypto.randomUUID(), change }
-    const operation = pending.current
+    const operation = pending.current ?? { operationId: crypto.randomUUID(), change }
+    setPendingValue(operation)
     setBusy(true)
     setError('')
     setMessage('')
     try {
       const result = await window.collie.changeEvidence({ ...scope, ...operation })
       if (!result.ok) {
-        if (result.error.code !== 'UNAVAILABLE') pending.current = null
+        if (result.error.code !== 'UNAVAILABLE') setPendingValue(null)
         setError(result.error.message)
         return
       }
-      pending.current = null
+      setPendingValue(null)
       data.accept(result.value)
       const savedChange = operation.change
       if (
@@ -411,12 +421,12 @@ export default function EvidencePanel({
       {dirty ? (
         <p role="status">
           You have unsaved research edits.{' '}
-          <AppButton variant="subtle" disabled={busy || !!pending.current} onClick={discard}>
+          <AppButton variant="subtle" disabled={busy || !!pendingValue} onClick={discard}>
             Discard form edits
           </AppButton>
         </p>
       ) : null}
-      {pending.current ? (
+      {pendingValue ? (
         <AppButton
           disabled={busy || disabled || readOnly}
           onClick={() => {
@@ -537,11 +547,7 @@ export default function EvidencePanel({
               {item && item.revisionId !== draft.original?.revisionId ? (
                 <p role="status">
                   This item changed since you opened the form. Your edits remain here.{' '}
-                  <AppButton
-                    variant="subtle"
-                    disabled={busy || !!pending.current}
-                    onClick={discard}
-                  >
+                  <AppButton variant="subtle" disabled={busy || !!pendingValue} onClick={discard}>
                     Discard edits and reload saved item
                   </AppButton>
                 </p>

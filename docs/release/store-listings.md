@@ -2,15 +2,15 @@
 
 October 1, 2026. **Internal drafts only; neither channel is submitted or approved.** The [D8 decision](../decisions/D8-store-channels.md) records current effective policy dates and the separate implementation/external gates. Source preparation is not evidence that a store artifact runs, a purchase works or an output meets the required fidelity. Do not copy these drafts into a live listing until the applicable release gates and user authorization are recorded.
 
-| Item | Microsoft Store EXE listing | Mac App Store |
-| --- | --- | --- |
-| Current status | Prepared for a future owner submission; direct commerce/signing/native gates pending | Blocked on native entitlement, bookmark and coordinated-write implementation, then external/native gates |
-| Territory/language | United States; English UI/listing | United States; English UI/listing |
-| Candidate | Exact accepted direct-production Windows 11 x64 NSIS EXE | None; MAS packaging/startup deliberately blocked |
-| Purchases | Direct Paddle flow, once configured and accepted; disclose third-party purchases | Apple IAP only, after native implementation and acceptance |
-| Updates | Explicit app-owned direct-production update flow | Apple Store updates only, after implementation |
-| Restore | Direct purchase recovery flow; no Microsoft account-based unlock | Apple native restore; no direct purchase-key import or cross-store promise |
-| Submission/review | Not submitted | Not submitted; not ready to submit |
+| Item               | Microsoft Store EXE listing                                                          | Mac App Store                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Current status     | Prepared for a future owner submission; direct commerce/signing/native gates pending | Blocked on native entitlement, bookmark and coordinated-write implementation, then external/native gates |
+| Territory/language | United States; English UI/listing                                                    | United States; English UI/listing                                                                        |
+| Candidate          | Exact accepted direct-production Windows 11 x64 NSIS EXE                             | None; MAS packaging/startup deliberately blocked                                                         |
+| Purchases          | Direct Paddle flow, once configured and accepted; disclose third-party purchases     | Apple IAP only, after native implementation and acceptance                                               |
+| Updates            | Explicit app-owned direct-production update flow                                     | Apple Store updates only, after implementation                                                           |
+| Restore            | Direct purchase recovery flow; no Microsoft account-based unlock                     | Apple native restore; no direct purchase-key import or cross-store promise                               |
+| Submission/review  | Not submitted                                                                        | Not submitted; not ready to submit                                                                       |
 
 ## Proposed public description
 
@@ -38,19 +38,19 @@ For MAS, map the same rights to owner-confirmed Apple product IDs and native loc
 
 These are intentionally unset; the product name is not a verified legal seller name and a selected namespace is not domain ownership.
 
-| Resource | Required value/evidence | State |
-| --- | --- | --- |
-| Legal seller/publisher | Actual verified entity/person and channel account identity | Not supplied |
-| Product identity | Ownership/availability of `com.colliewriter.app`; exact Windows publisher subject and Apple team/profile when applicable | Not supplied |
-| Privacy policy | Owned HTTPS page describing actual channel collection, providers and retention | Not supplied |
-| Support | Owned HTTPS support page/contact and named incident-response owner | Not supplied |
-| Terms and purchase terms | Approved US terms, edition rights, renewal/refund/restore explanations | Not supplied |
-| Catalog | Confirmed US/USD products, displayed prices/taxes, no trial, correct lifetime rights | Not supplied |
-| Branding/screenshots | Final icon rights and user-produced screenshots of the actual accepted channel candidate using disposable/public content | Not supplied |
-| Age/content rating | Owner-completed questionnaire based on shipped functionality; do not invent a rating | Not supplied |
-| Accessibility claims | Specific supported platforms/features backed by user observations, with known limitations | Not supplied |
-| Notices/resources | Packaged dependency inventory, citeproc CPAL attribution/source, font/style/locale notices and resource allowlist evidence | Native artifact inspection pending |
-| Review access | Approved instructions and, only when required, owner-provided sandbox access shared through the channel's secure review mechanism | Not supplied |
+| Resource                 | Required value/evidence                                                                                                           | State                              |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Legal seller/publisher   | Actual verified entity/person and channel account identity                                                                        | Not supplied                       |
+| Product identity         | Ownership/availability of `com.colliewriter.app`; exact Windows publisher subject and Apple team/profile when applicable          | Not supplied                       |
+| Privacy policy           | Owned HTTPS page describing actual channel collection, providers and retention                                                    | Not supplied                       |
+| Support                  | Owned HTTPS support page/contact and named incident-response owner                                                                | Not supplied                       |
+| Terms and purchase terms | Approved US terms, edition rights, renewal/refund/restore explanations                                                            | Not supplied                       |
+| Catalog                  | Confirmed US/USD products, displayed prices/taxes, no trial, correct lifetime rights                                              | Not supplied                       |
+| Branding/screenshots     | Final icon rights and user-produced screenshots of the actual accepted channel candidate using disposable/public content          | Not supplied                       |
+| Age/content rating       | Owner-completed questionnaire based on shipped functionality; do not invent a rating                                              | Not supplied                       |
+| Accessibility claims     | Specific supported platforms/features backed by user observations, with known limitations                                         | Not supplied                       |
+| Notices/resources        | Packaged dependency inventory, citeproc CPAL attribution/source, font/style/locale notices and resource allowlist evidence        | Native artifact inspection pending |
+| Review access            | Approved instructions and, only when required, owner-provided sandbox access shared through the channel's secure review mechanism | Not supplied                       |
 
 Never commit account credentials, certificates, purchase recovery codes, review-account passwords or private project content in this document. No screenshots, examples or fixtures were generated for store review.
 
@@ -85,9 +85,9 @@ Before a channel switch, removal or container reset, the user saves a portable p
 
 Use the [support and incident runbook](support-and-incidents.md) for content-free incident handling, and the [direct commerce operator instructions](../../services/entitlements/README.md) for configured purchase issues. Initial support asks for app version/channel/OS, the visible error and the user's reviewed support preview or a description using invented labels. Do not request full manuscripts, raw purchase receipts, credentials or a workspace directory. Direct purchase support belongs to the configured seller/provider process; MAS purchase support will require its separately implemented Apple flow.
 
-| Channel | Submission ID/date | Review decision | Artifact/evidence | Next blocking step |
-| --- | --- | --- | --- | --- |
-| Microsoft EXE | None | Not submitted | None | Direct signed/commerce/native readiness and owner listing resources |
-| MAS | None | Not submitted | None | Implement native entitlement, bookmark and coordinated-file adapters |
+| Channel       | Submission ID/date | Review decision | Artifact/evidence | Next blocking step                                                   |
+| ------------- | ------------------ | --------------- | ----------------- | -------------------------------------------------------------------- |
+| Microsoft EXE | None               | Not submitted   | None              | Direct signed/commerce/native readiness and owner listing resources  |
+| MAS           | None               | Not submitted   | None              | Implement native entitlement, bookmark and coordinated-file adapters |
 
 The owner must supply real outcomes before these states change. Store delay does not block an independently accepted direct release; neither this draft nor Stage 23 authorizes publication. No tests, builds, launches, purchases, uploads or submissions were performed to prepare this document.

@@ -1,4 +1,3 @@
-import type { AiStorage } from './storage'
 import { AiError } from './errors'
 
 /** Source/protocol reference, NOT a pinned distributable binary or permission. */
@@ -20,6 +19,6 @@ type GrokLaunch = {
  * The returned environment must be built from an allowlist, never process.env.
  * See docs/ai/grok-runtime.md. No runtime is installed or launched by I14.
  */
-export async function prepareGrokLaunch(_storage: AiStorage): Promise<GrokLaunch> {
+export async function prepareGrokLaunch(): Promise<GrokLaunch> {
   throw new AiError('configuration-required')
 }

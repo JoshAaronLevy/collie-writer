@@ -1,3 +1,4 @@
+import { hasControlCharacters, replaceControlCharacters } from '../../shared/control-characters'
 import Database from 'better-sqlite3'
 import { Cite, type CSL } from '@citation-js/core'
 import '@citation-js/plugin-bibtex'
@@ -66,12 +67,7 @@ const norm = (value: string): string =>
     .trim()
     .replace(/\s+/g, ' ')
 const clean = (value: unknown, max = 2000): string =>
-  typeof value === 'string'
-    ? value
-        .replace(/[\u0000-\u001f]/g, ' ')
-        .trim()
-        .slice(0, max)
-    : ''
+  typeof value === 'string' ? replaceControlCharacters(value).trim().slice(0, max) : ''
 const numericText = (value: unknown): string =>
   typeof value === 'number' && Number.isFinite(value) ? String(value) : clean(value)
 const doi = (value: string): string =>
@@ -298,12 +294,12 @@ function risRecords(value: string): string[] {
   const rows: string[] = []
   let current = ''
   for (const line of value.split(/\r?\n/)) {
-    if (/^TY  - /.test(line) && current.trim()) {
+    if (/^TY {2}- /.test(line) && current.trim()) {
       rows.push(current)
       current = ''
     }
     current += `${line}\n`
-    if (/^ER  -/.test(line)) {
+    if (/^ER {2}-/.test(line)) {
       rows.push(current)
       current = ''
     }
@@ -371,7 +367,9 @@ function rawUnsupported(raw: unknown, format: BibliographyFormat): string[] {
     ])
     return [
       ...new Set(
-        [...raw.matchAll(/^([A-Z][A-Z0-9])  -/gm)].map((m) => m[1]).filter((k) => !supported.has(k))
+        [...raw.matchAll(/^([A-Z][A-Z0-9]) {2}-/gm)]
+          .map((m) => m[1])
+          .filter((k) => !supported.has(k))
       )
     ].slice(0, 20)
   }
@@ -421,7 +419,7 @@ function parseRows(value: string, format: BibliographyFormat): SourceImportRow[]
   return raws.map((raw, index) => {
     try {
       if (JSON.stringify(raw).length > 300000) throw new Error('Record exceeds 300 KB')
-      if (typeof raw === 'string' && /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(raw))
+      if (typeof raw === 'string' && hasControlCharacters(raw, true))
         throw new Error('Record contains unsupported control characters')
       const parsed: unknown =
         format === 'csl-json'

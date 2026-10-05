@@ -2,25 +2,90 @@
    These are semantic feature selectors, not global element or Mantine overrides. */
 .projects {
   min-width: 0;
-  h1 { font: 400 clamp(1.75rem, 4vw, 2.5rem)/1.2 var(--collie-font-manuscript); margin-block: 0 var(--collie-space-3); letter-spacing: -0.02em; }
-  button:not([data-collie-button]) { font: inherit; min-height: var(--collie-control-height); max-width: 100%; border: 1px solid var(--collie-control-border); padding: var(--collie-space-2) var(--collie-space-4); background: var(--collie-surface); color: var(--collie-text); border-radius: var(--collie-radius-control); cursor: pointer; }
-  button:not([data-collie-button]):hover:not(:disabled) { background: var(--collie-selected); }
-  input, select, textarea { color: var(--collie-text); background: var(--collie-surface); accent-color: var(--collie-accent); max-width: 100%; border-color: var(--collie-control-border); }
-  input:not([type='checkbox']), select { min-height: var(--collie-control-height); }
-  summary { min-height: var(--collie-control-height); cursor: pointer; }
-  label:has(input[type='checkbox']) { display: inline-flex; align-items: center; min-height: var(--collie-control-height); gap: var(--collie-space-2); }
-.project-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1rem 0; }
-.project-error { border-left: 4px solid var(--collie-error); padding: 0.75rem; background: var(--collie-error-surface); }
-button:not([data-collie-button]):disabled { opacity: 1; cursor: not-allowed; color: var(--collie-text-secondary); background: var(--collie-surface-muted); border-color: var(--collie-border); }
+  h1 {
+    font: 400 clamp(1.75rem, 4vw, 2.5rem)/1.2 var(--collie-font-manuscript);
+    margin-block: 0 var(--collie-space-3);
+    letter-spacing: -0.02em;
+  }
+  button:not([data-collie-button]) {
+    font: inherit;
+    min-height: var(--collie-control-height);
+    max-width: 100%;
+    border: 1px solid var(--collie-control-border);
+    padding: var(--collie-space-2) var(--collie-space-4);
+    background: var(--collie-surface);
+    color: var(--collie-text);
+    border-radius: var(--collie-radius-control);
+    cursor: pointer;
+  }
+  button:not([data-collie-button]):hover:not(:disabled) {
+    background: var(--collie-selected);
+  }
+  input,
+  select,
+  textarea {
+    color: var(--collie-text);
+    background: var(--collie-surface);
+    accent-color: var(--collie-accent);
+    max-width: 100%;
+    border-color: var(--collie-control-border);
+  }
+  input:not([type='checkbox']),
+  select {
+    min-height: var(--collie-control-height);
+  }
+  summary {
+    min-height: var(--collie-control-height);
+    cursor: pointer;
+  }
+  label:has(input[type='checkbox']) {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--collie-control-height);
+    gap: var(--collie-space-2);
+  }
+  .project-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 1rem 0;
+  }
+  .project-error {
+    border-left: 4px solid var(--collie-error);
+    padding: 0.75rem;
+    background: var(--collie-error-surface);
+  }
+  button:not([data-collie-button]):disabled {
+    opacity: 1;
+    cursor: not-allowed;
+    color: var(--collie-text-secondary);
+    background: var(--collie-surface-muted);
+    border-color: var(--collie-border);
+  }
 
-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
-input:not([type='checkbox']) { font: inherit; padding: 0.5rem; max-width: 100%; min-width: 0; border: 1px solid var(--collie-text-secondary); border-radius: 0.3rem; }
-form input { flex: 1 1 14rem; }
-
-
-
+  form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  input:not([type='checkbox']) {
+    font: inherit;
+    padding: 0.5rem;
+    max-width: 100%;
+    min-width: 0;
+    border: 1px solid var(--collie-text-secondary);
+    border-radius: 0.3rem;
+  }
+  form input {
+    flex: 1 1 14rem;
+  }
 
   @media (forced-colors: active) {
-    [aria-current='true'], [aria-current='page'], [aria-pressed='true'] { border: 2px solid Highlight; }
+    [aria-current='true'],
+    [aria-current='page'],
+    [aria-pressed='true'] {
+      border: 2px solid Highlight;
+    }
   }
 }

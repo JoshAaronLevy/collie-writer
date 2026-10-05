@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { AppButton, SelectField } from '../../components/ui/Controls'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
-import { useResearchData } from './ResearchData'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
+import { useResearchData } from './researchContext'
 import {
   containingChapter,
   linkDocument,
@@ -266,9 +266,12 @@ export function SectionSources({
   const { project, research, dirty } = useWorkspaceSession()
   const { view, fresh } = useResearchData()
   const [selection, setSelection] = useState(project?.documentId ?? '')
-  useEffect(() => {
+  const selectionKey = `${project?.projectId ?? ''}:${project?.documentId ?? ''}`
+  const [lastSelectionKey, setLastSelectionKey] = useState(selectionKey)
+  if (lastSelectionKey !== selectionKey) {
+    setLastSelectionKey(selectionKey)
     setSelection(project?.documentId ?? '')
-  }, [project?.projectId, project?.documentId])
+  }
   if (!project) return <></>
   const ids = new Set(sectionsWithin(project.documents, selection))
   const chapter = containingChapter(project.documents, project.documentId)

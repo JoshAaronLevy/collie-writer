@@ -8,8 +8,13 @@ function bundledDevToolsRequest(raw: string): boolean {
   if (app.isPackaged) return false
   try {
     const url = new URL(raw)
-    return url.protocol === 'devtools:' && url.host === 'devtools' &&
-      !url.username && !url.password && url.pathname.startsWith('/bundled/')
+    return (
+      url.protocol === 'devtools:' &&
+      url.host === 'devtools' &&
+      !url.username &&
+      !url.password &&
+      url.pathname.startsWith('/bundled/')
+    )
   } catch {
     return false
   }
@@ -23,7 +28,9 @@ export function protectSession(session: Session, devOrigin?: string): void {
   // Electron's bundled DevTools shares this session with the inspected page.
   // Keep its local frontend separate from Collie's renderer network policy.
   session.webRequest.onBeforeRequest((details, callback) =>
-    callback({ cancel: !bundledDevToolsRequest(details.url) && !allowedRequest(details.url, devOrigin) })
+    callback({
+      cancel: !bundledDevToolsRequest(details.url) && !allowedRequest(details.url, devOrigin)
+    })
   )
   session.webRequest.onHeadersReceived((details, callback) => {
     if (bundledDevToolsRequest(details.url)) {
@@ -74,12 +81,26 @@ export function createWindow(devOrigin?: string): BrowserWindow {
   protectWindow(window)
   window.webContents.on('context-menu', (_event, params) => {
     if (!params.isEditable) return
-    const suggestions = params.dictionarySuggestions.slice(0, 5).map(suggestion => ({ label: suggestion, click: () => window.webContents.replaceMisspelling(suggestion) }))
+    const suggestions = params.dictionarySuggestions.slice(0, 5).map((suggestion) => ({
+      label: suggestion,
+      click: () => window.webContents.replaceMisspelling(suggestion)
+    }))
     const entries: MenuItemConstructorOptions[] = [
       ...suggestions,
-      ...(params.misspelledWord ? [{ label: 'Add to dictionary', click: () => window.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord) }] : []),
+      ...(params.misspelledWord
+        ? [
+            {
+              label: 'Add to dictionary',
+              click: () =>
+                window.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord)
+            }
+          ]
+        : []),
       ...(suggestions.length || params.misspelledWord ? [{ type: 'separator' as const }] : []),
-      { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' },
+      { role: 'selectAll' }
     ]
     const menu = Menu.buildFromTemplate(entries)
     menu.popup({ window })

@@ -1,10 +1,17 @@
 import { useId, useRef } from 'react'
-import { useWorkspaceSession } from '../features/workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../features/workspace/workspaceContext'
 import { useRetainedDraft } from '../features/workspace/DraftOwner'
 import { scopeOf } from '../features/workspace/useWorkspaceController'
 
 /** Dialog values must be applied or explicitly cancelled before native close or scope replacement. */
-export function useEditorFormDraft(label: string, open: boolean, noteMode = false) {
+export function useEditorFormDraft(
+  label: string,
+  open: boolean,
+  noteMode = false
+): {
+  canClose: () => boolean
+  events: { onCompositionStartCapture: () => void; onCompositionEndCapture: () => void }
+} {
   const { project } = useWorkspaceSession()
   const id = useId(),
     composing = useRef(false)

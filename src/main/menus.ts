@@ -20,17 +20,31 @@ export async function confirmExternalLink(raw: unknown, testMode: boolean): Prom
   if (choice.response === 1) await shell.openExternal(url)
 }
 export async function showLicenses(): Promise<void> {
-  await dialog.showMessageBox({
-              type: 'info',
-              title: 'Third-party licenses',
-              message: 'citeproc-js implements the Citation Style Language',
-              detail: '© Frank Bennett\nhttps://citationstyles.org/\n\nThe citation processor is used under CPAL 1.0. Its unmodified source and license, CSL style/locale notices, font licenses and editor/export notices are bundled with this app.',
-              buttons: ['Close', 'Show bundled licenses'], defaultId: 0, cancelId: 0, noLink: true
-            }).then(result => {
-              if (result.response === 1) shell.showItemInFolder(join(bundledResources(), 'licenses/NOTICE.txt'))
-            })
+  await dialog
+    .showMessageBox({
+      type: 'info',
+      title: 'Third-party licenses',
+      message: 'citeproc-js implements the Citation Style Language',
+      detail:
+        '© Frank Bennett\nhttps://citationstyles.org/\n\nThe citation processor is used under CPAL 1.0. Its unmodified source and license, CSL style/locale notices, font licenses and editor/export notices are bundled with this app.',
+      buttons: ['Close', 'Show bundled licenses'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    })
+    .then((result) => {
+      if (result.response === 1)
+        shell.showItemInFolder(join(bundledResources(), 'licenses/NOTICE.txt'))
+    })
 }
-export function installMenu(testMode: boolean, channel: ReleaseChannel, fileAction: (kind: 'save' | 'save-as' | 'open') => void, editorAction: (kind: 'undo' | 'redo' | 'find' | 'paste-plain') => void, checkUpdates: () => void, installUpdate: () => void): void {
+export function installMenu(
+  testMode: boolean,
+  channel: ReleaseChannel,
+  fileAction: (kind: 'save' | 'save-as' | 'open') => void,
+  editorAction: (kind: 'undo' | 'redo' | 'find' | 'paste-plain') => void,
+  checkUpdates: () => void,
+  installUpdate: () => void
+): void {
   const about = (): void => {
     void dialog.showMessageBox({
       type: 'info',
@@ -61,7 +75,11 @@ export function installMenu(testMode: boolean, channel: ReleaseChannel, fileActi
     {
       label: 'File',
       submenu: [
-        { label: 'Open project file…', accelerator: 'CmdOrCtrl+O', click: () => fileAction('open') },
+        {
+          label: 'Open project file…',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => fileAction('open')
+        },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => fileAction('save') },
         { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => fileAction('save-as') },
         { type: 'separator' },
@@ -69,16 +87,25 @@ export function installMenu(testMode: boolean, channel: ReleaseChannel, fileActi
         ...(process.platform === 'darwin' ? [] : [{ role: 'quit' } as MenuItemConstructorOptions])
       ]
     },
-    { label: 'Edit', submenu: [
-      { label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: () => editorAction('undo') },
-      { label: 'Redo', accelerator: 'CmdOrCtrl+Shift+Z', click: () => editorAction('redo') },
-      { type: 'separator' },
-      { role: 'cut' }, { role: 'copy' }, { role: 'paste' },
-      { label: 'Paste as Plain Text', accelerator: 'CmdOrCtrl+Shift+V', click: () => editorAction('paste-plain') },
-      { role: 'selectAll' },
-      { type: 'separator' },
-      { label: 'Find in Section', accelerator: 'CmdOrCtrl+F', click: () => editorAction('find') }
-    ] },
+    {
+      label: 'Edit',
+      submenu: [
+        { label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: () => editorAction('undo') },
+        { label: 'Redo', accelerator: 'CmdOrCtrl+Shift+Z', click: () => editorAction('redo') },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        {
+          label: 'Paste as Plain Text',
+          accelerator: 'CmdOrCtrl+Shift+V',
+          click: () => editorAction('paste-plain')
+        },
+        { role: 'selectAll' },
+        { type: 'separator' },
+        { label: 'Find in Section', accelerator: 'CmdOrCtrl+F', click: () => editorAction('find') }
+      ]
+    },
     {
       label: 'View',
       submenu: [
@@ -98,7 +125,9 @@ export function installMenu(testMode: boolean, channel: ReleaseChannel, fileActi
         { type: 'separator' },
         {
           label: 'Third-party licenses',
-          click: () => { void showLicenses() }
+          click: () => {
+            void showLicenses()
+          }
         },
         {
           label: 'Privacy and data',

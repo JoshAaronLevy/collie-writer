@@ -1,8 +1,11 @@
+import { useLayoutEffect } from 'react'
+import { useSynchronousState } from '../../hooks/useSynchronousState'
+import { hasControlCharacters } from '../../../../shared/control-characters'
 import { Radio, TextInput } from '@mantine/core'
 import ExportResults from '../export/ExportResults'
 import { AppButton, SelectField, ChoiceField } from '../../components/ui/Controls'
 import styles from '../export/ExportWorkspace.module.css'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import { useEffect, useRef, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
@@ -55,7 +58,9 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
     setStep('result')
   }
   const current = useRef(props)
-  current.current = props
+  useLayoutEffect(() => {
+    current.current = props
+  })
   const orderedOutline = outline(props.project.documents)
   const texts = orderedOutline.filter((d) => d.kind === 'text')
   const [selected, setSelected] = useState<string[]>(() =>
@@ -78,11 +83,12 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
   const [recipes, setRecipes] = useState<RecipesView | null>(null),
     [recipeId, setRecipeId] = useState<string | null>(null),
     [recipeName, setRecipeName] = useState('')
-  const pendingRecipe = useRef<{ signature: string; input: RecipeChangeInput } | null>(null)
+  const [pendingRecipeValue, setPendingRecipeValue, pendingRecipe] = useSynchronousState<{
+    signature: string
+    input: RecipeChangeInput
+  } | null>(null)
   const scope = { projectId: props.project.projectId, workspaceId: props.project.workspaceId }
-  useEffect(() => {
-    if (!props.paid) setFormats((old) => (old.length > 1 ? [old[0]] : old))
-  }, [props.paid])
+  if (!props.paid && formats.length > 1) setFormats([formats[0]])
   const optionsKey = JSON.stringify({
     paper,
     selected,
@@ -95,13 +101,13 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
     capture?.options === optionsKey && capture.value.headCommitId === props.project.headCommitId
       ? capture.value
       : null
-  useEffect(() => {
+  const acknowledgmentKey = `${props.project.headCommitId}:${optionsKey}`
+  const [lastAcknowledgmentKey, setLastAcknowledgmentKey] = useState(acknowledgmentKey)
+  if (lastAcknowledgmentKey !== acknowledgmentKey) {
+    setLastAcknowledgmentKey(acknowledgmentKey)
     setCapture(null)
     setAck(false)
-  }, [optionsKey])
-  useEffect(() => {
-    setAck(false)
-  }, [props.project.headCommitId])
+  }
   useEffect(() => {
     if (
       destination.kind === 'workspace' &&
@@ -109,7 +115,7 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
       destination.exportResultId
     )
       setStep('result')
-  }, [focusRevision])
+  }, [focusRevision, destination])
   useEffect(() => {
     if (
       step !== 'result' ||
@@ -124,11 +130,11 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
       result?.scrollIntoView({ block: 'start' })
     })
     return () => cancelAnimationFrame(frame)
-  }, [step, focusRevision])
+  }, [step, focusRevision, destination])
   useEffect(() => {
     let active = true
     void window.collie
-      .readRecipes(scope)
+      .readRecipes({ projectId: scope.projectId, workspaceId: scope.workspaceId })
       .then((result) => {
         if (active) {
           if (result.ok) setRecipes(result.value)
@@ -277,7 +283,7 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
       setBusy(false)
     }
   }
-  function useRecipe(recipe: CompilationRecipe): void {
+  function selectRecipe(recipe: CompilationRecipe): void {
     setTitlePage(false)
     setIncludeDescription(false)
     setRecipeId(recipe.id)
@@ -306,7 +312,7 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
         formats
       })
       if (!pendingRecipe.current)
-        pendingRecipe.current = {
+        setPendingRecipeValue({
           signature,
           input: {
             ...scope,
@@ -319,10 +325,12 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
             paper,
             formats
           }
-        }
-      const result = await window.collie.changeRecipe(pendingRecipe.current.input)
+        })
+      const operation = pendingRecipe.current
+      if (!operation) throw new Error('Recipe change was not retained')
+      const result = await window.collie.changeRecipe(operation.input)
       if (!result.ok) {
-        if (result.error.code !== 'UNAVAILABLE') pendingRecipe.current = null
+        if (result.error.code !== 'UNAVAILABLE') setPendingRecipeValue(null)
         setError(
           result.error.code === 'UNAVAILABLE'
             ? 'The recipe result is unknown. Retry the same save; a completed change will not be repeated.'
@@ -330,7 +338,7 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
         )
         return
       }
-      pendingRecipe.current = null
+      setPendingRecipeValue(null)
       setRecipes(result.value)
       setCapture(null)
       setRecipeId(
@@ -375,7 +383,8 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
   const metadata = preview?.issues.filter((i) => i.kind === 'metadata') ?? [],
     blocking = preview?.issues.filter((i) => i.kind !== 'metadata') ?? []
   const validBaseName =
-    /^[^\\/:*?"<>|.\u0000-\u001f][^\\/:*?"<>|\u0000-\u001f]*$/.test(baseName.trim()) &&
+    !hasControlCharacters(baseName.trim()) &&
+    /^[^\\/:*?"<>|.][^\\/:*?"<>|]*$/.test(baseName.trim()) &&
     !/[. ]$/.test(baseName.trim()) &&
     !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(baseName.trim())
   useRetainedDraft('export-preparation', {
@@ -394,7 +403,7 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
       target: { kind: 'workspace', scope, view: 'export' }
     })
   })
-  const locked = props.disabled || busy || !!pendingRecipe.current
+  const locked = props.disabled || busy || !!pendingRecipeValue
   const canReview =
     selected.length > 0 &&
     formats.length > 0 &&
@@ -604,10 +613,7 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
               result reports format losses.
             </p>
           </details>
-          <details
-            className={styles['export-disclosure']}
-            open={!!pendingRecipe.current || undefined}
-          >
+          <details className={styles['export-disclosure']} open={!!pendingRecipeValue || undefined}>
             <summary>Saved compilation recipes</summary>
             <p>
               Recipes remember section IDs, order, paper and formats. They contain no second
@@ -625,7 +631,7 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
               value={recipeId ?? ''}
               onChange={(e) => {
                 const found = recipes?.recipes.find((r) => r.id === e.currentTarget.value)
-                if (found) useRecipe(found)
+                if (found) selectRecipe(found)
                 else {
                   setRecipeId(null)
                   setRecipeName('')
@@ -659,7 +665,7 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
                 !props.paid ||
                 props.disabled ||
                 busy ||
-                (!pendingRecipe.current &&
+                (!pendingRecipeValue &&
                   (!recipeName.trim() ||
                     !selected.length ||
                     !formats.length ||
@@ -667,7 +673,7 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
               }
               onClick={() => void saveRecipe()}
             >
-              {pendingRecipe.current
+              {pendingRecipeValue
                 ? 'Retry same recipe save'
                 : recipeId
                   ? 'Update recipe'

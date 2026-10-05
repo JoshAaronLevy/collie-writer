@@ -6,17 +6,17 @@ October 2, 2026. **Independent local implementation delivered — awaiting user 
 
 The latest request explicitly authorized I10 implementation under the revised development-first brief. The working tree began clean. Shared plan contracts, I10, prerequisite I03/I09 records, applicable repository guidance and main/preload/storage/access/security boundaries were read. Josh's I07/I08 notes and all model/effort recommendations remain intact. I01–I09 were not reimplemented.
 
-| Delivered code/documentation | Responsibility |
-| --- | --- |
-| `src/shared/ai.ts`, `src/preload/ai.ts`, preload/commands integration, `src/main/ai/ipc.ts` | Exact typed and validated connection, model, captured-operation, recovery/protection and sanitized event contracts; trusted-frame authorization |
-| `src/main/ai/deployment.ts`, `errors.ts` | Per-channel source-owned registration, explicit funding/isolation refusals and bounded non-secret errors |
-| `src/main/ai/openai-auth.ts`, `openai-http.ts` | Browser/public-client OAuth callback, PKCE/state/nonce, signed identity/access-token checks, bounded provider requests, refresh and revocation |
-| `src/main/ai/storage.ts` | Encrypted credential/operation formats, stable host/account mapping, pending rotation/sign-out intent, retained atomic-write candidates |
-| `src/main/ai/codex-runtime.ts` | Pinned development binary resolution, isolated process/profile, real JSON-RPC methods and streaming/cancel/terminal-event handling; no inference activated |
-| `src/main/ai/service.ts` | Main-owned connection/operation lifetime, context digest, exact replay, coalesced local protection, interrupted/unknown recovery and disk-only retry |
-| `src/main/entitlements/service.ts`, `src/main/lifecycle.ts`, `src/main/index.ts` | Main editing authorization, pending-work access guard, existing close/update/suspend/renderer-loss settlement |
-| `package.json`, `package-lock.json`, bundled jose notice/inventory/NOTICE | Exact `jose` 6.2.12 production dependency and Codex CLI 0.160.0 development dependency |
-| [Runtime runbook](../ai/provider-runtime.md), decision, manual guide/index, provider/approval records, privacy inventory, plan and AGENTS | Delivered component map, remaining methods/configuration, downstream ownership and honest partial handoff |
+| Delivered code/documentation                                                                                                              | Responsibility                                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/ai.ts`, `src/preload/ai.ts`, preload/commands integration, `src/main/ai/ipc.ts`                                               | Exact typed and validated connection, model, captured-operation, recovery/protection and sanitized event contracts; trusted-frame authorization            |
+| `src/main/ai/deployment.ts`, `errors.ts`                                                                                                  | Per-channel source-owned registration, explicit funding/isolation refusals and bounded non-secret errors                                                   |
+| `src/main/ai/openai-auth.ts`, `openai-http.ts`                                                                                            | Browser/public-client OAuth callback, PKCE/state/nonce, signed identity/access-token checks, bounded provider requests, refresh and revocation             |
+| `src/main/ai/storage.ts`                                                                                                                  | Encrypted credential/operation formats, stable host/account mapping, pending rotation/sign-out intent, retained atomic-write candidates                    |
+| `src/main/ai/codex-runtime.ts`                                                                                                            | Pinned development binary resolution, isolated process/profile, real JSON-RPC methods and streaming/cancel/terminal-event handling; no inference activated |
+| `src/main/ai/service.ts`                                                                                                                  | Main-owned connection/operation lifetime, context digest, exact replay, coalesced local protection, interrupted/unknown recovery and disk-only retry       |
+| `src/main/entitlements/service.ts`, `src/main/lifecycle.ts`, `src/main/index.ts`                                                          | Main editing authorization, pending-work access guard, existing close/update/suspend/renderer-loss settlement                                              |
+| `package.json`, `package-lock.json`, bundled jose notice/inventory/NOTICE                                                                 | Exact `jose` 6.2.12 production dependency and Codex CLI 0.160.0 development dependency                                                                     |
+| [Runtime runbook](../ai/provider-runtime.md), decision, manual guide/index, provider/approval records, privacy inventory, plan and AGENTS | Delivered component map, remaining methods/configuration, downstream ownership and honest partial handoff                                                  |
 
 There is now real provider code; this is not an empty registry or another approval-only handoff. No registration has been populated, no funding policy invented, and no complete text-only runtime guarantee asserted. `requireIncludedFunding` and `requireTextOnlyRuntime` deliberately refuse. Their provider-specific enforcement is still missing engineering and must be completed in I10 using actual documented controls. Native/packaged runtime delivery is also pending. The [runbook component matrix and remaining-work list](../ai/provider-runtime.md) are authoritative for what is implemented versus pending.
 
@@ -56,24 +56,24 @@ Official OpenAI documentation was refreshed using the OpenAI Docs skill: commerc
 
 Josh explicitly confirmed that he has not obtained commercial approval and does not know the approval process. The [owner guide](../ai/openai-approval-guide.md) responds with the current official form, draft description and questions. No application status beyond that statement is assumed. The assistant submitted nothing and contacted nobody.
 
-| I10 requirement | Status |
-| --- | --- |
-| Applicable commercial permission (A-OPENAI) | Not obtained; owner-confirmed. Blocks implementation under I10's entry rule. |
-| Binding included-only funding (F-OPENAI) | Not established by reviewed public material. Error refusal is documented, but client-enforced exclusion of available credits across settings changes/internal calls is unresolved. |
-| SDK/runtime, credential service, IPC, execution, close/update integration | Not implemented; dependent on the exact approved route and funding control. |
-| Desktop packaging, licenses and new privacy flows | No provider artifact selected or flow added; implementation remains pending. |
-| User/native/funding observations | No results supplied. Later I11/I12 UI is required for production interaction. |
+| I10 requirement                                                           | Status                                                                                                                                                                             |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Applicable commercial permission (A-OPENAI)                               | Not obtained; owner-confirmed. Blocks implementation under I10's entry rule.                                                                                                       |
+| Binding included-only funding (F-OPENAI)                                  | Not established by reviewed public material. Error refusal is documented, but client-enforced exclusion of available credits across settings changes/internal calls is unresolved. |
+| SDK/runtime, credential service, IPC, execution, close/update integration | Not implemented; dependent on the exact approved route and funding control.                                                                                                        |
+| Desktop packaging, licenses and new privacy flows                         | No provider artifact selected or flow added; implementation remains pending.                                                                                                       |
+| User/native/funding observations                                          | No results supplied. Later I11/I12 UI is required for production interaction.                                                                                                      |
 
 ## Changed documentation
 
-| Path | Result |
-| --- | --- |
-| [Approval guide](../ai/openai-approval-guide.md) | Practical owner application steps, accurate prepared wording and evidence needed to resume |
-| [Provider eligibility](../ai/provider-eligibility.md) | Dated OpenAI refresh, owner-confirmed missing approval and unresolved funding distinction |
-| [I10 decision](../decisions/improvement-10-provider-boundary.md) | Blocked disposition, existing source owners and remaining implementation sequence |
-| [Manual review guide](../manual-testing/improvement-I10.md) and [index](../manual-testing/README.md) | Document-only review; no nonexistent provider UI or probes |
-| [Improvement plan](../../app-improvement-plan.md) and [AGENTS.md](../../AGENTS.md) | Requested-but-blocked I10 status, links and current handoff; reconciled stale I08 reference to I09 as not started |
-| This record | Scope, evidence, unchanged formats and pending work |
+| Path                                                                                                 | Result                                                                                                            |
+| ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [Approval guide](../ai/openai-approval-guide.md)                                                     | Practical owner application steps, accurate prepared wording and evidence needed to resume                        |
+| [Provider eligibility](../ai/provider-eligibility.md)                                                | Dated OpenAI refresh, owner-confirmed missing approval and unresolved funding distinction                         |
+| [I10 decision](../decisions/improvement-10-provider-boundary.md)                                     | Blocked disposition, existing source owners and remaining implementation sequence                                 |
+| [Manual review guide](../manual-testing/improvement-I10.md) and [index](../manual-testing/README.md) | Document-only review; no nonexistent provider UI or probes                                                        |
+| [Improvement plan](../../app-improvement-plan.md) and [AGENTS.md](../../AGENTS.md)                   | Requested-but-blocked I10 status, links and current handoff; reconciled stale I08 reference to I09 as not started |
+| This record                                                                                          | Scope, evidence, unchanged formats and pending work                                                               |
 
 ## Execution and compatibility
 

@@ -20,12 +20,12 @@ Transitions serialize, prevent competing input during a bounded flush, reject ac
 
 `DraftRegistry` holds live handles into each owner, not copies of its content. Each registration supplies scope/entity/kind/label, dirty/composing/busy state, its exact pending operation, a destination/focus target, a policy and optional flush callback. The registry records untouched/protecting/protected/blocked/failed outcomes. Policies are:
 
-| Policy | Behavior |
-| --- | --- |
-| `flush` | Protect sources, notes, manuscript/section details using the existing commands and idempotent requests. Sources precede notes; the controller then protects the manuscript. |
-| `explicit` | Questions/claims/decisions, human transcriptions/corrections and project detail edits require their own Save or explicit clear action. Navigation never treats them as automatically approved mutations. |
-| `operation` | Jobs and pending retries survive visibility changes; active/unknown work blocks scope replacement and close/access transitions when reconciliation is needed. |
-| `retain` | A future owner may retain a buffer on ordinary navigation, but must resolve it before scope replacement. No independent persistence promise is implied. |
+| Policy      | Behavior                                                                                                                                                                                                 |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flush`     | Protect sources, notes, manuscript/section details using the existing commands and idempotent requests. Sources precede notes; the controller then protects the manuscript.                              |
+| `explicit`  | Questions/claims/decisions, human transcriptions/corrections and project detail edits require their own Save or explicit clear action. Navigation never treats them as automatically approved mutations. |
+| `operation` | Jobs and pending retries survive visibility changes; active/unknown work blocks scope replacement and close/access transitions when reconciliation is needed.                                            |
+| `retain`    | A future owner may retain a buffer on ordinary navigation, but must resolve it before scope replacement. No independent persistence promise is implied.                                                  |
 
 Annotation commentary keeps its existing bounded access-drain behavior. Main remains authoritative for capabilities. An unresolved image import retains its exact operation and original section; it must reconcile before section replacement or close. Inspector page/version changes cannot move a pending human transcription to a different source location.
 

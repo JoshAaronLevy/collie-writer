@@ -1,3 +1,4 @@
+import { hasControlCharacters } from './control-characters'
 import { isId } from '../domain/editor/schema'
 import type { OpenInput } from './projects'
 
@@ -179,7 +180,8 @@ export function isExportBatchStart(v: unknown): v is ExportBatchStartInput {
     typeof v.baseName === 'string' &&
     v.baseName.length > 0 &&
     v.baseName.length <= 100 &&
-    /^[^\\/:*?"<>|.\u0000-\u001f][^\\/:*?"<>|\u0000-\u001f]*$/.test(v.baseName) &&
+    !hasControlCharacters(v.baseName) &&
+    /^[^\\/:*?"<>|.][^\\/:*?"<>|]*$/.test(v.baseName) &&
     !/[. ]$/.test(v.baseName) &&
     !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(v.baseName)
   )
@@ -214,15 +216,17 @@ export function isWorkerExportBatchStart(v: unknown): v is WorkerExportBatchStar
       formats: v.formats,
       baseName: v.baseName
     }) ||
+    !Array.isArray(v.formats) ||
     !Array.isArray(v.destinations) ||
     v.destinations.length !== v.formats.length
   )
     return false
+  const formats = v.formats
   return v.destinations.every(
     (d, i) =>
       object(d) &&
       keys(d, ['format', 'path', 'fingerprint']) &&
-      d.format === v.formats[i] &&
+      d.format === formats[i] &&
       typeof d.path === 'string' &&
       d.path.length > 0 &&
       d.path.length <= 4096 &&
@@ -312,6 +316,7 @@ export function isExportPreview(v: unknown): v is ExportPreview {
         isId(s.documentId) &&
         typeof s.title === 'string' &&
         s.title.length <= 500 &&
+        typeof s.blocks === 'number' &&
         Number.isSafeInteger(s.blocks) &&
         s.blocks >= 0
     ) &&

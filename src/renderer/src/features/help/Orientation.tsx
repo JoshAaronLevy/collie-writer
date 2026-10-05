@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { AppButton } from '../../components/ui/Controls'
 import styles from './WritingGuide.module.css'
 

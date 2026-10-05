@@ -1,10 +1,13 @@
+import { useEffectEvent } from 'react'
+import { useLayoutEffect } from 'react'
+import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { Checkbox, TextInput, Textarea } from '@mantine/core'
 import { AppButton, SelectField } from '../../components/ui/Controls'
 import { AppDialog } from '../../components/ui/AppDialog'
 import { ResearchHeader, ResearchLayout } from '../research/ResearchLayout'
 import { EmptyState } from '../../components/ui/Feedback'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
-import { useResearchData } from '../research/ResearchData'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
+import { useResearchData } from '../research/researchContext'
 import './NotesPanel.css'
 import { useRetainedDraft, useDraftRegistry } from '../workspace/DraftOwner'
 import { useEffect, useRef, useState } from 'react'
@@ -24,10 +27,7 @@ export type AnnotationCapture = {
   endOffset: number
   quote: string
 }
-const scope = (p: OpenProject): { projectId: string; workspaceId: string } => ({
-  projectId: p.projectId,
-  workspaceId: p.workspaceId
-})
+
 const blank = (): DocumentPayload => emptyDocument(() => crypto.randomUUID())
 
 export default function NotesPanel({
@@ -61,10 +61,13 @@ export default function NotesPanel({
     [labelTarget, setLabelTarget] = useState('')
   const annotationFocus = useRef(''),
     readSequence = useRef(0),
-    annotationBase = useRef<Annotation | null>(null)
+    [annotationBaseValue, setAnnotationBaseValue, annotationBase] =
+      useSynchronousState<Annotation | null>(null)
   const [noteEpoch, setNoteEpoch] = useState(0)
   const labelComposing = useRef(false),
-    baseRevision = useRef<string | null>(null)
+    [baseRevisionValue, setBaseRevisionValue, baseRevision] = useSynchronousState<string | null>(
+      null
+    )
   const registry = useDraftRegistry()
   const panel = useRef<HTMLElement>(null),
     focusedRequest = useRef<string | null>(null)
@@ -82,17 +85,25 @@ export default function NotesPanel({
     [editText, setEditText] = useState('')
   const editor = useRef<Editor | null>(null),
     dirty = useRef(false),
-    pending = useRef<{ operationId: string; change: NoteChange } | null>(null),
+    [pendingValue, setPendingValue, pending] = useSynchronousState<{
+      operationId: string
+      change: NoteChange
+    } | null>(null),
     task = useRef<Promise<boolean> | null>(null)
-  const unresolved = useRef<{ operationId: string; change: NoteChange } | null>(null)
+  const [unresolvedValue, setUnresolvedValue, unresolved] = useSynchronousState<{
+    operationId: string
+    change: NoteChange
+  } | null>(null)
   const accessAnnotation = useRef<{ operationId: string; change: NoteChange } | null>(null)
   const accessInterpretation = useRef<{ operationId: string; change: NoteChange } | null>(null)
   const latest = useRef({ title, links, labels, selected, view })
-  latest.current = { title, links, labels, selected, view }
+  useLayoutEffect(() => {
+    latest.current = { title, links, labels, selected, view }
+  })
   const note = view?.notes.find((n) => n.id === selected)
   const commentDraft =
     !!(capture && annotationText) ||
-    !!(editingAnnotation && editText !== annotationBase.current?.interpretation)
+    !!(editingAnnotation && editText !== annotationBaseValue?.interpretation)
   const setDirty = (value: boolean): void => {
     dirty.current = value
     registry.changed()
@@ -101,7 +112,7 @@ export default function NotesPanel({
     let live = true
     const request = ++readSequence.current
     void window.collie
-      .readNotes(scope(project))
+      .readNotes({ projectId: project.projectId, workspaceId: project.workspaceId })
       .then((result) => {
         if (live && request === readSequence.current) {
           if (result.ok) {
@@ -120,27 +131,29 @@ export default function NotesPanel({
       live = false
     }
   }, [project.projectId, project.workspaceId, project.headCommitId])
-  useEffect(() => {
+  const [lastCapture, setLastCapture] = useState(capture)
+  if (capture !== lastCapture) {
+    setLastCapture(capture)
     if (capture) {
       setTab('annotations')
       setAnnotationId(null)
     }
-  }, [capture])
+  }
   function choose(n: Note): void {
     if (session.composition.current) return
     if (n.id === selected && n.revisionId !== baseRevision.current)
       setNoteEpoch((value) => value + 1)
-    baseRevision.current = n.revisionId
+    setBaseRevisionValue(n.revisionId)
     setTab('notes')
     setSelected(n.id)
     setTitle(n.title)
     setLinks(n.documentIds)
     setLabels(n.labelIds)
     setDirty(false)
-    pending.current = null
+    setPendingValue(null)
     setMessage('')
   }
-  useEffect(() => {
+  const onNoteNavigation = useEffectEvent(() => {
     if (!focusNoteId) {
       focusedRequest.current = null
       return
@@ -158,36 +171,43 @@ export default function NotesPanel({
       setQuery('')
       choose(target)
     } else setMessage('The requested note is no longer available.')
-  }, [focusNoteId, session.focusRevision, view?.notes])
+  })
+  // Present only the latest committed navigation request, after retained regions update.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => onNoteNavigation())
+    return () => cancelAnimationFrame(frame)
+  }, [focusNoteId, session.focusRevision, view, busy])
 
   async function change(
     changeValue: NoteChange,
-    operationId = crypto.randomUUID()
+    operationId: string = crypto.randomUUID()
   ): Promise<boolean> {
     if (unresolved.current && unresolved.current.operationId !== operationId) {
       setMessage('Retry the pending local change before making another change.')
       return false
     }
     setBusy(true)
-    unresolved.current = { operationId, change: changeValue }
+    setUnresolvedValue({ operationId, change: changeValue })
     try {
       const result = await window.collie.changeNote({
-        ...scope(project),
+        ...{ projectId: project.projectId, workspaceId: project.workspaceId },
         operationId,
         change: changeValue
       })
       if (!result.ok) {
-        unresolved.current =
+        setUnresolvedValue(
           result.error.code === 'UNAVAILABLE' ? { operationId, change: changeValue } : null
-        if (result.error.code !== 'UNAVAILABLE') pending.current = null
+        )
+        if (result.error.code !== 'UNAVAILABLE') setPendingValue(null)
         setMessage(result.error.message)
         return false
       }
-      unresolved.current = null
+      setUnresolvedValue(null)
       if (changeValue.type === 'updateNote' && changeValue.id === latest.current.selected)
-        baseRevision.current =
+        setBaseRevisionValue(
           result.value.notes.find((item) => item.id === changeValue.id)?.revisionId ??
-          baseRevision.current
+            baseRevision.current
+        )
       readSequence.current++
       latest.current.view = result.value
       setView(result.value)
@@ -233,7 +253,7 @@ export default function NotesPanel({
       }
       let body: DocumentPayload
       try {
-        body = serializeEditor(editor.current, {})
+        body = serializeEditor(editor.current)
       } catch {
         setMessage(
           'This note cannot be protected yet. Keep this window open and copy its contents.'
@@ -250,10 +270,10 @@ export default function NotesPanel({
         labelIds: state.labels
       }
       const operation = pending.current ?? { operationId: crypto.randomUUID(), change: changeValue }
-      pending.current = operation
+      setPendingValue(operation)
       const ok = await change(operation.change, operation.operationId)
       if (ok) {
-        pending.current = null
+        setPendingValue(null)
         setDirty(false)
       }
       return ok
@@ -311,16 +331,19 @@ export default function NotesPanel({
     registry.changed()
     return true
   }
+  const onNoteProtection = useEffectEvent(() => {
+    if (dirty.current && !disabled) void flush(true)
+  })
   useEffect(() => {
     if (!dirty.current || !note || disabled) return
     const timer = setTimeout(() => {
-      void flush(true)
+      onNoteProtection()
     }, 900)
     return () => clearTimeout(timer)
-  }, [title, links, labels, note?.id, disabled])
+  }, [title, links, labels, note, disabled])
   useEffect(() => {
     const timer = setInterval(() => {
-      if (dirty.current && !disabled) void flush(true)
+      onNoteProtection()
     }, 5000)
     return () => clearInterval(timer)
   }, [disabled])
@@ -419,7 +442,7 @@ export default function NotesPanel({
       .filter((n) => n.title.toLocaleLowerCase().includes(query.toLocaleLowerCase())) ?? []
   const draftBinding = useRetainedDraft('notes', {
     read: () => ({
-      scope: scope(project),
+      scope: { projectId: project.projectId, workspaceId: project.workspaceId },
       kind: 'note-and-annotation',
       entityId: selected,
       label: 'notes and annotations',
@@ -436,7 +459,7 @@ export default function NotesPanel({
       issue: message,
       target: {
         kind: 'workspace',
-        scope: scope(project),
+        scope: { projectId: project.projectId, workspaceId: project.workspaceId },
         view: 'research',
         target: {
           kind: 'notes',
@@ -450,7 +473,7 @@ export default function NotesPanel({
   })
   useRetainedDraft('note-label-form', {
     read: () => ({
-      scope: scope(project),
+      scope: { projectId: project.projectId, workspaceId: project.workspaceId },
       kind: 'label-form',
       entityId: labelDialog?.id ?? null,
       label: 'tag or category form',
@@ -461,13 +484,13 @@ export default function NotesPanel({
       policy: 'explicit',
       target: {
         kind: 'workspace',
-        scope: scope(project),
+        scope: { projectId: project.projectId, workspaceId: project.workspaceId },
         view: 'research',
         target: { kind: 'notes' }
       }
     })
   })
-  useEffect(() => {
+  const onAnnotationNavigation = useEffectEvent(() => {
     if (!focusAnnotationId) {
       annotationFocus.current = ''
       return
@@ -481,7 +504,12 @@ export default function NotesPanel({
       setTab('annotations')
       if (found.state === 'archived') setShowArchivedAnnotations(true)
     } else setMessage('The requested annotation is missing; no different comment was selected.')
-  }, [focusAnnotationId, session.focusRevision, view?.annotations])
+  })
+  // Present only the latest committed navigation request, after retained regions update.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => onAnnotationNavigation())
+    return () => cancelAnimationFrame(frame)
+  }, [focusAnnotationId, session.focusRevision, view, commentDraft])
   const annotation = view?.annotations.find((item) => item.id === annotationId)
   const relatedItems = researchData.view
     ? [
@@ -518,7 +546,7 @@ export default function NotesPanel({
                 : 'Tags and categories'}
           </AppButton>
         ))}
-        {unresolved.current ? (
+        {unresolvedValue ? (
           <AppButton
             disabled={disabled || busy}
             onClick={() => {
@@ -606,7 +634,7 @@ export default function NotesPanel({
             <>
               <p className="research-state">
                 {note.state} · Human-authored note
-                {baseRevision.current !== note.revisionId
+                {baseRevisionValue !== note.revisionId
                   ? ' · Stored revision changed; the current editor is retained.'
                   : ''}
               </p>
@@ -614,7 +642,7 @@ export default function NotesPanel({
                 label="Note title"
                 value={title}
                 maxLength={500}
-                disabled={disabled || busy || !!pending.current}
+                disabled={disabled || busy || !!pendingValue}
                 onChange={(event) => {
                   setTitle(event.currentTarget.value)
                   setDirty(true)
@@ -624,7 +652,7 @@ export default function NotesPanel({
                 key={`${note.id}:${noteEpoch}`}
                 noteMode
                 payload={note.body}
-                disabled={disabled || busy || !!pending.current}
+                disabled={disabled || busy || !!pendingValue}
                 onReady={(value) => {
                   editor.current = value
                 }}
@@ -643,7 +671,7 @@ export default function NotesPanel({
                     void flush(true)
                   }}
                 >
-                  {pending.current ? 'Retry note save' : 'Save note'}
+                  {pendingValue ? 'Retry note save' : 'Save note'}
                 </AppButton>
                 <AppButton
                   variant="subtle"
@@ -668,7 +696,7 @@ export default function NotesPanel({
               </div>
               <details className="research-disclosure">
                 <summary>Sections, tags and categories</summary>
-                <fieldset disabled={disabled || busy || !!pending.current}>
+                <fieldset disabled={disabled || busy || !!pendingValue}>
                   <legend>Linked sections</legend>
                   <div className="research-checklist">
                     {project.documents
@@ -690,7 +718,7 @@ export default function NotesPanel({
                       ))}
                   </div>
                 </fieldset>
-                <fieldset disabled={disabled || busy || !!pending.current}>
+                <fieldset disabled={disabled || busy || !!pendingValue}>
                   <legend>Tags and categories</legend>
                   <div className="research-checklist">
                     {view?.labels
@@ -713,10 +741,10 @@ export default function NotesPanel({
                   </div>
                 </fieldset>
               </details>
-              {baseRevision.current !== note.revisionId ? (
+              {baseRevisionValue !== note.revisionId ? (
                 <AppButton
                   variant="default"
-                  disabled={busy || !!unresolved.current || !!pending.current}
+                  disabled={busy || !!unresolvedValue || !!pendingValue}
                   onClick={() => choose(note)}
                 >
                   Discard note edits and reload saved note
@@ -827,9 +855,9 @@ export default function NotesPanel({
                 </AppButton>
                 <AppButton
                   variant="subtle"
-                  disabled={disabled || busy || !!pending.current || commentDraft}
+                  disabled={disabled || busy || !!pendingValue || commentDraft}
                   onClick={() => {
-                    annotationBase.current = annotation
+                    setAnnotationBaseValue(annotation)
                     setEditingAnnotation(annotation.id)
                     setEditText(annotation.interpretation)
                   }}
@@ -838,7 +866,7 @@ export default function NotesPanel({
                 </AppButton>
                 <AppButton
                   variant="subtle"
-                  disabled={disabled || busy || !!pending.current || commentDraft}
+                  disabled={disabled || busy || !!pendingValue || commentDraft}
                   onClick={() => {
                     void change({
                       type: 'updateAnnotation',
@@ -856,14 +884,14 @@ export default function NotesPanel({
                 <div className="research-form">
                   <Textarea
                     label="Your interpretation"
-                    disabled={disabled || busy || !!pending.current}
+                    disabled={disabled || busy || !!pendingValue}
                     value={editText}
                     maxLength={100000}
                     onChange={(event) => setEditText(event.currentTarget.value)}
                   />
                   <div className="research-actions">
                     <AppButton
-                      disabled={disabled || busy || !!pending.current}
+                      disabled={disabled || busy || !!pendingValue}
                       onClick={() => {
                         void editAnnotation(annotation)
                       }}
@@ -872,7 +900,7 @@ export default function NotesPanel({
                     </AppButton>
                     <AppButton
                       variant="default"
-                      disabled={busy || !!unresolved.current}
+                      disabled={busy || !!unresolvedValue}
                       onClick={() => {
                         setEditingAnnotation(null)
                         setEditText('')
@@ -890,7 +918,7 @@ export default function NotesPanel({
               <blockquote className="research-quote">{capture.quote}</blockquote>
               <Textarea
                 label="Your interpretation"
-                disabled={disabled || busy || !!pending.current}
+                disabled={disabled || busy || !!pendingValue}
                 value={annotationText}
                 maxLength={100000}
                 onChange={(event) => setAnnotationText(event.currentTarget.value)}
@@ -906,7 +934,7 @@ export default function NotesPanel({
                 </AppButton>
                 <AppButton
                   variant="default"
-                  disabled={busy || !!unresolved.current}
+                  disabled={busy || !!unresolvedValue}
                   onClick={() => setAnnotationText('')}
                 >
                   Clear annotation draft
@@ -967,7 +995,7 @@ export default function NotesPanel({
                   </AppButton>
                   <AppButton
                     variant="subtle"
-                    disabled={disabled || busy || !!pending.current}
+                    disabled={disabled || busy || !!pendingValue}
                     onClick={() => {
                       void flush().then((ok) => {
                         if (ok) void change({ type: 'archiveLabel', id: item.id })
@@ -993,7 +1021,7 @@ export default function NotesPanel({
         onClose={() => {
           if (!busy && !unresolved.current && !labelComposing.current) setLabelDialog(null)
         }}
-        dismissible={!busy && !unresolved.current}
+        dismissible={!busy && !unresolvedValue}
       >
         <form
           className="note-label-form"
@@ -1015,7 +1043,7 @@ export default function NotesPanel({
               label="Label to keep"
               required
               value={labelTarget}
-              disabled={!!unresolved.current}
+              disabled={!!unresolvedValue}
               onChange={(event) => setLabelTarget(event.target.value)}
             >
               <option value="">Choose by name</option>
@@ -1038,24 +1066,24 @@ export default function NotesPanel({
               required
               maxLength={100}
               value={labelName}
-              disabled={!!unresolved.current}
+              disabled={!!unresolvedValue}
               onChange={(event) => setLabelName(event.currentTarget.value)}
               data-autofocus
             />
           )}
           {message ? <p role="status">{message}</p> : null}
-          {unresolved.current ? (
+          {unresolvedValue ? (
             <AppButton disabled={disabled || busy} onClick={() => void retryPending()}>
               Retry pending label change
             </AppButton>
           ) : null}
           <div className="research-actions">
-            <AppButton type="submit" disabled={disabled || busy || !!unresolved.current}>
+            <AppButton type="submit" disabled={disabled || busy || !!unresolvedValue}>
               Apply label change
             </AppButton>
             <AppButton
               variant="default"
-              disabled={busy || !!unresolved.current}
+              disabled={busy || !!unresolvedValue}
               onClick={() => {
                 if (!labelComposing.current) setLabelDialog(null)
               }}

@@ -22,31 +22,31 @@ High contrast is enabled by either the local checkbox or the OS preference. Redu
 
 `theme/tokens.css` owns CSS values; `theme/theme.ts` supplies the corresponding Mantine context and component defaults. Because runtime theme-variable injection is disabled, maintain both when changing theme dimensions or palette. Base library variables remain in bundled Mantine CSS; Collie's static bridge overrides its selected palette and roles.
 
-| Product role | Values / Mantine mapping |
-| --- | --- |
-| Surround, surface, muted surface | `--collie-background`, `--collie-surface`, `--collie-surface-muted`; bridge to body/default/disabled variables |
-| Text and secondary text | Warm graphite/light ink; bridge to text, dimmed, placeholder and bright; supporting text stays near 14px |
-| Accent and selection | Ten green shades in both theme/CSS; shade 7 light, shade 3 dark; semantic foreground/background and filled/light/outline/primary aliases |
-| Error and warning | Dedicated text/surface roles; status icons and titles convey severity independently of color |
-| Typography | System sans for interface, local Source Serif 4 for prose, system monospace for support preview; interface 16px, manuscript 19px/1.6 |
-| Spacing | 4/8/12/16/24/32/48px semantic scale; Mantine xs/sm/md/lg/xl map to 4/8/16/24/32px |
-| Radius and density | 8px controls, 12px surfaces; controls aim for at least 44px; labels/actions wrap |
-| Focus and elevation | Offset 3px ring, 4px high-contrast ring; shadow reserved for overlays, borders on ordinary surfaces |
-| Motion | Short 120ms fades; zero-duration overlay transitions and near-zero global animation when reduced motion is requested |
-| Contrast/forced colors | Separate light/dark high-contrast tokens; native forced-color semantics and Highlight focus, with no forced-color opt-out |
+| Product role                     | Values / Mantine mapping                                                                                                                 |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Surround, surface, muted surface | `--collie-background`, `--collie-surface`, `--collie-surface-muted`; bridge to body/default/disabled variables                           |
+| Text and secondary text          | Warm graphite/light ink; bridge to text, dimmed, placeholder and bright; supporting text stays near 14px                                 |
+| Accent and selection             | Ten green shades in both theme/CSS; shade 7 light, shade 3 dark; semantic foreground/background and filled/light/outline/primary aliases |
+| Error and warning                | Dedicated text/surface roles; status icons and titles convey severity independently of color                                             |
+| Typography                       | System sans for interface, local Source Serif 4 for prose, system monospace for support preview; interface 16px, manuscript 19px/1.6     |
+| Spacing                          | 4/8/12/16/24/32/48px semantic scale; Mantine xs/sm/md/lg/xl map to 4/8/16/24/32px                                                        |
+| Radius and density               | 8px controls, 12px surfaces; controls aim for at least 44px; labels/actions wrap                                                         |
+| Focus and elevation              | Offset 3px ring, 4px high-contrast ring; shadow reserved for overlays, borders on ordinary surfaces                                      |
+| Motion                           | Short 120ms fades; zero-duration overlay transitions and near-zero global animation when reduced motion is requested                     |
+| Contrast/forced colors           | Separate light/dark high-contrast tokens; native forced-color semantics and Highlight focus, with no forced-color opt-out                |
 
 All authored classes are semantic lowercase hyphenated names. Mantine's supported theme `classNames` slots connect shared controls to CSS Modules. [Styles API](https://mantine.dev/styles/styles-api/).
 
-| Owner | Styles / responsibility |
-| --- | --- |
-| `assets/main.css` | Global resets, base elements, selection, focus and reduced-motion rules only |
-| `theme/tokens.css` | Font faces, palette and semantic dimensions, theme/contrast variants and Mantine variable bridge |
-| `App.module.css` | Shell header/footer, attribution, skip link, content measure and storage disclosure |
-| `components/ui/controls.module.css` | Buttons, labeled fields/errors, choices, action menus, dialogs, base surfaces and dialog scroll locking |
-| `components/ui/feedback.module.css` | Shared section surfaces, banners and empty states |
-| `features/settings/SettingsPanel.module.css` | Appearance/accessibility arrangement, privacy disclosure and support preview |
-| `features/projects/Projects.css` | Existing aggregate workspace rules moved intact in role to the current `.projects` owner, with color tokens and local manuscript fonts; no session mutation |
-| `components/ErrorBoundary.module.css` | Provider-independent fallback window and reload control |
+| Owner                                        | Styles / responsibility                                                                                                                                     |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assets/main.css`                            | Global resets, base elements, selection, focus and reduced-motion rules only                                                                                |
+| `theme/tokens.css`                           | Font faces, palette and semantic dimensions, theme/contrast variants and Mantine variable bridge                                                            |
+| `App.module.css`                             | Shell header/footer, attribution, skip link, content measure and storage disclosure                                                                         |
+| `components/ui/controls.module.css`          | Buttons, labeled fields/errors, choices, action menus, dialogs, base surfaces and dialog scroll locking                                                     |
+| `components/ui/feedback.module.css`          | Shared section surfaces, banners and empty states                                                                                                           |
+| `features/settings/SettingsPanel.module.css` | Appearance/accessibility arrangement, privacy disclosure and support preview                                                                                |
+| `features/projects/Projects.css`             | Existing aggregate workspace rules moved intact in role to the current `.projects` owner, with color tokens and local manuscript fonts; no session mutation |
+| `components/ErrorBoundary.module.css`        | Provider-independent fallback window and reload control                                                                                                     |
 
 The existing workspace is still a single mounted feature. Its legacy child selectors are scoped under `.projects` rather than left in root CSS. As later stages change those panels, extract each panel's presentation with its owner; do not use this transitional sheet as a destination for new unrelated feature rules. I02 does not claim the old panels have received their final redesign. No utility stacks, generated-hash selectors, broad `.mantine-*` rules or app-authored layout style props were added.
 

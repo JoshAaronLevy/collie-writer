@@ -1,3 +1,149 @@
+import type { ExportJob } from '../../../../shared/exports'
+import type { ExportOperation } from './useExportOperations'
+import type { OutlineDocument } from '../../../../shared/outline'
+type WorkspaceControllerState = {
+  acceptProjectDetails: (next: OpenProject) => void
+  composition: React.RefObject<boolean>
+  actionTask: React.RefObject<Promise<unknown> | null>
+  renamePending: React.RefObject<RenameInput | null>
+  storage: StorageStatus
+  drafts: DraftRegistry
+  destination: AppDestination
+  focusRevision: number
+  focusRequest: React.RefObject<(() => void) | null>
+  navigating: boolean
+  blocker: DraftBlocker | null
+  navigate: (next: AppDestination, remember?: boolean) => Promise<boolean>
+  returnToDraft: () => void
+  showAccess: () => void
+  workspace: (view: 'write' | 'search' | 'export' | 'history' | 'details') => AppDestination | null
+  research: (target: ResearchTarget) => void
+  returnToWork: () => void
+  startupPending: boolean
+  libraryIssue: string | null
+  setLibraryIssue: React.Dispatch<React.SetStateAction<string | null>>
+  libraryView: 'active' | 'archived' | 'recent'
+  setLibraryView: React.Dispatch<React.SetStateAction<'active' | 'archived' | 'recent'>>
+  editorEpoch: number
+  setData: React.Dispatch<React.SetStateAction<DataLocations | null>>
+  setList: React.Dispatch<React.SetStateAction<ProjectList>>
+  location: LocationStatus | null
+  setLocation: React.Dispatch<React.SetStateAction<LocationStatus | null>>
+  list: ProjectList
+  project: OpenProject | null
+  access: AccessView | null
+  sectionTitle: string
+  setSectionTitle: React.Dispatch<React.SetStateAction<string>>
+  sectionStatus: 'review' | 'draft' | 'complete'
+  setSectionStatus: React.Dispatch<React.SetStateAction<'review' | 'draft' | 'complete'>>
+  sectionSynopsis: string
+  setSectionSynopsis: React.Dispatch<React.SetStateAction<string>>
+  sectionFields: React.RefObject<{
+    title: string
+    status: 'draft' | 'review' | 'complete'
+    synopsis: string
+  }>
+  busy: boolean
+  setBusy: React.Dispatch<React.SetStateAction<boolean>>
+  acting: boolean
+  working: boolean
+  closing: boolean
+  committing: boolean
+  retry: CommitInput | null
+  error: string
+  setError: React.Dispatch<React.SetStateAction<string>>
+  notice: string
+  setNotice: React.Dispatch<React.SetStateAction<string>>
+  history: HistoryView | null
+  annotationCapture: AnnotationCapture | null
+  noteDirty: boolean
+  sourceDirty: boolean
+  inspectionTarget: {
+    sourceId: string
+    excerptId: string | null
+    versionId: string | null
+    pageIndex: number | null
+  } | null
+  setInspectionTarget: React.Dispatch<
+    React.SetStateAction<{
+      sourceId: string
+      excerptId: string | null
+      versionId: string | null
+      pageIndex: number | null
+    } | null>
+  >
+  citationContext: { projectId: string; sources: SourceRecord[]; view: CitationsView | null } | null
+  setCitationContext: React.Dispatch<
+    React.SetStateAction<{
+      projectId: string
+      sources: SourceRecord[]
+      view: CitationsView | null
+    } | null>
+  >
+  outlineRetry: boolean
+  conflict: OpenProject | null
+  files: FileStatus
+  data: DataLocations | null
+  metaPending: React.RefObject<SectionMetaInput | null>
+  current: React.RefObject<OpenProject | null>
+  editorRef: React.RefObject<Editor | null>
+  imageUrls: React.RefObject<Map<string, string>>
+  anchorToFocus: React.RefObject<string | null>
+  selectedSection: OutlineDocument | undefined
+  sectionReadOnly: boolean
+  sectionDirty: boolean
+  dirty: boolean
+  fileActive: boolean
+  accessReadOnly: boolean
+  accessTransition: boolean
+  available: boolean
+  updateProject: (next: OpenProject | null) => void
+  isDirty: () => boolean
+  changed: () => void
+  refresh: () => Promise<void>
+  refreshData: () => Promise<void>
+  importImage: (details: { alt: string; caption: string }) => Promise<void>
+  navigateSection: (documentId: string, anchorId?: string) => Promise<void>
+  navigateSearch: (hit: SearchHit) => void
+  loadHistory: (checkpointId: string | null) => Promise<void>
+  performOutline: (change?: OutlineChange) => Promise<boolean>
+  saveSectionMeta: () => Promise<void>
+  flush: (forAccess?: boolean, mode?: FlushMode, exclude?: string[]) => Promise<OpenProject | null>
+  flushManuscript: () => Promise<OpenProject | null>
+  run: (work: () => Promise<unknown>) => void
+  waitActive: () => Promise<boolean>
+  save: (as: boolean) => Promise<boolean>
+  openLocal: (scope: OpenInput, after?: 'write' | 'details') => Promise<void>
+  openFile: (inspect?: boolean, locate?: boolean, shell?: boolean) => Promise<void>
+  lifecycleFile: (
+    kind: 'backup' | 'move' | 'duplicate' | 'restore' | 'recover',
+    artifactId?: string
+  ) => Promise<void>
+  manage: (title?: string) => Promise<void>
+  resetLocal: (review: string) => Promise<void>
+  captureAnnotation: () => Promise<void>
+  afterNoteCommit: () => Promise<void>
+  changeAccess: (kind: 'designate' | 'finish' | 'import') => Promise<void>
+  openTutorial: (reset: boolean) => Promise<void>
+  prepareSetupCreation: () => Promise<boolean>
+  createSetupProject: (input: CreateInput) => Promise<ProjectResult<OpenProject>>
+  resumeSetupProject: (
+    receipt: { projectId: string; workspaceId: string; documentId: string },
+    target: 'write' | 'details' | 'setup'
+  ) => Promise<boolean>
+  chooseProject: (scope: OpenInput, after?: 'write' | 'details') => Promise<void>
+  exports: ExportOperation[]
+  trackExport: (scope: OpenInput, job: ExportJob) => void
+  manuscriptDirty: boolean
+  applyProofreading: (capture?: ProofreadCapture, finding?: ProofreadFinding) => Promise<boolean>
+  proofreadingLocked: boolean
+  refreshConversationHead: (scope: OpenInput) => Promise<void>
+  backDestination: AppDestination | null
+  backLabel: string
+  goBack: () => Promise<boolean>
+  referenceAnchor: { id: string; documentId: string; request: number } | null
+  writingView: ReturnType<typeof useWritingPreferences>
+}
 import { closeHistory } from '@tiptap/pm/history'
 import { replaceMechanicsFinding } from '../../../../domain/ai/proofreading'
 import type {
@@ -9,7 +155,14 @@ import { manuscriptAnchor, payloadHasAnchor } from '../../editor/anchors'
 import { useWritingPreferences } from './useWritingPreferences'
 import { captureSelection, restoreSelection } from '../../editor/selection'
 import { useExportOperations } from './useExportOperations'
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore
+} from 'react'
 import {
   effectiveState,
   type OutlineInput,
@@ -60,7 +213,7 @@ export function scopeOf(project: OpenInput): OpenInput {
 }
 const emptyFiles: FileStatus = { scope: null, destination: null, state: 'unsaved', job: null }
 
-export function useWorkspaceController(storage: StorageStatus) {
+export function useWorkspaceController(storage: StorageStatus): WorkspaceControllerState {
   const exportOperations = useExportOperations()
   const writingView = useWritingPreferences()
   const composition = useRef(false)
@@ -270,7 +423,23 @@ export function useWorkspaceController(storage: StorageStatus) {
     window.collie.setUnprotectedChanges(true)
     setNotice('Writing changed. Waiting for a local commit…')
   }
+  const onFileStatus = useEffectEvent((status: FileStatus) => applyFiles(status))
+  const onProtectionTick = useEffectEvent(() => {
+    if (
+      isDirty() &&
+      !retryCommit.current &&
+      !metaPending.current &&
+      !actionTask.current &&
+      !closingRef.current
+    )
+      void flushManuscript()
+  })
+  const onDirtyChanged = useEffectEvent(() => window.collie.setUnprotectedChanges(isDirty()))
+  const onStorageReady = useEffectEvent(() => {
+    void refreshData()
+  })
   useEffect(() => {
+    const waiters = jobWaiters.current
     alive.current = true
     void window.collie.getWorkingLocation().then((result) => {
       if (alive.current) {
@@ -278,7 +447,7 @@ export function useWorkspaceController(storage: StorageStatus) {
         else setError(result.error.message)
       }
     })
-    const offFiles = window.collie.onFileStatus(applyFiles)
+    const offFiles = window.collie.onFileStatus(onFileStatus)
     const offAccess = window.collie.onAccessChanged(applyAccess)
     void window.collie.readAccess().then((result) => {
       if (alive.current) {
@@ -300,12 +469,12 @@ export function useWorkspaceController(storage: StorageStatus) {
       offAccess()
       for (const url of imageUrls.current.values()) URL.revokeObjectURL(url)
       imageUrls.current.clear()
-      for (const group of jobWaiters.current.values()) for (const resolve of group) resolve(null)
-      jobWaiters.current.clear()
+      for (const group of waiters.values()) for (const resolve of group) resolve(null)
+      waiters.clear()
     }
   }, [])
   useEffect(() => {
-    window.collie.setUnprotectedChanges(isDirty())
+    onDirtyChanged()
   }, [dirty, draftRevision])
   useEffect(() => {
     if (destination.kind !== 'workspace' || !project || !sameScope(destination.scope, project))
@@ -313,16 +482,10 @@ export function useWorkspaceController(storage: StorageStatus) {
     const selected = project.documents.find((item) => item.id === project.documentId)
     if (selected?.kind === 'text' && effectiveState(selected, project.documents) === 'active')
       rememberLastProject({ ...scopeOf(project), documentId: project.documentId })
-  }, [
-    destination,
-    project?.projectId,
-    project?.workspaceId,
-    project?.documentId,
-    project?.archived
-  ])
+  }, [destination, project])
   useEffect(() => {
     if (storage.state === 'ready') {
-      void refreshData()
+      onStorageReady()
       return
     }
     if (storage.state === 'unavailable') {
@@ -331,10 +494,9 @@ export function useWorkspaceController(storage: StorageStatus) {
     }
   }, [storage.state])
   useEffect(() => {
-    if (!project || !dirty || closing || storage.state !== 'ready') return
+    if (!project?.documentId || !dirty || closing || storage.state !== 'ready') return
     const timer = setTimeout(() => {
-      if (!actionTask.current && !retryCommit.current && !metaPending.current)
-        void flushManuscript()
+      onProtectionTick()
     }, 900)
     return () => clearTimeout(timer)
   }, [
@@ -342,24 +504,20 @@ export function useWorkspaceController(storage: StorageStatus) {
     sectionTitle,
     sectionStatus,
     sectionSynopsis,
+    project?.projectId,
+    project?.workspaceId,
     project?.documentId,
+    dirty,
     closing,
     storage.state
   ])
   useEffect(() => {
-    if (!project || storage.state !== 'ready') return
+    if (!project?.documentId || storage.state !== 'ready') return
     const timer = setInterval(() => {
-      if (
-        isDirty() &&
-        !retryCommit.current &&
-        !metaPending.current &&
-        !actionTask.current &&
-        !closingRef.current
-      )
-        void flushManuscript()
+      onProtectionTick()
     }, 5000)
     return () => clearInterval(timer)
-  }, [project?.documentId, storage.state])
+  }, [project?.projectId, project?.workspaceId, project?.documentId, storage.state])
   async function resolveInitialDestination(projects: ProjectList): Promise<void> {
     if (initialDestinationResolved.current) return
     initialDestinationResolved.current = true
@@ -756,17 +914,14 @@ export function useWorkspaceController(storage: StorageStatus) {
     retryCommit.current = input
     retryVersion.current = version
     setRetry(input)
-    const result = await window.collie
-      .commitDocument(input)
-      .catch(() => ({
-        ok: false as const,
-        requestId: input.operationId,
-        error: {
-          code: 'UNAVAILABLE' as const,
-          message:
-            'The local acknowledgment is unavailable. Retry keeps this exact draft operation.'
-        }
-      }))
+    const result = await window.collie.commitDocument(input).catch(() => ({
+      ok: false as const,
+      requestId: input.operationId,
+      error: {
+        code: 'UNAVAILABLE' as const,
+        message: 'The local acknowledgment is unavailable. Retry keeps this exact draft operation.'
+      }
+    }))
     if (!alive.current) return null
     if (result.ok) {
       const next = {
@@ -878,17 +1033,15 @@ export function useWorkspaceController(storage: StorageStatus) {
         status: fields.status,
         synopsis: fields.synopsis
       }
-      const meta = await window.collie
-        .updateSectionMeta(metaPending.current)
-        .catch(() => ({
-          ok: false as const,
-          requestId: metaPending.current!.operationId,
-          error: {
-            code: 'UNAVAILABLE' as const,
-            message:
-              'The section-details outcome is unknown. Retry the same details before changing them.'
-          }
-        }))
+      const meta = await window.collie.updateSectionMeta(metaPending.current).catch(() => ({
+        ok: false as const,
+        requestId: metaPending.current!.operationId,
+        error: {
+          code: 'UNAVAILABLE' as const,
+          message:
+            'The section-details outcome is unknown. Retry the same details before changing them.'
+        }
+      }))
       if (!meta.ok) {
         if (meta.error.code !== 'UNAVAILABLE') metaPending.current = null
         setError(meta.error.message)
@@ -1888,7 +2041,7 @@ export function useWorkspaceController(storage: StorageStatus) {
       flush: (mode) => manuscriptHandle.current!.flush!(mode),
       focus: () => manuscriptHandle.current!.focus?.()
     })
-  }, [drafts, project?.projectId, project?.workspaceId])
+  }, [drafts, project])
   useLayoutEffect(() => {
     if (!project) return
     const owner = project
@@ -1906,7 +2059,7 @@ export function useWorkspaceController(storage: StorageStatus) {
         target: writingDestination(owner, pendingImage.current?.documentId ?? owner.documentId)
       })
     })
-  }, [drafts, project?.projectId, project?.workspaceId])
+  }, [drafts, project])
   useLayoutEffect(() => {
     if (!project) return
     const owner = project
@@ -1924,7 +2077,7 @@ export function useWorkspaceController(storage: StorageStatus) {
         target: writingDestination(owner, owner.documentId)
       })
     })
-  }, [drafts, project?.projectId, project?.workspaceId])
+  }, [drafts, project])
   useLayoutEffect(() => {
     drafts.changed()
   })

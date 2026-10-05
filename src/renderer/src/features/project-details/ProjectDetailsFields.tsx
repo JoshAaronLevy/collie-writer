@@ -1,3 +1,4 @@
+import { detailsErrors } from './detailsErrors'
 import { TextInput } from '@mantine/core'
 import type { ReactNode, Ref } from 'react'
 import { SelectField, TextareaField } from '../../components/ui/Controls'
@@ -7,32 +8,9 @@ import {
   templateForKind,
   type ProjectKind
 } from '../../../../domain/projects/templates'
-import {
-  requiredProjectName,
-  projectText,
-  type ProjectDetails
-} from '../../../../domain/projects/details'
+import { type ProjectDetails } from '../../../../domain/projects/details'
 import styles from './ProjectDetails.module.css'
 
-export function detailsErrors(
-  value: ProjectDetails,
-  creating: boolean,
-  originalTitle?: string
-): Partial<Record<keyof ProjectDetails, string>> {
-  return {
-    title:
-      value.title === originalTitle || requiredProjectName(value.title.trim())
-        ? undefined
-        : 'Enter a title of 1–500 characters without line breaks or control characters.',
-    byline:
-      (!creating && value.byline === '') || requiredProjectName(value.byline.trim())
-        ? undefined
-        : 'Enter an author or byline of 1–500 characters.',
-    description: projectText(value.description, 10000)
-      ? undefined
-      : 'Use up to 10,000 characters, without invalid control characters.'
-  }
-}
 export function ProjectDetailsFields({
   value,
   onChange,

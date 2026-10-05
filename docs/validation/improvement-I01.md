@@ -12,16 +12,16 @@ Official OpenAI, Anthropic, Grok, Google, and Mantine documentation was read for
 
 ## Delivered artifacts
 
-| Path | Delivered result |
-| --- | --- |
-| [Experience specification](../design/app-experience.md) | Confirmed product baseline, seven category mappings/copy, semantic visual tokens, wide/narrow annotated screens S01–S09, focus/actions/states, and first-run/returning/offline/read-only/recovery journeys |
-| [Architecture decision](../decisions/improvement-01-experience.md) | Full-plan findings, typed navigation, persistent session/draft ownership, proposed module responsibilities, complete capability relocation, Mantine/CSS/CSP handoff, bounded Study critique scope |
-| [Provider eligibility](../ai/provider-eligibility.md) | Dated runtime/auth/permission/funding matrix, conditional OpenAI route, credential/content/packaging requirements, exact blockers and next-step ownership |
-| [Manual review guide](../manual-testing/improvement-I01.md) | Ordered document actions and expected findings; no nonexistent UI, account action, or launch required |
-| [Improvement plan](../../app-improvement-plan.md) | I01 status and artifact links, review disposition, provider gate linkage, and I12 clarification separating offline conversation organization from inference eligibility |
-| [Repository guidance](../../AGENTS.md) | I01 checkpoint linking stage artifacts and preserving stage scope |
-| [Manual-guide index](../manual-testing/README.md) | Improvement-stage review entry, separate from MVP numbering |
-| This record | Completion evidence, unchanged formats, pending acceptance and external gates |
+| Path                                                               | Delivered result                                                                                                                                                                                           |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Experience specification](../design/app-experience.md)            | Confirmed product baseline, seven category mappings/copy, semantic visual tokens, wide/narrow annotated screens S01–S09, focus/actions/states, and first-run/returning/offline/read-only/recovery journeys |
+| [Architecture decision](../decisions/improvement-01-experience.md) | Full-plan findings, typed navigation, persistent session/draft ownership, proposed module responsibilities, complete capability relocation, Mantine/CSS/CSP handoff, bounded Study critique scope          |
+| [Provider eligibility](../ai/provider-eligibility.md)              | Dated runtime/auth/permission/funding matrix, conditional OpenAI route, credential/content/packaging requirements, exact blockers and next-step ownership                                                  |
+| [Manual review guide](../manual-testing/improvement-I01.md)        | Ordered document actions and expected findings; no nonexistent UI, account action, or launch required                                                                                                      |
+| [Improvement plan](../../app-improvement-plan.md)                  | I01 status and artifact links, review disposition, provider gate linkage, and I12 clarification separating offline conversation organization from inference eligibility                                    |
+| [Repository guidance](../../AGENTS.md)                             | I01 checkpoint linking stage artifacts and preserving stage scope                                                                                                                                          |
+| [Manual-guide index](../manual-testing/README.md)                  | Improvement-stage review entry, separate from MVP numbering                                                                                                                                                |
+| This record                                                        | Completion evidence, unchanged formats, pending acceptance and external gates                                                                                                                              |
 
 ## Decisions and practical consequences
 
@@ -40,15 +40,15 @@ No tests, test code, fixtures, harnesses, checks, typecheck, lint, formatter, au
 
 ## Pending evidence and stage boundaries
 
-| Item | Status / consequence |
-| --- | --- |
-| I01 deliverables | Complete; all required specifications and handoff records delivered |
-| User document review | Pending; no approval or requested correction supplied yet |
-| Calmness/readability/accessibility/native outcomes | Unobserved; later implemented production screens require user-owned review |
-| I02 | Specification prerequisite delivered; not implemented or started by this request |
-| I10 OpenAI | Enablement blocked by A-OPENAI and F-OPENAI; runtime/distribution details remain stage-owned requirements |
-| I14 second provider | Conditional/deferred; no provider independently qualified |
-| Existing MVP commerce/value/signing/MAS/release | Unchanged; release candidate remains NO-GO |
+| Item                                               | Status / consequence                                                                                      |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| I01 deliverables                                   | Complete; all required specifications and handoff records delivered                                       |
+| User document review                               | Pending; no approval or requested correction supplied yet                                                 |
+| Calmness/readability/accessibility/native outcomes | Unobserved; later implemented production screens require user-owned review                                |
+| I02                                                | Specification prerequisite delivered; not implemented or started by this request                          |
+| I10 OpenAI                                         | Enablement blocked by A-OPENAI and F-OPENAI; runtime/distribution details remain stage-owned requirements |
+| I14 second provider                                | Conditional/deferred; no provider independently qualified                                                 |
+| Existing MVP commerce/value/signing/MAS/release    | Unchanged; release candidate remains NO-GO                                                                |
 
 The [provider gate register](../ai/provider-eligibility.md#exact-gate-register-and-next-steps) names missing evidence and responsible parties. No account action or external outreach is authorized by its next-step descriptions. Completing I01 is not completion of the AI milestone.
 

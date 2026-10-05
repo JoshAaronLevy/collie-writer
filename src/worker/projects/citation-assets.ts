@@ -1,3 +1,4 @@
+import { withoutKeys } from '../../shared/objects'
 import { randomUUID } from 'node:crypto'
 import { readFile, lstat, mkdir, copyFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -149,7 +150,8 @@ export async function projectCitationFiles(
   }
   await contained(workspace, folder, true)
   const files: { ref: CitationRef; path: string }[] = []
-  for (const { resource: _resource, ...ref } of CITATION_ASSETS) {
+  for (const asset of CITATION_ASSETS) {
+    const ref = withoutKeys(asset, ['resource'])
     const path = join(folder, ref.sha256)
     await contained(workspace, path, false)
     await validateCitationFile(path, ref, signal)

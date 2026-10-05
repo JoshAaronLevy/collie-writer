@@ -1,30 +1,17 @@
+import { readableWriting } from './readableWriting'
 import { ProofreadingPanel } from '../ai/proofreading/ProofreadingPanel'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { SelectField, AppButton } from '../../components/ui/Controls'
 import type { Note } from '../../../../shared/notes'
 import type { SourceRecord } from '../../../../shared/sources'
 import type { InspectionView } from '../../../../shared/inspection'
 import { SectionSources } from '../research/SourceUsage'
-import { useResearchData } from '../research/ResearchData'
-import { useWorkspaceSession } from './WorkspaceSession'
+import { useResearchData } from '../research/researchContext'
+import { useWorkspaceSession } from './workspaceContext'
 import { ConversationPanel } from '../ai/conversations/ConversationPanel'
-import { scopeOf } from './useWorkspaceController'
 import type { SecondaryPanel } from './useWritingPreferences'
 import styles from './WritingWorkspace.module.css'
 
-export function readableWriting(value: unknown): string {
-  if (!value || typeof value !== 'object') return ''
-  if ('type' in value && value.type === 'text' && 'text' in value) return String(value.text)
-  if ('type' in value && value.type === 'hardBreak') return '\n'
-  if ('content' in value && Array.isArray(value.content))
-    return (
-      value.content.map(readableWriting).join('') +
-      ('type' in value && ['paragraph', 'heading', 'tableRow'].includes(String(value.type))
-        ? '\n'
-        : '')
-    )
-  return ''
-}
 export function WritingSidePanel({
   mode,
   active
@@ -42,12 +29,28 @@ export function WritingSidePanel({
   const [issue, setIssue] = useState(''),
     [loading, setLoading] = useState(false),
     [revision, setRevision] = useState(0)
-  useEffect(() => {
-    if (!active || !project || !['notes', 'source'].includes(mode)) return
-    let current = true
-    setLoading(true)
+  const projectId = project?.projectId,
+    workspaceId = project?.workspaceId
+  const scope = useMemo(
+    () => (projectId && workspaceId ? { projectId, workspaceId } : null),
+    [projectId, workspaceId]
+  )
+  const loadKey = `${projectId}:${workspaceId}:${mode}:${revision}:${active}:${project?.headCommitId}`
+  const [lastLoadKey, setLastLoadKey] = useState('')
+  if (lastLoadKey !== loadKey) {
+    setLastLoadKey(loadKey)
+    setLoading(active && !!scope && (mode === 'notes' || mode === 'source'))
     setIssue('')
-    const scope = scopeOf(project)
+  }
+  const inspectionKey = `${loadKey}:${sourceId}`
+  const [lastInspectionKey, setLastInspectionKey] = useState(inspectionKey)
+  if (lastInspectionKey !== inspectionKey) {
+    setLastInspectionKey(inspectionKey)
+    setInspection(null)
+  }
+  useEffect(() => {
+    if (!active || !scope || !['notes', 'source'].includes(mode)) return
+    let current = true
     if (mode === 'notes')
       void window.collie
         .readNotes(scope)
@@ -86,13 +89,12 @@ export function WritingSidePanel({
     return () => {
       current = false
     }
-  }, [project?.projectId, project?.workspaceId, mode, revision, active, project?.headCommitId])
+  }, [scope, mode, revision, active, project?.headCommitId])
   useEffect(() => {
-    setInspection(null)
-    if (!active || !project || mode !== 'source' || !sourceId) return
+    if (!active || !scope || mode !== 'source' || !sourceId) return
     let current = true
     void window.collie
-      .readInspection({ ...scopeOf(project), sourceId })
+      .readInspection({ ...scope, sourceId })
       .then((result) => {
         if (current) {
           if (result.ok) setInspection(result.value)
@@ -105,15 +107,7 @@ export function WritingSidePanel({
     return () => {
       current = false
     }
-  }, [
-    project?.projectId,
-    project?.workspaceId,
-    sourceId,
-    mode,
-    revision,
-    active,
-    project?.headCommitId
-  ])
+  }, [scope, sourceId, mode, revision, active, project?.headCommitId])
   const note = notes.find((item) => item.id === noteId),
     source = sources.find((item) => item.id === sourceId)
   return (

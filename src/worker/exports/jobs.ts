@@ -237,17 +237,24 @@ export class ExportJobs {
     )
     return { ...job }
   }
-  private async publishNew(destination: string, bytes: Buffer, signal: AbortSignal): Promise<void> {
+  private async publishNew(
+    destination: string,
+    bytes: Buffer,
+    signal: AbortSignal,
+    onLinked: () => void
+  ): Promise<void> {
     cancelled(signal)
     if (await fingerprint(destination)) throw new ProjectError('DESTINATION_EXISTS')
     const parent = dirname(destination),
       temporary = join(parent, `.collie-export-${randomUUID()}.incoming`)
+    let ownsTemporary = false
     try {
       const output = await open(
         temporary,
         constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
         0o600
       )
+      ownsTemporary = true
       try {
         await output.writeFile(bytes)
         await output.sync()
@@ -256,7 +263,19 @@ export class ExportJobs {
       }
       cancelled(signal)
       if (await fingerprint(destination)) throw new ProjectError('DESTINATION_EXISTS')
-      await link(temporary, destination)
+      try {
+        await link(temporary, destination)
+      } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')
+          throw new ProjectError('DESTINATION_EXISTS')
+        throw error
+      }
+      // From this point a destination exists, even if cleanup, sync or inspection later fails.
+      onLinked()
+      // fileHash deliberately rejects multiply linked files. Retire our staging name first;
+      // keep the no-overwrite link operation and the untrusted-file protections unchanged.
+      await unlink(temporary)
+      ownsTemporary = false
       await syncDirectory(parent)
       const actual = await fileHash(destination, 512 * 1024 * 1024)
       if (
@@ -265,7 +284,7 @@ export class ExportJobs {
       )
         throw new ProjectError('UNAVAILABLE')
     } finally {
-      await unlink(temporary).catch(() => {})
+      if (ownsTemporary) await unlink(temporary).catch(() => {})
     }
   }
   private async renderBatch(
@@ -276,6 +295,7 @@ export class ExportJobs {
   ): Promise<void> {
     const { job, controller, folder } = running,
       signal = controller.signal
+    let retainedPartialOutput = false
     for (let index = 0; index < input.destinations.length; index++) {
       const target = input.destinations[index],
         file = job.files![index]
@@ -284,6 +304,13 @@ export class ExportJobs {
         file.error = 'CANCELLED'
         continue
       }
+      const publication = {
+        outputLinked: false,
+        sidecarCreated: false,
+        assetsLinked: 0,
+        assetsVerified: 0
+      }
+      const sidecar = `${input.baseName}-assets-${job.id}`
       try {
         job.phase = `Rendering ${target.format}`
         await this.persist(running)
@@ -330,17 +357,22 @@ export class ExportJobs {
           )
             throw new ProjectError('VALIDATION')
         } else {
-          const sidecar = `${input.baseName}-assets-${job.id}`
           const result = exportInterchange(model, images, target.format, sidecar)
           bytes = result.bytes
           assets = result.assets
           losses = result.losses
+          file.losses = losses
           if (assets.length) {
             const sidecarPath = join(dirname(target.path), sidecar)
             await mkdir(sidecarPath, { mode: 0o700 })
+            publication.sidecarCreated = true
             await syncDirectory(dirname(sidecarPath))
-            for (const asset of assets)
-              await this.publishNew(join(sidecarPath, asset.name), asset.bytes, signal)
+            for (const asset of assets) {
+              await this.publishNew(join(sidecarPath, asset.name), asset.bytes, signal, () => {
+                publication.assetsLinked++
+              })
+              publication.assetsVerified++
+            }
           }
         }
         if (bytes.length > 512 * 1024 * 1024) throw new ProjectError('LIMIT_EXCEEDED')
@@ -348,13 +380,14 @@ export class ExportJobs {
         job.state = 'publishing'
         job.phase = `Publishing ${target.format}`
         await this.persist(running)
-        await this.publishNew(target.path, bytes, signal)
+        await this.publishNew(target.path, bytes, signal, () => {
+          publication.outputLinked = true
+        })
         if (target.format === 'docx') await inspectDocx(target.path)
         file.state = 'complete'
         file.bytes = bytes.length
         file.pages = pages
         file.losses = losses
-        job.losses.push(...losses.map((l) => `${target.format}: ${l}`))
       } catch (error) {
         const code = signal.aborted
           ? 'CANCELLED'
@@ -365,22 +398,37 @@ export class ExportJobs {
               : 'UNAVAILABLE'
         file.state = code === 'CANCELLED' ? 'cancelled' : 'failed'
         file.error = code
+        if (publication.outputLinked) {
+          retainedPartialOutput = true
+          file.losses.push(
+            'The output file was created, but final publication checks did not finish. Inspect the retained file before using it or retrying with a new name.'
+          )
+        }
+        if (publication.sidecarCreated) {
+          retainedPartialOutput = true
+          file.losses.push(
+            `${publication.assetsLinked} image file(s) were created in the adjacent ${sidecar} folder; ${publication.assetsVerified} completed publication checks. These files were retained. Review this folder before retrying.`
+          )
+        }
       }
+      job.losses.push(...file.losses.map((loss) => `${target.format}: ${loss}`))
       job.state = 'rendering'
       await this.persist(running).catch(() => {})
     }
-    job.state = signal.aborted
-      ? 'cancelled'
-      : job.files!.every((f) => f.state === 'complete')
-        ? 'complete'
+    job.state = job.files!.every((f) => f.state === 'complete')
+      ? 'complete'
+      : signal.aborted
+        ? 'cancelled'
         : 'failed'
     job.error = job.state === 'complete' ? null : signal.aborted ? 'CANCELLED' : 'UNAVAILABLE'
     job.phase =
       job.state === 'complete'
         ? 'All selected files ready'
-        : job.state === 'cancelled'
-          ? 'Export cancelled; completed files retained'
-          : 'Some files failed; completed files retained'
+        : retainedPartialOutput
+          ? 'Export stopped; partial output retained. Review each file result.'
+          : job.state === 'cancelled'
+            ? 'Export cancelled; completed files retained'
+            : 'Some files failed; completed files retained'
     await this.persist(running).catch(() => {})
     this.jobs.delete(job.id)
   }

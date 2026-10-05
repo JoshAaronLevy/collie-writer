@@ -1,3 +1,4 @@
+import { hasControlCharacters } from '../../shared/control-characters'
 import { validatePortableProofreading } from './proofreading'
 import { validatePortableConversations } from './conversations'
 import { readProjectDetails } from './details'
@@ -25,9 +26,7 @@ const invalid = (): never => {
   throw new SnapshotError('INVALID_ARCHIVE')
 }
 const text = (v: unknown, maximum: number): boolean =>
-  typeof v === 'string' &&
-  v.length <= maximum &&
-  !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(v)
+  typeof v === 'string' && v.length <= maximum && !hasControlCharacters(v, true)
 
 /** Only queries app-owned tables after exact SQL/trigger/schema and integrity validation. */
 export function readPortableGraph(db: Database.Database): PortableGraph {

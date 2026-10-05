@@ -15,16 +15,16 @@ There are no directory entries. The writer stores entries without compression, m
 
 UTF-8 JSON with exactly these fields, validated in `src/worker/projects/manifest.ts`:
 
-| Field | Contract |
-| --- | --- |
-| `format`, `formatVersion`, `minimumReader` | `collie`, `1`, `1` |
-| `schemaVersion`, `editorVersion` | Working SQL `2`, document AST `1`; independent version domains |
-| `projectId`, `snapshotId`, `headCommitId` | UUIDs; head read from the actual copied database |
-| `parentSnapshotId` | Previous destination snapshot UUID or null; never inferred from timestamps |
-| `createdAt` | UTC ISO timestamp with milliseconds |
-| `database` | `{sha256, bytes}` for the closed, independent `project.sqlite` |
-| `blobs` | Unique `{sha256, bytes}` entries matching the captured managed-asset inventory exactly |
-| `citationAssets` | Unique `{id, kind, sha256, bytes}` entries for the supported offline citation profile |
+| Field                                      | Contract                                                                               |
+| ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `format`, `formatVersion`, `minimumReader` | `collie`, `1`, `1`                                                                     |
+| `schemaVersion`, `editorVersion`           | Working SQL `2`, document AST `1`; independent version domains                         |
+| `projectId`, `snapshotId`, `headCommitId`  | UUIDs; head read from the actual copied database                                       |
+| `parentSnapshotId`                         | Previous destination snapshot UUID or null; never inferred from timestamps             |
+| `createdAt`                                | UTC ISO timestamp with milliseconds                                                    |
+| `database`                                 | `{sha256, bytes}` for the closed, independent `project.sqlite`                         |
+| `blobs`                                    | Unique `{sha256, bytes}` entries matching the captured managed-asset inventory exactly |
+| `citationAssets`                           | Unique `{id, kind, sha256, bytes}` entries for the supported offline citation profile  |
 
 No machine ID, selected path, license grant, account secret, local job, owner lock or destination receipt is permitted. Portable mutation receipts contain IDs/revisions only. Authors' manuscript/source text is preserved; this restriction does not attempt to censor strings inside user-authored content.
 
@@ -51,7 +51,6 @@ Per-workspace `snapshots/<job UUID>/job.json` is the device-local job/lease jour
 Interrupted/corrupt journals and complete candidates survive restart. GC must run under the repository boundary, retain current/history references, and consult `mayCollect` for provisional/exact leases. No GC exists yet. Normal completion removes only the job's capture/inspection copies. `discardTransferredCandidate` may be called only after durable, verified destination acknowledgment; an unsuccessful or uncertain transfer retains the candidate. This format does not encode local save success or cloud upload.
 
 Stage 6 selected-file metadata and reconciliation are defined in the [native-location decision](../decisions/stage-06-file-locations.md). Its per-workspace `destination-v1.json` supplies the snapshot parent after successful file acknowledgment; picker hints and the legacy catalog destination rows do not. Archive v1 itself remains unchanged.
-
 
 ## Stage 7 lifecycle consumers
 

@@ -14,29 +14,54 @@ export const LOCAL_CODEX_POLICY = Object.freeze({
 /** Read only trusted main identity. In particular RELEASE's development fallback
  * for missing package metadata MUST NOT enable the owner-only route in a package. */
 export function selectAiRoute(): AiRoute {
-  if (!app.isPackaged && RELEASE.channel === 'development' && RELEASE.distribution === 'development' &&
-    RELEASE.appId === 'com.colliewriter.app.dev') {
-    return { kind: 'local-chatgpt-plan', policyRevision: 1,
-      scope: 'owner-unpackaged-development', providerClassification: 'unresolved' }
+  if (
+    !app.isPackaged &&
+    RELEASE.channel === 'development' &&
+    RELEASE.distribution === 'development' &&
+    RELEASE.appId === 'com.colliewriter.app.dev'
+  ) {
+    return {
+      kind: 'local-chatgpt-plan',
+      policyRevision: 1,
+      scope: 'owner-unpackaged-development',
+      providerClassification: 'unresolved'
+    }
   }
-  if (app.isPackaged && RELEASE.channel === 'development') return { kind: 'unavailable', reason: 'packaged-development-refused' }
-  if (app.isPackaged && RELEASE.distribution === 'direct' &&
-    (RELEASE.channel === 'production' && RELEASE.appId === 'com.colliewriter.app' ||
-      RELEASE.channel === 'beta' && RELEASE.appId === 'com.colliewriter.app.beta')) {
+  if (app.isPackaged && RELEASE.channel === 'development')
+    return { kind: 'unavailable', reason: 'packaged-development-refused' }
+  if (
+    app.isPackaged &&
+    RELEASE.distribution === 'direct' &&
+    ((RELEASE.channel === 'production' && RELEASE.appId === 'com.colliewriter.app') ||
+      (RELEASE.channel === 'beta' && RELEASE.appId === 'com.colliewriter.app.beta'))
+  ) {
     return { kind: 'registered-openai', policyRevision: 1 }
   }
   return { kind: 'unavailable', reason: 'unsupported-app-identity' }
 }
 
 export function routeFunding(route: AiRoute): AiFunding {
-  if (route.kind === 'local-codex-chatgpt'||route.kind==='local-chatgpt-plan') return { kind: 'normal-subscription', credits: 'account-settings', apiKeyFallback: false, appBillingChanges: false }
-  if (route.kind === 'registered-openai') return { kind: 'included-only', enforcement: 'unresolved', apiKeyFallback: false, appBillingChanges: false }
+  if (route.kind === 'local-codex-chatgpt' || route.kind === 'local-chatgpt-plan')
+    return {
+      kind: 'normal-subscription',
+      credits: 'account-settings',
+      apiKeyFallback: false,
+      appBillingChanges: false
+    }
+  if (route.kind === 'registered-openai')
+    return {
+      kind: 'included-only',
+      enforcement: 'unresolved',
+      apiKeyFallback: false,
+      appBillingChanges: false
+    }
   return { kind: 'unavailable', apiKeyFallback: false, appBillingChanges: false }
 }
 
 /** CD02 owns managed login; never fall through to registered OAuth for local auth. */
 export function requireRegisteredRoute(): void {
-  if (selectAiRoute().kind !== 'registered-openai') throw new AiError('development-access-unavailable')
+  if (selectAiRoute().kind !== 'registered-openai')
+    throw new AiError('development-access-unavailable')
 }
 export const OPENAI = Object.freeze({
   issuer: 'https://auth.openai.com',
@@ -55,23 +80,42 @@ export type OpenAiRegistration = {
   permissionReference: string
   commercialReference: string | null
 }
-export const OPENAI_REGISTRATIONS: Readonly<Record<ReleaseChannel, OpenAiRegistration | null>> = Object.freeze({
-  development: null, beta: null, production: null
-})
+export const OPENAI_REGISTRATIONS: Readonly<Record<ReleaseChannel, OpenAiRegistration | null>> =
+  Object.freeze({
+    development: null,
+    beta: null,
+    production: null
+  })
 export function registration(): OpenAiRegistration {
   requireRegisteredRoute()
   const value = OPENAI_REGISTRATIONS[RELEASE.channel]
-  if (!value) throw new AiError(RELEASE.channel==='development' ? 'development-access-unavailable' : 'commercial-activation-pending')
-  if (!/^oaiapp_[A-Za-z0-9_-]+$/.test(value.clientId) || !value.permissionReference || value.callbackPath!=='/auth/callback' ||
-    !Number.isInteger(value.callbackPort) || value.callbackPort<0 || value.callbackPort>65535 ||
-    (RELEASE.channel==='production' && !value.commercialReference)) throw new AiError('configuration-required')
+  if (!value)
+    throw new AiError(
+      RELEASE.channel === 'development'
+        ? 'development-access-unavailable'
+        : 'commercial-activation-pending'
+    )
+  if (
+    !/^oaiapp_[A-Za-z0-9_-]+$/.test(value.clientId) ||
+    !value.permissionReference ||
+    value.callbackPath !== '/auth/callback' ||
+    !Number.isInteger(value.callbackPort) ||
+    value.callbackPort < 0 ||
+    value.callbackPort > 65535 ||
+    (RELEASE.channel === 'production' && !value.commercialReference)
+  )
+    throw new AiError('configuration-required')
   return value
 }
 /** Deliberate production refusal, not an invented funding flag. Replace only with
  * a documented provider-enforced restriction bound to every internal request. */
-export function requireIncludedFunding(): never { throw new AiError('funding-unknown') }
+export function requireIncludedFunding(): never {
+  throw new AiError('funding-unknown')
+}
 
 /** Config switches alone do not yet establish that this release has no implicit
  * tool/config discovery. Keep execution closed until the exact isolation contract
  * is established; the transport and documented restrictions are implemented. */
-export function requireTextOnlyRuntime(): never { throw new AiError('isolation-unresolved') }
+export function requireTextOnlyRuntime(): never {
+  throw new AiError('isolation-unresolved')
+}

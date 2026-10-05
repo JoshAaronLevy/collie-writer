@@ -9,10 +9,11 @@ import {
   isProjectTemplate,
   type ProjectTemplate
 } from '../../../../domain/projects/templates'
-import { ProjectDetailsFields, detailsErrors } from '../project-details/ProjectDetailsFields'
+import { ProjectDetailsFields } from '../project-details/ProjectDetailsFields'
+import { detailsErrors } from '../project-details/detailsErrors'
 import { AppButton, ChoiceField } from '../../components/ui/Controls'
 import { StatusBanner } from '../../components/ui/Feedback'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { AiConnectionPanel } from '../ai-connections/AiConnectionPanel'
 import {
   emptySetupDraft,

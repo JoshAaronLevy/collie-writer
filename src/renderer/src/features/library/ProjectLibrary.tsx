@@ -8,7 +8,7 @@ import { projectTypes, templateForKind } from '../../../../domain/projects/templ
 import { ActionMenu } from '../../components/ui/ActionMenu'
 import { AppButton } from '../../components/ui/Controls'
 import { StatusBanner } from '../../components/ui/Feedback'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { scopeOf } from '../workspace/useWorkspaceController'
 import styles from './ProjectLibrary.module.css'
 

@@ -14,15 +14,15 @@ I13 delivers **Spelling, grammar & punctuation** on a selection/current text sec
 
 Keep one mode selected per review initially. Show a short explanation and relevant parameters; do not turn the initial dialog into seven panels of settings. Recommendations below are product design choices for Josh's review, not claims about measured AI accuracy.
 
-| Review label | User benefit and bounded input | Finding/action | Delivery |
-| --- | --- | --- | --- |
-| **Spelling, grammar & punctuation** | Mechanical correctness of explicitly included prose; honor the document language and stated spelling convention, preserve author voice and quoted material | Exact local replacement with reason; Apply or Ignore | I13 foundation; P01–P04 expand review/scopes |
-| **Source faithfulness** | Compare a manuscript statement with chosen, actually available source passages; disclose source version, excerpts, context and extraction limits | Possible misrepresentation/overstatement with side-by-side quotes and locators; advisory by default | P06 |
-| **Citation & source coverage** | Understand actual citation distribution and uncited research; counts use manuscript occurrences, while optional commentary considers disclosed context | Source/chapter coverage report and cautious suggestions, not a “correct” citation quota | P07 |
-| **Claims needing support** | Identify statements whose wording may imply stronger evidence than the supplied material establishes | Review question or suggested qualification with explicit evidence scope; user chooses wording or adds evidence | P06 |
-| **Repeated ideas** | Identify possibly redundant claims or explanations, including paraphrases, while preserving intentional summaries/repetition | A group of exact occurrences and why they may overlap; no automatic deletion of all instances | P05 |
-| **Clarity & coherence** | Identify wordiness, unclear references, digressions and broken logical transitions; a constructive replacement for “Rambling/Incoherence” | Advisory explanation or a bounded optional replacement; preserve nuance and voice | P05 |
-| **Structure & flow** | Review ordering, headings, transitions and alignment of a chapter/manuscript with its stated purpose | Outline-linked advice and proposed organization for human consideration; no automatic outline mutation | P08 |
+| Review label                        | User benefit and bounded input                                                                                                                             | Finding/action                                                                                                 | Delivery                                     |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **Spelling, grammar & punctuation** | Mechanical correctness of explicitly included prose; honor the document language and stated spelling convention, preserve author voice and quoted material | Exact local replacement with reason; Apply or Ignore                                                           | I13 foundation; P01–P04 expand review/scopes |
+| **Source faithfulness**             | Compare a manuscript statement with chosen, actually available source passages; disclose source version, excerpts, context and extraction limits           | Possible misrepresentation/overstatement with side-by-side quotes and locators; advisory by default            | P06                                          |
+| **Citation & source coverage**      | Understand actual citation distribution and uncited research; counts use manuscript occurrences, while optional commentary considers disclosed context     | Source/chapter coverage report and cautious suggestions, not a “correct” citation quota                        | P07                                          |
+| **Claims needing support**          | Identify statements whose wording may imply stronger evidence than the supplied material establishes                                                       | Review question or suggested qualification with explicit evidence scope; user chooses wording or adds evidence | P06                                          |
+| **Repeated ideas**                  | Identify possibly redundant claims or explanations, including paraphrases, while preserving intentional summaries/repetition                               | A group of exact occurrences and why they may overlap; no automatic deletion of all instances                  | P05                                          |
+| **Clarity & coherence**             | Identify wordiness, unclear references, digressions and broken logical transitions; a constructive replacement for “Rambling/Incoherence”                  | Advisory explanation or a bounded optional replacement; preserve nuance and voice                              | P05                                          |
+| **Structure & flow**                | Review ordering, headings, transitions and alignment of a chapter/manuscript with its stated purpose                                                       | Outline-linked advice and proposed organization for human consideration; no automatic outline mutation         | P08                                          |
 
 All seven original ideas are included. No plagiarism checker, AI detector, truth score or automatic reference generator is added. Source faithfulness assesses the representation of provided material, not whether a study is scientifically correct. Claims needing support is not an all-purpose fact checker. Saving a source does not obligate the author to cite it; frequency alone cannot establish overuse or adequate support. Those limits should be concise in the product and detailed in Help.
 
@@ -30,15 +30,15 @@ All seven original ideas are included. No plagiarism checker, AI detector, truth
 
 Use restrained defaults and reveal these options only for their corresponding implemented mode. Persist the chosen parameters in each capture so a later rerun can explain what changed. Product/project type may suggest wording, never silently select additional content or send a request.
 
-| Mode | Recommended parameters |
-| --- | --- |
-| Mechanics | Use the project's explicitly supported language/spelling convention, initially the existing en-US convention unless a supported choice is implemented; conservative corrections, preserve quotations and voice. Do not imply evaluated multilingual support. |
-| Source faithfulness | Author-selected claim/source pairings and passages; show the comparison's actual evidence coverage. No automatic source download or unsupplied study-wide conclusion. |
-| Citation & source coverage | Chosen manuscript scope and source set; separate actual citations, evidence links and unrelated saved sources. Local descriptive report first, optional AI commentary second. |
-| Claims needing support | Optional intended genre/purpose and selected evidence; distinguish factual claims from interpretation, recommendation and personal observation. Default to cautious review questions. |
-| Repeated ideas | Chosen scope and optional instruction to preserve intentional recaps; show grouped occurrences, not a numerical originality score. |
-| Clarity & coherence | Optional audience/purpose; conservative mode by default, with suggestions to simplify only when requested. Preserve necessary technical terms and qualifications. |
-| Structure & flow | Optional objective and desired audience; selected chapter/manuscript outline plus declared text coverage. Advice only; the writer performs structural edits. |
+| Mode                       | Recommended parameters                                                                                                                                                                                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Mechanics                  | Use the project's explicitly supported language/spelling convention, initially the existing en-US convention unless a supported choice is implemented; conservative corrections, preserve quotations and voice. Do not imply evaluated multilingual support. |
+| Source faithfulness        | Author-selected claim/source pairings and passages; show the comparison's actual evidence coverage. No automatic source download or unsupplied study-wide conclusion.                                                                                        |
+| Citation & source coverage | Chosen manuscript scope and source set; separate actual citations, evidence links and unrelated saved sources. Local descriptive report first, optional AI commentary second.                                                                                |
+| Claims needing support     | Optional intended genre/purpose and selected evidence; distinguish factual claims from interpretation, recommendation and personal observation. Default to cautious review questions.                                                                        |
+| Repeated ideas             | Chosen scope and optional instruction to preserve intentional recaps; show grouped occurrences, not a numerical originality score.                                                                                                                           |
+| Clarity & coherence        | Optional audience/purpose; conservative mode by default, with suggestions to simplify only when requested. Preserve necessary technical terms and qualifications.                                                                                            |
+| Structure & flow           | Optional objective and desired audience; selected chapter/manuscript outline plus declared text coverage. Advice only; the writer performs structural edits.                                                                                                 |
 
 ## Shared execution contracts
 
@@ -89,17 +89,17 @@ Use **“Implement P02 from proofreading-implementation-plan.md.”** Read the s
 
 Conversation C stages are not blanket prerequisites. P06/P07 may reuse C03's source-context owner if delivered; otherwise they implement the narrow required extension in the same shared capture owner and record it for future C03 to reuse. C07 owns shared durable operational handoff/retention for both features and can be explicitly implemented after I12 without the other C stages. CD08 now delivers the shared C07 handoff — awaiting user testing: proven outcomes release hot slots and local bindings while retaining encrypted originals; uncertain outcomes need explicit local acknowledgment. The hot cap remains 64. See the [shared format](docs/formats/ai-handoff-v1.md) and [manual guide](docs/manual-testing/codex-CD08.md). No P stage is implemented by this overlap, and live repeated-use acceptance remains blocked by CD03. Neither plan may create competing capture, run or retention services, silently implement the other plan or force a rerun of I01–I11.
 
-| Stage | Outcome | Depends on | Status |
-| --- | --- | --- | --- |
-| P01 | Reusable findings, exact-occurrence Ignore and grouped apply | Delivered I13 and I12 shared core | Not started |
-| P02 | Accessible inline flags and contextual inspector | P01 | Not started |
-| P03 | Explicit chapter review and bounded batch lifecycle | P01; I12 run owner | Not started |
-| P04 | Entire-manuscript scope and disclosed synthesis | P03 | Not started |
-| P05 | Clarity/coherence and repeated-idea reviews | P01–P04 | Not started |
-| P06 | Source faithfulness and claims needing support | P01–P04; existing inspected sources/evidence | Not started |
-| P07 | Citation/source coverage report and optional commentary | P06; actual citation occurrence projections | Not started |
-| P08 | Structure/flow review | P04; P01/P02 finding presentation | Not started |
-| P09 | Integrated modes, help, report export and acceptance handoff | P01–P08; C07 shared retention for the sustained-use milestone | Not started |
+| Stage | Outcome                                                      | Depends on                                                    | Status      |
+| ----- | ------------------------------------------------------------ | ------------------------------------------------------------- | ----------- |
+| P01   | Reusable findings, exact-occurrence Ignore and grouped apply | Delivered I13 and I12 shared core                             | Not started |
+| P02   | Accessible inline flags and contextual inspector             | P01                                                           | Not started |
+| P03   | Explicit chapter review and bounded batch lifecycle          | P01; I12 run owner                                            | Not started |
+| P04   | Entire-manuscript scope and disclosed synthesis              | P03                                                           | Not started |
+| P05   | Clarity/coherence and repeated-idea reviews                  | P01–P04                                                       | Not started |
+| P06   | Source faithfulness and claims needing support               | P01–P04; existing inspected sources/evidence                  | Not started |
+| P07   | Citation/source coverage report and optional commentary      | P06; actual citation occurrence projections                   | Not started |
+| P08   | Structure/flow review                                        | P04; P01/P02 finding presentation                             | Not started |
+| P09   | Integrated modes, help, report export and acceptance handoff | P01–P08; C07 shared retention for the sustained-use milestone | Not started |
 
 ### Stage P01 — Extend findings and occurrence-specific decisions
 
@@ -251,14 +251,14 @@ Conversation C stages are not blanket prerequisites. P06/P07 may reuse C03's sou
 
 ## Handoff and completion ledger
 
-The standing manual-testing policy applies to every P stage: no assistant test code, fixtures/mocks, test-only controls, harnesses, validation/build/typecheck/lint/audit commands, app/browser/SDK launches, screenshots, benchmarks or delegated verification. Ordinary source/Git reads and production edits are allowed. Do not log in, run inference, contact providers or publish as part of implementation. Manual guides use ordinary user actions and disposable/public material, not executable test scripts or deliberate quota/cost experiments.
+The standing [AGENTS.md policy](AGENTS.md#user-owned-manual-testing--standing-instruction), amended October 5, 2026, applies to every P stage. After code changes, run `npm run format`, `npm run lint` and `npm run typecheck`, fix reported issues including warnings, rerun until clean, and record actual outcomes separately from runtime acceptance. Documentation-only edits do not require these checks. No assistant test code, fixtures/mocks, test-only controls, harnesses, automated test runs, builds, dependency audits, app/browser/SDK launches, screenshots, benchmarks or delegated runtime verification. Ordinary source/Git reads and production edits are allowed. Do not log in, run inference, contact providers or publish as part of implementation. Manual guides use ordinary user actions and disposable/public material, not executable test scripts or deliberate quota/cost experiments.
 
 Each explicitly requested stage produces its code, migration/decision documentation as needed, `docs/validation/proofreading-Pxx.md` with changed paths/limits and `docs/manual-testing/proofreading-Pxx.md` with user-only setup/actions/observable outcomes. Update this index and the app plan's expansion ledger. Mark **implementation complete — awaiting user testing** separately from user acceptance, provider activation and unresolved dependent code. Finish “Stage Pxx complete. As a user:” only for implemented scope, provide the ordered guide and stop before the next stage.
 
-| Milestone | Status |
-| --- | --- |
-| Planning and seven-mode catalog | Draft delivered for Josh's review; no implementation authorization |
-| I13 mechanics foundation | Not implemented at this planning checkpoint |
-| P01–P09 | Not started |
+| Milestone                                                  | Status                                                               |
+| ---------------------------------------------------------- | -------------------------------------------------------------------- |
+| Planning and seven-mode catalog                            | Draft delivered for Josh's review; no implementation authorization   |
+| I13 mechanics foundation                                   | Not implemented at this planning checkpoint                          |
+| P01–P09                                                    | Not started                                                          |
 | Native targeting/application, accessibility and AI quality | Unobserved; real eligible output required for dependent observations |
-| Provider activation and release | I10 requirements and existing release NO-GO remain independent |
+| Provider activation and release                            | I10 requirements and existing release NO-GO remain independent       |

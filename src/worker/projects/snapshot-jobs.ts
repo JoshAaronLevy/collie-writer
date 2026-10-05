@@ -398,7 +398,7 @@ export class SnapshotJobs {
         await this.persist(job)
         this.emit(job)
         // Completed candidate is retained for transfer/retry. Remove only this job's disposable copies.
-        for (const name of ['capture.sqlite', 'inspection'])
+        for (const name of ['capture.sqlite', 'inspection'] as const)
           await this.removeOwned(job, name).catch(() => {})
       } catch (error) {
         job.state = controller.signal.aborted ? 'cancelled' : 'failed'
@@ -419,7 +419,7 @@ export class SnapshotJobs {
         this.emit(job)
         // Preserve a complete candidate even if acknowledgment failed; never infer transfer success.
         if (!job.manifest)
-          for (const name of ['candidate.partial', 'capture.sqlite', 'inspection'])
+          for (const name of ['candidate.partial', 'capture.sqlite', 'inspection'] as const)
             await this.removeOwned(job, name).catch(() => {})
       } finally {
         this.active = undefined

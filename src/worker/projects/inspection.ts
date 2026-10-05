@@ -9,7 +9,6 @@ import {
   PDF_INSPECTION_LIMIT,
   PDF_PAGE_LIMIT,
   TEXT_EXTRACTOR,
-  isInspectionView,
   type InspectionAssetInput,
   type InspectionChangeInput,
   type InspectionPageInput,

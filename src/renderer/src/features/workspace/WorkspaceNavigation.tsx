@@ -1,5 +1,5 @@
 import { AppButton } from '../../components/ui/Controls'
-import { useWorkspaceSession } from './WorkspaceSession'
+import { useWorkspaceSession } from './workspaceContext'
 import styles from './WorkspaceNavigation.module.css'
 
 export function WorkspaceNavigation(): React.JSX.Element {

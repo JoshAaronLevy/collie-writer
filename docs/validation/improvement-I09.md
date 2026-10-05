@@ -4,16 +4,16 @@ October 2, 2026. **Implementation complete — awaiting user testing.** This rec
 
 ## Delivered paths
 
-| Area | Changed production/documentation owners |
-| --- | --- |
-| Export flow, bounded preflight validity and results | `features/projects/DocxExportPanel.tsx`; new `features/export/ExportResults.tsx`, `ExportWorkspace.module.css`, `CitationsPanel.module.css`; old `ExportMetadata.module.css` removed |
-| Reference style/retry and import/access presentation | `features/projects/CitationsPanel.tsx`, `InterchangeImportPanel.tsx` and stylesheet, `AccessPanel.tsx`, `DirectAccessPanel.tsx`; `features/settings/CollieAccess.module.css` |
-| Save and global scoped operation results | `features/workspace/SaveMenu.tsx` and stylesheet, `WorkspaceStatus.tsx`, `WritingWorkspace.tsx`, `app/navigation.ts` |
-| Destination composition and help/settings | `App.tsx`, `WorkspaceViews.tsx` and stylesheet, `WorkspaceNavigation.tsx`, `SettingsPanel.tsx` and stylesheet; new `AboutPanel.tsx`, `ConnectionSettings.tsx`, `UpdateSettings.tsx`, `NativeHelpActions.tsx` |
-| Trusted native Help actions | `src/shared/commands.ts`, `src/preload/index.ts`, `src/main/ipc.ts`, `index.ts`, `menus.ts` |
-| Optional orientation and nonfiction teaching sample | `features/help/Orientation.tsx`, `WritingGuide.module.css`, `features/projects/TutorialPanel.tsx`, `src/main/tutorial.ts`, `resources/tutorial/reading-study.txt`; old tutorial resource retained |
-| Semantic ownership cleanup | `features/projects/Projects.css`; feature rules moved to their actual owners |
-| Contracts/handoff | [decision](../decisions/improvement-09-local-journey.md), [navigation map](../design/local-navigation.md), [manual guide](../manual-testing/improvement-I09.md), privacy/accessibility addenda, direct-update runbook, improvement plan and AGENTS checkpoint |
+| Area                                                 | Changed production/documentation owners                                                                                                                                                                                                                       |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Export flow, bounded preflight validity and results  | `features/projects/DocxExportPanel.tsx`; new `features/export/ExportResults.tsx`, `ExportWorkspace.module.css`, `CitationsPanel.module.css`; old `ExportMetadata.module.css` removed                                                                          |
+| Reference style/retry and import/access presentation | `features/projects/CitationsPanel.tsx`, `InterchangeImportPanel.tsx` and stylesheet, `AccessPanel.tsx`, `DirectAccessPanel.tsx`; `features/settings/CollieAccess.module.css`                                                                                  |
+| Save and global scoped operation results             | `features/workspace/SaveMenu.tsx` and stylesheet, `WorkspaceStatus.tsx`, `WritingWorkspace.tsx`, `app/navigation.ts`                                                                                                                                          |
+| Destination composition and help/settings            | `App.tsx`, `WorkspaceViews.tsx` and stylesheet, `WorkspaceNavigation.tsx`, `SettingsPanel.tsx` and stylesheet; new `AboutPanel.tsx`, `ConnectionSettings.tsx`, `UpdateSettings.tsx`, `NativeHelpActions.tsx`                                                  |
+| Trusted native Help actions                          | `src/shared/commands.ts`, `src/preload/index.ts`, `src/main/ipc.ts`, `index.ts`, `menus.ts`                                                                                                                                                                   |
+| Optional orientation and nonfiction teaching sample  | `features/help/Orientation.tsx`, `WritingGuide.module.css`, `features/projects/TutorialPanel.tsx`, `src/main/tutorial.ts`, `resources/tutorial/reading-study.txt`; old tutorial resource retained                                                             |
+| Semantic ownership cleanup                           | `features/projects/Projects.css`; feature rules moved to their actual owners                                                                                                                                                                                  |
+| Contracts/handoff                                    | [decision](../decisions/improvement-09-local-journey.md), [navigation map](../design/local-navigation.md), [manual guide](../manual-testing/improvement-I09.md), privacy/accessibility addenda, direct-update runbook, improvement plan and AGENTS checkpoint |
 
 Renderer paths in the table are relative to `src/renderer/src/` unless fully qualified. No tests or test-only resources were added or edited. No dependency install, command-line validation, formatter, app/server/browser launch, screenshot, native picker, network action, account action or publication was performed.
 

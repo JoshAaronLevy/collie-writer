@@ -4,14 +4,14 @@ October 2, 2026. **Engineering partial — Grok ACP transport component delivere
 
 ## Work delivered
 
-| Paths | Result |
-| --- | --- |
-| `src/main/ai/grok-runtime.ts` | Real ACP initialization/cached-auth/session/prompt protocol, incremental agent text, current-model catalog, bounded frames/output, cancellation/terminal mapping and process teardown |
-| `src/main/ai/grok-deployment.ts` | Pinned source-reference identifier and explicit pre-spawn refusal; documents the missing protected launch methods without implementing a bypass |
-| `src/main/ai/runtime.ts`, `registry.ts` | Shared text-operation interface and main-only Codex/Grok transport constructors |
-| `src/main/ai/codex-runtime.ts`, `service.ts` | Codex uses the common update/interface and registry constructor; account/operation behavior and existing refusals retained |
-| `docs/ai/grok-runtime.md`, provider eligibility/runtime records | Official route/source evidence, implemented protocol, unfinished components, provider-specific funding/access, distribution and privacy requirements |
-| Decision, this record, manual guide/index, plan, AGENTS and privacy inventory | Honest partial checkpoint and concrete continuation without previous-stage reimplementation |
+| Paths                                                                         | Result                                                                                                                                                                                |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main/ai/grok-runtime.ts`                                                 | Real ACP initialization/cached-auth/session/prompt protocol, incremental agent text, current-model catalog, bounded frames/output, cancellation/terminal mapping and process teardown |
+| `src/main/ai/grok-deployment.ts`                                              | Pinned source-reference identifier and explicit pre-spawn refusal; documents the missing protected launch methods without implementing a bypass                                       |
+| `src/main/ai/runtime.ts`, `registry.ts`                                       | Shared text-operation interface and main-only Codex/Grok transport constructors                                                                                                       |
+| `src/main/ai/codex-runtime.ts`, `service.ts`                                  | Codex uses the common update/interface and registry constructor; account/operation behavior and existing refusals retained                                                            |
+| `docs/ai/grok-runtime.md`, provider eligibility/runtime records               | Official route/source evidence, implemented protocol, unfinished components, provider-specific funding/access, distribution and privacy requirements                                  |
+| Decision, this record, manual guide/index, plan, AGENTS and privacy inventory | Honest partial checkpoint and concrete continuation without previous-stage reimplementation                                                                                           |
 
 The full improvement plan and shared rules were reviewed. I10/I11 records, current I12/I13 boundaries, provider types, deployment, runtime, credential storage, operation service and packaging source informed scope. Official Grok/Claude/ACP pages and the pinned public Grok source were read without execution. See the [runbook](../ai/grok-runtime.md) for primary-source links and exact remaining work. The internal registry has two real transport classes, but only the existing OpenAI account service is exposed. No nominal connection card or canned success was added.
 

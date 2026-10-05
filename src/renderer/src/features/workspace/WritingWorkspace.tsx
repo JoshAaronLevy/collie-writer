@@ -1,3 +1,4 @@
+import { useEffectEvent } from 'react'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { TextInput, Textarea } from '@mantine/core'
 import { AppButton, SelectField } from '../../components/ui/Controls'
@@ -7,10 +8,11 @@ import RichDraft from '../../editor/RichDraft'
 import { editorIsComposing } from '../../editor/adapter'
 import SaveMenu from './SaveMenu'
 import OutlinePanel from '../outline/OutlinePanel'
-import { useWorkspaceSession } from './WorkspaceSession'
+import { useWorkspaceSession } from './workspaceContext'
 import { scopeOf } from './useWorkspaceController'
 import { PaneResizeHandle } from './PaneResizeHandle'
-import { WritingSidePanel, readableWriting } from './WritingSidePanel'
+import { WritingSidePanel } from './WritingSidePanel'
+import { readableWriting } from './readableWriting'
 import type { SecondaryPanel } from './useWritingPreferences'
 import { AiProviderIndicator } from '../ai-connections/AiProviderIndicator'
 import { sameScope } from '../../../../shared/project-files'
@@ -28,7 +30,7 @@ export default function WritingWorkspace(): React.JSX.Element {
     setSectionStatus,
     sectionSynopsis,
     setSectionSynopsis,
-    sectionFields,
+    sectionFields: sectionFieldsRef,
     busy,
     acting,
     closing,
@@ -41,7 +43,7 @@ export default function WritingWorkspace(): React.JSX.Element {
     storage,
     metaPending,
     editorRef,
-    anchorToFocus,
+    anchorToFocus: anchorToFocusRef,
     citationContext,
     dirty,
     editorEpoch,
@@ -94,12 +96,13 @@ export default function WritingWorkspace(): React.JSX.Element {
     media.addEventListener('change', change)
     return () => media.removeEventListener('change', change)
   }, [])
-  useEffect(() => {
-    if (visible) {
-      setMobilePane('editor')
-    }
-  }, [visible, project?.documentId])
-  useEffect(() => {
+  const paneKey = `${visible}:${project?.documentId ?? ''}`
+  const [lastPaneKey, setLastPaneKey] = useState(paneKey)
+  if (lastPaneKey !== paneKey) {
+    setLastPaneKey(paneKey)
+    if (visible) setMobilePane('editor')
+  }
+  const onPanelReveal = useEffectEvent(() => {
     if (
       visible &&
       writingView.revealRevision !== handledReveal.current &&
@@ -113,7 +116,12 @@ export default function WritingWorkspace(): React.JSX.Element {
           sidePane.current.focus({ preventScroll: true })
       })
     }
-  }, [visible, writingView.revealRevision])
+  })
+  // Present only the latest committed navigation request, after retained regions update.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => onPanelReveal())
+    return () => cancelAnimationFrame(frame)
+  }, [visible, writingView.revealRevision, preferences.panel, session.composition])
   useEffect(() => {
     if (
       !visible ||
@@ -128,7 +136,7 @@ export default function WritingWorkspace(): React.JSX.Element {
     }
     const pane = mobilePane === 'outline' ? outlinePane.current : sidePane.current
     pane?.focus({ preventScroll: true })
-  }, [mobilePane, narrow, visible])
+  }, [mobilePane, narrow, visible, editorRef, session.composition])
   if (!project) return <p>Open a project from Projects to begin writing.</p>
   const blocked = busy || acting || closing || session.navigating
   const readOnly = sectionReadOnly || accessReadOnly || accessTransition
@@ -459,7 +467,7 @@ export default function WritingWorkspace(): React.JSX.Element {
               required
               disabled={blocked || outlineRetry || readOnly || !!metaPending.current}
               onChange={(event) => {
-                sectionFields.current.title = event.currentTarget.value
+                sectionFieldsRef.current.title = event.currentTarget.value
                 setSectionTitle(event.currentTarget.value)
               }}
             />
@@ -468,9 +476,9 @@ export default function WritingWorkspace(): React.JSX.Element {
               value={sectionStatus}
               disabled={blocked || outlineRetry || readOnly || !!metaPending.current}
               onChange={(event) => {
-                sectionFields.current.status = event.currentTarget.value as
+                sectionFieldsRef.current.status = event.currentTarget.value as
                   'draft' | 'review' | 'complete'
-                setSectionStatus(sectionFields.current.status)
+                setSectionStatus(sectionFieldsRef.current.status)
               }}
             >
               <option value="draft">Draft</option>
@@ -483,7 +491,7 @@ export default function WritingWorkspace(): React.JSX.Element {
               maxLength={10000}
               disabled={blocked || outlineRetry || readOnly || !!metaPending.current}
               onChange={(event) => {
-                sectionFields.current.synopsis = event.currentTarget.value
+                sectionFieldsRef.current.synopsis = event.currentTarget.value
                 setSectionSynopsis(event.currentTarget.value)
               }}
             />
@@ -498,7 +506,7 @@ export default function WritingWorkspace(): React.JSX.Element {
               focusAnchor:
                 session.referenceAnchor?.documentId === project.documentId
                   ? session.referenceAnchor.id
-                  : anchorToFocus.current,
+                  : null,
               focusRequest: session.referenceAnchor?.request,
               projectId: project.projectId,
               sources:
@@ -522,9 +530,9 @@ export default function WritingWorkspace(): React.JSX.Element {
             }
             onReady={(editor) => {
               editorRef.current = editor
-              if (editor && anchorToFocus.current) {
-                const id = anchorToFocus.current
-                anchorToFocus.current = null
+              if (editor && anchorToFocusRef.current) {
+                const id = anchorToFocusRef.current
+                anchorToFocusRef.current = null
                 const target = manuscriptAnchor(editor, id)
                 if (target) {
                   if (target.footnote) editor.commands.setNodeSelection(target.position)

@@ -14,14 +14,14 @@ This plan extends the existing local Export workspace and compilation pipeline. 
 
 The source review for the October 2 planning addition found the following starting points. Read the actual checkout and delivered records again when implementing; these observations are a planning baseline, not runtime acceptance.
 
-| Area | Existing foundation | Work owned by this plan |
-| --- | --- | --- |
-| Export workspace | I09 presents existing PDF, DOCX, Markdown and plain-text export with selected contents, issues, recipes and native job results. | Extend that surface into a coherent Contents → Theme & layout → Preview → Export journey. |
-| Typography | PDF/DOCX largely use fixed Source Serif 4 styling and bundled script fallbacks; DOCX also assigns fonts directly to text runs. | Versioned role-based themes and actual font assets, applied consistently to every relevant output role. |
-| Preview | The current export preview reports selected sections, counts and issues; preparation initially materializes the manuscript. | A genuinely bounded visual sample with scoped content/dependency reads, independent of the full export selection. |
-| E-books | There is no EPUB export implementation in this baseline. | A reflowable EPUB writer and corresponding bounded e-book reading preview, integrated into existing export jobs. |
-| Print settings and recipes | Letter/A4 and recipes containing selected document IDs, paper and formats already exist. | Bounded book-interior presets and portable versioned typography/layout/metadata preferences. |
-| Preservation | Protected drafts, frozen compilation, narrow native file grants, retained-copy migration, backup/restore and independent copies exist. | Extend these contracts together; preview artifacts remain disposable and distinct from project/recovery data. |
+| Area                       | Existing foundation                                                                                                                    | Work owned by this plan                                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Export workspace           | I09 presents existing PDF, DOCX, Markdown and plain-text export with selected contents, issues, recipes and native job results.        | Extend that surface into a coherent Contents → Theme & layout → Preview → Export journey.                         |
+| Typography                 | PDF/DOCX largely use fixed Source Serif 4 styling and bundled script fallbacks; DOCX also assigns fonts directly to text runs.         | Versioned role-based themes and actual font assets, applied consistently to every relevant output role.           |
+| Preview                    | The current export preview reports selected sections, counts and issues; preparation initially materializes the manuscript.            | A genuinely bounded visual sample with scoped content/dependency reads, independent of the full export selection. |
+| E-books                    | There is no EPUB export implementation in this baseline.                                                                               | A reflowable EPUB writer and corresponding bounded e-book reading preview, integrated into existing export jobs.  |
+| Print settings and recipes | Letter/A4 and recipes containing selected document IDs, paper and formats already exist.                                               | Bounded book-interior presets and portable versioned typography/layout/metadata preferences.                      |
+| Preservation               | Protected drafts, frozen compilation, narrow native file grants, retained-copy migration, backup/restore and independent copies exist. | Extend these contracts together; preview artifacts remain disposable and distinct from project/recovery data.     |
 
 Required foundation records include [I03 session ownership](docs/decisions/improvement-03-session-navigation.md), [I04 metadata and consumers](docs/formats/working-project-v10.md), [I09 delivered export integration](docs/validation/improvement-I09.md), [MVP Stage 16 compilation](docs/decisions/stage-16-docx-compilation.md), [Stage 17 formats and recipes](docs/decisions/stage-17-interchange-and-recipes.md) and [Stage 18 access](docs/decisions/stage-18-capabilities-and-offline-access.md). Local implementation remains awaiting user testing. The recorded baseline is SQL/minimum reader 10, compilation 3 and AST/archive 1; allocate actual future versions from the checkout, not from these historical numbers. This documentation move changes no format or feature status.
 
@@ -37,18 +37,18 @@ The Export workspace should lead through **Contents → Theme & layout → Previ
 
 **Starting theme collection:** aim for these ten coordinated themes, using four restrained font families rather than a long font dropdown. Names and spacing may be refined from Josh's visual feedback; the variation in hierarchy and reading feel is required. Source Serif 4 is already bundled. Additional families below are candidates to pin with appropriate static faces and redistribution/embedding evidence in TE01.
 
-| Theme | Body / chapter-title family | Intended treatment |
-| --- | --- | --- |
-| Editorial Classic | Source Serif 4 / Source Serif 4 | Quiet centered chapter title, first-line indents, optional separate chapter number. |
-| Modern Nonfiction | Source Serif 4 / Source Sans 3 | Left-aligned sans-serif headings, restrained spacing and clear hierarchy. |
-| Academic Clear | Source Serif 4 / Source Sans 3 | Compact section hierarchy, comfortable line spacing, no decorative chapter treatment. |
-| Numbered Chapters | Source Serif 4 / Source Sans 3 | Distinct chapter number above the title; body remains familiar and understated. |
-| Quiet Chapters | Source Serif 4 / Source Serif 4 | Title-led opening with numbering off, generous opening space. |
-| Practical Handbook | Source Serif 4 / Source Sans 3 | Compact headings and paragraph spacing suited to frequent short sections. |
-| Traditional Book | Libre Baskerville / Libre Baskerville | Classical serif treatment with moderate heading contrast. |
-| Contemporary Book | Literata / Source Sans 3 | Open reading texture with clear modern chapter titles. |
-| Reading Edition | Literata / Literata | Consistent serif hierarchy and relaxed long-form reading. |
-| Professional Report | Source Sans 3 / Source Sans 3 | Straightforward sans-serif body and headings with space between paragraphs. |
+| Theme               | Body / chapter-title family           | Intended treatment                                                                    |
+| ------------------- | ------------------------------------- | ------------------------------------------------------------------------------------- |
+| Editorial Classic   | Source Serif 4 / Source Serif 4       | Quiet centered chapter title, first-line indents, optional separate chapter number.   |
+| Modern Nonfiction   | Source Serif 4 / Source Sans 3        | Left-aligned sans-serif headings, restrained spacing and clear hierarchy.             |
+| Academic Clear      | Source Serif 4 / Source Sans 3        | Compact section hierarchy, comfortable line spacing, no decorative chapter treatment. |
+| Numbered Chapters   | Source Serif 4 / Source Sans 3        | Distinct chapter number above the title; body remains familiar and understated.       |
+| Quiet Chapters      | Source Serif 4 / Source Serif 4       | Title-led opening with numbering off, generous opening space.                         |
+| Practical Handbook  | Source Serif 4 / Source Sans 3        | Compact headings and paragraph spacing suited to frequent short sections.             |
+| Traditional Book    | Libre Baskerville / Libre Baskerville | Classical serif treatment with moderate heading contrast.                             |
+| Contemporary Book   | Literata / Source Sans 3              | Open reading texture with clear modern chapter titles.                                |
+| Reading Edition     | Literata / Literata                   | Consistent serif hierarchy and relaxed long-form reading.                             |
+| Professional Report | Source Sans 3 / Source Sans 3         | Straightforward sans-serif body and headings with space between paragraphs.           |
 
 The proposed additional fonts have upstream sources at [Adobe Source Sans](https://github.com/adobe-fonts/source-sans), [Libre Baskerville](https://github.com/impallari/Libre-Baskerville) and [Literata](https://github.com/googlefonts/literata). At implementation time record exact versions, files, hashes, available faces, notices and permitted embedding/distribution for each selected asset. If a required face or script is absent, choose and document a suitable bundled alternative rather than synthesizing styles or silently borrowing installed fonts. No runtime font download, font marketplace, user font installation requirement or arbitrary uploaded-font feature is included.
 
@@ -56,12 +56,12 @@ The proposed additional fonts have upstream sources at [Adobe Source Sans](https
 
 “Compatible with printing or e-readers” means standards-based output with a documented target matrix and readable fallbacks. A font/theme alone cannot guarantee acceptance by every printer, store or reading app. These are separate rendering contracts:
 
-| Format | Theme behavior and intended use | Honest limitation |
-| --- | --- | --- |
-| PDF | Frozen page geometry and typography, licensed embedded fonts, print-oriented black text on paper. | A book interior still needs the target printer's trim, margins and production requirements. No blanket PDF/X, cover, bleed or press-ready certification. |
-| DOCX | Real document styles, editable text, headings and native notes, appropriate licensed font embedding/fallbacks. | Word processors can substitute fonts or repaginate. The app's paginated preview describes its PDF layout, not every word processor's rendering. |
-| EPUB 3 | Reflowable structure and a matching theme treatment, usable navigation, reader-controlled sizing and body-font defaults. Offer publisher typography as an optional preference where supported. | Reading software may ignore or override fonts/layout; fixed print page counts and footnote placement do not carry over. |
-| Markdown / plain text | Preserve existing semantic/text export and honest loss reports. | These formats do not preserve a coordinated page/font theme. |
+| Format                | Theme behavior and intended use                                                                                                                                                                | Honest limitation                                                                                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PDF                   | Frozen page geometry and typography, licensed embedded fonts, print-oriented black text on paper.                                                                                              | A book interior still needs the target printer's trim, margins and production requirements. No blanket PDF/X, cover, bleed or press-ready certification. |
+| DOCX                  | Real document styles, editable text, headings and native notes, appropriate licensed font embedding/fallbacks.                                                                                 | Word processors can substitute fonts or repaginate. The app's paginated preview describes its PDF layout, not every word processor's rendering.          |
+| EPUB 3                | Reflowable structure and a matching theme treatment, usable navigation, reader-controlled sizing and body-font defaults. Offer publisher typography as an optional preference where supported. | Reading software may ignore or override fonts/layout; fixed print page counts and footnote placement do not carry over.                                  |
+| Markdown / plain text | Preserve existing semantic/text export and honest loss reports.                                                                                                                                | These formats do not preserve a coordinated page/font theme.                                                                                             |
 
 Primary documentation reviewed for this planning addition: [W3C EPUB 3.3](https://www.w3.org/TR/epub-33/) defines the portable publication format; [EPUB reading systems](https://www.w3.org/TR/epub-rs-33/) describes reading-system behavior. [Kindle's reflowable text guidance](https://kdp.amazon.com/en_US/help/topic/GH4DRT75GWWAGBTU) supports reader control over body text and optional publisher fonts. [KDP's content routes](https://kdp.amazon.com/en_US/help/topic/G79CTKR8BX79E96L), [Apple Books preparation](https://itunespartner.apple.com/books/support/9-prepare-book) and [Kobo's accepted file types](https://kobowritinglife.zendesk.com/hc/en-us/articles/360059386271-File-Types-Sizes) support EPUB as a distribution input. Kindle submission/conversion is distinct from a claim that every Kindle directly opens `.epub` files. Print guidance requires attention to [embedded fonts](https://kdp.amazon.com/en_US/help/topic/G202145450) and [manuscript-file preparation](https://kdp.amazon.com/en_US/help/topic/G202145060); [print options](https://kdp.amazon.com/en_US/help/topic/G201834180) are target-specific. Refresh relevant official requirements during implementation; observed output remains user-owned acceptance. No publishing account, upload, store submission or paid conversion service is authorized by these stages.
 
@@ -85,12 +85,12 @@ Use a prompt such as **“Please implement TE01 from theme-and-export-plan.md.�
 
 The model/effort headings retain the app improvement plan's recommendations: **Astra** is GPT-6 Astra (`gpt-6-astra`); **High** and **Extra High** denote `high` and `xhigh` where the user's client provides them. They recommend the coding assistant workload setting, not a provider/model exposed inside Collie, measured performance, automatic model switching or permission to delegate. All four stages remain explicitly user-requested work.
 
-| Stage | Former app-plan ID | Deliverable | Depends on | Status |
-| --- | --- | --- | --- | --- |
-| TE01 | I12A | Professional theme catalog, frozen typography and PDF/DOCX styling | I04/I09 and existing MVP 16/17 export contracts | Not started |
-| TE02 | I12B | Lightweight visual sample preview with independent export contents | TE01; I03 session/draft/job ownership | Not started |
-| TE03 | I12C | Reflowable EPUB export and e-book sample preview | TE01, TE02 | Not started |
-| TE04 | I12D | Print presets, portable publication recipes and complete feature handoff | TE01–TE03 | Not started |
+| Stage | Former app-plan ID | Deliverable                                                              | Depends on                                      | Status      |
+| ----- | ------------------ | ------------------------------------------------------------------------ | ----------------------------------------------- | ----------- |
+| TE01  | I12A               | Professional theme catalog, frozen typography and PDF/DOCX styling       | I04/I09 and existing MVP 16/17 export contracts | Not started |
+| TE02  | I12B               | Lightweight visual sample preview with independent export contents       | TE01; I03 session/draft/job ownership           | Not started |
+| TE03  | I12C               | Reflowable EPUB export and e-book sample preview                         | TE01, TE02                                      | Not started |
+| TE04  | I12D               | Print presets, portable publication recipes and complete feature handoff | TE01–TE03                                       | Not started |
 
 The former IDs are a relocation map only. **TE01–TE04 are the authoritative stage IDs** for new requests, evidence and status. Dependencies establish engineering order, not permission to auto-advance. None depends on live AI or completion of I12/I13/I15.
 
@@ -206,7 +206,7 @@ Work:
 6. Finish progressive disclosure, keyboard/focus behavior, theme specimen clarity, narrow layouts and useful errors across the four steps. Keep local-only operation obvious through normal behavior, with no mandatory AI sign-in or online assets. Add succinct guidance on PDF vs editable DOCX vs reflowable EPUB, subset preview vs final scope, metadata privacy and where to adjust printer requirements. Explain unsupported theme features or format losses before exporting, avoiding a wall of technical notices in the normal flow.
 7. Produce a support matrix covering the app's PDF preview/output, editable DOCX in actual user-observed word processors, EPUB in available standard readers and optional Kindle/Apple/Kobo publisher previews. Each row distinguishes intended target, known limitations and dated user observations. Carry forward existing font/script, page-footnote, native destination and large-project gates; theme delivery does not close them. Track full publication-workflow implementation separately from accepted print/e-reader outcomes.
 
-**Implementation contract and deliverables:** Extend the existing recipe owner and shared publication layout model; do not introduce a second export-settings database or migrate editor formatting. Deliver the actual format/migration matrix, updated help and notices, `docs/validation/theme-and-export-TE04.md` and `docs/manual-testing/theme-and-export-TE04.md`. Runtime validation and actionable output checks belong in production. Manual acceptance remains the user's responsibility; no assistant-run reader/printing/build/format checks or generated test fixtures.
+**Implementation contract and deliverables:** Extend the existing recipe owner and shared publication layout model; do not introduce a second export-settings database or migrate editor formatting. Deliver the actual format/migration matrix, updated help and notices, `docs/validation/theme-and-export-TE04.md` and `docs/manual-testing/theme-and-export-TE04.md`. Runtime validation and actionable output checks belong in production. Run the required source format/lint/typecheck commands under the October 5 policy. Reader/printing/output-format acceptance remains the user's responsibility; no assistant-run reader/printing/build checks or generated test fixtures.
 
 **User-owned acceptance:** create a paper and a book-interior export with contrasting themes; preview a small section and export the intended full/excerpt scope; save/reopen/apply a recipe and observe retained theme/layout/metadata choices. On a disposable project copy, Save/Open/Duplicate/Restore preserve recipes and text without carrying output paths; old recipes retain legacy defaults. Observe each available target reader/word processor/printer manually and record limits, including font overrides in e-books. Confirm the ad-hoc single-export experience still works on a readable read-only project.
 
@@ -214,7 +214,7 @@ Work:
 
 ## Handoff and completion ledger
 
-The standing [user-owned manual-testing policy](AGENTS.md#user-owned-manual-testing--standing-instruction) applies to every stage. Assistants may read/edit source, configuration and documentation and inspect ordinary Git status/diffs. They must not create/maintain tests, fixtures, mocks, test-only tools, harnesses or CI substitutes, or run tests, typecheck, lint, audit/format/build/package checks, app/dev-server/browser/reader launches, screenshots, benchmarks or delegated verification. Production input validation, output integrity checks, recovery and error handling remain necessary product behavior; describing them here does not authorize executing them as checks.
+The standing [AGENTS.md policy](AGENTS.md#user-owned-manual-testing--standing-instruction), amended October 5, 2026, applies to every stage. After code changes, run `npm run format`, `npm run lint` and `npm run typecheck`, fix reported issues including warnings, rerun until clean, and record actual outcomes separately from runtime acceptance. This supersedes older prohibitions on these checks; documentation-only edits do not require them. Assistants may read/edit source, configuration and documentation and inspect ordinary Git status/diffs. They must not create/maintain tests, fixtures, mocks, test-only tools, harnesses or CI substitutes, or run tests, dependency audits, build/package checks, app/dev-server/browser/reader launches, screenshots, benchmarks or delegated runtime verification. Production input validation, output integrity checks, recovery and error handling remain necessary product behavior; they do not authorize other validation runs.
 
 For each explicitly requested TE stage:
 
@@ -225,14 +225,14 @@ For each explicitly requested TE stage:
 5. Record user-supplied outcomes with the relevant OS, format, reader/word processor/printer and version where known. Keep all unobserved migration, accessibility, font/script, footnote, native-file and scale behavior pending. Fix supplied defects without adding or running tests.
 6. Update the app improvement plan's separate publication milestone/cross-reference when feature status changes. I15 is not a prerequisite or a required repeat pass; TE04 owns integration and the final publication-specific handoff. Publishing, account actions and store submission require their own explicit authorization.
 
-| Milestone | Required work and acceptance | Status |
-| --- | --- | --- |
-| Standalone plan and scope | Four stages, shared contracts, theme collection and compatibility direction | Draft delivered for Josh's review; no implementation authorized |
-| Professional typography | TE01 implemented; user observes actual PDF/DOCX/font behavior | Not started |
-| Partial visual preview | TE02 implemented; user observes independent sample/output scope, cancellation and usability | Not started |
-| Reflowable e-book output | TE03 implemented; actual EPUB/reader results recorded individually | Not started |
-| Complete publication workflow | TE04 implemented; recipes, print presets and integrated manual handoff | Not started |
-| Format, migration, native, accessibility and scale acceptance | Dated user observations, with limitations retained | Unobserved for this feature; existing export gates remain pending |
-| Release readiness | Independent MVP/app gates, approvals and artifacts | Existing NO-GO unchanged; this plan does not authorize release |
+| Milestone                                                     | Required work and acceptance                                                                | Status                                                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Standalone plan and scope                                     | Four stages, shared contracts, theme collection and compatibility direction                 | Draft delivered for Josh's review; no implementation authorized   |
+| Professional typography                                       | TE01 implemented; user observes actual PDF/DOCX/font behavior                               | Not started                                                       |
+| Partial visual preview                                        | TE02 implemented; user observes independent sample/output scope, cancellation and usability | Not started                                                       |
+| Reflowable e-book output                                      | TE03 implemented; actual EPUB/reader results recorded individually                          | Not started                                                       |
+| Complete publication workflow                                 | TE04 implemented; recipes, print presets and integrated manual handoff                      | Not started                                                       |
+| Format, migration, native, accessibility and scale acceptance | Dated user observations, with limitations retained                                          | Unobserved for this feature; existing export gates remain pending |
+| Release readiness                                             | Independent MVP/app gates, approvals and artifacts                                          | Existing NO-GO unchanged; this plan does not authorize release    |
 
 Current handoff: the feature has been moved out of I12A–I12D into this standalone plan, retaining all four implementation scopes. Josh can review it and explicitly request TE01 when ready. No production code, font assets, schema changes or feature acceptance is delivered by this planning revision.

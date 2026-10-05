@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { destinationRegion } from '../../app/navigation'
-import { useWorkspaceSession } from './WorkspaceSession'
+import { useWorkspaceSession } from './workspaceContext'
 import styles from './WorkspaceNavigation.module.css'
 
 /** Visibility changes never unmount an editor, clear a draft registration or cancel a job. */
@@ -13,15 +13,20 @@ export function RetainedRegion({
   label: string
   children: ReactNode
 }): React.JSX.Element {
-  const { destination, focusRevision, focusRequest, navigating } = useWorkspaceSession()
+  const {
+    destination,
+    focusRevision,
+    focusRequest: focusRequestRef,
+    navigating
+  } = useWorkspaceSession()
   const visible = destinationRegion(destination) === name
   const root = useRef<HTMLElement>(null),
     lastFocus = useRef<HTMLElement | null>(null)
   useLayoutEffect(() => {
     if (!visible || !focusRevision || navigating) return
-    const requested = focusRequest.current
+    const requested = focusRequestRef.current
     if (requested) {
-      focusRequest.current = null
+      focusRequestRef.current = null
       requested()
       return
     }
@@ -30,7 +35,7 @@ export function RetainedRegion({
       previous.focus({ preventScroll: true })
     else root.current?.focus({ preventScroll: true })
     root.current?.scrollIntoView({ block: 'start' })
-  }, [visible, focusRevision, navigating])
+  }, [visible, focusRevision, navigating, focusRequestRef])
   return (
     <section
       ref={root}

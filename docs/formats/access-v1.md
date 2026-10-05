@@ -10,17 +10,17 @@ If persisting a newly authenticated issuer decision fails, paid access becomes u
 
 The signed envelope has exactly `grant` and `signature`. `signature` is canonical padded base64 of the 64-byte Ed25519 signature. `grant` has exactly:
 
-| Field | Version-1 rule |
-| --- | --- |
-| `schema` | Integer `1` |
-| `keyId`, `issuer`, `purchaseRef` | Opaque ASCII `[A-Za-z0-9_-]`, 1–128 characters; no email or content identifiers |
-| `channel` | Wire schema reserves `direct`, `mas` and `microsoft`; D8's implemented desktop verifier accepts only `direct`, matching the bundled key's authority |
-| `editionId` | `nonfiction` |
-| `accessKind` | `subscription` or `lifetime` |
-| `revision` | Positive JavaScript safe integer, increasing monotonically per purchase identity |
-| `status` | `active` or `revoked` |
-| `issuedAt` | Exact UTC `YYYY-MM-DDTHH:mm:ss.sssZ`, a valid round-tripping date |
-| `paidThrough`, `graceUntil` | Required only for subscription, same UTC syntax; grace is between paid-through and 14 days after it |
+| Field                            | Version-1 rule                                                                                                                                      |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`                         | Integer `1`                                                                                                                                         |
+| `keyId`, `issuer`, `purchaseRef` | Opaque ASCII `[A-Za-z0-9_-]`, 1–128 characters; no email or content identifiers                                                                     |
+| `channel`                        | Wire schema reserves `direct`, `mas` and `microsoft`; D8's implemented desktop verifier accepts only `direct`, matching the bundled key's authority |
+| `editionId`                      | `nonfiction`                                                                                                                                        |
+| `accessKind`                     | `subscription` or `lifetime`                                                                                                                        |
+| `revision`                       | Positive JavaScript safe integer, increasing monotonically per purchase identity                                                                    |
+| `status`                         | `active` or `revoked`                                                                                                                               |
+| `issuedAt`                       | Exact UTC `YYYY-MM-DDTHH:mm:ss.sssZ`, a valid round-tripping date                                                                                   |
+| `paidThrough`, `graceUntil`      | Required only for subscription, same UTC syntax; grace is between paid-through and 14 days after it                                                 |
 
 Lifetime documents must omit both subscription dates; no version/edition-upgrade ceiling or artificial lifetime expiry field is accepted. Extra fields are rejected. An active document issued more than five minutes in the future is unavailable until time catches up. An authenticated revocation takes effect when received. A later authentic active revision may restore rights; replay of an older active revision cannot undo the revocation.
 

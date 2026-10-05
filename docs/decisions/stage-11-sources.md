@@ -8,11 +8,11 @@ Pinned local interchange packages are `@citation-js/core`, `@citation-js/plugin-
 
 All three Citation.js packages stay external at the Electron worker boundary so plugin registration shares one core instance.
 
-| Source field | CSL JSON | BibTeX | RIS |
-| --- | --- | --- | --- |
-| Type/title/creator/issued | CSL `type`, `title`, `author`, `issued` | Citation.js entry type, `title`, `author`, `year`/`date` | `TY`, `TI`/`T1`, `AU`/`A1`, `PY`/`Y1` |
-| Container/publisher/edition/volume/issue/pages | CSL names | `journal`/`booktitle`, `publisher`, `edition`, `volume`, `number`, `pages` | `JO`/`JF`/`BT`, `PB`, `ET`, `VL`, `IS`, `SP`/`EP` |
-| DOI/URL/ISBN/ISSN | CSL `DOI`, `URL`, `ISBN`, `ISSN` | `doi`, `url`, `isbn`, `issn` | `DO`, `UR`, `SN` (ISBN/ISSN depends on record type) |
+| Source field                                   | CSL JSON                                | BibTeX                                                                     | RIS                                                 |
+| ---------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------- |
+| Type/title/creator/issued                      | CSL `type`, `title`, `author`, `issued` | Citation.js entry type, `title`, `author`, `year`/`date`                   | `TY`, `TI`/`T1`, `AU`/`A1`, `PY`/`Y1`               |
+| Container/publisher/edition/volume/issue/pages | CSL names                               | `journal`/`booktitle`, `publisher`, `edition`, `volume`, `number`, `pages` | `JO`/`JF`/`BT`, `PB`, `ET`, `VL`, `IS`, `SP`/`EP`   |
+| DOI/URL/ISBN/ISSN                              | CSL `DOI`, `URL`, `ISBN`, `ISSN`        | `doi`, `url`, `isbn`, `issn`                                               | `DO`, `UR`, `SN` (ISBN/ISSN depends on record type) |
 
 This table is the application's intended subset; dialect-specific behavior remains user acceptance work. BibTeX macros spanning separate entries are not expanded by the per-record preview splitter. RIS old/new variants supported by the pinned plugin are attempted, but arbitrary vendor tags are not canonicalized. Imports up to 8 MiB and 2,000 records receive a preview under a one-hour, project-scoped file grant. Each row has either normalized fields or an error, possible exact DOI/ISBN/URL/imported-ID matches and similar title/first-creator matches, and omitted field names. The preview does not mutate storage. A commit re-reads and hashes the selected file, requires one action for every row, and inserts all accepted rows plus the report in one transaction. Candidate matches default to Skip; Create separate, Merge into target and Link imported ID to target are explicit. Link does not replace target metadata; merge only fills target fields that are empty. Imported original records, including skipped/invalid rows, and unknown field names remain in project data. Export reports omit project-only provenance, verification, links, attachments, raw records and revision history, plus each unknown field. No universal bibliography round trip is asserted.
 

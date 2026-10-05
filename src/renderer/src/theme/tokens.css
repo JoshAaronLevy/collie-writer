@@ -94,7 +94,8 @@
   --mantine-primary-color-9: var(--mantine-color-green-9);
 }
 
-:root, :root[data-mantine-color-scheme='light'] {
+:root,
+:root[data-mantine-color-scheme='light'] {
   color-scheme: light;
   --collie-background: #f5f4f0;
   --collie-surface: #fff;
@@ -201,7 +202,9 @@
   --mantine-shadow-md: var(--collie-shadow-overlay);
 }
 
-:root[data-motion='reduced'] { --collie-motion-duration: 0ms; }
+:root[data-motion='reduced'] {
+  --collie-motion-duration: 0ms;
+}
 
 @media (forced-colors: active) {
   :root[data-mantine-color-scheme] {

@@ -1,11 +1,9 @@
-import { createContext, useContext, type ReactNode } from 'react'
+import { Context } from './workspaceContext'
+import { type ReactNode } from 'react'
 import type { StorageStatus } from '../../../../shared/storage'
 import { useWorkspaceController } from './useWorkspaceController'
 import { ResearchDataProvider } from '../research/ResearchData'
 import { DraftContext } from './DraftOwner'
-
-type WorkspaceSession = ReturnType<typeof useWorkspaceController>
-const Context = createContext<WorkspaceSession | null>(null)
 
 export function WorkspaceSessionProvider({
   storage,
@@ -22,10 +20,4 @@ export function WorkspaceSessionProvider({
       </DraftContext.Provider>
     </Context.Provider>
   )
-}
-
-export function useWorkspaceSession(): WorkspaceSession {
-  const session = useContext(Context)
-  if (!session) throw new Error('Workspace session is missing')
-  return session
 }

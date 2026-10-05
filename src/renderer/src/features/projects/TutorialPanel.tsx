@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AppButton, ChoiceField } from '../../components/ui/Controls'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import styles from '../help/WritingGuide.module.css'
 
 export default function TutorialPanel({

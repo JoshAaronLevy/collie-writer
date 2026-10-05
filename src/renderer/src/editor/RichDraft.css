@@ -1,23 +1,115 @@
-.rich-draft { min-width: 0; }
-.rich-draft .editor-toolbar, .rich-draft .editor-context-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; padding-block: .5rem; border-block: 1px solid var(--collie-border); }
-.rich-draft .editor-context-tools { border-top: 0; font-size: .875rem; color: var(--collie-text-secondary); }
-.rich-draft .editor-toolbar [aria-pressed='true'] { background: var(--collie-selected); color: var(--collie-accent); }
-.rich-draft .editor-host .tiptap { min-height: 52vh; padding: 1.5rem .25rem; font: 1.1875rem/1.75 var(--collie-font-manuscript); color: var(--collie-text); background: var(--collie-surface); white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
-.rich-draft .editor-host .tiptap:focus-visible { outline: var(--collie-focus-width) solid var(--collie-focus); outline-offset: .25rem; }
-.rich-draft .editor-host .tiptap p { margin-block: 0 1em; }
-.rich-draft .editor-host .tiptap h1, .rich-draft .editor-host .tiptap h2, .rich-draft .editor-host .tiptap h3 { font-family: var(--collie-font-manuscript); line-height: 1.25; }
-.rich-draft .editor-host .tiptap blockquote { border-left: 3px solid var(--collie-control-border); padding-left: 1rem; margin-left: 0; }
-.rich-draft .editor-host .tiptap figure { max-width: 100%; margin-inline: 0; }
-.rich-draft .editor-host .tiptap img { max-width: 100%; height: auto; }
-.rich-draft .editor-host .tiptap figcaption { color: var(--collie-text-secondary); font-size: .9rem; }
-.rich-draft .editor-host .tiptap hr[data-kind='pageBreak'] { border: 0; border-top: 2px dashed var(--collie-control-border); margin-block: 1.5rem; }
-.rich-draft .editor-host .tiptap table { display: block; overflow-x: auto; border-collapse: collapse; max-width: 100%; }
-.rich-draft .editor-host .tiptap td, .rich-draft .editor-host .tiptap th { border: 1px solid var(--collie-control-border); min-width: 5rem; padding: .35rem; vertical-align: top; }
-.rich-draft .word-count { color: var(--collie-text-secondary); font-size: .875rem; }
-.rich-draft .editor-find { display: grid; gap: .75rem; padding-block: 1rem; border-top: 1px solid var(--collie-border); }
-.rich-draft [hidden] { display: none; }
-.rich-draft .editor-reference-region { padding-block: .75rem; border-bottom: 1px solid var(--collie-border); }
-.rich-draft [data-citation], .rich-draft [data-footnote] { background: var(--collie-selected); cursor: pointer; }
-.rich-draft [data-citation][data-numbered-note] { vertical-align: super; font-size: .8em; }
-.editor-dialog-form { display: grid; gap: 1rem; }
-.rich-draft .editor-dialog-actions, .editor-dialog-form .editor-dialog-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.rich-draft {
+  min-width: 0;
+}
+.rich-draft .editor-toolbar,
+.rich-draft .editor-context-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding-block: 0.5rem;
+  border-block: 1px solid var(--collie-border);
+}
+.rich-draft .editor-context-tools {
+  border-top: 0;
+  font-size: 0.875rem;
+  color: var(--collie-text-secondary);
+}
+.rich-draft .editor-toolbar [aria-pressed='true'] {
+  background: var(--collie-selected);
+  color: var(--collie-accent);
+}
+.rich-draft .editor-host .tiptap {
+  min-height: 52vh;
+  padding: 1.5rem 0.25rem;
+  font: 1.1875rem/1.75 var(--collie-font-manuscript);
+  color: var(--collie-text);
+  background: var(--collie-surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+.rich-draft .editor-host .tiptap:focus-visible {
+  outline: var(--collie-focus-width) solid var(--collie-focus);
+  outline-offset: 0.25rem;
+}
+.rich-draft .editor-host .tiptap p {
+  margin-block: 0 1em;
+}
+.rich-draft .editor-host .tiptap h1,
+.rich-draft .editor-host .tiptap h2,
+.rich-draft .editor-host .tiptap h3 {
+  font-family: var(--collie-font-manuscript);
+  line-height: 1.25;
+}
+.rich-draft .editor-host .tiptap blockquote {
+  border-left: 3px solid var(--collie-control-border);
+  padding-left: 1rem;
+  margin-left: 0;
+}
+.rich-draft .editor-host .tiptap figure {
+  max-width: 100%;
+  margin-inline: 0;
+}
+.rich-draft .editor-host .tiptap img {
+  max-width: 100%;
+  height: auto;
+}
+.rich-draft .editor-host .tiptap figcaption {
+  color: var(--collie-text-secondary);
+  font-size: 0.9rem;
+}
+.rich-draft .editor-host .tiptap hr[data-kind='pageBreak'] {
+  border: 0;
+  border-top: 2px dashed var(--collie-control-border);
+  margin-block: 1.5rem;
+}
+.rich-draft .editor-host .tiptap table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  max-width: 100%;
+}
+.rich-draft .editor-host .tiptap td,
+.rich-draft .editor-host .tiptap th {
+  border: 1px solid var(--collie-control-border);
+  min-width: 5rem;
+  padding: 0.35rem;
+  vertical-align: top;
+}
+.rich-draft .word-count {
+  color: var(--collie-text-secondary);
+  font-size: 0.875rem;
+}
+.rich-draft .editor-find {
+  display: grid;
+  gap: 0.75rem;
+  padding-block: 1rem;
+  border-top: 1px solid var(--collie-border);
+}
+.rich-draft [hidden] {
+  display: none;
+}
+.rich-draft .editor-reference-region {
+  padding-block: 0.75rem;
+  border-bottom: 1px solid var(--collie-border);
+}
+.rich-draft [data-citation],
+.rich-draft [data-footnote] {
+  background: var(--collie-selected);
+  cursor: pointer;
+}
+.rich-draft [data-citation][data-numbered-note] {
+  vertical-align: super;
+  font-size: 0.8em;
+}
+.editor-dialog-form {
+  display: grid;
+  gap: 1rem;
+}
+.rich-draft .editor-dialog-actions,
+.editor-dialog-form .editor-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

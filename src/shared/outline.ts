@@ -1,3 +1,4 @@
+import { hasControlCharacters } from './control-characters'
 import { isId, readDocument, type DocumentPayload } from '../domain/editor/schema'
 
 export type OutlineKind = 'part' | 'chapter' | 'text'
@@ -80,7 +81,7 @@ const obj = (v: unknown): v is Record<string, unknown> =>
 const keys = (v: Record<string, unknown>, fields: string[]): boolean =>
   Object.keys(v).length === fields.length && fields.every((k) => Object.hasOwn(v, k))
 const text = (v: unknown, max: number): v is string =>
-  typeof v === 'string' && v.length <= max && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(v)
+  typeof v === 'string' && v.length <= max && !hasControlCharacters(v, true)
 const title = (v: unknown): boolean => text(v, 500) && !!v.trim()
 const nullableId = (v: unknown): boolean => v === null || isId(v)
 export function isOutlineDocument(v: unknown): v is OutlineDocument {

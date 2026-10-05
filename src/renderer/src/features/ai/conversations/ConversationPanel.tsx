@@ -1,13 +1,13 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { TextInput, Textarea } from '@mantine/core'
 import { AppButton, ChoiceField, SelectField } from '../../../components/ui/Controls'
-import { useWorkspaceSession } from '../../workspace/WorkspaceSession'
-import { useAiConnections } from '../../ai-connections/AiConnectionsProvider'
+import { useWorkspaceSession } from '../../workspace/workspaceContext'
+import { useAiConnections } from '../../ai-connections/connectionState'
 import { AiRequestConnection } from '../../ai-connections/AiRequestConnection'
 import { connectionReason, featureDescription } from '../../ai-connections/connection-copy'
 import type { AiReason } from '../../../../../shared/ai'
 import type { ConversationTurn } from '../../../../../shared/conversations'
-import { useConversations } from './ConversationProvider'
+import { useConversations } from './conversationState'
 import styles from './Conversations.module.css'
 
 const outcomes = {
@@ -36,8 +36,8 @@ function requestReason(reason: AiReason): string {
   return connectionReason[reason]
 }
 function MessageTurn({ turn }: { turn: ConversationTurn }): React.JSX.Element {
-  const c = useConversations(),
-    a = turn.attempt,
+  const c = useConversations()
+  const a = turn.attempt,
     active = ['preparing', 'running', 'stopping'].includes(a.state),
     messages = turn.assistant ? [turn.user, turn.assistant] : [turn.user]
   return (
@@ -143,7 +143,8 @@ function MessageTurn({ turn }: { turn: ConversationTurn }): React.JSX.Element {
   )
 }
 export function ConversationPanel(): React.JSX.Element {
-  const c = useConversations(),
+  const c = useConversations()
+  const { composerRef, composingRef } = c,
     session = useWorkspaceSession(),
     connections = useAiConnections(),
     transcript = useRef<HTMLDivElement>(null)
@@ -152,7 +153,7 @@ export function ConversationPanel(): React.JSX.Element {
   const key = `${c.selected ?? 'none'}:${c.before ?? 'latest'}`
   useLayoutEffect(() => {
     if (transcript.current) transcript.current.scrollTop = c.scroll.current.get(key) ?? 0
-  }, [key, c.page?.conversation.id])
+  }, [key, c.page?.conversation.id, c.scroll])
   const blocked = c.busy || !!c.pending || session.closing || session.navigating,
     archived = c.page?.conversation.state === 'archived',
     review = c.draft.review
@@ -161,11 +162,11 @@ export function ConversationPanel(): React.JSX.Element {
       className={styles['conversation-panel']}
       aria-label="Project conversations"
       onCompositionStartCapture={() => {
-        c.composing.current = true
+        composingRef.current = true
         c.draftEvents.onCompositionStartCapture()
       }}
       onCompositionEndCapture={() => {
-        c.composing.current = false
+        composingRef.current = false
         c.draftEvents.onCompositionEndCapture()
       }}
     >
@@ -383,7 +384,7 @@ export function ConversationPanel(): React.JSX.Element {
             >
               <Textarea
                 label="Your next message"
-                ref={c.composer}
+                ref={composerRef}
                 value={c.draft.text}
                 maxLength={16000}
                 rows={5}
@@ -538,8 +539,8 @@ export function ConversationPanel(): React.JSX.Element {
   )
 }
 export function ConversationNotice(): React.JSX.Element | null {
-  const c = useConversations(),
-    drafts = Object.values(c.drafts).filter((d) => !!d.text).length
+  const c = useConversations()
+  const drafts = Object.values(c.drafts).filter((d) => !!d.text).length
   if (
     !c.scope ||
     (!c.run?.pending && !c.run?.issue && !c.pending && !drafts && !c.newTitle && !c.rename)

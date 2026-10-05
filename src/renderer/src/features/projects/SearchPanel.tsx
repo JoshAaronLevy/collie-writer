@@ -13,14 +13,10 @@ import { AppButton, SelectField } from '../../components/ui/Controls'
 import { EmptyState } from '../../components/ui/Feedback'
 import { ResearchHeader } from '../research/ResearchLayout'
 import { sectionPath } from '../research/usage'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import './SearchPanel.css'
 
-const scope = (project: OpenProject) => ({
-  projectId: project.projectId,
-  workspaceId: project.workspaceId
-})
 const labels: Record<SearchKind, string> = {
   draft: 'Writing',
   note: 'Note',
@@ -76,7 +72,7 @@ export default function SearchPanel({
   useEffect(() => {
     let live = true
     void window.collie
-      .readSources(scope(project))
+      .readSources({ projectId: project.projectId, workspaceId: project.workspaceId })
       .then((result) => {
         if (live && result.ok)
           setSources(result.value.sources.map((row) => ({ id: row.id, title: row.metadata.title })))
@@ -85,7 +81,7 @@ export default function SearchPanel({
         if (live) setError('Source filters could not be loaded.')
       })
     void window.collie
-      .readNotes(scope(project))
+      .readNotes({ projectId: project.projectId, workspaceId: project.workspaceId })
       .then((result) => {
         if (live && result.ok)
           setTags(result.value.labels.filter((row) => row.kind === 'tag' && row.state === 'active'))
@@ -101,7 +97,7 @@ export default function SearchPanel({
     let live = true
     const read = (): void => {
       void window.collie
-        .readSearchActivity(scope(project))
+        .readSearchActivity({ projectId: project.projectId, workspaceId: project.workspaceId })
         .then((result) => {
           if (live) {
             if (result.ok) setActivity(result.value)
@@ -122,9 +118,13 @@ export default function SearchPanel({
       clearInterval(timer)
     }
   }, [project.projectId, project.workspaceId, retry])
+  const [lastRequestKey, setLastRequestKey] = useState(requestKey)
+  if (lastRequestKey !== requestKey) {
+    setLastRequestKey(requestKey)
+    setSearching(!!query.trim())
+  }
   useEffect(() => {
     let live = true
-    setSearching(!!query.trim())
     const timer = setTimeout(() => {
       if (!query.trim()) {
         setView(null)
@@ -133,7 +133,7 @@ export default function SearchPanel({
         return
       }
       const input: SearchInput = {
-        ...scope(project),
+        ...{ projectId: project.projectId, workspaceId: project.workspaceId },
         query,
         kind,
         tagId: tag || null,
@@ -167,6 +167,12 @@ export default function SearchPanel({
     project.projectId,
     project.workspaceId,
     project.headCommitId,
+    kind,
+    offset,
+    query,
+    section,
+    source,
+    tag,
     requestKey,
     activity?.state,
     activity?.processed,
@@ -178,7 +184,10 @@ export default function SearchPanel({
     setBusy(true)
     setError('')
     try {
-      const result = await window.collie.changeSearch({ ...scope(project), action })
+      const result = await window.collie.changeSearch({
+        ...{ projectId: project.projectId, workspaceId: project.workspaceId },
+        action
+      })
       if (result.ok) setActivity(result.value)
       else setError(result.error.message)
     } catch {
@@ -192,7 +201,7 @@ export default function SearchPanel({
     current = submitted === requestKey
   useRetainedDraft('search-index-operation', {
     read: () => ({
-      scope: scope(project),
+      scope: { projectId: project.projectId, workspaceId: project.workspaceId },
       kind: 'search-index',
       entityId: null,
       label: 'local search index',
@@ -203,7 +212,11 @@ export default function SearchPanel({
       policy: 'operation',
       status: indexing ? `${a?.processed ?? 0} of ${a?.total ?? 0} records examined` : undefined,
       issue: a?.error ?? undefined,
-      target: { kind: 'workspace', scope: scope(project), view: 'search' }
+      target: {
+        kind: 'workspace',
+        scope: { projectId: project.projectId, workspaceId: project.workspaceId },
+        view: 'search'
+      }
     })
   })
   return (

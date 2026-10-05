@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { AppButton } from '../../../components/ui/Controls'
-import { useProofreading } from './ProofreadingProvider'
-import { useAiConnections } from '../../ai-connections/AiConnectionsProvider'
+import { useProofreading } from './proofreadingState'
+import { useAiConnections } from '../../ai-connections/connectionState'
 import { connectionReason, featureDescription } from '../../ai-connections/connection-copy'
 import type { CoverageKind, ProofreadCapture } from '../../../../../shared/proofreading'
 import { AiRequestConnection } from '../../ai-connections/AiRequestConnection'
@@ -96,14 +96,17 @@ function CaptureDetails({ capture }: { capture: ProofreadCapture }): React.JSX.E
   )
 }
 export function ProofreadingPanel(): React.JSX.Element {
-  const p = useProofreading(),
+  const p = useProofreading()
+  const { panelRef } = p,
     connections = useAiConnections()
   const [findingId, setFindingId] = useState<string | null>(null),
     [page, setPage] = useState(0)
-  useEffect(() => {
+  const [lastSelected, setLastSelected] = useState(p.selected)
+  if (lastSelected !== p.selected) {
+    setLastSelected(p.selected)
     setFindingId(null)
     setPage(0)
-  }, [p.selected])
+  }
   const b = p.bundle,
     f = b?.findings.find((item) => item.id === findingId),
     active = !!b && ['preparing', 'running', 'stopping'].includes(b.attempt.state)
@@ -111,7 +114,7 @@ export function ProofreadingPanel(): React.JSX.Element {
     <section
       className={styles['proofreading-panel']}
       aria-label="Proofreading"
-      ref={p.panel}
+      ref={panelRef}
       tabIndex={-1}
     >
       <header className={styles['proofreading-heading']}>

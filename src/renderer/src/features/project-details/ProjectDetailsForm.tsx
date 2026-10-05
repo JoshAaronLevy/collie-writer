@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffectEvent, useEffect, useRef, useState } from 'react'
 import type { ProjectDetailsInput, OpenProject } from '../../../../shared/projects'
 import type { ProjectDetails } from '../../../../domain/projects/details'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useDraftRegistry, useRetainedDraft } from '../workspace/DraftOwner'
 import { AppButton } from '../../components/ui/Controls'
-import { ProjectDetailsFields, detailsErrors } from './ProjectDetailsFields'
+import { ProjectDetailsFields } from './ProjectDetailsFields'
+import { detailsErrors } from './detailsErrors'
 import styles from './ProjectDetails.module.css'
 
 const fields = (p: OpenProject): ProjectDetails => ({
@@ -36,6 +37,8 @@ export default function ProjectDetailsForm({
     busy: false,
     pending: null as ProjectDetailsInput | null
   })
+  const [baseline, setBaseline] = useState(() => fields(project))
+  const [pending, setPending] = useState<ProjectDetailsInput | null>(null)
   const panel = useRef<HTMLFormElement>(null)
   const scope = { projectId: project.projectId, workspaceId: project.workspaceId }
   const dirty = (): boolean =>
@@ -48,13 +51,23 @@ export default function ProjectDetailsForm({
   }
   function adopt(next: OpenProject): void {
     state.current.baseline = fields(next)
+    setBaseline(fields(next))
     state.current.revision = next.detailsRevisionId
     change(fields(next))
     setAttempted(false)
   }
+  const onSavedDetailsChanged = useEffectEvent((next: OpenProject) => {
+    if (
+      !dirty() &&
+      !state.current.pending &&
+      !state.current.busy &&
+      state.current.revision !== next.detailsRevisionId
+    )
+      adopt(next)
+  })
   useEffect(() => {
-    if (!dirty() && !state.current.pending && !state.current.busy) adopt(project)
-  }, [project.detailsRevisionId])
+    onSavedDetailsChanged(project)
+  }, [project])
   const binding = useRetainedDraft('project-details', {
     read: () => ({
       scope,
@@ -103,10 +116,14 @@ export default function ProjectDetailsForm({
             : state.current.value.title.trim(),
         byline: state.current.value.byline.trim()
       }
+      setPending(state.current.pending)
       registry.changed()
       const result = await window.collie.updateProjectDetails(state.current.pending)
       if (!result.ok) {
-        if (result.error.code !== 'UNAVAILABLE') state.current.pending = null
+        if (result.error.code !== 'UNAVAILABLE') {
+          state.current.pending = null
+          setPending(null)
+        }
         setError(
           result.error.code === 'UNAVAILABLE'
             ? 'The save result is unknown. Retry this exact save before changing the fields.'
@@ -115,6 +132,7 @@ export default function ProjectDetailsForm({
         return
       }
       state.current.pending = null
+      setPending(null)
       session.acceptProjectDetails(result.value)
       adopt(result.value)
       setMessage(
@@ -169,20 +187,25 @@ export default function ProjectDetailsForm({
         value={value}
         onChange={change}
         creating={false}
-        disabled={disabled || readOnly || busy || !!state.current.pending}
+        disabled={disabled || readOnly || busy || !!pending}
         showErrors={attempted}
-        originalTitle={state.current.baseline.title}
+        originalTitle={baseline.title}
       />
       <div className={styles['project-details-actions']}>
         <AppButton
           type="submit"
-          disabled={disabled || readOnly || busy || (!dirty() && !state.current.pending)}
+          disabled={
+            disabled ||
+            readOnly ||
+            busy ||
+            (JSON.stringify(value) === JSON.stringify(baseline) && !pending)
+          }
         >
-          {state.current.pending ? 'Retry details save' : 'Save project details'}
+          {pending ? 'Retry details save' : 'Save project details'}
         </AppButton>
         <AppButton
           variant="default"
-          disabled={disabled || busy || !!state.current.pending}
+          disabled={disabled || busy || !!pending}
           onClick={() => session.run(reload)}
         >
           Replace form with saved details

@@ -24,12 +24,12 @@ import ProjectFileActions from '../projects/ProjectFileActions'
 import AccessPanel from '../projects/AccessPanel'
 import TutorialPanel from '../projects/TutorialPanel'
 import SettingsPanel from '../settings/SettingsPanel'
-import { useWorkspaceSession } from './WorkspaceSession'
+import { useWorkspaceSession } from './workspaceContext'
 import { RetainedRegion } from './RetainedRegion'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
 export default function WorkspaceViews(): React.JSX.Element {
   const {
-    composition,
+    composition: compositionRef,
     drafts,
     destination,
     storage,
@@ -102,11 +102,11 @@ export default function WorkspaceViews(): React.JSX.Element {
       <div
         inert={navigating || closing}
         onCompositionStartCapture={() => {
-          composition.current = true
+          compositionRef.current = true
           drafts.changed()
         }}
         onCompositionEndCapture={() => {
-          composition.current = false
+          compositionRef.current = false
           drafts.changed()
         }}
       >
@@ -132,11 +132,11 @@ export default function WorkspaceViews(): React.JSX.Element {
         <div
           inert={navigating || closing}
           onCompositionStartCapture={() => {
-            composition.current = true
+            compositionRef.current = true
             drafts.changed()
           }}
           onCompositionEndCapture={() => {
-            composition.current = false
+            compositionRef.current = false
             drafts.changed()
           }}
         >
@@ -272,11 +272,11 @@ export default function WorkspaceViews(): React.JSX.Element {
         <div
           inert={navigating || closing}
           onCompositionStartCapture={() => {
-            composition.current = true
+            compositionRef.current = true
             drafts.changed()
           }}
           onCompositionEndCapture={() => {
-            composition.current = false
+            compositionRef.current = false
             drafts.changed()
           }}
         >

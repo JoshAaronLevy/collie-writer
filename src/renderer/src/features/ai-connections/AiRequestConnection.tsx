@@ -1,6 +1,6 @@
 import { AppButton } from '../../components/ui/Controls'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
-import { useAiConnections } from './AiConnectionsProvider'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
+import { useAiConnections } from './connectionState'
 import { AiModelSelection } from './AiModelSelection'
 import { AiCapacity } from './AiCapacity'
 import { DirectConnectionProgress } from './DirectConnectionProgress'

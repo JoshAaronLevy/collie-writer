@@ -6,13 +6,13 @@ The approved refinement depicts a sweet black-and-white Border Collie holding a 
 
 Derived assets:
 
-| Path | Purpose |
-| --- | --- |
-| `build/icon.iconset/` | macOS 16, 32, 128, 256 and 512-point images, each at 1× and 2× |
-| `build/icon.icns` | macOS application bundle icon |
-| `build/icon.ico` | Windows application/installer icon, with 16, 24, 32, 48, 64, 128 and 256-pixel frames |
-| `build/icon.png` | 1024-pixel native image, including the development macOS Dock |
-| `src/renderer/src/assets/collie-writer.png` | 256-pixel image shared by the header and About screen |
+| Path                                        | Purpose                                                                               |
+| ------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `build/icon.iconset/`                       | macOS 16, 32, 128, 256 and 512-point images, each at 1× and 2×                        |
+| `build/icon.icns`                           | macOS application bundle icon                                                         |
+| `build/icon.ico`                            | Windows application/installer icon, with 16, 24, 32, 48, 64, 128 and 256-pixel frames |
+| `build/icon.png`                            | 1024-pixel native image, including the development macOS Dock                         |
+| `src/renderer/src/assets/collie-writer.png` | 256-pixel image shared by the header and About screen                                 |
 
 Run `npm run icons:generate` on macOS to regenerate these assets after an explicitly approved master update. The script uses macOS `sips` and `iconutil`, plus Node's standard library for the ICO container. It resizes the complete square artwork, preserves the original master, and never starts or packages the app. No image-generation service, API key or additional package is needed for resizing. Generated assets are committed, so Windows development and packaging do not require these macOS tools.
 

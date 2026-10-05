@@ -1,7 +1,7 @@
 import { useId } from 'react'
 import { AppButton, SelectField } from '../../components/ui/Controls'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
-import { useAiConnections } from './AiConnectionsProvider'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
+import { useAiConnections } from './connectionState'
 import { connectionReason, featureDescription } from './connection-copy'
 import styles from './AiConnections.module.css'
 

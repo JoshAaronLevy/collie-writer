@@ -1,7 +1,8 @@
+import { withoutKeys } from '../../../../shared/objects'
 import { TextInput } from '@mantine/core'
 import { AppButton, SelectField } from '../../components/ui/Controls'
 import './HistoryPanel.css'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
 import {
   effectiveState,
@@ -101,11 +102,14 @@ export default function HistoryPanel({
     [target, setTarget] = useState(''),
     [page, setPage] = useState(0),
     [issuePage, setIssuePage] = useState(0)
-  useEffect(() => {
-    setSelected(history?.checkpointId ?? '')
+  const checkpointId = history?.checkpointId ?? ''
+  const [lastCheckpointId, setLastCheckpointId] = useState(checkpointId)
+  if (lastCheckpointId !== checkpointId) {
+    setLastCheckpointId(checkpointId)
+    setSelected(checkpointId)
     setConfirm(null)
     setPage(0)
-  }, [history?.checkpointId])
+  }
   const fresh = history?.headCommitId === project.headCommitId
   const issues = history?.anchors.filter((a) => a.state !== 'active') ?? []
   const oldDocs = history?.snapshot?.documents ?? [],
@@ -115,7 +119,7 @@ export default function HistoryPanel({
       current = currentDocs.find((d) => d.id === id)
     const comparable = (doc: RetainedDocument | undefined): string => {
       if (!doc) return ''
-      const { revisionId: _revision, ...rest } = doc
+      const rest = withoutKeys(doc, ['revisionId'])
       return JSON.stringify(rest)
     }
     return comparable(old) !== comparable(current)

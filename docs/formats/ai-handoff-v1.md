@@ -22,12 +22,12 @@ An explicit acknowledgment retry first waits for the same attempt's current work
 
 All paths below are beneath the verified working root. Credentials and runtime files retain their existing separate owners.
 
-| Path | Contract |
-| --- | --- |
-| `ai/operations/<operationId>.json` | At most 64 hot operations globally across both features. Original safeStorage envelope and 4 MiB file limit. |
-| `ai/operations/index-v1.json` | Encrypted exact `{version:1, layout:'receipt-index-v1', limit:64}` marker. Pre-CD08 readers refuse this non-operation entry instead of ignoring retired identities. |
-| `ai/retained-v1/records/<operationId>.json` | Original encrypted bytes moved intact from the hot path. Exact v1/v2/v3 interpretation and 4 MiB limit. |
-| `ai/retained-v1/receipts/<operationId>.json` | Encrypted exact `{version:1, receipt, recordDigest}` entry; 32 KiB limit. `recordDigest` binds the entire decoded original operation. |
+| Path                                         | Contract                                                                                                                                                            |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ai/operations/<operationId>.json`           | At most 64 hot operations globally across both features. Original safeStorage envelope and 4 MiB file limit.                                                        |
+| `ai/operations/index-v1.json`                | Encrypted exact `{version:1, layout:'receipt-index-v1', limit:64}` marker. Pre-CD08 readers refuse this non-operation entry instead of ignoring retired identities. |
+| `ai/retained-v1/records/<operationId>.json`  | Original encrypted bytes moved intact from the hot path. Exact v1/v2/v3 interpretation and 4 MiB limit.                                                             |
+| `ai/retained-v1/receipts/<operationId>.json` | Encrypted exact `{version:1, receipt, recordDigest}` entry; 32 KiB limit. `recordDigest` binds the entire decoded original operation.                               |
 
 Startup streams the hot directory and refuses more than 64 records. It never lists or loads cold history. Exact-ID reads inspect only the two bounded record locations and one bounded receipt; simultaneous hot/cold originals, unknown versions, inconsistent digests or missing indexed records refuse. Cold records are not cached in an unbounded map. Portable history retains its existing paged readers.
 
@@ -47,16 +47,16 @@ Binding/receipt queries select at most 16,001 SQLite text characters per result 
 
 ## Consumer matrix
 
-| Consumer | Responsibility |
-| --- | --- |
-| `worker/ai/handoff.ts` | Shared original-binding lookup, bounded active collections, durable receipts and receipt-only retirement. |
-| Conversation/proofreading workers | Compare committed feature results, freeze settlement after a receipt, preserve transcript/findings/human decisions. |
-| Project repository | Exact local schema migration and retained backup; serialize against file work and require the original open scope. |
-| `AiStorage`, `main/ai/handoff.ts` | Encrypted marker/index, intact original moves, bounded lazy reads and full/projection digest validation. |
-| `AiService` | Shared 64-hot limit, serialized local transfer, capacity status and exact cold prepare/start/read/cancel/protect behavior. A cold ID cannot become a new dispatch. |
-| `AiContentService` and both adapters | Portable settlement before transfer, exact failed-write priority, completed auto-handoff, explicit uncertain acknowledgment, original-project reopening recovery. |
-| Shared/main/preload contracts | Exact transient capacity/work status and narrow public acknowledgment; worker receipt inputs remain internal. |
-| Retained feature providers/global notice | Show history, capacity and local recovery; retain uncertain action acknowledgments; non-running retained outcomes do not become busy drafts. |
+| Consumer                                                         | Responsibility                                                                                                                                                                                                                 |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `worker/ai/handoff.ts`                                           | Shared original-binding lookup, bounded active collections, durable receipts and receipt-only retirement.                                                                                                                      |
+| Conversation/proofreading workers                                | Compare committed feature results, freeze settlement after a receipt, preserve transcript/findings/human decisions.                                                                                                            |
+| Project repository                                               | Exact local schema migration and retained backup; serialize against file work and require the original open scope.                                                                                                             |
+| `AiStorage`, `main/ai/handoff.ts`                                | Encrypted marker/index, intact original moves, bounded lazy reads and full/projection digest validation.                                                                                                                       |
+| `AiService`                                                      | Shared 64-hot limit, serialized local transfer, capacity status and exact cold prepare/start/read/cancel/protect behavior. A cold ID cannot become a new dispatch.                                                             |
+| `AiContentService` and both adapters                             | Portable settlement before transfer, exact failed-write priority, completed auto-handoff, explicit uncertain acknowledgment, original-project reopening recovery.                                                              |
+| Shared/main/preload contracts                                    | Exact transient capacity/work status and narrow public acknowledgment; worker receipt inputs remain internal.                                                                                                                  |
+| Retained feature providers/global notice                         | Show history, capacity and local recovery; retain uncertain action acknowledgments; non-running retained outcomes do not become busy drafts.                                                                                   |
 | Portable project, snapshot, Save/Backup/Duplicate/Restore/export | Same existing format and copy rules. They carry portable history only, never operations databases, handoff receipts, credentials or execution authority. Older external files/backups keep the history they already contained. |
 
 ## Retention and limits

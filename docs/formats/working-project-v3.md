@@ -2,12 +2,12 @@
 
 Stage 9 extends [schema 2](working-project-v2.md). Application ID `1129270359` is unchanged; `user_version`, `format.schema_version` and `format.minimum_reader` become **3**. Editor AST remains **1**. Exact app-owned STRICT DDL is in `src/worker/storage/schema.ts`; renderer input never supplies SQL.
 
-| Added table | Portable fields and ownership |
-| --- | --- |
-| `outline_state` | `(project_id,document_id)` primary key; state active/archived/trashed/merged; nullable replacement document FK. Documents remain tombstones instead of being deleted. |
-| `anchor_targets` | `(project_id,id)` primary key; document FK; blockId/citationId/footnoteId kind; active/archived/trashed/deleted state; nullable same-project replacement anchor FK; bounded last text label. |
+| Added table           | Portable fields and ownership                                                                                                                                                                                                           |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `outline_state`       | `(project_id,document_id)` primary key; state active/archived/trashed/merged; nullable replacement document FK. Documents remain tombstones instead of being deleted.                                                                   |
+| `anchor_targets`      | `(project_id,id)` primary key; document FK; blockId/citationId/footnoteId kind; active/archived/trashed/deleted state; nullable same-project replacement anchor FK; bounded last text label.                                            |
 | `history_checkpoints` | `(project_id,id)` primary key; logical parent checkpoint ID; head commit FK; UTC timestamp; human actor; manual/automatic/structural/restore reason; label; encoded snapshot index; exact UTF-8 index byte size. Parents may be pruned. |
-| `history_content` | `(project_id,id)` primary key; id is the canonical JSON SHA-256 of `{document,anchors}`; immutable JSON content and UTF-8 byte size. Shared by any number of retained checkpoints. |
+| `history_content`     | `(project_id,id)` primary key; id is the canonical JSON SHA-256 of `{document,anchors}`; immutable JSON content and UTF-8 byte size. Shared by any number of retained checkpoints.                                                      |
 
 `documents.kind` now admits `part`, `chapter` and `text` (the existing section kind). Parent kinds and stable contiguous sibling positions are validated across the whole tree, including tombstones. Only text documents contribute current editor IDs. Containers retain one inert empty paragraph to keep AST version 1 unchanged. State inherited from a parent controls descendant availability. A merged text document retains its old payload but is excluded from current occurrences; its replacement identifies the current destination.
 

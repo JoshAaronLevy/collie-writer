@@ -1,5 +1,5 @@
 import { AppButton } from '../../components/ui/Controls'
-import { useAiConnections } from './AiConnectionsProvider'
+import { useAiConnections } from './connectionState'
 import { connectionLabel } from './connection-copy'
 import styles from './AiConnections.module.css'
 

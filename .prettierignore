@@ -4,3 +4,27 @@ pnpm-lock.yaml
 LICENSE.md
 tsconfig.json
 tsconfig.*.json
+
+# Bundled upstream files must remain byte-for-byte originals.
+resources/vendor/
+resources/licenses/
+resources/fonts/
+resources/locales/
+resources/styles/
+src/renderer/public/pdfjs/
+
+# Generated/local output and historical testing infrastructure are not authored product code.
+.tools/
+out-tests/
+test-results/
+output/
+playwright-report/
+services/entitlements/runtime/
+tests/
+src/main/test-root.ts
+src/main/test-network.ts
+scripts/build-integration.mjs
+scripts/test-unpacked.mjs
+playwright.config.ts
+vitest.config.ts
+.github/disabled-workflows/

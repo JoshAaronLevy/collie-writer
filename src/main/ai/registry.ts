@@ -8,5 +8,5 @@ import type { AiStorage } from './storage'
  */
 export const PROVIDER_RUNTIMES = Object.freeze({
   'openai-codex': Object.freeze({ create: (storage: AiStorage) => new CodexRuntime(storage) }),
-  'xai-grok-build': Object.freeze({ create: (storage: AiStorage) => new GrokRuntime(storage) })
+  'xai-grok-build': Object.freeze({ create: () => new GrokRuntime() })
 })

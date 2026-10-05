@@ -1,3 +1,4 @@
+import { hasControlCharacters } from '../../shared/control-characters'
 import type Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
@@ -230,7 +231,7 @@ async function parse(input: WorkerImportPreview | WorkerImportCommit): Promise<P
   }
   text = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n')
   if (
-    /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(text) ||
+    hasControlCharacters(text, true) ||
     (input.format === 'markdown' && /<!--|<![A-Za-z]|<\/?[A-Za-z][^>]*>/u.test(text))
   )
     throw new ProjectError('VALIDATION')
@@ -286,7 +287,7 @@ async function parse(input: WorkerImportPreview | WorkerImportCommit): Promise<P
     while ((match = pattern.exec(value))) {
       if (match.index > offset)
         result.push(
-          ...literal(value.slice(offset, match.index).replace(/\\([\\`*_{}\[\]<>!|])/g, '$1'))
+          ...literal(value.slice(offset, match.index).replace(/\\([\\`*_{}[\]<>!|])/g, '$1'))
         )
       if (match[4]) {
         const definition = definitions.get(match[4])
@@ -329,7 +330,7 @@ async function parse(input: WorkerImportPreview | WorkerImportCommit): Promise<P
       offset = pattern.lastIndex
     }
     if (offset < value.length)
-      result.push(...literal(value.slice(offset).replace(/\\([\\`*_{}\[\]<>!|])/g, '$1')))
+      result.push(...literal(value.slice(offset).replace(/\\([\\`*_{}[\]<>!|])/g, '$1')))
     if (!result.length && value) result.push(...literal(value))
     return result
   }
@@ -521,7 +522,7 @@ export async function commitInterchange(
   })
 }
 export function validatePortableInterchange(db: Database.Database, projectId: string): void {
-  const fail = (): never => {
+  function fail(): never {
     throw new ProjectError('CORRUPT_PROJECT')
   }
   const ids = new Set(
@@ -539,7 +540,7 @@ export function validatePortableInterchange(db: Database.Database, projectId: st
       typeof row.name !== 'string' ||
       row.name.length > 120 ||
       !row.name.trim() ||
-      /[\u0000-\u001f]/.test(row.name) ||
+      hasControlCharacters(row.name) ||
       !['Letter', 'A4'].includes(String(row.paper)) ||
       !isUtc(row.created_at) ||
       !isUtc(row.updated_at)
@@ -612,7 +613,8 @@ export function validatePortableInterchange(db: Database.Database, projectId: st
       typeof row.original_name !== 'string' ||
       !row.original_name ||
       row.original_name.length > 255 ||
-      /[\\/:\u0000-\u001f]/.test(row.original_name) ||
+      hasControlCharacters(row.original_name) ||
+      /[\\/:]/u.test(row.original_name) ||
       !['markdown', 'text'].includes(String(row.format)) ||
       typeof row.sha256 !== 'string' ||
       !/^[a-f0-9]{64}$/.test(row.sha256) ||

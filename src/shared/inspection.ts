@@ -1,3 +1,4 @@
+import { hasControlCharacters } from './control-characters'
 import { isId } from '../domain/editor/schema'
 import type { OpenInput } from './projects'
 import { isSourceMetadata, type SourceMetadata } from './sources'
@@ -130,7 +131,7 @@ const record = (v: unknown): v is Record<string, unknown> =>
 const exact = (v: Record<string, unknown>, keys: string[]): boolean =>
   Object.keys(v).length === keys.length && keys.every((k) => Object.hasOwn(v, k))
 const str = (v: unknown, max: number): v is string =>
-  typeof v === 'string' && v.length <= max && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v)
+  typeof v === 'string' && v.length <= max && !hasControlCharacters(v, true)
 const hash = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v)
 const index = (v: unknown): v is number =>
   Number.isSafeInteger(v) && Number(v) >= 0 && Number(v) <= 10000

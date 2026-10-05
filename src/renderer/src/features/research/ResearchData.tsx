@@ -1,24 +1,8 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode
-} from 'react'
+import { Context } from './researchContext'
+import { useLayoutEffect } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
 import type { EvidenceView } from '../../../../shared/evidence'
-
-type ResearchData = {
-  view: EvidenceView | null
-  loading: boolean
-  error: string
-  fresh: boolean
-  refresh: () => Promise<void>
-  accept: (view: EvidenceView) => void
-}
-const Context = createContext<ResearchData | null>(null)
 
 /** One read model for usage and evidence; editing buffers stay with their retained owners. */
 export function ResearchDataProvider({
@@ -30,7 +14,9 @@ export function ResearchDataProvider({
 }): React.JSX.Element {
   const scope = project ? `${project.projectId}:${project.workspaceId}` : ''
   const latest = useRef(project)
-  latest.current = project
+  useLayoutEffect(() => {
+    latest.current = project
+  })
   const sequence = useRef(0)
   const [snapshot, setSnapshot] = useState<{ scope: string; view: EvidenceView } | null>(null)
   const [loading, setLoading] = useState(false),
@@ -63,8 +49,9 @@ export function ResearchDataProvider({
   }, [])
   useEffect(() => {
     void refresh()
+    const generation = sequence
     return () => {
-      sequence.current++
+      generation.current++
     }
   }, [scope, project?.headCommitId, refresh])
   const accept = (view: EvidenceView): void => {
@@ -88,9 +75,4 @@ export function ResearchDataProvider({
       {children}
     </Context.Provider>
   )
-}
-export function useResearchData(): ResearchData {
-  const value = useContext(Context)
-  if (!value) throw new Error('Research data owner is missing')
-  return value
 }

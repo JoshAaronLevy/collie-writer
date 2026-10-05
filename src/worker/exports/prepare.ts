@@ -198,13 +198,11 @@ export async function prepareExport(
       while (shared < ancestors.length && previousAncestors[shared] === ancestors[shared].id)
         shared++
       previousAncestors = ancestors.map((a) => a.id)
-      const headings = ancestors
-        .slice(shared)
-        .map((a) => ({
-          id: a.id,
-          title: a.title,
-          level: (a.kind === 'part' ? 1 : ancestors.some((p) => p.kind === 'part') ? 2 : 1) as 1 | 2
-        }))
+      const headings = ancestors.slice(shared).map((a) => ({
+        id: a.id,
+        title: a.title,
+        level: (a.kind === 'part' ? 1 : ancestors.some((p) => p.kind === 'part') ? 2 : 1) as 1 | 2
+      }))
       const titleLevel = (
         ancestors.some((a) => a.kind === 'chapter')
           ? ancestors.some((a) => a.kind === 'part')

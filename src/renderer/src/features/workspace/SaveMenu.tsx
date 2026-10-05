@@ -1,7 +1,7 @@
 import { AppButton } from '../../components/ui/Controls'
 import { ActionMenu } from '../../components/ui/ActionMenu'
 import { sameScope } from '../../../../shared/project-files'
-import { useWorkspaceSession } from './WorkspaceSession'
+import { useWorkspaceSession } from './workspaceContext'
 import styles from './SaveMenu.module.css'
 
 export default function SaveMenu(): React.JSX.Element {

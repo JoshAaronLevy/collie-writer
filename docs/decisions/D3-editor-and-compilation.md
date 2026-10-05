@@ -8,21 +8,21 @@ The canonical contract is `DocumentPayload = { schemaVersion: 1, ast, footnotesB
 
 ## Frozen schema v1 subset
 
-| Canonical content | DOCX adapter | PDF adapter | Bounds / handling |
-| --- | --- | --- | --- |
-| Paragraph; heading levels 1–3 | Named paragraph styles / outline levels | `p`, `h1`–`h3` | Unique block ID; inline Unicode text |
-| Bold, italic, underline, strike | Native run properties | Escaped semantic tags | Text marks only; no arbitrary CSS |
-| HTTP(S) link | Native hyperlink | Escaped hyperlink | No credentials, active scheme or implicit navigation |
-| Hard break | Run break | `br` | Plain-text paste preserves line breaks |
-| Bullet / ordered list | Native numbering; independent start per list | `ul` / `ol start` | One level in v1; item owns one or more paragraphs. Unsupported nesting is rejected, never flattened silently |
-| Block quotation | Indented named style | Indented paragraphs | Paragraph content only in v1 |
-| Horizontal / page break | Border / native page break | `hr` / paged break | Separate addressable block |
-| Managed PNG/JPEG image | Embedded inline drawing, alt text, caption | Data image, alt text, caption | Separate inline-flow figure block; no floating/text wrapping; proportional downscale within printable area |
-| Rectangular table | Native rows/cells; repeating header row; rows may split | `table`, `thead`, `tbody` | Up to 20 columns / 10,000 rows; optional first header row; plain paragraphs/line breaks only; no spans, nested tables, notes or citations in cells |
-| Citation cluster atom | Resolved formatted runs or Chicago native note | Same formatted runs or page note | UUID instance; ordered source IDs with per-item locator/label/prefix/suffix |
-| Author footnote atom + owned body | Native footnote body / reference | Genuine page footnote | Paragraphs, basic marks, links and citations; no nested notes, tables or images |
-| Section title and explicit boundary | Heading / page break | Heading / page break | Compile selection controls inclusion. Status/synopsis remain later document metadata, not manuscript text |
-| Bibliography | Editable styled text | Escaped styled text | Derived from selected citation order, never canonical citation-manager fields |
+| Canonical content                   | DOCX adapter                                            | PDF adapter                      | Bounds / handling                                                                                                                                  |
+| ----------------------------------- | ------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Paragraph; heading levels 1–3       | Named paragraph styles / outline levels                 | `p`, `h1`–`h3`                   | Unique block ID; inline Unicode text                                                                                                               |
+| Bold, italic, underline, strike     | Native run properties                                   | Escaped semantic tags            | Text marks only; no arbitrary CSS                                                                                                                  |
+| HTTP(S) link                        | Native hyperlink                                        | Escaped hyperlink                | No credentials, active scheme or implicit navigation                                                                                               |
+| Hard break                          | Run break                                               | `br`                             | Plain-text paste preserves line breaks                                                                                                             |
+| Bullet / ordered list               | Native numbering; independent start per list            | `ul` / `ol start`                | One level in v1; item owns one or more paragraphs. Unsupported nesting is rejected, never flattened silently                                       |
+| Block quotation                     | Indented named style                                    | Indented paragraphs              | Paragraph content only in v1                                                                                                                       |
+| Horizontal / page break             | Border / native page break                              | `hr` / paged break               | Separate addressable block                                                                                                                         |
+| Managed PNG/JPEG image              | Embedded inline drawing, alt text, caption              | Data image, alt text, caption    | Separate inline-flow figure block; no floating/text wrapping; proportional downscale within printable area                                         |
+| Rectangular table                   | Native rows/cells; repeating header row; rows may split | `table`, `thead`, `tbody`        | Up to 20 columns / 10,000 rows; optional first header row; plain paragraphs/line breaks only; no spans, nested tables, notes or citations in cells |
+| Citation cluster atom               | Resolved formatted runs or Chicago native note          | Same formatted runs or page note | UUID instance; ordered source IDs with per-item locator/label/prefix/suffix                                                                        |
+| Author footnote atom + owned body   | Native footnote body / reference                        | Genuine page footnote            | Paragraphs, basic marks, links and citations; no nested notes, tables or images                                                                    |
+| Section title and explicit boundary | Heading / page break                                    | Heading / page break             | Compile selection controls inclusion. Status/synopsis remain later document metadata, not manuscript text                                          |
+| Bibliography                        | Editable styled text                                    | Escaped styled text              | Derived from selected citation order, never canonical citation-manager fields                                                                      |
 
 Images are limited to 1–1600 logical pixels on each axis in editor JSON. Export proportionally fits the printable area; managed bytes are limited to 25 MiB each and 256 MiB total per compilation. The latter is a prototype memory budget, not a measured performance result. Source libraries may be much larger; only manuscript images are loaded here. Stage 16 must provide an actionable report for limits before writing destinations.
 

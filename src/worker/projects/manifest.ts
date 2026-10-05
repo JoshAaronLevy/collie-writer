@@ -47,7 +47,7 @@ export const isUtc = (value: unknown): value is string =>
   typeof value === 'string' &&
   /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value) &&
   Number.isFinite(Date.parse(value))
-function blob(value: unknown, maximum: number): value is BlobRef {
+function blob(value: unknown, maximum: number): value is BlobRef & Record<string, unknown> {
   return (
     record(value) &&
     isHash(value.sha256) &&

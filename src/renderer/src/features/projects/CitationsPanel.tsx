@@ -1,3 +1,6 @@
+import { useEffectEvent } from 'react'
+import { useLayoutEffect } from 'react'
+import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { AppButton, SelectField, ChoiceField } from '../../components/ui/Controls'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import styles from '../export/CitationsPanel.module.css'
@@ -59,14 +62,16 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
     [acknowledged, setAcknowledged] = useState(false),
     [selectedStyle, setSelectedStyle] = useState<CitationStyle>('apa')
   const current = useRef(props),
-    pending = useRef<CitationStyleInput | null>(null),
+    [pendingValue, setPendingValue, pending] = useSynchronousState<CitationStyleInput | null>(null),
     generation = useRef(0)
   const panel = useRef<HTMLElement>(null),
-    changing = useRef(false)
+    [changingValue, setChangingValue, changing] = useSynchronousState(false)
   useEffect(() => {
     if (error || pending.current) panel.current?.closest('details')?.setAttribute('open', '')
-  }, [error, loading])
-  current.current = props
+  }, [error, loading, pending])
+  useLayoutEffect(() => {
+    current.current = props
+  })
   async function load(): Promise<void> {
     const epoch = ++generation.current
     setLoading(true)
@@ -109,44 +114,57 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
       if (epoch === generation.current) setLoading(false)
     }
   }
-  useEffect(() => {
+  const previewKey = `${project.headCommitId}:${dirty}`
+  const [lastPreviewKey, setLastPreviewKey] = useState(previewKey)
+  if (lastPreviewKey !== previewKey) {
+    setLastPreviewKey(previewKey)
     setView(null)
     setAcknowledged(false)
+  }
+  const onPreviewTimer = useEffectEvent(() => {
+    void load()
+  })
+  useEffect(() => {
     const timer = setTimeout(() => {
-      void load()
+      onPreviewTimer()
     }, 350)
+    const requestGeneration = generation
     return () => {
       clearTimeout(timer)
-      generation.current++
+      requestGeneration.current++
     }
   }, [project.headCommitId, dirty])
   async function changeStyle(): Promise<void> {
     if (changing.current) return
-    changing.current = true
+    setChangingValue(true)
     setLoading(true)
     setError('')
     try {
       const saved = await current.current.flush()
       if (!saved) return
-      pending.current ??= {
-        ...scope,
-        operationId: crypto.randomUUID(),
-        expectedHead: saved.headCommitId,
-        style: selectedStyle
-      }
-      const result = await window.collie.changeCitationStyle(pending.current)
+      setPendingValue(
+        pending.current ?? {
+          ...scope,
+          operationId: crypto.randomUUID(),
+          expectedHead: saved.headCommitId,
+          style: selectedStyle
+        }
+      )
+      const input = pending.current
+      if (!input) throw new Error('Citation change was not retained')
+      const result = await window.collie.changeCitationStyle(input)
       if (!result.ok) {
-        if (!['UNAVAILABLE', 'DISK_FULL'].includes(result.error.code)) pending.current = null
+        if (!['UNAVAILABLE', 'DISK_FULL'].includes(result.error.code)) setPendingValue(null)
         setError(result.error.message)
         return
       }
-      pending.current = null
+      setPendingValue(null)
       await current.current.onCommitted()
       // The head change drives a fresh context; never attach old strings to newer edits.
     } catch {
       setError('The style change was not acknowledged. Retry uses the same operation.')
     } finally {
-      changing.current = false
+      setChangingValue(false)
       setLoading(false)
     }
   }
@@ -186,7 +204,7 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
       <SelectField
         label="Style"
         value={selectedStyle}
-        disabled={props.readOnly || disabled || loading || changing.current || !!pending.current}
+        disabled={props.readOnly || disabled || loading || changingValue || !!pendingValue}
         onChange={(event) => setSelectedStyle(event.target.value as CitationStyle)}
       >
         <option value="apa">APA 7</option>
@@ -199,19 +217,19 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
           props.readOnly ||
           disabled ||
           loading ||
-          changing.current ||
-          (!pending.current && selectedStyle === view?.style)
+          changingValue ||
+          (!pendingValue && selectedStyle === view?.style)
         }
         onClick={() => {
           void changeStyle()
         }}
       >
-        {pending.current ? 'Retry style change' : 'Apply style to project'}
+        {pendingValue ? 'Retry style change' : 'Apply style to project'}
       </AppButton>
       <AppButton
         variant="default"
         type="button"
-        disabled={disabled || loading || changing.current}
+        disabled={disabled || loading || changingValue}
         onClick={() => {
           void current.current.flush().then((saved) => {
             if (saved) void load()

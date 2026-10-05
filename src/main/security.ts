@@ -33,9 +33,14 @@ export function allowedRequest(raw: string, devOrigin?: string): boolean {
     if (url.username || url.password) return false
     if (url.protocol === 'blob:') {
       const inner = new URL(url.pathname)
-      return devOrigin ? inner.origin === devOrigin : inner.protocol === 'collie:' && inner.host === 'app'
+      return devOrigin
+        ? inner.origin === devOrigin
+        : inner.protocol === 'collie:' && inner.host === 'app'
     }
-    if(url.protocol==='collie-source:')return url.host==='asset'&&/^\/[a-f0-9-]{36}$/.test(url.pathname)&&!url.search&&!url.hash
+    if (url.protocol === 'collie-source:')
+      return (
+        url.host === 'asset' && /^\/[a-f0-9-]{36}$/.test(url.pathname) && !url.search && !url.hash
+      )
     if (devOrigin)
       return url.origin === devOrigin || url.origin === devOrigin.replace('http:', 'ws:')
     return url.protocol === 'collie:' && url.host === 'app'

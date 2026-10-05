@@ -1,5 +1,11 @@
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
-import { HELP_ACTION, GET_INFO, GET_STORAGE_STATUS, type AppInfo, type Result } from '../shared/commands'
+import {
+  HELP_ACTION,
+  GET_INFO,
+  GET_STORAGE_STATUS,
+  type AppInfo,
+  type Result
+} from '../shared/commands'
 import { exact, record, projectFailure, type ProjectResult } from '../shared/projects'
 import { isId } from '../domain/editor/schema'
 import { showLicenses } from './menus'
@@ -91,19 +97,33 @@ export function registerStorageIpc(
 }
 
 /** Fixed, trusted menu actions only; no renderer URL, path, feed or restart primitive. */
-export function registerHelpIpc(owner:()=>WebContents|undefined, updater:DirectUpdater, devOrigin?:string):void {
-  let active=false
-  ipcMain.handle(HELP_ACTION, async(event,payload:unknown):Promise<ProjectResult<boolean>>=>{
-    if(!isTrustedSender(event,owner(),devOrigin))return projectFailure('', 'DENIED')
-    if(!record(payload)||!exact(payload,['requestId','input'])||!isId(payload.requestId)||typeof payload.input!=='string'||!['licenses','check-updates','install-update'].includes(payload.input))return projectFailure('', 'VALIDATION')
-    if(active)return projectFailure(payload.requestId,'UNAVAILABLE')
-    active=true
+export function registerHelpIpc(
+  owner: () => WebContents | undefined,
+  updater: DirectUpdater,
+  devOrigin?: string
+): void {
+  let active = false
+  ipcMain.handle(HELP_ACTION, async (event, payload: unknown): Promise<ProjectResult<boolean>> => {
+    if (!isTrustedSender(event, owner(), devOrigin)) return projectFailure('', 'DENIED')
+    if (
+      !record(payload) ||
+      !exact(payload, ['requestId', 'input']) ||
+      !isId(payload.requestId) ||
+      typeof payload.input !== 'string' ||
+      !['licenses', 'check-updates', 'install-update'].includes(payload.input)
+    )
+      return projectFailure('', 'VALIDATION')
+    if (active) return projectFailure(payload.requestId, 'UNAVAILABLE')
+    active = true
     try {
-      if(payload.input==='licenses')await showLicenses()
-      else if(payload.input==='check-updates')await updater.check()
+      if (payload.input === 'licenses') await showLicenses()
+      else if (payload.input === 'check-updates') await updater.check()
       else await updater.install()
-      return {ok:true,requestId:payload.requestId,value:true}
-    }catch{return projectFailure(payload.requestId,'UNAVAILABLE')}
-    finally{active=false}
+      return { ok: true, requestId: payload.requestId, value: true }
+    } catch {
+      return projectFailure(payload.requestId, 'UNAVAILABLE')
+    } finally {
+      active = false
+    }
   })
 }

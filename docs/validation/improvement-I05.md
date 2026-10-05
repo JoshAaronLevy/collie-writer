@@ -4,14 +4,14 @@ October 1, 2026. **Implementation complete — awaiting user testing.** Josh exp
 
 ## Delivered
 
-| Paths | Change |
-| --- | --- |
-| `src/renderer/src/features/onboarding/OnboardingWizard.tsx`, `OnboardingWizard.module.css` | Mantine primary/secondary type cards, details, frozen creation/retry, truthful AI boundary, explicit access choice and writing handoff; semantic scoped CSS |
-| `features/onboarding/setup-draft.ts` | Bounded app-profile setup/request/receipt record, strict read/write, explicit discard, optional remembered-author preference |
-| `features/onboarding/AuthorPreferenceSettings.tsx`, `AuthorPreferenceSettings.module.css`, `features/settings/SettingsPanel.tsx` | Edit/clear author default with component-scoped styles and disclose locally held setup metadata |
-| `features/project-details/ProjectDetailsFields.tsx` | Reused I04 details validation/fields with wizard focus and author-preference placement |
-| `features/workspace/useWorkspaceController.ts`, `WorkspaceViews.tsx` | First-launch destination, exact create/resume integration, pending-work protection and retained setup region; removed transitional single-page New project form |
-| [Decision](../decisions/improvement-05-guided-setup.md), [manual guide](../manual-testing/improvement-I05.md), plan, AGENTS, privacy/accessibility indexes | Contracts, pending observations and user-owned handoff |
+| Paths                                                                                                                                                      | Change                                                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/renderer/src/features/onboarding/OnboardingWizard.tsx`, `OnboardingWizard.module.css`                                                                 | Mantine primary/secondary type cards, details, frozen creation/retry, truthful AI boundary, explicit access choice and writing handoff; semantic scoped CSS     |
+| `features/onboarding/setup-draft.ts`                                                                                                                       | Bounded app-profile setup/request/receipt record, strict read/write, explicit discard, optional remembered-author preference                                    |
+| `features/onboarding/AuthorPreferenceSettings.tsx`, `AuthorPreferenceSettings.module.css`, `features/settings/SettingsPanel.tsx`                           | Edit/clear author default with component-scoped styles and disclose locally held setup metadata                                                                 |
+| `features/project-details/ProjectDetailsFields.tsx`                                                                                                        | Reused I04 details validation/fields with wizard focus and author-preference placement                                                                          |
+| `features/workspace/useWorkspaceController.ts`, `WorkspaceViews.tsx`                                                                                       | First-launch destination, exact create/resume integration, pending-work protection and retained setup region; removed transitional single-page New project form |
+| [Decision](../decisions/improvement-05-guided-setup.md), [manual guide](../manual-testing/improvement-I05.md), plan, AGENTS, privacy/accessibility indexes | Contracts, pending observations and user-owned handoff                                                                                                          |
 
 No new IPC, provider SDK, account session, migration, chosen-file destination or dependency was introduced. Current working SQL/minimum reader is **10**, editor AST/archive container **1**, frozen compilation **3**. Existing durable create intent/receipt and entitlement services remain authoritative. Study critique gains a primary card, not a specialized PDF/link/refutation workflow.
 

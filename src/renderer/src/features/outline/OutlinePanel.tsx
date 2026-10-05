@@ -1,3 +1,4 @@
+import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { TextInput, Textarea } from '@mantine/core'
 import { AppButton, SelectField } from '../../components/ui/Controls'
 import { ActionMenu } from '../../components/ui/ActionMenu'
@@ -5,7 +6,7 @@ import { AppDialog } from '../../components/ui/AppDialog'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import { scopeOf } from '../workspace/useWorkspaceController'
 import './OutlinePanel.css'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
 import {
   canParent,
@@ -33,7 +34,7 @@ export default function OutlinePanel({
   const [focusId, setFocusId] = useState(project.documentId),
     [showRemoved, setShowRemoved] = useState(false)
   const [mode, setMode] = useState<'create' | 'move' | 'split' | 'merge' | 'details' | null>(null)
-  const submitting = useRef(false),
+  const [submittingValue, setSubmittingValue, submitting] = useSynchronousState(false),
     composing = useRef(false)
   const [failed, setFailed] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
@@ -66,9 +67,11 @@ export default function OutlinePanel({
     [synopsis, setSynopsis] = useState('')
   const docs = project.documents,
     focused = docs.find((d) => d.id === focusId) ?? docs.find((d) => d.id === project.documentId)!
-  useEffect(() => {
+  const [lastDocumentId, setLastDocumentId] = useState(project.documentId)
+  if (lastDocumentId !== project.documentId) {
+    setLastDocumentId(project.documentId)
     setFocusId(project.documentId)
-  }, [project.documentId])
+  }
   const state = effectiveState(focused, docs)
   const siblings = docs
     .filter((d) => d.parentId === focused.parentId)
@@ -345,7 +348,7 @@ export default function OutlinePanel({
                   : 'Outline details'
         }
         onClose={closeForm}
-        dismissible={!submitting.current}
+        dismissible={!submittingValue}
       >
         {mode ? (
           <form
@@ -375,9 +378,9 @@ export default function OutlinePanel({
                 input = { type: 'split', documentId: focused.id, afterBlockId: boundary, title }
               else if (mode === 'merge') input = { type: 'merge', documentId: focused.id, targetId }
               else input = { type: 'details', documentId: focused.id, title, status, synopsis }
-              submitting.current = true
+              setSubmittingValue(true)
               change(input, (success) => {
-                submitting.current = false
+                setSubmittingValue(false)
                 setFailed(!success)
                 if (success) setMode(null)
               })
@@ -528,7 +531,7 @@ export default function OutlinePanel({
             <AppButton
               variant="default"
               type="button"
-              disabled={submitting.current}
+              disabled={submittingValue}
               onClick={closeForm}
             >
               Cancel

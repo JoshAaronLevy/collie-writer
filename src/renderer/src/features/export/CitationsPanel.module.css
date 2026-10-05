@@ -1,8 +1,32 @@
-.citations-panel { display: grid; gap: var(--collie-space-3); padding-block: var(--collie-space-4); }
-.citations-panel h2, .citations-panel p { margin-block: var(--collie-space-2); }
-.citations-panel > button { justify-self: start; }
-.citations-panel li { margin-block: var(--collie-space-3); }
-.citations-panel li button { margin: var(--collie-space-1); }
-.citations-panel summary { cursor: pointer; min-height: var(--collie-control-height); align-content: center; }
-.citation-note-preview p, .bibliography-preview p { white-space: pre-wrap; overflow-wrap: anywhere; }
-.bibliography-preview[data-hanging='true'] p { padding-inline-start: 2rem; text-indent: -2rem; }
+.citations-panel {
+  display: grid;
+  gap: var(--collie-space-3);
+  padding-block: var(--collie-space-4);
+}
+.citations-panel h2,
+.citations-panel p {
+  margin-block: var(--collie-space-2);
+}
+.citations-panel > button {
+  justify-self: start;
+}
+.citations-panel li {
+  margin-block: var(--collie-space-3);
+}
+.citations-panel li button {
+  margin: var(--collie-space-1);
+}
+.citations-panel summary {
+  cursor: pointer;
+  min-height: var(--collie-control-height);
+  align-content: center;
+}
+.citation-note-preview p,
+.bibliography-preview p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.bibliography-preview[data-hanging='true'] p {
+  padding-inline-start: 2rem;
+  text-indent: -2rem;
+}

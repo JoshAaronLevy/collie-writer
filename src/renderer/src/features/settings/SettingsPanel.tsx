@@ -1,6 +1,6 @@
 import { Palette } from 'lucide-react'
 import { isZoomLevel, ZOOM_LEVELS } from '../../../../shared/support'
-import { useVisualPreferences } from '../../theme/VisualPreferencesProvider'
+import { useVisualPreferences } from '../../theme/visualPreferencesContext'
 import { AppButton, ChoiceField, SelectField } from '../../components/ui/Controls'
 import { ContentSurface } from '../../components/ui/Feedback'
 import AuthorPreferenceSettings from '../onboarding/AuthorPreferenceSettings'

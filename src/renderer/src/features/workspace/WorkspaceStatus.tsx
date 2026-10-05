@@ -1,5 +1,5 @@
 import type { ExportOperation } from './useExportOperations'
-import { useWorkspaceSession } from './WorkspaceSession'
+import { useWorkspaceSession } from './workspaceContext'
 import SaveMenu from './SaveMenu'
 import ProjectFileActions from '../projects/ProjectFileActions'
 import { sameScope } from '../../../../shared/project-files'

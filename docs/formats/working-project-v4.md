@@ -2,14 +2,14 @@
 
 Stage 10 extends [schema 3](working-project-v3.md). Application ID `1129270359` and editor AST version 1 remain unchanged. `user_version`, `format.schema_version`, and `format.minimum_reader` become **4**. The exact app-owned STRICT DDL is in `src/worker/storage/schema.ts`.
 
-| Table | Purpose |
-| --- | --- |
-| `notes` | Project-scoped stable note identity, independent revision, human origin, rich editor-subset body, active/archive/trash state and timestamps. |
-| `note_revisions` | Immutable pre-change note snapshots, including title/body/state and section/label links. |
-| `note_links` | Many-to-many note-to-section links. Sections retain identity through moves and merge tombstones. |
+| Table                                | Purpose                                                                                                                                                                                      |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notes`                              | Project-scoped stable note identity, independent revision, human origin, rich editor-subset body, active/archive/trash state and timestamps.                                                 |
+| `note_revisions`                     | Immutable pre-change note snapshots, including title/body/state and section/label links.                                                                                                     |
+| `note_links`                         | Many-to-many note-to-section links. Sections retain identity through moves and merge tombstones.                                                                                             |
 | `note_labels` and `note_label_links` | Reusable tag/category identity and note membership. Archived labels and notes remain; label removal cannot delete a note. Normalized names prevent duplicate active labels of the same kind. |
-| `annotations` | Original quote and editable interpretation in separate columns, with retained block ID, UTF-16 offsets and explicit active/orphaned projection. |
-| `annotation_revisions` | Immutable pre-change interpretation/state snapshots. |
+| `annotations`                        | Original quote and editable interpretation in separate columns, with retained block ID, UTF-16 offsets and explicit active/orphaned projection.                                              |
+| `annotation_revisions`               | Immutable pre-change interpretation/state snapshots.                                                                                                                                         |
 
 Notes accept the supported manuscript editor subset: paragraphs, headings, lists, quotes, rules, text/marks/links and line breaks. They reject images, tables, page breaks, citations, footnotes and source references. Note bodies are bounded to 2 million encoded characters; quotes to 10,000 characters. A note is not a source or citation. Origin is human for this stage; the field allows later origin choices without an AI runtime.
 

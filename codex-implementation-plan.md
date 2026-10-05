@@ -50,14 +50,14 @@ Current project formats are SQL/minimum reader **12**, AST/archive **1**, and fr
 
 Sources consulted October 2, 2026:
 
-| Source | What it establishes for this plan |
-| --- | --- |
-| [Codex SDK](https://learn.chatgpt.com/docs/codex-sdk) and [TypeScript SDK README](https://github.com/openai/codex/blob/main/sdk/typescript/README.md) | Programmatic local Codex integration. The TypeScript SDK wraps the CLI. |
-| [Codex authentication](https://learn.chatgpt.com/docs/auth) | Browser ChatGPT login, subscription authentication, credential-store choices and login-method restrictions. |
-| [Codex app-server](https://learn.chatgpt.com/docs/app-server) | Account/login lifecycle, model discovery, threads, turns, streaming and interruption. Current documentation also describes per-turn output schemas. |
-| [Sign in with ChatGPT quickstart](https://developers.openai.com/siwc/quickstart) | Identity-only authentication and authorized plan inference are separate capabilities. |
-| [Sign in with ChatGPT client registration](https://developers.openai.com/siwc/request-client-id) | The commercial program has a separate registration/waitlist route. |
-| [Codex pricing and usage](https://learn.chatgpt.com/docs/pricing) | Subscription limits and available credits are distinct from API-key billing. |
+| Source                                                                                                                                                | What it establishes for this plan                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Codex SDK](https://learn.chatgpt.com/docs/codex-sdk) and [TypeScript SDK README](https://github.com/openai/codex/blob/main/sdk/typescript/README.md) | Programmatic local Codex integration. The TypeScript SDK wraps the CLI.                                                                             |
+| [Codex authentication](https://learn.chatgpt.com/docs/auth)                                                                                           | Browser ChatGPT login, subscription authentication, credential-store choices and login-method restrictions.                                         |
+| [Codex app-server](https://learn.chatgpt.com/docs/app-server)                                                                                         | Account/login lifecycle, model discovery, threads, turns, streaming and interruption. Current documentation also describes per-turn output schemas. |
+| [Sign in with ChatGPT quickstart](https://developers.openai.com/siwc/quickstart)                                                                      | Identity-only authentication and authorized plan inference are separate capabilities.                                                               |
+| [Sign in with ChatGPT client registration](https://developers.openai.com/siwc/request-client-id)                                                      | The commercial program has a separate registration/waitlist route.                                                                                  |
+| [Codex pricing and usage](https://learn.chatgpt.com/docs/pricing)                                                                                     | Subscription limits and available credits are distinct from API-key billing.                                                                        |
 
 The app-server authentication documentation explicitly excludes commercial or hosted services and allows continued use by existing local/open-source applications. It does not explicitly classify a new private, owner-only POC for a future commercial product. **This plan records that uncertainty; it does not manufacture an OpenAI approval, sandbox entitlement or blanket POC exemption.** Josh has authorized planning for personal development, not asserted that OpenAI has approved commercial embedding.
 
@@ -69,20 +69,20 @@ Latest documentation may describe features absent from the pinned runtime. Consu
 
 This map describes source inspection, not observed runtime behavior.
 
-| Owner | Existing behavior | Required development adaptation |
-| --- | --- | --- |
-| `src/main/ai/deployment.ts` | Pins Codex 0.160.0; all registered OAuth clients are null; funding/isolation methods always refuse. | Add a distinct local route policy without populating fake registrations or changing commercial gates. |
-| `src/main/ai/openai-auth.ts`, `openai-http.ts` | Collie-owned, registered-client OAuth and token handling. | Retain for the commercial route. Local Codex auth must not impersonate one of these clients. |
-| `src/main/ai/codex-runtime.ts` | Fresh process/profile per operation; externally supplied Responses access token; custom provider; streamed text. | Codex-managed login with persistent isolated auth ownership, fresh context per operation and route-appropriate execution. |
-| `src/main/ai/runtime.ts`, `registry.ts` | Common text updates; internal Codex/Grok constructors. | Keep one Codex service with explicit internal route selection. Do not expose Grok or a generic runtime RPC. |
-| `src/main/ai/storage.ts` | Encrypted v1 credentials require registered client IDs and OAuth token/scopes; encrypted operation journal. | Version local route metadata safely. Codex-managed credentials belong to their supported secure store, not counterfeit v1 token records. |
-| `src/main/ai/service.ts` | Registered-account assumptions, exact prepare/start, protected operations, global 64-operation cap. | Separate authentication route, funding policy, capabilities and account lifecycle while preserving dispatch/replay protection. |
-| `src/shared/ai.ts`, `src/preload/ai.ts`, `src/main/ai/ipc.ts` | Strict IPC; status permits only partial implementation/unknown funding; models permit only unverified eligibility. | Coherent route-aware status and action eligibility across all consumers. |
-| `features/ai-connections/` under `src/renderer/src/` | Persistent I11 account owner and Settings/setup/companion presentation. | A visible local-development Connect action and truthful signed-in/ready/blocked/reconnect states. |
-| `src/main/ai/content-service.ts` | Shared durable intent/bind/start/settle/recovery coordinator. | Reuse it for both features; bind operations to the selected local route/session policy safely. |
-| `src/main/conversations/service.ts`, renderer `features/ai/conversations/` | Existing request/context/history/persistence and Send wiring. | Align capability checks, model selection, stream/error handling and local readiness. |
-| `src/main/proofreading/service.ts`, renderer `features/ai/proofreading/` | Existing captures, strict JSON findings and human Apply/Ignore. | Enable actual eligible execution; preserve exact findings while separating final structured output from incidental agent text. |
-| `src/main/release.ts` | Unpackaged development identity; packaged metadata handling can also return a development label. | Require `!app.isPackaged` as well as the trusted development identity. Channel text alone is insufficient. |
+| Owner                                                                      | Existing behavior                                                                                                  | Required development adaptation                                                                                                          |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main/ai/deployment.ts`                                                | Pins Codex 0.160.0; all registered OAuth clients are null; funding/isolation methods always refuse.                | Add a distinct local route policy without populating fake registrations or changing commercial gates.                                    |
+| `src/main/ai/openai-auth.ts`, `openai-http.ts`                             | Collie-owned, registered-client OAuth and token handling.                                                          | Retain for the commercial route. Local Codex auth must not impersonate one of these clients.                                             |
+| `src/main/ai/codex-runtime.ts`                                             | Fresh process/profile per operation; externally supplied Responses access token; custom provider; streamed text.   | Codex-managed login with persistent isolated auth ownership, fresh context per operation and route-appropriate execution.                |
+| `src/main/ai/runtime.ts`, `registry.ts`                                    | Common text updates; internal Codex/Grok constructors.                                                             | Keep one Codex service with explicit internal route selection. Do not expose Grok or a generic runtime RPC.                              |
+| `src/main/ai/storage.ts`                                                   | Encrypted v1 credentials require registered client IDs and OAuth token/scopes; encrypted operation journal.        | Version local route metadata safely. Codex-managed credentials belong to their supported secure store, not counterfeit v1 token records. |
+| `src/main/ai/service.ts`                                                   | Registered-account assumptions, exact prepare/start, protected operations, global 64-operation cap.                | Separate authentication route, funding policy, capabilities and account lifecycle while preserving dispatch/replay protection.           |
+| `src/shared/ai.ts`, `src/preload/ai.ts`, `src/main/ai/ipc.ts`              | Strict IPC; status permits only partial implementation/unknown funding; models permit only unverified eligibility. | Coherent route-aware status and action eligibility across all consumers.                                                                 |
+| `features/ai-connections/` under `src/renderer/src/`                       | Persistent I11 account owner and Settings/setup/companion presentation.                                            | A visible local-development Connect action and truthful signed-in/ready/blocked/reconnect states.                                        |
+| `src/main/ai/content-service.ts`                                           | Shared durable intent/bind/start/settle/recovery coordinator.                                                      | Reuse it for both features; bind operations to the selected local route/session policy safely.                                           |
+| `src/main/conversations/service.ts`, renderer `features/ai/conversations/` | Existing request/context/history/persistence and Send wiring.                                                      | Align capability checks, model selection, stream/error handling and local readiness.                                                     |
+| `src/main/proofreading/service.ts`, renderer `features/ai/proofreading/`   | Existing captures, strict JSON findings and human Apply/Ignore.                                                    | Enable actual eligible execution; preserve exact findings while separating final structured output from incidental agent text.           |
+| `src/main/release.ts`                                                      | Unpackaged development identity; packaged metadata handling can also return a development label.                   | Require `!app.isPackaged` as well as the trusted development identity. Channel text alone is insufficient.                               |
 
 Renderer paths in the table are relative to `src/renderer/src/`; they are existing feature owners, not suggestions to create duplicate directories.
 
@@ -132,16 +132,16 @@ Browser URLs come only from the validated matching runtime login response. Restr
 
 Define explicit route-specific status instead of overloading `commercialApproved` or returning artificial “included” funding:
 
-| Concept | Required meaning |
-| --- | --- |
-| Route | Local Codex ChatGPT session versus registered commercial SIWC; selected by main. |
-| Authentication | Signed out, signing in, saved session needing resume, signed in, reconnect required, disconnecting. |
-| Development spending | Normal signed-in account subscription/credit settings, as Josh explicitly accepted. No API-key fallback. |
-| Commercial spending | Existing included-only requirement and its unresolved enforcement; unchanged. |
-| Runtime readiness | Actual supported version/platform, secure isolated account storage and implemented text-only policy. |
-| Model status | Runtime-reported candidate and action compatibility, distinct from a guarantee that a provider will accept the next request. |
-| Action eligibility | Main-authoritative conversation/proofread availability with an actionable reason; rechecked at prepare and dispatch. |
-| Operational state | Active work, pending protection, unavailable storage or capacity exhaustion. |
+| Concept              | Required meaning                                                                                                             |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Route                | Local Codex ChatGPT session versus registered commercial SIWC; selected by main.                                             |
+| Authentication       | Signed out, signing in, saved session needing resume, signed in, reconnect required, disconnecting.                          |
+| Development spending | Normal signed-in account subscription/credit settings, as Josh explicitly accepted. No API-key fallback.                     |
+| Commercial spending  | Existing included-only requirement and its unresolved enforcement; unchanged.                                                |
+| Runtime readiness    | Actual supported version/platform, secure isolated account storage and implemented text-only policy.                         |
+| Model status         | Runtime-reported candidate and action compatibility, distinct from a guarantee that a provider will accept the next request. |
+| Action eligibility   | Main-authoritative conversation/proofread availability with an actionable reason; rechecked at prepare and dispatch.         |
+| Operational state    | Active work, pending protection, unavailable storage or capacity exhaustion.                                                 |
 
 Represent these as discriminated typed contracts with exact validators. Do not spread optional booleans across unrelated components. A model catalog is not a funding guarantee or a successful inference observation. Permit a reviewed development request on a genuinely available supported candidate without requiring a hidden paid connectivity probe; map an actual provider denial honestly.
 
@@ -175,7 +175,7 @@ No automatic resend on refresh, reconnect, restart, cancelled/unknown outcomes o
 
 Request a stage explicitly, for example: **“Implement CD02 from codex-implementation-plan.md.”** Read this plan's shared contracts and that complete stage, inspect the current owners and prerequisite records, implement only the requested stage and its necessary owner changes, then stop for Josh's manual results. Do not silently implement missing predecessors.
 
-All implementation follows `AGENTS.md`: no assistant-written or assistant-run tests, harnesses, mocks, automated validation, formatting checks, builds, packaging checks, application/browser/runtime launches, logins or inference. Ordinary source/Git reading and edits are allowed. Production input validation and runtime protection are required product behavior.
+All implementation follows `AGENTS.md`, amended October 5, 2026: after code changes, run `npm run format`, `npm run lint` and `npm run typecheck`, fix reported issues including warnings, rerun until clean, and record actual outcomes separately from runtime acceptance. Documentation-only edits do not require these checks. No assistant-written or assistant-run tests, harnesses, mocks, other prohibited validation, builds, packaging checks, application/browser/runtime launches, logins or inference. Ordinary source/Git reading and edits are allowed. Production input validation and runtime protection are required product behavior.
 
 Every stage supplies its decision/implementation record and a concise ordered user guide, preferably `docs/decisions/codex-CDxx.md`, `docs/validation/codex-CDxx.md`, and `docs/manual-testing/codex-CDxx.md`. Record **implementation complete — awaiting user testing** separately from user-confirmed outcomes. Update only the relevant current checkpoint/plan ledger when implemented; preserve historical evidence and release NO-GO.
 
@@ -187,17 +187,17 @@ These recommendations select the coding assistant used to implement each stage. 
 
 The assignments are engineering judgments based on each stage's scope, informed by [OpenAI's model-selection guidance](https://learn.chatgpt.com/docs/model-selection). Astra / Extra High is recommended for coupled authentication, isolation, persistence and recovery work; Sol / High is recommended for bounded feature integration and the final runbook. Josh selects the model and effort in his coding client. These recommendations do not choose Collie's inference model, alter billing policy, switch the current session automatically or authorize assistant testing.
 
-| Stage | Deliverable | Depends on | Status |
-| --- | --- | --- | --- |
-| CD01 | Development route, pinned protocol decisions and compatible contracts | Existing I10–I13 owners | Implementation complete — awaiting user testing |
-| CD02 | Secure Codex login and real in-app connection controls | CD01 | Implementation complete — awaiting user testing |
-| CD03 | Isolated text runtime, model discovery and action readiness | CD02 | Engineering partial — model controls delivered; execution isolation unfinished |
-| CD04 | Route-bound durable dispatch shared by both features | CD03 remains partial; live execution refused | Implementation complete — awaiting user testing |
-| CD05 | Working in-app conversations with real Codex responses | CD04; unfinished CD03 isolation | Engineering partial — conversation integration delivered; live responses remain blocked |
-| CD06 | Working mechanics proofreading with validated real findings | CD04; CD05 establishes the first live owner observation | Engineering partial — schema/proofreading integration delivered; live findings remain blocked |
-| CD07 | Integrated account, close, cancellation and recovery lifecycle | CD05–CD06 remain partial; live execution refused | Lifecycle implementation complete — awaiting user testing; live acceptance blocked by CD03 |
-| CD08 | Shared durable handoff for repeated development use | CD07; shared C07 contract implemented here | Implementation complete — awaiting user testing; live acceptance blocked by CD03 |
-| CD09 | Owner runbook, integrated manual acceptance and scope reconciliation | CD01–CD08 | Not started |
+| Stage | Deliverable                                                           | Depends on                                              | Status                                                                                        |
+| ----- | --------------------------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| CD01  | Development route, pinned protocol decisions and compatible contracts | Existing I10–I13 owners                                 | Implementation complete — awaiting user testing                                               |
+| CD02  | Secure Codex login and real in-app connection controls                | CD01                                                    | Implementation complete — awaiting user testing                                               |
+| CD03  | Isolated text runtime, model discovery and action readiness           | CD02                                                    | Engineering partial — model controls delivered; execution isolation unfinished                |
+| CD04  | Route-bound durable dispatch shared by both features                  | CD03 remains partial; live execution refused            | Implementation complete — awaiting user testing                                               |
+| CD05  | Working in-app conversations with real Codex responses                | CD04; unfinished CD03 isolation                         | Engineering partial — conversation integration delivered; live responses remain blocked       |
+| CD06  | Working mechanics proofreading with validated real findings           | CD04; CD05 establishes the first live owner observation | Engineering partial — schema/proofreading integration delivered; live findings remain blocked |
+| CD07  | Integrated account, close, cancellation and recovery lifecycle        | CD05–CD06 remain partial; live execution refused        | Lifecycle implementation complete — awaiting user testing; live acceptance blocked by CD03    |
+| CD08  | Shared durable handoff for repeated development use                   | CD07; shared C07 contract implemented here              | Implementation complete — awaiting user testing; live acceptance blocked by CD03              |
+| CD09  | Owner runbook, integrated manual acceptance and scope reconciliation  | CD01–CD08                                               | Not started                                                                                   |
 
 **Milestones:** CD02 provides actual browser sign-in. CD05 provides the first full conversation path. CD06 provides both AI features. CD07–CD09 finish lifecycle, repeated-use capacity and the full local-development handoff. Earlier milestones must not be called complete if their real request paths remain unimplemented.
 

@@ -1,6 +1,6 @@
 # Manual stage guides
 
-The user performs all testing. The assistant writes plain-language guides only and stops for feedback. Do not add test scripts, code snippets that assert results, automated suites, fixture generators, test-only controls or browser automation here or elsewhere.
+The user performs runtime/manual testing. Under the October 5, 2026 amendment in [AGENTS.md](../../AGENTS.md#user-owned-manual-testing--standing-instruction), the assistant must run format, lint and typecheck after code changes, fix reported issues including warnings, rerun until clean, and report actual command outcomes separately from runtime acceptance. Documentation-only edits do not require those commands. The assistant writes plain-language manual guides and stops for user feedback. Do not add test scripts, code snippets that assert results, automated suites, fixture generators, test-only controls or browser automation here or elsewhere. Automated test runs, builds and app launches remain prohibited for the assistant.
 
 For a fully implemented stage, start its guide with `Stage X complete. As a user:` and a numbered action/expected-outcome list. A blocked or incomplete stage must say so instead. Include only implemented behavior and relevant user-owned setup steps. Implementation complete does not mean user acceptance or release gates passed; record those separately in the plan and stage record. If a feature cannot yet be observed, identify it as unverified instead of inventing a testing interface.
 
@@ -43,3 +43,7 @@ These use I-prefixed IDs, separate from MVP Stages 1–23. [I01 — experience a
 [CD01 — route and compatible contracts](codex-CD01.md): historical document-review checkpoint for the owner-only normal subscription/credit policy, trusted unpackaged boundary, pinned protocol and unchanged portable data; [record](../validation/codex-CD01.md). CD02 now owns the connection behavior.
 
 [CD02 — managed browser login](codex-CD02.md): global Connect Codex, Continue with ChatGPT, explicit returning Resume, cancellation, single-account replacement, disconnect, retained cleanup and local metadata protection. Implementation complete — awaiting user testing; [record](../validation/codex-CD02.md). No live account outcome is claimed. CD03–CD09 remain not started.
+
+## Code audit CA01
+
+[Export publication and required-check cleanup](code-audit-CA01.md): fresh output in all four formats, Markdown image sidecars, existing-file preservation, partial/cancelled results, and editor/research/navigation continuity after the mandatory lint/type cleanup. See the [implementation record](../validation/code-audit-CA01.md). Format, lint and both typechecks pass; runtime acceptance remains pending.

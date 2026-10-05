@@ -14,17 +14,15 @@ import { AiConnectionNotice } from './features/ai-connections/AiConnectionNotice
 import { AiWorkNotice } from './features/ai/AiWorkNotice'
 import { AiProviderIndicator } from './features/ai-connections/AiProviderIndicator'
 import Projects from './features/projects/Projects'
-import {
-  WorkspaceSessionProvider,
-  useWorkspaceSession
-} from './features/workspace/WorkspaceSession'
+import { WorkspaceSessionProvider } from './features/workspace/WorkspaceSession'
+import { useWorkspaceSession } from './features/workspace/workspaceContext'
 import { WorkspaceStatus } from './features/workspace/WorkspaceStatus'
 import { RetainedRegion } from './features/workspace/RetainedRegion'
 import { ActionMenu } from './components/ui/ActionMenu'
 import { AppLogo } from './components/AppLogo'
 import { AppButton } from './components/ui/Controls'
 import { StatusBanner } from './components/ui/Feedback'
-import { useVisualPreferences } from './theme/VisualPreferencesProvider'
+import { useVisualPreferences } from './theme/visualPreferencesContext'
 import styles from './App.module.css'
 
 export default function App(): React.JSX.Element {

@@ -6,12 +6,12 @@ October 2, 2026. Implementation complete — awaiting user testing. This superse
 
 The existing retained-backup/candidate migration chain gains 10→11. It creates four empty app-owned STRICT tables; it invents no conversation or AI response. Existing projects, originals, failed candidates and backups remain retained. `validateProjectSchema` retains exact schema sets for versions 1–10 and adds 11. Archives supported previously remain readable and are migrated locally through the existing copy path.
 
-| Table | Ownership and contents |
-| --- | --- |
-| `conversations` | Composite project/UUID identity; independently mutable title, active/archived state, revision and UTC timestamps |
-| `ai_captures` | Immutable versioned capture: conversation identity, template `conversation-v1`, prompt, saved head/source revision, passage block offsets or section reference, explicitly selected history IDs, exact text projections, labels and canonical SHA-256 digest |
-| `conversation_attempts` | One versioned attempt per immutable capture, linked to user/optional assistant message, revision, outcome, actual known provider/model, sanitized reason, sequence, timestamps and idempotent submission digest |
-| `conversation_messages` | Stable ID/revision, conversation/attempt ownership, ordered user or assistant text and UTC timestamp; an assistant row exists only for nonempty genuine output |
+| Table                   | Ownership and contents                                                                                                                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `conversations`         | Composite project/UUID identity; independently mutable title, active/archived state, revision and UTC timestamps                                                                                                                                             |
+| `ai_captures`           | Immutable versioned capture: conversation identity, template `conversation-v1`, prompt, saved head/source revision, passage block offsets or section reference, explicitly selected history IDs, exact text projections, labels and canonical SHA-256 digest |
+| `conversation_attempts` | One versioned attempt per immutable capture, linked to user/optional assistant message, revision, outcome, actual known provider/model, sanitized reason, sequence, timestamps and idempotent submission digest                                              |
+| `conversation_messages` | Stable ID/revision, conversation/attempt ownership, ordered user or assistant text and UTC timestamp; an assistant row exists only for nonempty genuine output                                                                                               |
 
 All content mutations advance the existing project commit chain, so selected-file Save status becomes pending. Conversation revisions advance for metadata and transcript changes. No manuscript document revision, payload, undo history, outline, research record or compilation selection is changed by a conversation mutation.
 
@@ -27,16 +27,16 @@ The main AI service retains its existing encrypted operation input/output journa
 
 ## Consumer matrix
 
-| Consumer | Schema 11 handling |
-| --- | --- |
-| New-project creation and working open | Current schema, retained-copy migration, conversation graph validation and unbound-interruption reconciliation |
-| Shared commands / capability policy / main / preload / worker | Named conversation envelope with exact action/result validators; public callers cannot bind or settle output |
-| Snapshot / Save / Save As / Backup | Existing whole-database snapshot includes conversations; portable validation now includes schema 11 |
-| Archive manifest / extraction / incoming validation | Reader accepts schema/minimum reader 11 plus prior supported pairs; archive format remains 1 |
-| Duplicate / Restore / independent Open copy | Rekeys all four table owners; excludes operations database and provider grants |
-| Recovery / project discovery | Conversation commits update the local project head/catalog through the existing repository owner |
-| Transcript export | Separate native UTF-8 `.txt` output, ordered roles/dates/outcomes/provenance, optional reviewed-context appendix; exclusive creation, 64 MiB cap, existing file preserved |
-| Manuscript exports / frozen compilation / history restore | Existing selection and compilation 3; no chat transcript is compiled into DOCX/PDF/Markdown |
-| I13 extension | `shared/ai-content.ts`, `domain/ai/context.ts` and `worker/ai/capture.ts` provide action-neutral capture/attempt fields, deterministic text projection and hashing; I13 owns its proposal storage/UI and later migration |
+| Consumer                                                      | Schema 11 handling                                                                                                                                                                                                       |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| New-project creation and working open                         | Current schema, retained-copy migration, conversation graph validation and unbound-interruption reconciliation                                                                                                           |
+| Shared commands / capability policy / main / preload / worker | Named conversation envelope with exact action/result validators; public callers cannot bind or settle output                                                                                                             |
+| Snapshot / Save / Save As / Backup                            | Existing whole-database snapshot includes conversations; portable validation now includes schema 11                                                                                                                      |
+| Archive manifest / extraction / incoming validation           | Reader accepts schema/minimum reader 11 plus prior supported pairs; archive format remains 1                                                                                                                             |
+| Duplicate / Restore / independent Open copy                   | Rekeys all four table owners; excludes operations database and provider grants                                                                                                                                           |
+| Recovery / project discovery                                  | Conversation commits update the local project head/catalog through the existing repository owner                                                                                                                         |
+| Transcript export                                             | Separate native UTF-8 `.txt` output, ordered roles/dates/outcomes/provenance, optional reviewed-context appendix; exclusive creation, 64 MiB cap, existing file preserved                                                |
+| Manuscript exports / frozen compilation / history restore     | Existing selection and compilation 3; no chat transcript is compiled into DOCX/PDF/Markdown                                                                                                                              |
+| I13 extension                                                 | `shared/ai-content.ts`, `domain/ai/context.ts` and `worker/ai/capture.ts` provide action-neutral capture/attempt fields, deterministic text projection and hashing; I13 owns its proposal storage/UI and later migration |
 
 No migration, round trip, copy, export, native filesystem or scale acceptance is claimed. See the [I12 manual guide](../manual-testing/improvement-I12.md).

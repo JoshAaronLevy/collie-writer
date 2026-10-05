@@ -1,3 +1,4 @@
+import { hasControlCharacters } from './control-characters'
 import { isId, readDocument, type DocumentPayload } from '../domain/editor/schema'
 import { exact, record, type OpenInput } from './projects'
 
@@ -72,7 +73,7 @@ export type NoteChange =
 export type NoteChangeInput = OpenInput & { operationId: string; change: NoteChange }
 
 const line = (v: unknown, limit: number): v is string =>
-  typeof v === 'string' && v.length <= limit && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(v)
+  typeof v === 'string' && v.length <= limit && !hasControlCharacters(v, true)
 export function noteBody(value: unknown): value is DocumentPayload {
   try {
     const body = readDocument(value)

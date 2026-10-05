@@ -1,7 +1,7 @@
 import { sameScope } from '../../../../shared/project-files'
 import { AppButton } from '../../components/ui/Controls'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
-import { useAiConnections } from './AiConnectionsProvider'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
+import { useAiConnections } from './connectionState'
 import styles from './AiConnections.module.css'
 
 /** One main-owned capacity count for both tools, including closed originals. */
@@ -33,7 +33,7 @@ export function AiCapacity(): React.JSX.Element | null {
       {status?.work.some((item) => item.state === 'record-unavailable') ? (
         <p>
           An execution binding also needs recovery. If its original protected record is missing,
-          that feature's binding stays reserved even when the active slot count is lower.
+          that feature&apos;s binding stays reserved even when the active slot count is lower.
         </p>
       ) : null}
       {others.length ? (

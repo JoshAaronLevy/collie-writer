@@ -195,7 +195,7 @@ function review(db: Database.Database, p: string, input: ProofreadReview): Proof
 function bindings(operations: Database.Database): ConversationBinding[] {
   return activeBindings(operations, 'proofread')
 }
-const sameBinding = (a: ConversationBinding | undefined, b: ConversationBinding | null) =>
+const sameBinding = (a: ConversationBinding | undefined, b: ConversationBinding | null): boolean =>
   !!a && !!b && requestDigest(a) === requestDigest(b)
 export function findingSuggestion(f: ProofreadFinding): FindingSuggestion {
   return {
@@ -510,7 +510,14 @@ export async function proofreadingCommand(
         const b = bundle(db, p, input.attemptId),
           f = b.findings.find((f) => f.id === input.findingId)
         if (!f) throw new ProjectError('NOT_FOUND')
-        const receipt = () => {
+        const receipt = (): {
+          head: string
+          updatedAt: string
+          type: 'decision'
+          turn: ProofreadBundle
+          documentId: string
+          revisionId: string
+        } => {
           const d = db
             .prepare('SELECT revision_id FROM documents WHERE project_id=? AND id=?')
             .get(p, b.capture.source.documentId) as { revision_id: string }
@@ -638,7 +645,7 @@ export function interruptUnboundProofreading(
   })
 }
 export function validatePortableProofreading(db: Database.Database, p: string): void {
-  const count = (table: string) =>
+  const count = (table: string): number =>
     (db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n
   for (const table of [
     'proofreading_captures',

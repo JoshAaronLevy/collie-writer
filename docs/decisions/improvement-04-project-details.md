@@ -25,12 +25,12 @@ Export options add two explicit booleans, both off initially:
 
 The preflight digest binds the captured head, section order, style, paper, captured metadata and title-page option. Changing a choice/head invalidates the visible preview. Export re-prepares under the boundary and requires matching head/digest. A running job renders only its captured model; later project edits cannot change its author/title. Device-local export manifests retain the compilation version, captured metadata (description only when chosen), title-page choice, and source map with the existing output reports. No content goes to diagnostics or a server.
 
-| Output | Default document properties | Explicit title-page behavior |
-| --- | --- | --- |
-| DOCX | Project title and byline in core title/creator; description only when selected. An old project's empty byline remains empty. | Centered title/byline followed by a page break before writing; no description |
-| PDF | Project title/author in PDF Info metadata; selected description in Subject; creator names Collie Writer | Escaped title/byline in the local print document with a page break; no description |
-| Markdown | No native metadata/front matter added | Literal escaped title/byline at the start; page layout cannot be promised |
-| Plain text | No native document properties added | Title/byline at the start; page layout cannot be promised |
+| Output     | Default document properties                                                                                                  | Explicit title-page behavior                                                       |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| DOCX       | Project title and byline in core title/creator; description only when selected. An old project's empty byline remains empty. | Centered title/byline followed by a page break before writing; no description      |
+| PDF        | Project title/author in PDF Info metadata; selected description in Subject; creator names Collie Writer                      | Escaped title/byline in the local print document with a page break; no description |
+| Markdown   | No native metadata/front matter added                                                                                        | Literal escaped title/byline at the start; page layout cannot be promised          |
+| Plain text | No native document properties added                                                                                          | Title/byline at the start; page layout cannot be promised                          |
 
 Title-page content is derived presentation, not a manuscript section or source-map target. Existing selected-section counts exclude it; PDF page count includes rendered pages. Text reports disclose the lack of physical title-page layout. Loading a compilation recipe resets both metadata choices to off; recipes continue storing their existing section/order/paper/formats contract. They do not silently opt into sharing a description. I09 owns the final Export screen arrangement.
 

@@ -1,5 +1,5 @@
 import FilePanel from './FilePanel'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { scopeOf } from '../workspace/useWorkspaceController'
 import { sameScope } from '../../../../shared/project-files'
 

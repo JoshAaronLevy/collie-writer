@@ -1,1 +1,6 @@
-.save-menu { display: flex; flex-wrap: wrap; gap: var(--collie-space-2); align-items: center; }
+.save-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--collie-space-2);
+  align-items: center;
+}

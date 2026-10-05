@@ -1,6 +1,6 @@
 import { AppButton } from '../../components/ui/Controls'
 import { StatusBanner } from '../../components/ui/Feedback'
-import { useAiConnections } from './AiConnectionsProvider'
+import { useAiConnections } from './connectionState'
 import { connectionLabel, connectionReason } from './connection-copy'
 import styles from './AiConnections.module.css'
 

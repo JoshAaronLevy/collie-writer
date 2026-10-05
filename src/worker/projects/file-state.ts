@@ -1,3 +1,4 @@
+import { hasControlCharacters } from '../../shared/control-characters'
 import { constants, type BigIntStats, type ReadStream } from 'node:fs'
 import { lstat, open, readFile, realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
@@ -91,7 +92,7 @@ export async function selectedPath(root: string, path: string): Promise<string> 
   if (
     !isAbsolute(path) ||
     path.length > 4000 ||
-    /[\x00-\x1f]/.test(path) ||
+    hasControlCharacters(path) ||
     !/\.collie$/i.test(path)
   )
     throw new ProjectError('DENIED')

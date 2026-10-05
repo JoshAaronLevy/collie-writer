@@ -1,4 +1,19 @@
-.writing-import { display: grid; gap: var(--collie-space-3); margin-block: var(--collie-space-6); padding: var(--collie-space-6); background: var(--collie-surface); border: 1px solid var(--collie-border); border-radius: var(--collie-radius-surface); }
-.writing-import > button { justify-self: start; }
-.writing-import p { max-width: 75ch; overflow-wrap: anywhere; }
-.writing-import h2 { margin: 0; }
+.writing-import {
+  display: grid;
+  gap: var(--collie-space-3);
+  margin-block: var(--collie-space-6);
+  padding: var(--collie-space-6);
+  background: var(--collie-surface);
+  border: 1px solid var(--collie-border);
+  border-radius: var(--collie-radius-surface);
+}
+.writing-import > button {
+  justify-self: start;
+}
+.writing-import p {
+  max-width: 75ch;
+  overflow-wrap: anywhere;
+}
+.writing-import h2 {
+  margin: 0;
+}

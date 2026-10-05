@@ -728,7 +728,7 @@ export function validatePortableConversations(db: Database.Database, p: string):
         .n
     )
       corrupt()
-  const counts = (table: string) =>
+  const counts = (table: string): number =>
     (db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n
   if (
     counts('conversations') > 10000 ||

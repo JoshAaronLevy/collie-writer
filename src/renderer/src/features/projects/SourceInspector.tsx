@@ -1,9 +1,12 @@
+import { useEffectEvent } from 'react'
+import { useSynchronousState } from '../../hooks/useSynchronousState'
+import { replaceControlCharacters } from '../../../../shared/control-characters'
 import { TextInput, Textarea } from '@mantine/core'
 import { AppButton, TextareaField } from '../../components/ui/Controls'
 import { EmptyState } from '../../components/ui/Feedback'
 import { ResearchHeader, ResearchLayout } from '../research/ResearchLayout'
-import { useResearchData } from '../research/ResearchData'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useResearchData } from '../research/researchContext'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import './SourceInspector.css'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import { useEffect, useRef, useState } from 'react'
@@ -22,18 +25,8 @@ import {
 } from '../../../../shared/inspection'
 import type { SourceAttachment, SourceAttachmentInput } from '../../../../shared/sources'
 
-const scope = (p: OpenProject, sourceId: string) => ({
-  projectId: p.projectId,
-  workspaceId: p.workspaceId,
-  sourceId
-})
-const tidy = (value: unknown) =>
-  typeof value === 'string'
-    ? value
-        .replace(/[\u0000-\u001f]/g, ' ')
-        .trim()
-        .slice(0, 500)
-    : ''
+const tidy = (value: unknown): string =>
+  typeof value === 'string' ? replaceControlCharacters(value).trim().slice(0, 500) : ''
 async function deadline<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -89,8 +82,12 @@ export default function SourceInspector({
     session.destination.view === 'research' &&
     session.destination.target.kind === 'inspector' &&
     session.destination.target.sourceId === sourceId
-  const reimportPending = useRef<SourceAttachmentInput | null>(null)
-  const pendingExcerpt = useRef<{ operationId: string; change: InspectionChange } | null>(null)
+  const [reimportPendingValue, setReimportPendingValue, reimportPending] =
+    useSynchronousState<SourceAttachmentInput | null>(null)
+  const [pendingExcerptValue, setPendingExcerptValue, pendingExcerpt] = useSynchronousState<{
+    operationId: string
+    change: InspectionChange
+  } | null>(null)
   const [view, setView] = useState<InspectionView | null>(null),
     [attachments, setAttachments] = useState<SourceAttachment[]>([])
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null),
@@ -112,12 +109,12 @@ export default function SourceInspector({
     manualLabel !== 'Manual transcription' ||
     (!!correctionFor &&
       (correctionQuote !== correctionFor.quote || correctionLabel !== 'Human correction')) ||
-    !!pendingExcerpt.current ||
-    !!reimportPending.current
+    !!pendingExcerptValue ||
+    !!reimportPendingValue
   const [reimportBytes, setReimportBytes] = useState<{ current: number; total: number } | null>(
     null
   )
-  const loaded = useRef<Loaded | null>(null),
+  const [loadedValue, setLoadedValue, loaded] = useSynchronousState<Loaded | null>(null),
     task = useRef<PDFDocumentLoadingTask | null>(null),
     pdfWorker = useRef<{ port: Worker; worker: PDFWorker } | null>(null),
     cancelled = useRef(false),
@@ -129,208 +126,45 @@ export default function SourceInspector({
   const selected = view?.versions.find((v) => v.id === selectedVersionId),
     active = view?.versions.find((v) => v.id === view.activeVersionId)
   const page = view?.pages.find((p) => p.versionId === selectedVersionId && p.index === pageIndex)
-  const loading =
-    busy || extracting || disabled || !!pendingExcerpt.current || !!reimportPending.current
+  const loading = busy || extracting || disabled || !!pendingExcerptValue || !!reimportPendingValue
 
-  useEffect(() => {
-    let alive = true
+  const sourceKey = `${project.projectId}:${project.workspaceId}:${sourceId}:${readRevision}`
+  const [lastSourceKey, setLastSourceKey] = useState(sourceKey)
+  if (lastSourceKey !== sourceKey) {
+    setLastSourceKey(sourceKey)
     setView(null)
     setSelectedVersionId(null)
     setLoadedVersionId(null)
-    loaded.current = null
     setPageText('')
-    void window.collie
-      .readInspection(scope(project, sourceId))
-      .then((r) => {
-        if (alive) {
-          if (r.ok) {
-            setView(r.value)
-            setSelectedVersionId(r.value.activeVersionId ?? r.value.versions[0]?.id ?? null)
-          } else setError(r.error.message)
-        }
-      })
-      .catch(() => {
-        if (alive) setError('Source inspection could not be loaded. Reload it to retry.')
-      })
-    void window.collie
-      .readSources({ projectId: project.projectId, workspaceId: project.workspaceId })
-      .then((r) => {
-        if (alive && r.ok) {
-          const source = r.value.sources.find((s) => s.id === sourceId)
-          setAttachments(source?.attachments ?? [])
-          setSourceTitle(source?.metadata.title ?? 'Missing source')
-        }
-      })
-      .catch(() => {
-        if (alive)
-          setError('Source details could not be read. The original and excerpts are retained.')
-      })
-    return () => {
-      alive = false
-      cancelled.current = true
-      void closePdf()
-    }
-  }, [project.projectId, project.workspaceId, sourceId, readRevision])
-  useEffect(() => {
-    if (!visible || !view || busy || extracting || draftPending) return
-    const key = `${focusExcerptId}:${focusVersionId}:${focusPageIndex}:${session.focusRevision}:${readRevision}`
-    if (focusedExcerpt.current === key) return
-    if (!focusExcerptId && !focusVersionId) {
-      focusedExcerpt.current = null
-      return
-    }
-    focusedExcerpt.current = key
-    if (focusExcerptId) {
-      const excerpt = view.excerpts.find((item) => item.id === focusExcerptId)
-      if (excerpt) {
-        setExcerptQuery('')
-        void navigateExcerpt(excerpt)
-      } else setError('The requested excerpt is missing. No different excerpt was selected.')
-    } else if (focusVersionId) {
-      const version = view.versions.find((item) => item.id === focusVersionId)
-      if (version) void openVersion(version, focusPageIndex ?? undefined)
-      else setError('The requested original version is missing. No newer version was substituted.')
-    }
-  }, [
-    focusExcerptId,
-    focusVersionId,
-    focusPageIndex,
-    session.focusRevision,
-    readRevision,
-    view?.sourceId,
-    busy,
-    extracting,
-    draftPending,
-    visible
-  ])
-  useEffect(() => {
-    if (
-      !visible ||
-      !view ||
-      busy ||
-      extracting ||
-      draftPending ||
-      view.headCommitId === project.headCommitId
-    )
-      return
-    let live = true
-    void Promise.all([
-      window.collie.readInspection(scope(project, sourceId)),
-      window.collie.readSources({ projectId: project.projectId, workspaceId: project.workspaceId })
-    ])
-      .then(([inspection, sources]) => {
-        if (!live) return
-        if (inspection.ok) setView(inspection.value)
-        else setError(inspection.error.message)
-        if (sources.ok) {
-          const source = sources.value.sources.find((item) => item.id === sourceId)
-          setSourceTitle(source?.metadata.title ?? 'Missing source')
-          setAttachments(source?.attachments ?? [])
-        } else setError(sources.error.message)
-      })
-      .catch(() => {
-        if (live)
-          setError(
-            'Updated inspection details could not be read. Your loaded original and excerpts remain available.'
-          )
-      })
-    return () => {
-      live = false
-    }
-  }, [project.headCommitId, visible, busy, extracting, draftPending, sourceId])
-  useEffect(
-    () =>
-      window.collie.onSourceProgress((p) => {
-        if (p.operationId === reimportOperation.current)
-          setReimportBytes({ current: p.transferred, total: p.total })
-      }),
-    []
-  )
-  useEffect(() => {
-    let alive = true
+  }
+
+  const inspectionHead = view?.headCommitId
+
+  const pageTextKey = `${sourceKey}:${selectedVersionId}:${pageIndex}:${page?.textHash}:${page?.state}`
+  const [lastPageTextKey, setLastPageTextKey] = useState(pageTextKey)
+  if (lastPageTextKey !== pageTextKey) {
+    setLastPageTextKey(pageTextKey)
     setPageText('')
-    if (page?.state === 'text' && selectedVersionId) {
-      void window.collie
-        .readInspectedPage({ ...scope(project, sourceId), versionId: selectedVersionId, pageIndex })
-        .then((r) => {
-          if (alive) {
-            if (r.ok) setPageText(r.value.text)
-            else setError(r.error.message)
-          }
-        })
-        .catch(() => {
-          if (alive) setError('Saved page text could not be loaded. Reopen the original to retry.')
-        })
-    }
-    return () => {
-      alive = false
-    }
-  }, [
-    project.projectId,
-    project.workspaceId,
-    sourceId,
-    selectedVersionId,
-    pageIndex,
-    page?.textHash
-  ])
-  useEffect(() => {
-    if (!loaded.current?.pdf || loaded.current.versionId !== selectedVersionId || !canvas.current)
-      return
-    let live = true
-    const running: { render: RenderTask | null } = { render: null }
-    const doc = loaded.current.pdf
-    void (async () => {
-      try {
-        const pdfjs = await import('pdfjs-dist')
-        const pdfPage = await deadline(doc.getPage(pageIndex), 10000)
-        if (!live || !canvas.current) return
-        const plain = pdfPage.getViewport({ scale: 1 }),
-          scale = Math.min(1.2, Math.sqrt(4_000_000 / (plain.width * plain.height)))
-        const viewport = pdfPage.getViewport({ scale })
-        const element = canvas.current,
-          context = element.getContext('2d')
-        if (!context) throw new Error('CANVAS_UNAVAILABLE')
-        element.width = Math.ceil(viewport.width)
-        element.height = Math.ceil(viewport.height)
-        running.render = pdfPage.render({
-          canvas: element,
-          canvasContext: context,
-          viewport,
-          annotationMode: pdfjs.AnnotationMode.DISABLE
-        })
-        await deadline(running.render.promise, 15000)
-      } catch {
-        running.render?.cancel()
-        if (live)
-          setError(
-            'This PDF page could not be rendered. Its source bytes and earlier excerpts remain available.'
-          )
-      }
-    })()
-    return () => {
-      live = false
-      running.render?.cancel()
-    }
-  }, [loadedVersionId, selectedVersionId, pageIndex])
+  }
 
   async function mutate(change: InspectionChange): Promise<InspectionView | null> {
     const operation =
       change.type === 'excerpt'
         ? (pendingExcerpt.current ?? { operationId: crypto.randomUUID(), change })
         : { operationId: crypto.randomUUID(), change }
-    if (change.type === 'excerpt') pendingExcerpt.current = operation
+    if (change.type === 'excerpt') setPendingExcerptValue(operation)
     try {
       const result = await window.collie.changeInspection({
-        ...scope(project, sourceId),
+        ...{ projectId: project.projectId, workspaceId: project.workspaceId, sourceId },
         ...operation
       })
       if (!result.ok) {
         if (result.error.code !== 'UNAVAILABLE' && change.type === 'excerpt')
-          pendingExcerpt.current = null
+          setPendingExcerptValue(null)
         setError(result.error.message)
         return null
       }
-      if (change.type === 'excerpt') pendingExcerpt.current = null
+      if (change.type === 'excerpt') setPendingExcerptValue(null)
       setView(result.value)
       return result.value
     } catch {
@@ -365,11 +199,15 @@ export default function SourceInspector({
     owned?.port.terminate()
     try {
       owned?.worker.destroy()
-    } catch {}
+    } catch {
+      // The worker port is already terminated; continue releasing the loading task.
+    }
     if (old)
       try {
         await deadline(old.destroy(), 1000)
-      } catch {}
+      } catch {
+        // Destruction is best effort after termination; no resource can be reused.
+      }
   }
   async function ensure(attachmentId: string): Promise<void> {
     if (!allowInspectionTargetChange()) return
@@ -426,10 +264,10 @@ export default function SourceInspector({
     setSelectedVersionId(v.id)
     try {
       await closePdf()
-      loaded.current = null
+      setLoadedValue(null)
       setLoadedVersionId(null)
       const access = await window.collie.openInspectedAsset({
-        ...scope(project, sourceId),
+        ...{ projectId: project.projectId, workspaceId: project.workspaceId, sourceId },
         versionId: v.id
       })
       if (!access.ok) {
@@ -450,7 +288,7 @@ export default function SourceInspector({
           )
           return
         }
-        loaded.current = { versionId: v.id, pdf: null, text, labels: null, title: '', author: '' }
+        setLoadedValue({ versionId: v.id, pdf: null, text, labels: null, title: '', author: '' })
         setLoadedVersionId(v.id)
         setPageIndex(0)
       } else {
@@ -481,16 +319,16 @@ export default function SourceInspector({
         const metadata = (await deadline(pdf.getMetadata(), 10000).catch(() => null)) as {
           info?: { Title?: unknown; Author?: unknown }
         } | null
-        loaded.current = {
+        setLoadedValue({
           versionId: v.id,
           pdf,
           text: null,
           labels,
           title: tidy(metadata?.info?.Title),
           author: tidy(metadata?.info?.Author)
-        }
+        })
         if (jump !== undefined && (jump < 1 || jump > pdf.numPages)) {
-          loaded.current = null
+          setLoadedValue(null)
           await closePdf()
           setError('That page is not present in this original. No other page was substituted.')
           return
@@ -582,7 +420,7 @@ export default function SourceInspector({
             }
             text = full.slice(0, 100000)
           }
-          text = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
+          text = replaceControlCharacters(text, true)
           state = text.trim() ? 'text' : 'no_text'
           if (pageTruncated)
             error =
@@ -592,7 +430,7 @@ export default function SourceInspector({
           error = 'Page text could not be extracted within the parser limit.'
           parserFailed = true
           await closePdf()
-          loaded.current = null
+          setLoadedValue(null)
           setLoadedVersionId(null)
         }
         if (cancelled.current) break
@@ -764,24 +602,29 @@ export default function SourceInspector({
           return
         }
         if (!picked.value) return
-        reimportPending.current = {
-          ...scope(project, sourceId),
+        setReimportPendingValue({
+          ...{ projectId: project.projectId, workspaceId: project.workspaceId, sourceId },
           operationId: crypto.randomUUID(),
           token: picked.value.token
-        }
+        })
       }
       const input = reimportPending.current
+      if (!input) throw new Error('Source import request was not retained')
       reimportOperation.current = input.operationId
       setReimportBytes(null)
       const result = await window.collie.attachSourceFile(input)
       if (!result.ok) {
-        if (result.error.code !== 'UNAVAILABLE') reimportPending.current = null
+        if (result.error.code !== 'UNAVAILABLE') setReimportPendingValue(null)
         setError(result.error.message)
         return
       }
-      reimportPending.current = null
+      setReimportPendingValue(null)
       setAttachments(result.value.sources.find((s) => s.id === sourceId)?.attachments ?? [])
-      const inspected = await window.collie.readInspection(scope(project, sourceId))
+      const inspected = await window.collie.readInspection({
+        projectId: project.projectId,
+        workspaceId: project.workspaceId,
+        sourceId
+      })
       if (inspected.ok) {
         setView(inspected.value)
         setSelectedVersionId(
@@ -816,7 +659,7 @@ export default function SourceInspector({
     if (item.pageIndex === null) {
       setSelectedVersionId(version.id)
       setLoadedVersionId(null)
-      loaded.current = null
+      setLoadedValue(null)
       await closePdf()
       setError(
         'This excerpt has no page anchor. Its quote is retained; open the original explicitly to inspect it.'
@@ -890,6 +733,211 @@ export default function SourceInspector({
       ? `${version.mediaType === 'application/pdf' ? 'PDF' : 'Text'} original ${index + 1} · ${new Date(version.createdAt).toLocaleDateString()}`
       : 'Missing original'
   }
+  useEffect(() => {
+    let alive = true
+    setLoadedValue(null)
+    void window.collie
+      .readInspection({ projectId: project.projectId, workspaceId: project.workspaceId, sourceId })
+      .then((r) => {
+        if (alive) {
+          if (r.ok) {
+            setView(r.value)
+            setSelectedVersionId(r.value.activeVersionId ?? r.value.versions[0]?.id ?? null)
+          } else setError(r.error.message)
+        }
+      })
+      .catch(() => {
+        if (alive) setError('Source inspection could not be loaded. Reload it to retry.')
+      })
+    void window.collie
+      .readSources({ projectId: project.projectId, workspaceId: project.workspaceId })
+      .then((r) => {
+        if (alive && r.ok) {
+          const source = r.value.sources.find((s) => s.id === sourceId)
+          setAttachments(source?.attachments ?? [])
+          setSourceTitle(source?.metadata.title ?? 'Missing source')
+        }
+      })
+      .catch(() => {
+        if (alive)
+          setError('Source details could not be read. The original and excerpts are retained.')
+      })
+    return () => {
+      alive = false
+      cancelled.current = true
+      void closePdf()
+    }
+  }, [project.projectId, project.workspaceId, sourceId, readRevision, setLoadedValue])
+
+  const onInspectionNavigation = useEffectEvent(() => {
+    if (!visible || !view || busy || extracting || draftPending) return
+    const key = `${focusExcerptId}:${focusVersionId}:${focusPageIndex}:${session.focusRevision}:${readRevision}`
+    if (focusedExcerpt.current === key) return
+    if (!focusExcerptId && !focusVersionId) {
+      focusedExcerpt.current = null
+      return
+    }
+    focusedExcerpt.current = key
+    if (focusExcerptId) {
+      const excerpt = view.excerpts.find((item) => item.id === focusExcerptId)
+      if (excerpt) {
+        setExcerptQuery('')
+        void navigateExcerpt(excerpt)
+      } else setError('The requested excerpt is missing. No different excerpt was selected.')
+    } else if (focusVersionId) {
+      const version = view.versions.find((item) => item.id === focusVersionId)
+      if (version) void openVersion(version, focusPageIndex ?? undefined)
+      else setError('The requested original version is missing. No newer version was substituted.')
+    }
+  })
+
+  // Present only the latest committed navigation request, after retained regions update.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => onInspectionNavigation())
+    return () => cancelAnimationFrame(frame)
+  }, [
+    focusExcerptId,
+    focusVersionId,
+    focusPageIndex,
+    session.focusRevision,
+    readRevision,
+    view?.sourceId,
+    busy,
+    extracting,
+    draftPending,
+    visible
+  ])
+
+  useEffect(() => {
+    if (
+      !visible ||
+      !inspectionHead ||
+      busy ||
+      extracting ||
+      draftPending ||
+      inspectionHead === project.headCommitId
+    )
+      return
+    let live = true
+    void Promise.all([
+      window.collie.readInspection({
+        projectId: project.projectId,
+        workspaceId: project.workspaceId,
+        sourceId
+      }),
+      window.collie.readSources({ projectId: project.projectId, workspaceId: project.workspaceId })
+    ])
+      .then(([inspection, sources]) => {
+        if (!live) return
+        if (inspection.ok) setView(inspection.value)
+        else setError(inspection.error.message)
+        if (sources.ok) {
+          const source = sources.value.sources.find((item) => item.id === sourceId)
+          setSourceTitle(source?.metadata.title ?? 'Missing source')
+          setAttachments(source?.attachments ?? [])
+        } else setError(sources.error.message)
+      })
+      .catch(() => {
+        if (live)
+          setError(
+            'Updated inspection details could not be read. Your loaded original and excerpts remain available.'
+          )
+      })
+    return () => {
+      live = false
+    }
+  }, [
+    project.projectId,
+    project.workspaceId,
+    project.headCommitId,
+    visible,
+    busy,
+    extracting,
+    draftPending,
+    sourceId,
+    inspectionHead
+  ])
+
+  useEffect(
+    () =>
+      window.collie.onSourceProgress((p) => {
+        if (p.operationId === reimportOperation.current)
+          setReimportBytes({ current: p.transferred, total: p.total })
+      }),
+    []
+  )
+
+  useEffect(() => {
+    let alive = true
+    if (page?.state === 'text' && selectedVersionId) {
+      void window.collie
+        .readInspectedPage({
+          ...{ projectId: project.projectId, workspaceId: project.workspaceId, sourceId },
+          versionId: selectedVersionId,
+          pageIndex
+        })
+        .then((r) => {
+          if (alive) {
+            if (r.ok) setPageText(r.value.text)
+            else setError(r.error.message)
+          }
+        })
+        .catch(() => {
+          if (alive) setError('Saved page text could not be loaded. Reopen the original to retry.')
+        })
+    }
+    return () => {
+      alive = false
+    }
+  }, [
+    project.projectId,
+    project.workspaceId,
+    sourceId,
+    selectedVersionId,
+    pageIndex,
+    page?.textHash,
+    page?.state
+  ])
+
+  useEffect(() => {
+    if (!loaded.current?.pdf || loaded.current.versionId !== selectedVersionId || !canvas.current)
+      return
+    let live = true
+    const running: { render: RenderTask | null } = { render: null }
+    const doc = loaded.current.pdf
+    void (async () => {
+      try {
+        const pdfjs = await import('pdfjs-dist')
+        const pdfPage = await deadline(doc.getPage(pageIndex), 10000)
+        if (!live || !canvas.current) return
+        const plain = pdfPage.getViewport({ scale: 1 }),
+          scale = Math.min(1.2, Math.sqrt(4_000_000 / (plain.width * plain.height)))
+        const viewport = pdfPage.getViewport({ scale })
+        const element = canvas.current,
+          context = element.getContext('2d')
+        if (!context) throw new Error('CANVAS_UNAVAILABLE')
+        element.width = Math.ceil(viewport.width)
+        element.height = Math.ceil(viewport.height)
+        running.render = pdfPage.render({
+          canvas: element,
+          canvasContext: context,
+          viewport,
+          annotationMode: pdfjs.AnnotationMode.DISABLE
+        })
+        await deadline(running.render.promise, 15000)
+      } catch {
+        running.render?.cancel()
+        if (live)
+          setError(
+            'This PDF page could not be rendered. Its source bytes and earlier excerpts remain available.'
+          )
+      }
+    })()
+    return () => {
+      live = false
+      running.render?.cancel()
+    }
+  }, [loadedVersionId, selectedVersionId, pageIndex, loaded])
   return (
     <section
       tabIndex={-1}
@@ -921,7 +969,7 @@ export default function SourceInspector({
           {Math.round((100 * reimportBytes.current) / Math.max(1, reimportBytes.total))}%
         </p>
       ) : null}
-      {pendingExcerpt.current ? (
+      {pendingExcerptValue ? (
         <AppButton
           disabled={busy || extracting || disabled || readOnly}
           onClick={() => void retryExcerpt()}
@@ -929,7 +977,7 @@ export default function SourceInspector({
           Retry pending excerpt
         </AppButton>
       ) : null}
-      {reimportPending.current ? (
+      {reimportPendingValue ? (
         <AppButton
           disabled={busy || extracting || disabled || readOnly}
           onClick={() => void reimport(true)}
@@ -1272,7 +1320,7 @@ export default function SourceInspector({
                     </AppButton>
                   ) : null}
                 </div>
-                {loaded.current?.pdf ? (
+                {loadedValue?.pdf ? (
                   <div className="research-actions">
                     <AppButton
                       variant="default"
@@ -1285,14 +1333,14 @@ export default function SourceInspector({
                       Previous page
                     </AppButton>
                     <span>
-                      PDF page {pageIndex} of {loaded.current.pdf.numPages}
-                      {loaded.current.labels?.[pageIndex - 1]
-                        ? ` · label ${loaded.current.labels[pageIndex - 1]}`
+                      PDF page {pageIndex} of {loadedValue.pdf.numPages}
+                      {loadedValue.labels?.[pageIndex - 1]
+                        ? ` · label ${loadedValue.labels[pageIndex - 1]}`
                         : ''}
                     </span>
                     <AppButton
                       variant="default"
-                      disabled={loading || draftPending || pageIndex >= loaded.current.pdf.numPages}
+                      disabled={loading || draftPending || pageIndex >= loadedValue.pdf.numPages}
                       onClick={() => {
                         setExcerptId(null)
                         setPageIndex((value) => value + 1)
@@ -1304,7 +1352,7 @@ export default function SourceInspector({
                 ) : (
                   <p>Plain text original; no PDF page number.</p>
                 )}
-                {loaded.current?.pdf ? (
+                {loadedValue?.pdf ? (
                   <canvas
                     ref={canvas}
                     className="inspected-pdf-canvas"

@@ -1,3 +1,4 @@
+import { hasControlCharacters } from './control-characters'
 import { isId } from '../domain/editor/schema'
 import type { OpenInput } from './projects'
 import { isExportFormat, type ExportFormat } from './exports'
@@ -69,7 +70,10 @@ const ids = (v: unknown): v is string[] =>
   v.every(isId) &&
   new Set(v).size === v.length
 const name = (v: unknown): v is string =>
-  typeof v === 'string' && v.length > 0 && v.length <= 255 && !/[\\/:\u0000-\u001f]/.test(v)
+  typeof v === 'string' &&
+  v.length > 0 &&
+  v.length <= 255 &&
+  !(hasControlCharacters(v) || /[\\/:]/u.test(v))
 export function isRecipeChange(v: unknown): v is RecipeChangeInput {
   return (
     obj(v) &&
@@ -93,7 +97,7 @@ export function isRecipeChange(v: unknown): v is RecipeChangeInput {
     typeof v.name === 'string' &&
     v.name.trim().length > 0 &&
     v.name.length <= 120 &&
-    !/[\u0000-\u001f]/.test(v.name) &&
+    !hasControlCharacters(v.name) &&
     ids(v.documentIds) &&
     ['Letter', 'A4'].includes(String(v.paper)) &&
     formats(v.formats)

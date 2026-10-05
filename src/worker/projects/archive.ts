@@ -71,7 +71,7 @@ export async function writeArchive(
           }
           const input = createReadStream(file.path)
           sources.add(input)
-          input.on('data', (chunk: Buffer) => progress?.(chunk.length))
+          input.on('data', (chunk) => progress?.(Buffer.byteLength(chunk)))
           input.once('close', () => sources.delete(input))
           callback(null, input)
         }

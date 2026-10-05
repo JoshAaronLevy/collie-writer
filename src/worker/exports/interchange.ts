@@ -26,7 +26,7 @@ export function exportInterchange(
   const listNumbers = new Map<string, number>()
   const noteMap = new Map(model.footnotes.map((n) => [n.number, n]))
   const escape = (value: string): string =>
-    markdown ? value.replace(/([\\`*_{}\[\]<>!|])/g, '\\$1') : value
+    markdown ? value.replace(/([\\`*_{}[\]<>!|])/g, '\\$1') : value
   function runs(input: readonly Frozen<Run>[]): string {
     return input
       .map((run) => {

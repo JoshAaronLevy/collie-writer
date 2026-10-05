@@ -6,20 +6,20 @@ October 1, 2026. **Specification implementation complete — awaiting user revie
 
 The opening experience should communicate care through typography, space, and a clear next action. Writing gets the largest, quietest surface. Research remains deep but appears in focused views. Each screen has one primary task; routine success stays quiet, while failures that threaten work remain visible.
 
-| Settled choice | Design consequence |
-| --- | --- |
-| Nonfiction edition; fiction is separate | Five primary categories and two secondary choices below; no novel/story option. |
-| Mantine and semantic scoped CSS | Use one themed component system. Classes describe product roles; feature styles live with their owner. |
-| Warm editorial identity | Warm neutral surround, paper surfaces, graphite text, deep green accents, system sans controls, bundled Source Serif prose. |
-| Light, dark, system; accessibility retained | Each surface/state has theme tokens; high contrast, 100–200% interface zoom, reduced motion, and keyboard paths remain available. |
-| Title and byline required; description optional | No account identity becomes the author. Remember the author only through an unchecked opt-in preference. |
-| Short empty starter outlines | No instructional/example prose inside a personal manuscript. Existing projects retain their outlines. |
-| Local writing works without accounts | Connection is optional, and the project exists before connection begins. No shared AI account, API-key form, or paid-token fallback. |
-| Conversations and proofreading | Conversations are optional beside writing. Proofreading produces reviewable, reversible suggestions after an explicitly selected scope. |
-| Portable ownership | Writing, research, conversations, and proposals travel with projects when implemented; credentials, live sessions, and view preferences do not. |
-| Free/paid access | One explicitly designated free editable project; paid unrestricted editing. Reading/export/backup/recovery remain available across projects. Eligible AI follows editable scope without an additional Collie AI paywall. |
-| Tutorial and help | Optional separate synthetic nonfiction sample; dismissible three-point orientation; no blocking tour. |
-| Permanent ad-free product | No promotions, upsell cards, sponsor slots, analytics, or remote decorative assets. Factual access controls belong in Settings. |
+| Settled choice                                  | Design consequence                                                                                                                                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Nonfiction edition; fiction is separate         | Five primary categories and two secondary choices below; no novel/story option.                                                                                                                                          |
+| Mantine and semantic scoped CSS                 | Use one themed component system. Classes describe product roles; feature styles live with their owner.                                                                                                                   |
+| Warm editorial identity                         | Warm neutral surround, paper surfaces, graphite text, deep green accents, system sans controls, bundled Source Serif prose.                                                                                              |
+| Light, dark, system; accessibility retained     | Each surface/state has theme tokens; high contrast, 100–200% interface zoom, reduced motion, and keyboard paths remain available.                                                                                        |
+| Title and byline required; description optional | No account identity becomes the author. Remember the author only through an unchecked opt-in preference.                                                                                                                 |
+| Short empty starter outlines                    | No instructional/example prose inside a personal manuscript. Existing projects retain their outlines.                                                                                                                    |
+| Local writing works without accounts            | Connection is optional, and the project exists before connection begins. No shared AI account, API-key form, or paid-token fallback.                                                                                     |
+| Conversations and proofreading                  | Conversations are optional beside writing. Proofreading produces reviewable, reversible suggestions after an explicitly selected scope.                                                                                  |
+| Portable ownership                              | Writing, research, conversations, and proposals travel with projects when implemented; credentials, live sessions, and view preferences do not.                                                                          |
+| Free/paid access                                | One explicitly designated free editable project; paid unrestricted editing. Reading/export/backup/recovery remain available across projects. Eligible AI follows editable scope without an additional Collie AI paywall. |
+| Tutorial and help                               | Optional separate synthetic nonfiction sample; dismissible three-point orientation; no blocking tour.                                                                                                                    |
+| Permanent ad-free product                       | No promotions, upsell cards, sponsor slots, analytics, or remote decorative assets. Factual access controls belong in Settings.                                                                                          |
 
 ## Navigation and visual hierarchy
 
@@ -33,31 +33,31 @@ Global Projects, Settings, and Help remain reachable. The workspace header adds 
 
 Dimensions below are starting implementation values, not measured accessibility claims. Use available CSS viewport width after interface zoom, not physical screen pixels. Allow content to reflow when labels, system fonts, or user preferences need more room.
 
-| Surface | Wide arrangement | Narrow arrangement |
-| --- | --- | --- |
-| Setup | Centered content up to 960px; cards in three columns when each can remain about 260px wide; last two left aligned | Two columns when they fit, then one; details form one column at every size |
-| Details / connection | Form/content measure up to 560px | Full available width with 16px gutters; actions wrap without clipping |
-| Projects | Readable list up to 1120px; title/type/date/status columns | Stacked rows; title and availability first, metadata below |
-| Write | Around 1200px and above: outline about 240px, editor at least 480px, optional panel about 320px | Below about 1200px: secondary panel becomes a drawer/view; below about 900px: outline also becomes a drawer |
-| Research | List about 280px plus detail; source reading gets remaining space | One list or detail at a time with explicit Back; inspector can take the full content region |
-| Export / Settings | Section navigation plus a constrained content column | Section selector/back navigation and one content column |
+| Surface              | Wide arrangement                                                                                                  | Narrow arrangement                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Setup                | Centered content up to 960px; cards in three columns when each can remain about 260px wide; last two left aligned | Two columns when they fit, then one; details form one column at every size                                  |
+| Details / connection | Form/content measure up to 560px                                                                                  | Full available width with 16px gutters; actions wrap without clipping                                       |
+| Projects             | Readable list up to 1120px; title/type/date/status columns                                                        | Stacked rows; title and availability first, metadata below                                                  |
+| Write                | Around 1200px and above: outline about 240px, editor at least 480px, optional panel about 320px                   | Below about 1200px: secondary panel becomes a drawer/view; below about 900px: outline also becomes a drawer |
+| Research             | List about 280px plus detail; source reading gets remaining space                                                 | One list or detail at a time with explicit Back; inspector can take the full content region                 |
+| Export / Settings    | Section navigation plus a constrained content column                                                              | Section selector/back navigation and one content column                                                     |
 
 Keep the existing 420×400 native minimum; do not raise it to hide layout problems. At very small effective widths or 200% zoom, labels wrap, all content scrolls vertically, and actions remain reachable. Do not impose a minimum editor width that forces page-wide horizontal scrolling. Tables/PDFs may have their own labeled scroll region. Sticky headers/footers must not cover focused controls or consume most of a short window.
 
 Proposed token roles for I02:
 
-| Role | Light | Dark | High-contrast treatment |
-| --- | --- | --- | --- |
-| App surround | `#F5F4F0` | `#171D1A` | White/near-black according to effective theme |
-| Paper / primary surface | `#FFFFFF` | `#202925` | Clear surface boundaries without opacity |
-| Primary text | `#252D2B` | `#EEF3EF` | Black/white; no low-opacity text |
-| Secondary text | `#5D6964` | `#BBC8C0` | Bring closer to primary text |
-| Primary action | `#2F6757` with white label | `#A7D7BD` with dark label | Explicit strong border and contrasting label |
-| Selected surface | `#E8F0EA` | `#2C4438` | Check/selected label and border, independent of fill |
-| Separator | `#D8DFD9` | `#4A5A51` | Stronger visible boundary |
-| Error | `#A63131` | `#FFB6AF` | Error icon, message, and action; never color alone |
-| Warning | `#77551A` | `#EBCB85` | Warning label and persistent message |
-| Focus | Accent ring with visible offset | Light accent ring with visible offset | Respect forced colors; never remove native focus without a visible replacement |
+| Role                    | Light                           | Dark                                  | High-contrast treatment                                                        |
+| ----------------------- | ------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------ |
+| App surround            | `#F5F4F0`                       | `#171D1A`                             | White/near-black according to effective theme                                  |
+| Paper / primary surface | `#FFFFFF`                       | `#202925`                             | Clear surface boundaries without opacity                                       |
+| Primary text            | `#252D2B`                       | `#EEF3EF`                             | Black/white; no low-opacity text                                               |
+| Secondary text          | `#5D6964`                       | `#BBC8C0`                             | Bring closer to primary text                                                   |
+| Primary action          | `#2F6757` with white label      | `#A7D7BD` with dark label             | Explicit strong border and contrasting label                                   |
+| Selected surface        | `#E8F0EA`                       | `#2C4438`                             | Check/selected label and border, independent of fill                           |
+| Separator               | `#D8DFD9`                       | `#4A5A51`                             | Stronger visible boundary                                                      |
+| Error                   | `#A63131`                       | `#FFB6AF`                             | Error icon, message, and action; never color alone                             |
+| Warning                 | `#77551A`                       | `#EBCB85`                             | Warning label and persistent message                                           |
+| Focus                   | Accent ring with visible offset | Light accent ring with visible offset | Respect forced colors; never remove native focus without a visible replacement |
 
 Use a 4/8/12/16/24/32/48px spacing scale, about 8px control radii and 12px card radii. Start controls/body copy near 16px, supporting text near 14px, prose near 19px with 1.6 line height and a 65–75 character measure. Keep controls comfortably targetable, aiming for 40px height and more generous primary actions. Avoid all-uppercase paragraphs, oversized welcome illustrations, continuous gradients, and a box around every subsection. Shadows identify overlays, not every panel. Transitions should be short and optional; reduced motion removes nonessential movement.
 
@@ -78,15 +78,15 @@ Colors and dimensions remain subject to user-observed contrast, readability, key
 
 All descriptions below are production copy specifications, not generated research fixtures. I04 owns the persistent mapping; I05 presents it.
 
-| Placement | Card / stable kind | Card description | New template / empty text sections |
-| --- | --- | --- | --- |
-| Primary | Nonfiction book / `nonfiction-book` | Develop a substantial idea across chapters. | `book`: Introduction; Chapter 1 |
-| Primary | Academic essay / `academic-essay` | Make a focused argument supported by sources. | `essay`: Introduction; Argument; Conclusion |
-| Primary | Article / `article` | Write a focused piece for readers or publication. | `article`: Draft |
-| Primary | Report / `report` | Present findings and practical recommendations. | `report`: Summary; Findings; Recommendations |
-| Primary | Study critique / `study-critique` | Build a research-supported argument against a study or publication. | `critique`: Study overview; Argument; Supporting research |
-| More starting points | Research paper / `research-paper` | Present research through methods, results, and discussion. | `research`: Abstract; Introduction; Methods; Results; Discussion |
-| More starting points | Blank nonfiction project / `blank-nonfiction` | Start with an empty draft and shape your own outline. | `blank`: Draft |
+| Placement            | Card / stable kind                            | Card description                                                    | New template / empty text sections                               |
+| -------------------- | --------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Primary              | Nonfiction book / `nonfiction-book`           | Develop a substantial idea across chapters.                         | `book`: Introduction; Chapter 1                                  |
+| Primary              | Academic essay / `academic-essay`             | Make a focused argument supported by sources.                       | `essay`: Introduction; Argument; Conclusion                      |
+| Primary              | Article / `article`                           | Write a focused piece for readers or publication.                   | `article`: Draft                                                 |
+| Primary              | Report / `report`                             | Present findings and practical recommendations.                     | `report`: Summary; Findings; Recommendations                     |
+| Primary              | Study critique / `study-critique`             | Build a research-supported argument against a study or publication. | `critique`: Study overview; Argument; Supporting research        |
+| More starting points | Research paper / `research-paper`             | Present research through methods, results, and discussion.          | `research`: Abstract; Introduction; Methods; Results; Discussion |
+| More starting points | Blank nonfiction project / `blank-nonfiction` | Start with an empty draft and shape your own outline.               | `blank`: Draft                                                   |
 
 Use small bundled Lucide icons decoratively with visible titles. The optional choices use the same selection semantics, without overwhelming the five primary cards. Expanding More starting points retains selection and focus. A selected secondary option stays visible when returning to this step.
 
@@ -359,30 +359,30 @@ Your setup entries are retained.
 
 Primary action is issue-specific, not always Retry. Focus the interruption heading/summary once, then the applicable action. Preserve draft input and origin. Storage unavailable mid-edit keeps the window/draft visible and provides Select all for copying; do not advise quitting before preserving unprotected text. A failed migration retains originals and reports recovery options. Missing selected files offer Locate/Retry/Save As as applicable while locally protected work remains readable. Recovering a retained artifact opens an independent project. Unknown/interrupted material is retained, not cleaned automatically.
 
-| Local state | Selected-file state | Compact message / detail |
-| --- | --- | --- |
-| Visible edits not committed | Any | Protecting changes…; if protection fails, Changes need protection with Retry/copy guidance |
-| Protected | No destination | Protected on this device · Save project file |
-| Protected | Older than local head | Protected on this device · Project file needs Save |
-| Protected | Saving | Saving project file…; show cancellable operation where supported |
-| Protected | Matching acknowledged head | Project file saved; details also show local protection |
-| Protected or dirty | External change/unavailable/interrupted | Save needs attention; local state remains separately visible |
-| Any | Customer cloud folder | No assertion about completed cloud upload |
+| Local state                 | Selected-file state                     | Compact message / detail                                                                   |
+| --------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Visible edits not committed | Any                                     | Protecting changes…; if protection fails, Changes need protection with Retry/copy guidance |
+| Protected                   | No destination                          | Protected on this device · Save project file                                               |
+| Protected                   | Older than local head                   | Protected on this device · Project file needs Save                                         |
+| Protected                   | Saving                                  | Saving project file…; show cancellable operation where supported                           |
+| Protected                   | Matching acknowledged head              | Project file saved; details also show local protection                                     |
+| Protected or dirty          | External change/unavailable/interrupted | Save needs attention; local state remains separately visible                               |
+| Any                         | Customer cloud folder                   | No assertion about completed cloud upload                                                  |
 
 ## Complete journeys and retention decisions
 
-| Journey | Sequence and observable design outcome | Owning stages |
-| --- | --- | --- |
-| First run | Safe storage initializes → S01 → S02 atomic local create → S03 optional connection → first empty section in S05. First Save chooses a file natively. | I02–I05, I07, I11 |
-| Returning | Restore preferences → resolve last trusted nonarchived workspace/section → S05; otherwise S04 with actionable unavailable/recovery state. No repeated tour/login. | I03, I06, I09 |
-| New project during work | Guard active drafts/jobs → S01/S02 → reconcile one creation → connection → new workspace. Cancelling before dispatch discards only setup; after dispatch reconcile first and retain any created project. | I03–I05 |
-| Free project switch | Protect current edits → explicitly designate chosen project through existing main policy → open/edit. Create/Open never silently change designation. If no designation exists, offer Use this project for free editing before typing. | I03, I05–I07 |
-| Offline / AI unavailable | Local setup/write/research/save/export continue. Connection explains offline/unavailable and offers Continue without AI. Existing chats remain readable when delivered. No background inference retry. | I05, I09–I12 |
-| Access loss mid-draft | Freeze new edits → preserve eligible in-flight buffers → offer protection/return to same project's free designation → retain visible unresolved drafts. Reading/export/backup/recovery remain. | I03, I07–I09 |
-| Source-backed writing | S05 → S06 add source/inspect original/excerpt/link evidence → return to the exact manuscript position; opening a companion panel shares the same source/note draft. | I07–I08 |
-| Recovery | Persistent issue → inspect current/retained material → independent recovery copy or Save As → retain original/candidates until an explicit supported action says otherwise. | I06, I09 |
-| Conversation | Choose provider and exact context including history → send deliberate request → readable partial/complete local message → optional Save as note. No manuscript mutation. | I10–I12 |
-| Proofreading | Capture selected passage or explicit chapter/section → review grammar proposals → explicit revision-checked Apply/Reject → reversible history. Editing the target can make suggestions stale. | I13 |
+| Journey                  | Sequence and observable design outcome                                                                                                                                                                                                | Owning stages     |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| First run                | Safe storage initializes → S01 → S02 atomic local create → S03 optional connection → first empty section in S05. First Save chooses a file natively.                                                                                  | I02–I05, I07, I11 |
+| Returning                | Restore preferences → resolve last trusted nonarchived workspace/section → S05; otherwise S04 with actionable unavailable/recovery state. No repeated tour/login.                                                                     | I03, I06, I09     |
+| New project during work  | Guard active drafts/jobs → S01/S02 → reconcile one creation → connection → new workspace. Cancelling before dispatch discards only setup; after dispatch reconcile first and retain any created project.                              | I03–I05           |
+| Free project switch      | Protect current edits → explicitly designate chosen project through existing main policy → open/edit. Create/Open never silently change designation. If no designation exists, offer Use this project for free editing before typing. | I03, I05–I07      |
+| Offline / AI unavailable | Local setup/write/research/save/export continue. Connection explains offline/unavailable and offers Continue without AI. Existing chats remain readable when delivered. No background inference retry.                                | I05, I09–I12      |
+| Access loss mid-draft    | Freeze new edits → preserve eligible in-flight buffers → offer protection/return to same project's free designation → retain visible unresolved drafts. Reading/export/backup/recovery remain.                                        | I03, I07–I09      |
+| Source-backed writing    | S05 → S06 add source/inspect original/excerpt/link evidence → return to the exact manuscript position; opening a companion panel shares the same source/note draft.                                                                   | I07–I08           |
+| Recovery                 | Persistent issue → inspect current/retained material → independent recovery copy or Save As → retain original/candidates until an explicit supported action says otherwise.                                                           | I06, I09          |
+| Conversation             | Choose provider and exact context including history → send deliberate request → readable partial/complete local message → optional Save as note. No manuscript mutation.                                                              | I10–I12           |
+| Proofreading             | Capture selected passage or explicit chapter/section → review grammar proposals → explicit revision-checked Apply/Reject → reversible history. Editing the target can make suggestions stale.                                         | I13               |
 
 ## Acceptance boundary
 

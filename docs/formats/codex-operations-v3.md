@@ -8,12 +8,12 @@ October 3, 2026. Independent implementation delivered — awaiting user testing;
 
 V3 payload has exactly `version:3`, `input`, `execution`, `view`, `output`. Input/view and output channel shapes retain v2 semantics. Execution retains all frozen v2 route, runtime, policy, frame, account/profile/workspace/session/catalog, effort and capture fields, with these exact mechanics fields:
 
-| Field | Required value |
-| --- | --- |
-| `template` | `mechanics-v1` |
-| `outputContract` | `mechanics-schema-json-v1` |
-| `schemaId` | `collie-mechanics-result-v1` |
-| `schemaDigest` | Lowercase SHA-256 of UTF-8 `JSON.stringify(mechanicsOutputSchemaV1())`, using the schema factory's frozen property order |
+| Field            | Required value                                                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `template`       | `mechanics-v1`                                                                                                           |
+| `outputContract` | `mechanics-schema-json-v1`                                                                                               |
+| `schemaId`       | `collie-mechanics-result-v1`                                                                                             |
+| `schemaDigest`   | Lowercase SHA-256 of UTF-8 `JSON.stringify(mechanicsOutputSchemaV1())`, using the schema factory's frozen property order |
 
 The descriptor stores an identity, not a caller-supplied schema. Main derives a fresh schema only after matching the fixed ID/digest. Unknown keys, versions, schema identity or inconsistent action/template/digest fail closed while retaining files. No eager migration, expiry, cleanup or v1/v2 rewrite is introduced. A future change to schema bytes or semantics needs its own preserved version boundary.
 
@@ -42,14 +42,14 @@ The complete serialized frame plus frozen instruction strings plus serialized v1
 
 ## Consumer matrix
 
-| Consumer | V3 treatment |
-| --- | --- |
-| `AiService`, `AiStorage` | Choose/read exact v1/v2/v3, bind the version's digest, protect before publishing. Active records become unknown on restart with their actual output; recovery never replays inference. Same combined 64-operation cap. |
-| `LocalCodexSession`, `CodexAccountRuntime` | Main-only v3 descriptor for new mechanics calls; fixed derived `outputSchema` on the existing `turn/start`. Fresh threads, same guards and CD03 refusal. No schema IPC. |
-| `AiContentService` and both adapters | Bind exact prepared version; recovery checks record/binding version, input, scope, capture/template and digest. Protected projections only, with the original write retry ordering. |
-| Shared/local binding readers | Legacy versionless and v2 fields unchanged. A v3 mechanics binding adds only `version:3` to the same six identity fields. `isContentBinding` accepts all three; `isConversationBinding` still rejects v3. The historical shared type name remains `ConversationBinding`. |
-| Proofreading worker | Reads/binds/settles v3 through the shared exact reader, retaining scope/action/operation/sequence checks. Conversation worker remains v1/v2 only. `operations.sqlite` DDL/job kinds do not change. |
-| Status/main/preload/renderer | Required opaque `proofreadReviewRevision` invalidates stale review approval; exact validators and all status branches agree. No persistent grant, schema or runtime identity is exposed. |
-| Portable project/archive/copy/export consumers | No new field, enum, prompt, template, capture digest or SQL migration. Local bindings and journals do not travel. Independent copies keep reviews but acquire no execution authority. |
+| Consumer                                       | V3 treatment                                                                                                                                                                                                                                                             |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AiService`, `AiStorage`                       | Choose/read exact v1/v2/v3, bind the version's digest, protect before publishing. Active records become unknown on restart with their actual output; recovery never replays inference. Same combined 64-operation cap.                                                   |
+| `LocalCodexSession`, `CodexAccountRuntime`     | Main-only v3 descriptor for new mechanics calls; fixed derived `outputSchema` on the existing `turn/start`. Fresh threads, same guards and CD03 refusal. No schema IPC.                                                                                                  |
+| `AiContentService` and both adapters           | Bind exact prepared version; recovery checks record/binding version, input, scope, capture/template and digest. Protected projections only, with the original write retry ordering.                                                                                      |
+| Shared/local binding readers                   | Legacy versionless and v2 fields unchanged. A v3 mechanics binding adds only `version:3` to the same six identity fields. `isContentBinding` accepts all three; `isConversationBinding` still rejects v3. The historical shared type name remains `ConversationBinding`. |
+| Proofreading worker                            | Reads/binds/settles v3 through the shared exact reader, retaining scope/action/operation/sequence checks. Conversation worker remains v1/v2 only. `operations.sqlite` DDL/job kinds do not change.                                                                       |
+| Status/main/preload/renderer                   | Required opaque `proofreadReviewRevision` invalidates stale review approval; exact validators and all status branches agree. No persistent grant, schema or runtime identity is exposed.                                                                                 |
+| Portable project/archive/copy/export consumers | No new field, enum, prompt, template, capture digest or SQL migration. Local bindings and journals do not travel. Independent copies keep reviews but acquire no execution authority.                                                                                    |
 
 Account metadata stays v2 with its existing 2 MiB bound. SQL/minimum reader **12**, AST/archive **1** and frozen compilation **3** are unchanged. Compilation, journal compatibility, native schema behavior and recovery are unobserved; this is a source contract, not passed testing.

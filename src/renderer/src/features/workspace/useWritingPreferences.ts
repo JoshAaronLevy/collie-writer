@@ -1,4 +1,13 @@
-import { useEffect, useState } from 'react'
+type WritingPreferencesState = {
+  preferences: WritingPreferences
+  update: (patch: Partial<Omit<WritingPreferences, 'version'>>) => void
+  issue: string
+  revealPanel: (panel: SecondaryPanel) => void
+  revealRevision: number
+  aiTool: 'conversation' | 'proofreading'
+  setAiTool: React.Dispatch<React.SetStateAction<'conversation' | 'proofreading'>>
+}
+import { useRef, useState } from 'react'
 import { exact, record } from '../../../../shared/projects'
 
 export type SecondaryPanel = 'closed' | 'notes' | 'source' | 'ai'
@@ -41,21 +50,22 @@ function read(): WritingPreferences {
   }
   return defaults
 }
-export function useWritingPreferences() {
+export function useWritingPreferences(): WritingPreferencesState {
   const [preferences, setPreferences] = useState(read)
+  const preferencesRef = useRef(preferences)
   const [issue, setIssue] = useState('')
   const [aiTool, setAiTool] = useState<'conversation' | 'proofreading'>('conversation')
   const [revealRevision, setRevealRevision] = useState(0)
-  useEffect(() => {
+  function update(patch: Partial<Omit<WritingPreferences, 'version'>>): void {
+    const next = { ...preferencesRef.current, ...patch }
+    preferencesRef.current = next
+    setPreferences(next)
     try {
-      localStorage.setItem(key, JSON.stringify(preferences))
+      localStorage.setItem(key, JSON.stringify(next))
       setIssue('')
     } catch {
       setIssue('This layout works for this session, but could not be remembered on this device.')
     }
-  }, [preferences])
-  function update(patch: Partial<Omit<WritingPreferences, 'version'>>): void {
-    setPreferences((value) => ({ ...value, ...patch }))
   }
   function revealPanel(panel: SecondaryPanel): void {
     update({ panel, focus: false })

@@ -1,3 +1,4 @@
+import { hasControlCharacters } from './control-characters'
 import {
   isProofreadWorkerInput,
   isProofreadValue,
@@ -566,11 +567,11 @@ export function isSectionMetaInput(v: unknown): v is SectionMetaInput {
     typeof v.title === 'string' &&
     v.title.trim().length > 0 &&
     v.title.length <= 500 &&
-    !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(v.title) &&
+    !hasControlCharacters(v.title, true) &&
     ['draft', 'review', 'complete'].includes(String(v.status)) &&
     typeof v.synopsis === 'string' &&
     v.synopsis.length <= 10000 &&
-    !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(v.synopsis)
+    !hasControlCharacters(v.synopsis, true)
   )
 }
 export function isImageImportInput(v: unknown): v is ImageImportInput {
@@ -590,7 +591,7 @@ export function isWorkerImageImport(v: unknown): v is WorkerImageImport {
     v.sourcePath.length <= 4096 &&
     typeof v.originalName === 'string' &&
     v.originalName.length <= 255 &&
-    !/[\\/:\u0000-\u001f]/.test(v.originalName)
+    !(hasControlCharacters(v.originalName) || /[\\/:]/u.test(v.originalName))
   )
 }
 export function isImageReadInput(v: unknown): v is ImageReadInput {
@@ -747,7 +748,7 @@ export function isDestination(v: unknown): v is DestinationView {
     [v.snapshotId, v.headCommitId, v.generationId].every(isId)
   )
 }
-function summary(v: unknown): v is ProjectSummary {
+function summary(v: unknown): v is ProjectSummary & Record<string, unknown> {
   return (
     record(v) &&
     [v.projectId, v.workspaceId, v.headCommitId].every(isId) &&

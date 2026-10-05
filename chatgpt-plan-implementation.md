@@ -14,14 +14,14 @@ The owner’s previously accepted normal subscription/account-spending policy re
 
 ## DP01 delivery
 
-| Work | Source owners | Current state |
-| --- | --- | --- |
-| Initial and returning browser authorization | `main/ai/direct-auth.ts`, `direct-session.ts`, `direct-credentials.ts`, `storage.ts` | Implemented; browser/account outcomes unobserved |
-| Explicit current account model discovery | `main/ai/direct-http.ts`, `direct-session.ts`; shared catalog and model selector | Implemented; account eligibility unobserved |
-| One bounded streaming text response | `direct-http.ts`, `direct-operation.ts`, `service.ts` | Implemented; completed inference unobserved |
-| Reviewed request, output protection, Stop and reopening | Existing `content-service.ts`, conversation worker/provider; new v4 binding and direct provenance | Integrated; runtime/persistence acceptance pending |
-| Separate identity, plan, models and inference status | `shared/ai-direct.ts`, `features/ai-connections/DirectConnectionProgress.tsx` | Implemented; visible behavior pending |
-| Record compatibility | [Format and consumer record](docs/formats/chatgpt-plan-v1.md) | SQL/minimum reader 13; retained migration; no historical provider conversion |
+| Work                                                    | Source owners                                                                                     | Current state                                                                |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Initial and returning browser authorization             | `main/ai/direct-auth.ts`, `direct-session.ts`, `direct-credentials.ts`, `storage.ts`              | Implemented; browser/account outcomes unobserved                             |
+| Explicit current account model discovery                | `main/ai/direct-http.ts`, `direct-session.ts`; shared catalog and model selector                  | Implemented; account eligibility unobserved                                  |
+| One bounded streaming text response                     | `direct-http.ts`, `direct-operation.ts`, `service.ts`                                             | Implemented; completed inference unobserved                                  |
+| Reviewed request, output protection, Stop and reopening | Existing `content-service.ts`, conversation worker/provider; new v4 binding and direct provenance | Integrated; runtime/persistence acceptance pending                           |
+| Separate identity, plan, models and inference status    | `shared/ai-direct.ts`, `features/ai-connections/DirectConnectionProgress.tsx`                     | Implemented; visible behavior pending                                        |
+| Record compatibility                                    | [Format and consumer record](docs/formats/chatgpt-plan-v1.md)                                     | SQL/minimum reader 13; retained migration; no historical provider conversion |
 
 Paths beginning `main/` are relative to `src/`; renderer feature paths are relative to `src/renderer/src/`. Existing jose **6.2.12** validates tokens; Node HTTPS supplies transport. No dependency or lockfile change is required. Codex **0.160.0** remains installed for the historical route, with no invocation on this path.
 

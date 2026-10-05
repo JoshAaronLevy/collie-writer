@@ -8,10 +8,10 @@ October 2, 2026. Implementation complete — awaiting user testing. This is **op
 
 The encrypted operation envelope is bounded to 4 MiB on read and before write, accommodating v2's separately retained channels and framing, including JSON escaping/base64 overhead. Account metadata keeps its 2 MiB bound. Decoded input/output limits still apply independently. The directory has one combined **64-operation cap**, checked at prepare and start; both existing worker binding caps remain. CD08 owns capacity handoff.
 
-| Version | Exact payload | Identity |
-| --- | --- | --- |
-| 1 | `version`, `input`, `view` | Original `operationDigestV1(input)`. Canonical keys/order, omission semantics and bytes are unchanged. No route, session or output defaults are inserted. |
-| 2 | `version`, `input`, `execution`, `view`, `output` | Separate SHA-256 domain described below. Only a main content adapter can prepare this route; raw renderer prepare remains registered-only. |
+| Version | Exact payload                                     | Identity                                                                                                                                                  |
+| ------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1       | `version`, `input`, `view`                        | Original `operationDigestV1(input)`. Canonical keys/order, omission semantics and bytes are unchanged. No route, session or output defaults are inserted. |
+| 2       | `version`, `input`, `execution`, `view`, `output` | Separate SHA-256 domain described below. Only a main content adapter can prepare this route; raw renderer prepare remains registered-only.                |
 
 Both readers check operation ID, scope, connection, model, action and the correct version's digest. Active retained states become unknown with their actual output and a higher sequence on startup. This is a local journal write, never a provider call. A v1 record remains v1 throughout recovery/protection, even while the app's selected route is local Codex.
 
@@ -39,12 +39,12 @@ For conversations, the protected projection uses raw visible text. For local v2 
 
 Legacy `ConversationBinding` retains exactly `attemptId,operationId,connectionId,model,digest,captureDigest`, with no version key. A new local binding has those same fields plus **`version:2`**. `shared/conversations.ts` validates the exact union for **both** workers; `operations.sqlite` DDL and job kinds `conversation-binding` / `proofreading-binding` are unchanged. Bindings contain no profile/provider workspace/session handle and never enter project archives.
 
-| Consumer | Treatment |
-| --- | --- |
-| `AiService` / `AiStorage` | Exact versioned reads, same combined cap, separate live/unprotected and protected snapshots. No journal can reconstruct a live session. |
-| `AiContentService`, both feature adapters | Main-only protected reader checks binding version/digest, original scope/input and capture/template. Exact legacy records use legacy semantics. |
-| Worker binding readers / bind / settle | Shared exact binding union; exact request equality, scope/action/operation/digest and sequence checks remain. |
-| Renderer/preload/public AI record | Existing sanitized operation/input only; no new runtime/config/schema/account-identity IPC. Only protected operation snapshots cross this boundary. |
-| Portable validators, archive, migration, copy/rekey, transcript and manuscript exports | No new portable fields or enum changes. Copies carry saved history, not local execution authority. No SQL migration is needed. |
+| Consumer                                                                               | Treatment                                                                                                                                           |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AiService` / `AiStorage`                                                              | Exact versioned reads, same combined cap, separate live/unprotected and protected snapshots. No journal can reconstruct a live session.             |
+| `AiContentService`, both feature adapters                                              | Main-only protected reader checks binding version/digest, original scope/input and capture/template. Exact legacy records use legacy semantics.     |
+| Worker binding readers / bind / settle                                                 | Shared exact binding union; exact request equality, scope/action/operation/digest and sequence checks remain.                                       |
+| Renderer/preload/public AI record                                                      | Existing sanitized operation/input only; no new runtime/config/schema/account-identity IPC. Only protected operation snapshots cross this boundary. |
+| Portable validators, archive, migration, copy/rekey, transcript and manuscript exports | No new portable fields or enum changes. Copies carry saved history, not local execution authority. No SQL migration is needed.                      |
 
 An in-memory main review stamp binds the selected route/generation and action/template to the exact worker review/capture digest. It expires after five minutes, is bounded to 64 reviews per adapter, and is checked before new sent-intent commit and again during prepare. Local saves remain available without a working AI store. Restart, account/model/catalog changes and close/suspend invalidate unsent dispatch authority; already submitted receipts remain exact and immutable. Review stamps never enter portable requests or alter existing request digests.

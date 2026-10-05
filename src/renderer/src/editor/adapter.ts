@@ -520,10 +520,7 @@ export function documentFromEditorJson(value: unknown): DocumentPayload {
   visit(ast)
   return readDocument({ schemaVersion: 1, ast, footnotesById })
 }
-export function serializeEditor(
-  editor: Editor,
-  _legacyBodies?: DocumentPayload['footnotesById']
-): DocumentPayload {
+export function serializeEditor(editor: Editor): DocumentPayload {
   if (editorIsComposing(editor)) throw new Error('EDITOR_COMPOSING')
   return documentFromEditorJson(editor.getJSON())
 }

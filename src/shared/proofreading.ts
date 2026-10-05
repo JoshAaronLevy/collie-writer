@@ -1,3 +1,4 @@
+import { hasControlCharacters } from './control-characters'
 import type { Mark } from '../domain/editor/schema'
 import { isAiHandoffReceipt, type AiHandoffReceipt } from './ai-handoff'
 import { isId, safeLink } from '../domain/editor/schema'
@@ -201,7 +202,7 @@ const targetPattern = new RegExp(mechanics.targetPattern)
 const targetId = (v: unknown): v is string => typeof v === 'string' && targetPattern.test(v)
 export const isProofreadText = (v: unknown): v is string =>
   text(v, AI_LIMITS.context) &&
-  !/[\u0000-\u001f\u007f\u2028\u2029]/u.test(v) &&
+  !(hasControlCharacters(v, false, 0x7f) || /[\u2028\u2029]/u.test(v)) &&
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(v)
 export function isProofreadTarget(v: unknown): v is ProofreadTarget {
   return (

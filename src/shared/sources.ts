@@ -1,3 +1,4 @@
+import { hasControlCharacters } from './control-characters'
 import { isId } from '../domain/editor/schema'
 import type { OpenInput } from './projects'
 const record = (v: unknown): v is Record<string, unknown> =>
@@ -161,9 +162,9 @@ export function isSourceProgress(v: unknown): v is SourceProgress {
 }
 
 const str = (v: unknown, n: number): v is string =>
-  typeof v === 'string' && v.length <= n && !/[\u0000-\u001f]/.test(v)
+  typeof v === 'string' && v.length <= n && !hasControlCharacters(v)
 const rawText = (v: unknown, n: number): v is string =>
-  typeof v === 'string' && v.length <= n && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v)
+  typeof v === 'string' && v.length <= n && !hasControlCharacters(v, true)
 export function isSourceMetadata(v: unknown): v is SourceMetadata {
   return (
     record(v) &&

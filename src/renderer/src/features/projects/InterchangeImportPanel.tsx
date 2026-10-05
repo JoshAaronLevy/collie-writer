@@ -1,7 +1,8 @@
+import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { AppButton, ChoiceField } from '../../components/ui/Controls'
 import styles from './InterchangeImportPanel.module.css'
 import { useRetainedDraft } from '../workspace/DraftOwner'
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
 import type { ImportPick, ImportPreview, ImportCommitInput } from '../../../../shared/interchange'
 
@@ -23,13 +24,15 @@ export default function InterchangeImportPanel({
   const [preserve, setPreserve] = useState(true),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
-  const pending = useRef<ImportCommitInput | null>(null)
+  const [pendingValue, setPendingValue, pending] = useSynchronousState<ImportCommitInput | null>(
+    null
+  )
   async function choose(): Promise<void> {
     setBusy(true)
     setError('')
     setPreview(null)
     setPick(null)
-    pending.current = null
+    setPendingValue(null)
     try {
       const chosen = await window.collie.pickInterchange(scope)
       if (!chosen.ok) {
@@ -58,18 +61,20 @@ export default function InterchangeImportPanel({
           setError('Protect pending writing before importing.')
           return
         }
-        pending.current = {
+        setPendingValue({
           ...scope,
           token: pick.token,
           operationId: crypto.randomUUID(),
           expectedHead: saved.headCommitId,
           digest: preview.digest,
           preserveOriginal: preserve
-        }
+        })
       }
-      const result = await window.collie.importInterchange(pending.current)
+      const input = pending.current
+      if (!input) throw new Error('Import request was not retained')
+      const result = await window.collie.importInterchange(input)
       if (!result.ok) {
-        if (result.error.code !== 'UNAVAILABLE') pending.current = null
+        if (result.error.code !== 'UNAVAILABLE') setPendingValue(null)
         setError(
           result.error.code === 'UNAVAILABLE'
             ? 'The import result is unknown. Leave this selection open and retry; a completed import will not be repeated.'
@@ -80,7 +85,7 @@ export default function InterchangeImportPanel({
       onProject(result.value)
       setPick(null)
       setPreview(null)
-      pending.current = null
+      setPendingValue(null)
     } catch {
       setError(
         'The import result is unknown. Leave this selection open and retry; a completed import will not be repeated.'
@@ -115,7 +120,7 @@ export default function InterchangeImportPanel({
       <AppButton
         variant="default"
         type="button"
-        disabled={disabled || busy || !!pending.current}
+        disabled={disabled || busy || !!pendingValue}
         onClick={() => {
           void choose()
         }}
@@ -141,7 +146,7 @@ export default function InterchangeImportPanel({
           <ChoiceField
             label="Keep the exact original bytes in this project"
             checked={preserve}
-            disabled={!!pending.current || busy}
+            disabled={!!pendingValue || busy}
             onChange={(e) => setPreserve(e.currentTarget.checked)}
           />
           <AppButton

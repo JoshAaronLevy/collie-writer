@@ -1,19 +1,99 @@
-.export-workspace { max-width: 64rem; margin: auto; padding: var(--collie-space-6); background: var(--collie-surface); border: 1px solid var(--collie-border); border-radius: var(--collie-radius-surface); }
-.export-workspace h1 { margin: 0; font: 400 2rem/1.2 var(--collie-font-manuscript); }
-.export-eyebrow { color: var(--collie-text-secondary); }
-.export-steps, .export-actions { display: flex; flex-wrap: wrap; gap: var(--collie-space-2); }
-.export-steps { padding-block: var(--collie-space-4); border-block: 1px solid var(--collie-border); }
-.export-options, .export-review { display: grid; gap: var(--collie-space-4); min-width: 0; }
-.export-options > button, .export-review > button { justify-self: start; }
-.export-section-list, .export-format-options { border: 1px solid var(--collie-border); border-radius: var(--collie-radius-control); padding: var(--collie-space-4); display: grid; gap: var(--collie-space-2); min-width: 0; }
-.export-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--collie-space-4); }
-.export-disclosure { border-block-start: 1px solid var(--collie-border); padding-block: var(--collie-space-3); }
-.export-workspace summary { cursor: pointer; min-height: var(--collie-control-height); align-content: center; }
-.export-disclosure > :not(summary) { margin-block: var(--collie-space-3); }
-.export-order { padding-inline-start: var(--collie-space-6); }
-.export-order li { margin-block: var(--collie-space-3); }
-.export-result { margin-block: var(--collie-space-4); padding: var(--collie-space-4); border: 1px solid var(--collie-border); border-radius: var(--collie-radius-control); overflow-wrap: anywhere; }
-.export-result li { margin-block: var(--collie-space-3); }
-.export-reference-tools { max-width: 64rem; margin: var(--collie-space-4) auto; padding: var(--collie-space-4); border: 1px solid var(--collie-border); border-radius: var(--collie-radius-control); background: var(--collie-surface); }
-.export-reference-tools > summary { cursor: pointer; min-height: var(--collie-control-height); align-content: center; font-weight: 600; }
-@media (max-width: 40rem) { .export-fields { grid-template-columns: minmax(0,1fr); } .export-workspace { padding: var(--collie-space-4); } }
+.export-workspace {
+  max-width: 64rem;
+  margin: auto;
+  padding: var(--collie-space-6);
+  background: var(--collie-surface);
+  border: 1px solid var(--collie-border);
+  border-radius: var(--collie-radius-surface);
+}
+.export-workspace h1 {
+  margin: 0;
+  font: 400 2rem/1.2 var(--collie-font-manuscript);
+}
+.export-eyebrow {
+  color: var(--collie-text-secondary);
+}
+.export-steps,
+.export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--collie-space-2);
+}
+.export-steps {
+  padding-block: var(--collie-space-4);
+  border-block: 1px solid var(--collie-border);
+}
+.export-options,
+.export-review {
+  display: grid;
+  gap: var(--collie-space-4);
+  min-width: 0;
+}
+.export-options > button,
+.export-review > button {
+  justify-self: start;
+}
+.export-section-list,
+.export-format-options {
+  border: 1px solid var(--collie-border);
+  border-radius: var(--collie-radius-control);
+  padding: var(--collie-space-4);
+  display: grid;
+  gap: var(--collie-space-2);
+  min-width: 0;
+}
+.export-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--collie-space-4);
+}
+.export-disclosure {
+  border-block-start: 1px solid var(--collie-border);
+  padding-block: var(--collie-space-3);
+}
+.export-workspace summary {
+  cursor: pointer;
+  min-height: var(--collie-control-height);
+  align-content: center;
+}
+.export-disclosure > :not(summary) {
+  margin-block: var(--collie-space-3);
+}
+.export-order {
+  padding-inline-start: var(--collie-space-6);
+}
+.export-order li {
+  margin-block: var(--collie-space-3);
+}
+.export-result {
+  margin-block: var(--collie-space-4);
+  padding: var(--collie-space-4);
+  border: 1px solid var(--collie-border);
+  border-radius: var(--collie-radius-control);
+  overflow-wrap: anywhere;
+}
+.export-result li {
+  margin-block: var(--collie-space-3);
+}
+.export-reference-tools {
+  max-width: 64rem;
+  margin: var(--collie-space-4) auto;
+  padding: var(--collie-space-4);
+  border: 1px solid var(--collie-border);
+  border-radius: var(--collie-radius-control);
+  background: var(--collie-surface);
+}
+.export-reference-tools > summary {
+  cursor: pointer;
+  min-height: var(--collie-control-height);
+  align-content: center;
+  font-weight: 600;
+}
+@media (max-width: 40rem) {
+  .export-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .export-workspace {
+    padding: var(--collie-space-4);
+  }
+}

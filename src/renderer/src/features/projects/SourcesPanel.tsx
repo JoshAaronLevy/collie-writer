@@ -1,9 +1,12 @@
+import { useEffectEvent } from 'react'
+import { useLayoutEffect } from 'react'
+import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { Checkbox, TextInput } from '@mantine/core'
 import { AppButton, SelectField } from '../../components/ui/Controls'
 import { EmptyState } from '../../components/ui/Feedback'
 import { ResearchHeader, ResearchLayout } from '../research/ResearchLayout'
 import { SourceUsage, UsageSummary } from '../research/SourceUsage'
-import { useWorkspaceSession } from '../workspace/WorkspaceSession'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 import './SourcesPanel.css'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import { useEffect, useRef, useState } from 'react'
@@ -36,10 +39,7 @@ const blank = (): SourceMetadata => ({
   ISBN: '',
   ISSN: ''
 })
-const scope = (project: OpenProject) => ({
-  projectId: project.projectId,
-  workspaceId: project.workspaceId
-})
+
 const creators = (metadata: SourceMetadata): string =>
   metadata.author.map((a) => a.literal || `${a.family}${a.given ? `, ${a.given}` : ''}`).join('; ')
 const parseCreators = (text: string): SourceMetadata['author'] =>
@@ -76,9 +76,14 @@ export default function SourcesPanel({
     [query, setQuery] = useState(''),
     [showRemoved, setShowRemoved] = useState(false)
   const readSequence = useRef(0),
-    attachmentPending = useRef<SourceAttachmentInput | null>(null)
-  const baseRevision = useRef<string | null>(null),
-    mutation = useRef<SourceChangeInput | null>(null)
+    [attachmentPendingValue, setAttachmentPendingValue, attachmentPending] =
+      useSynchronousState<SourceAttachmentInput | null>(null)
+  const [baseRevisionValue, setBaseRevisionValue, baseRevision] = useSynchronousState<
+      string | null
+    >(null),
+    [mutationValue, setMutationValue, mutation] = useSynchronousState<SourceChangeInput | null>(
+      null
+    )
   const panel = useRef<HTMLElement>(null),
     focusedRequest = useRef<string | null>(null),
     saveTask = useRef<Promise<boolean> | null>(null)
@@ -103,8 +108,12 @@ export default function SourcesPanel({
       total: number
     } | null>(null),
     attachmentOperation = useRef<string | null>(null)
-  const pending = useRef<SourceChangeInput | null>(null),
-    pendingImport = useRef<string | null>(null),
+  const [pendingValue, setPendingValue, pending] = useSynchronousState<SourceChangeInput | null>(
+      null
+    ),
+    [pendingImportValue, setPendingImportValue, pendingImport] = useSynchronousState<string | null>(
+      null
+    ),
     latest = useRef({
       selected: null as string | null,
       draft: blank(),
@@ -113,14 +122,16 @@ export default function SourcesPanel({
       dirty: false,
       view: null as SourcesView | null
     })
-  latest.current = {
-    selected,
-    draft: { ...draft, author: parseCreators(creatorText) },
-    verified,
-    linked,
-    dirty,
-    view
-  }
+  useLayoutEffect(() => {
+    latest.current = {
+      selected,
+      draft: { ...draft, author: parseCreators(creatorText) },
+      verified,
+      linked,
+      dirty,
+      view
+    }
+  })
   function acceptView(next: SourcesView): void {
     readSequence.current++
     latest.current.view = next
@@ -130,7 +141,7 @@ export default function SourcesPanel({
     let active = true
     const request = ++readSequence.current
     void window.collie
-      .readSources(scope(project))
+      .readSources({ projectId: project.projectId, workspaceId: project.workspaceId })
       .then((result) => {
         if (!active || request !== readSequence.current) return
         if (result.ok) {
@@ -160,7 +171,7 @@ export default function SourcesPanel({
     setDraft(next)
     setCreatorText(authors)
     setDirty(true)
-    pending.current = null
+    setPendingValue(null)
   }
   function choose(row: SourceRecord | null): void {
     if (
@@ -171,7 +182,7 @@ export default function SourcesPanel({
       attachmentPending.current
     )
       return
-    baseRevision.current = row?.revisionId ?? null
+    setBaseRevisionValue(row?.revisionId ?? null)
     setCreating(!row)
     setPage('details')
     setSelected(row?.id ?? null)
@@ -183,7 +194,7 @@ export default function SourcesPanel({
     setError('')
     setMessage('')
   }
-  useEffect(() => {
+  const onSourceNavigation = useEffectEvent(() => {
     if (!focusSourceId) {
       focusedRequest.current = null
       return
@@ -206,7 +217,22 @@ export default function SourcesPanel({
       setQuery('')
       if (target.state !== 'active') setShowRemoved(true)
     } else setError('The requested source is no longer available.')
-  }, [focusSourceId, focusPage, session.focusRevision, view?.sources])
+  })
+  // Present only the latest committed navigation request, after retained regions update.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => onSourceNavigation())
+    return () => cancelAnimationFrame(frame)
+  }, [
+    focusSourceId,
+    focusPage,
+    session.focusRevision,
+    view,
+    dirty,
+    pendingValue,
+    mutationValue,
+    attachmentPendingValue,
+    pendingImportValue
+  ])
   async function save(): Promise<boolean> {
     if (saveTask.current) return saveTask.current
     const task = saveOnce()
@@ -227,7 +253,7 @@ export default function SourcesPanel({
     if (!state.dirty && !pending.current) return true
     const current = state.view?.sources.find((s) => s.id === state.selected)
     const input = pending.current ?? {
-      ...scope(project),
+      ...{ projectId: project.projectId, workspaceId: project.workspaceId },
       operationId: crypto.randomUUID(),
       change: current
         ? {
@@ -246,24 +272,24 @@ export default function SourcesPanel({
             documentIds: state.linked
           }
     }
-    pending.current = input
+    setPendingValue(input)
     setBusy(true)
     setError('')
     try {
       const result = await window.collie.changeSource(input)
       if (!result.ok) {
         setError(result.error.message)
-        if (result.error.code !== 'UNAVAILABLE') pending.current = null
+        if (result.error.code !== 'UNAVAILABLE') setPendingValue(null)
         return false
       }
-      pending.current = null
+      setPendingValue(null)
       acceptView(result.value)
       latest.current.dirty = false
       setDirty(false)
       if (input.change.type === 'create' || input.change.type === 'update') {
         const saved = result.value.sources.find((row) => row.id === input.change.id)
         if (saved) {
-          baseRevision.current = saved.revisionId
+          setBaseRevisionValue(saved.revisionId)
           latest.current = {
             selected: saved.id,
             draft: saved.metadata,
@@ -297,23 +323,27 @@ export default function SourcesPanel({
   async function mutate(change: SourceChangeInput['change'], retry = false): Promise<void> {
     if (readOnly || (mutation.current && !retry)) return
     if (!retry && !(await save())) return
-    mutation.current ??= { ...scope(project), operationId: crypto.randomUUID(), change }
-    const input = mutation.current
+    const input = mutation.current ?? {
+      ...{ projectId: project.projectId, workspaceId: project.workspaceId },
+      operationId: crypto.randomUUID(),
+      change
+    }
+    setMutationValue(input)
     setBusy(true)
     setError('')
     try {
       const result = await window.collie.changeSource(input)
       if (!result.ok) {
-        if (result.error.code !== 'UNAVAILABLE') mutation.current = null
+        if (result.error.code !== 'UNAVAILABLE') setMutationValue(null)
         setError(result.error.message)
         return
       }
-      mutation.current = null
+      setMutationValue(null)
       acceptView(result.value)
       const id = input.change.id
       const saved = result.value.sources.find((row) => row.id === id)
       if (saved) {
-        baseRevision.current = saved.revisionId
+        setBaseRevisionValue(saved.revisionId)
         setSelected(saved.id)
         setDraft(saved.metadata)
         setCreatorText(creators(saved.metadata))
@@ -336,21 +366,24 @@ export default function SourcesPanel({
     setBusy(true)
     setError('')
     try {
-      const pick = await window.collie.pickSourceImport(scope(project))
+      const pick = await window.collie.pickSourceImport({
+        projectId: project.projectId,
+        workspaceId: project.workspaceId
+      })
       if (!pick.ok) {
         setError(pick.error.message)
         return
       }
       if (!pick.value) return
       const result = await window.collie.previewSourceImport({
-        ...scope(project),
+        ...{ projectId: project.projectId, workspaceId: project.workspaceId },
         token: pick.value.token
       })
       if (!result.ok) {
         setError(result.error.message)
         return
       }
-      pendingImport.current = null
+      setPendingImportValue(null)
       setPreview(result.value)
       setChoices(
         result.value.rows.map((r) => ({
@@ -370,23 +403,24 @@ export default function SourcesPanel({
     if (!preview) return
     setBusy(true)
     setError('')
-    pendingImport.current ??= crypto.randomUUID()
+    const operationId = pendingImport.current ?? crypto.randomUUID()
+    setPendingImportValue(operationId)
     try {
       const result = await window.collie.commitSourceImport({
-        ...scope(project),
-        operationId: pendingImport.current,
+        ...{ projectId: project.projectId, workspaceId: project.workspaceId },
+        operationId,
         token: preview.token,
         digest: preview.digest,
         choices
       })
       if (result.ok) {
-        pendingImport.current = null
+        setPendingImportValue(null)
         acceptView(result.value)
         setPreview(null)
         setMessage('Bibliography imported. Review the retained report and unknown fields.')
         await onCommitted()
       } else {
-        if (result.error.code !== 'UNAVAILABLE') pendingImport.current = null
+        if (result.error.code !== 'UNAVAILABLE') setPendingImportValue(null)
         setError(result.error.message)
       }
     } catch {
@@ -402,29 +436,33 @@ export default function SourcesPanel({
     setMessage('Copying the selected original into local managed storage…')
     try {
       if (!attachmentPending.current) {
-        const pick = await window.collie.pickSourceAttachment(scope(project))
+        const pick = await window.collie.pickSourceAttachment({
+          projectId: project.projectId,
+          workspaceId: project.workspaceId
+        })
         if (!pick.ok) {
           setError(pick.error.message)
           return
         }
         if (!pick.value) return
-        attachmentPending.current = {
-          ...scope(project),
+        setAttachmentPendingValue({
+          ...{ projectId: project.projectId, workspaceId: project.workspaceId },
           operationId: crypto.randomUUID(),
           sourceId,
           token: pick.value.token
-        }
+        })
       }
       const input = attachmentPending.current
+      if (!input) throw new Error('Source attachment request was not retained')
       attachmentOperation.current = input.operationId
       setAttachmentProgress(null)
       const result = await window.collie.attachSourceFile(input)
       if (result.ok) {
-        attachmentPending.current = null
+        setAttachmentPendingValue(null)
         acceptView(result.value)
         const saved = result.value.sources.find((row) => row.id === latest.current.selected)
         if (saved) {
-          baseRevision.current = saved.revisionId
+          setBaseRevisionValue(saved.revisionId)
           setDraft(saved.metadata)
           setCreatorText(creators(saved.metadata))
           setVerified(saved.verified)
@@ -433,7 +471,7 @@ export default function SourcesPanel({
         setMessage('Managed original copied. Project backups include this local copy.')
         await onCommitted()
       } else {
-        if (result.error.code !== 'UNAVAILABLE') attachmentPending.current = null
+        if (result.error.code !== 'UNAVAILABLE') setAttachmentPendingValue(null)
         setError(result.error.message)
       }
     } catch {
@@ -469,7 +507,7 @@ export default function SourcesPanel({
     setError('')
     try {
       const result = await window.collie.exportSources({
-        ...scope(project),
+        ...{ projectId: project.projectId, workspaceId: project.workspaceId },
         operationId: crypto.randomUUID(),
         format: exportFormat,
         sourceIds: exportSelection
@@ -487,12 +525,11 @@ export default function SourcesPanel({
     }
   }
   const current = view?.sources.find((s) => s.id === selected)
-  const locked = disabled || busy || !!mutation.current || !!attachmentPending.current
-  const fieldsLocked =
-    locked || !!pending.current || !!mutation.current || current?.state === 'merged'
+  const locked = disabled || busy || !!mutationValue || !!attachmentPendingValue
+  const fieldsLocked = locked || !!pendingValue || !!mutationValue || current?.state === 'merged'
   const draftBinding = useRetainedDraft('sources', {
     read: () => ({
-      scope: scope(project),
+      scope: { projectId: project.projectId, workspaceId: project.workspaceId },
       kind: 'source',
       entityId: selected,
       label: 'source metadata',
@@ -504,7 +541,7 @@ export default function SourcesPanel({
       issue: error,
       target: {
         kind: 'workspace',
-        scope: scope(project),
+        scope: { projectId: project.projectId, workspaceId: project.workspaceId },
         view: 'research',
         target: { kind: 'sources', sourceId: selected ?? undefined, page }
       }
@@ -514,7 +551,7 @@ export default function SourcesPanel({
   })
   useRetainedDraft('source-operations', {
     read: () => ({
-      scope: scope(project),
+      scope: { projectId: project.projectId, workspaceId: project.workspaceId },
       kind: 'source-operation',
       entityId: selected,
       label: 'source import or attachment',
@@ -528,7 +565,7 @@ export default function SourcesPanel({
       status: busy ? 'Working…' : message || undefined,
       target: {
         kind: 'workspace',
-        scope: scope(project),
+        scope: { projectId: project.projectId, workspaceId: project.workspaceId },
         view: 'research',
         target: { kind: 'sources' }
       }
@@ -536,7 +573,7 @@ export default function SourcesPanel({
   })
   useRetainedDraft('source-import-review', {
     read: () => ({
-      scope: scope(project),
+      scope: { projectId: project.projectId, workspaceId: project.workspaceId },
       kind: 'import-review',
       entityId: null,
       label: 'bibliography import choices',
@@ -547,7 +584,7 @@ export default function SourcesPanel({
       policy: 'explicit',
       target: {
         kind: 'workspace',
-        scope: scope(project),
+        scope: { projectId: project.projectId, workspaceId: project.workspaceId },
         view: 'research',
         target: { kind: 'sources' }
       }
@@ -574,7 +611,7 @@ export default function SourcesPanel({
       </ResearchHeader>
       {error ? <p role="alert">{error}</p> : null}
       {message ? <p role="status">{message}</p> : null}
-      {attachmentPending.current ? (
+      {attachmentPendingValue ? (
         <AppButton
           disabled={disabled || busy || readOnly}
           onClick={() => {
@@ -584,7 +621,7 @@ export default function SourcesPanel({
           Retry original copy
         </AppButton>
       ) : null}
-      {mutation.current ? (
+      {mutationValue ? (
         <AppButton
           disabled={disabled || busy || readOnly}
           onClick={() => {
@@ -600,7 +637,7 @@ export default function SourcesPanel({
         </AppButton>
         <AppButton
           variant="default"
-          disabled={locked || readOnly || !!pendingImport.current || !!preview}
+          disabled={locked || readOnly || !!pendingImportValue || !!preview}
           onClick={() => void pickImport()}
         >
           Import bibliography…
@@ -624,7 +661,7 @@ export default function SourcesPanel({
                   <SelectField
                     label={`Action for record ${row.index + 1}`}
                     value={`${choice?.action || 'skip'}:${choice?.targetId || ''}`}
-                    disabled={locked || !!row.error || !!pendingImport.current}
+                    disabled={locked || !!row.error || !!pendingImportValue}
                     onChange={(event) => {
                       const [action, targetId] = event.target.value.split(':')
                       setChoices((old) =>
@@ -662,11 +699,11 @@ export default function SourcesPanel({
           </ol>
           <div className="research-actions">
             <AppButton disabled={locked || readOnly} onClick={() => void commitPreview()}>
-              {pendingImport.current ? 'Retry reviewed import' : 'Commit reviewed import'}
+              {pendingImportValue ? 'Retry reviewed import' : 'Commit reviewed import'}
             </AppButton>
             <AppButton
               variant="default"
-              disabled={locked || !!pendingImport.current}
+              disabled={locked || !!pendingImportValue}
               onClick={() => {
                 setPreview(null)
                 setChoices([])
@@ -751,7 +788,7 @@ export default function SourcesPanel({
                 <p className="research-state">
                   {current.state} ·{' '}
                   {current.verified ? 'Metadata manually reviewed' : 'Metadata not reviewed'}
-                  {baseRevision.current !== current.revisionId
+                  {baseRevisionValue !== current.revisionId
                     ? ' · Stored metadata changed; save will require resolving the revision.'
                     : ''}
                 </p>
@@ -875,15 +912,15 @@ export default function SourcesPanel({
               </fieldset>
               <div className="research-actions">
                 <AppButton type="submit" disabled={locked || readOnly || !dirty}>
-                  {pending.current ? 'Retry source save' : 'Save source'}
+                  {pendingValue ? 'Retry source save' : 'Save source'}
                 </AppButton>
-                {!pending.current ? (
+                {!pendingValue ? (
                   <AppButton
                     variant="default"
                     disabled={locked}
                     onClick={() => {
                       setDirty(false)
-                      baseRevision.current = current?.revisionId ?? null
+                      setBaseRevisionValue(current?.revisionId ?? null)
                       setDraft(current?.metadata ?? blank())
                       setCreatorText(current ? creators(current.metadata) : '')
                       setVerified(current?.verified ?? false)
@@ -935,7 +972,10 @@ export default function SourcesPanel({
                             onClick={() =>
                               void window.collie
                                 .exportSourceAttachment({
-                                  ...scope(project),
+                                  ...{
+                                    projectId: project.projectId,
+                                    workspaceId: project.workspaceId
+                                  },
                                   attachmentId: attachment.id,
                                   suggestedName: attachment.name
                                 })

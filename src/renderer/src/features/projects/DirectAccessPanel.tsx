@@ -6,6 +6,11 @@ import type { ProjectResult } from '../../../../shared/projects'
 
 export default function DirectAccessPanel(): React.JSX.Element {
   const [view, setView] = useState<DirectView | null>(null)
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   useEffect(() => {
@@ -39,7 +44,7 @@ export default function DirectAccessPanel(): React.JSX.Element {
     void perform(() => window.collie.beginDirectAccess(kind))
   }
   const available = !!view?.configured && view.secureStorage && !busy
-  const activeSession = !!view?.pending && (view.expiresAt ?? 0) > Date.now()
+  const activeSession = !!view?.pending && (view.expiresAt ?? 0) > now
   return (
     <details className={styles['purchase-connection']}>
       <summary>Direct purchase, restore and subscription management</summary>
@@ -155,9 +160,9 @@ export default function DirectAccessPanel(): React.JSX.Element {
           {view.connected || view.pending || !view.secureStorage ? (
             <>
               <p>
-                Disconnect clears this computer's purchase connection and pending session. It keeps
-                cached signed licenses and projects, and does not cancel a subscription. You can
-                restore with your recovery code later.
+                Disconnect clears this computer&apos;s purchase connection and pending session. It
+                keeps cached signed licenses and projects, and does not cancel a subscription. You
+                can restore with your recovery code later.
               </p>
               <AppButton
                 variant="default"
@@ -178,7 +183,7 @@ export default function DirectAccessPanel(): React.JSX.Element {
           </p>
         </>
       ) : (
-        <p role="status">Reading this computer's purchase connection…</p>
+        <p role="status">Reading this computer&apos;s purchase connection…</p>
       )}
       {error ? <p role="alert">{error}</p> : null}
     </details>

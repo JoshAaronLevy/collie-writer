@@ -1,3 +1,6 @@
+import { useEffectEvent } from 'react'
+import { useLayoutEffect } from 'react'
+import { useSynchronousState } from '../hooks/useSynchronousState'
 import { useEffect, useRef, useState } from 'react'
 import { TextInput } from '@mantine/core'
 import { AppButton, SelectField } from '../components/ui/Controls'
@@ -365,9 +368,11 @@ function FootnoteBody({
   close: () => void
 }): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null),
-    editor = useRef<Editor | null>(null),
-    live = useRef({ context, disabled })
-  live.current = { context, disabled }
+    [editorValue, setEditorValue, editor] = useSynchronousState<Editor | null>(null),
+    live = useRef({ context, disabled, issue, close })
+  useLayoutEffect(() => {
+    live.current = { context, disabled, issue, close }
+  })
   const [, render] = useState(0)
   useEffect(() => {
     const anchor = findAnchor(owner, id)
@@ -380,7 +385,7 @@ function FootnoteBody({
       payload: { schemaVersion: 1, ast: anchor.node.attrs.body, footnotesById: {} },
       imageUrl: () => undefined,
       citationLabel: (key) => live.current.context.labels.get(key) ?? '[citation]',
-      onIssue: issue,
+      onIssue: (message) => live.current.issue(message),
       onChange: () => {
         if (syncing) return
         const current = findAnchor(owner, id)
@@ -395,18 +400,20 @@ function FootnoteBody({
           documentFromEditorJson(tr.doc.toJSON())
           owner.view.dispatch(tr)
         } catch {
-          issue('This footnote cannot be protected yet. Keep its text visible for copying.')
+          live.current.issue(
+            'This footnote cannot be protected yet. Keep its text visible for copying.'
+          )
         }
       }
     })
-    editor.current = instance
+    setEditorValue(instance)
     bindFootnoteEditor(owner, instance)
     instance.setEditable(!live.current.disabled)
     render((n) => n + 1)
     const sync = (): void => {
       const current = findAnchor(owner, id)
       if (!current) {
-        close()
+        live.current.close()
         return
       }
       if (JSON.stringify(instance.getJSON()) !== JSON.stringify(current.node.attrs.body)) {
@@ -424,16 +431,16 @@ function FootnoteBody({
     return () => {
       owner.off('update', sync)
       bindFootnoteEditor(owner, null)
-      editor.current = null
+      setEditorValue(null)
       instance.destroy()
     }
-  }, [owner, id])
+  }, [owner, id, context.projectId, setEditorValue])
   useEffect(() => {
     if (editor.current) {
       editor.current.setEditable(!disabled)
       refreshCitationLabels(editor.current, context.labels)
     }
-  }, [disabled, context.labels])
+  }, [disabled, context.labels, editor])
   useEffect(() => {
     const instance = editor.current,
       anchor = context.focusAnchor
@@ -443,7 +450,7 @@ function FootnoteBody({
       instance.commands.setNodeSelection(citation.pos)
       instance.commands.focus()
     }
-  }, [context.focusAnchor, context.focusRequest])
+  }, [context.focusAnchor, context.focusRequest, editor])
   return (
     <section
       className="footnote-editor"
@@ -451,7 +458,7 @@ function FootnoteBody({
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !editor.current?.view.composing) {
           event.preventDefault()
-          close()
+          live.current.close()
         }
       }}
     >
@@ -477,9 +484,9 @@ function FootnoteBody({
           Return to reference
         </AppButton>
       </div>
-      {editor.current ? (
+      {editorValue ? (
         <CitationControls
-          editor={editor.current}
+          editor={editorValue}
           context={context}
           disabled={disabled}
           issue={issue}
@@ -517,7 +524,7 @@ export default function ReferenceTools({
     if (node.type.name === 'footnote')
       notes.push({ id: node.attrs.footnoteId, body: node.attrs.body })
   })
-  useEffect(() => {
+  const onReferenceNavigation = useEffectEvent(() => {
     const id = context.focusAnchor
     if (!id) return
     const main = findAnchor(editor, id)
@@ -533,6 +540,11 @@ export default function ReferenceTools({
       )
     )
     if (note) setNoteId(note.id)
+  })
+  // Present only the latest committed navigation request, after retained regions update.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => onReferenceNavigation())
+    return () => cancelAnimationFrame(frame)
   }, [context.focusAnchor, context.focusRequest, editor])
   const selected = (editor.state.selection as { node?: PMNode }).node
   const openNote = (id: string | null): void => {

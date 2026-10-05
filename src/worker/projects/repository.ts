@@ -623,19 +623,17 @@ export class ProjectRepository {
             'UPDATE project_details SET byline=?,description=?,kind=?,revision_id=? WHERE project_id=?'
           )
           .run(input.byline, input.description, input.projectKind, head, input.projectId)
-        owned.db
-          .prepare('INSERT INTO domain_operations VALUES (?,?,?,?)')
-          .run(
-            input.projectId,
-            input.operationId,
-            digest,
-            JSON.stringify({
-              projectId: input.projectId,
-              documentId: before.documentId,
-              revisionId: head,
-              headCommitId: head
-            })
-          )
+        owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(
+          input.projectId,
+          input.operationId,
+          digest,
+          JSON.stringify({
+            projectId: input.projectId,
+            documentId: before.documentId,
+            revisionId: head,
+            headCommitId: head
+          })
+        )
       })
       await this.discovery(owned)
       return this.read(owned)
@@ -682,19 +680,17 @@ export class ProjectRepository {
           .prepare('UPDATE projects SET head_commit_id=?,updated_at=? WHERE id=?')
           .run(head, time, input.projectId)
         automaticCheckpoint(owned.db, input.projectId)
-        owned.db
-          .prepare('INSERT INTO domain_operations VALUES (?,?,?,?)')
-          .run(
-            input.projectId,
-            input.operationId,
-            digest,
-            JSON.stringify({
-              projectId: input.projectId,
-              documentId: input.documentId,
-              revisionId: revision,
-              headCommitId: head
-            })
-          )
+        owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(
+          input.projectId,
+          input.operationId,
+          digest,
+          JSON.stringify({
+            projectId: input.projectId,
+            documentId: input.documentId,
+            revisionId: revision,
+            headCommitId: head
+          })
+        )
       })
       await this.discovery(owned)
       return this.read(owned, input.documentId)
@@ -852,19 +848,17 @@ export class ProjectRepository {
           .prepare('UPDATE project_details SET revision_id=? WHERE project_id=?')
           .run(headCommitId, owned.projectId)
         // Existing portable ID-only receipt contract; document content/revision is unchanged.
-        owned.db
-          .prepare('INSERT INTO domain_operations VALUES (?,?,?,?)')
-          .run(
-            owned.projectId,
-            input.operationId,
-            digest,
-            JSON.stringify({
-              projectId: owned.projectId,
-              documentId: before.documentId,
-              revisionId: before.revisionId,
-              headCommitId
-            })
-          )
+        owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(
+          owned.projectId,
+          input.operationId,
+          digest,
+          JSON.stringify({
+            projectId: owned.projectId,
+            documentId: before.documentId,
+            revisionId: before.revisionId,
+            headCommitId
+          })
+        )
       })
       await this.discovery(owned)
       return this.read(owned)
@@ -1521,19 +1515,17 @@ export class ProjectRepository {
           .prepare('UPDATE projects SET head_commit_id=?,updated_at=? WHERE id=?')
           .run(head, time, input.projectId)
         const section = this.read(owned)
-        owned.db
-          .prepare('INSERT INTO domain_operations VALUES (?,?,?,?)')
-          .run(
-            input.projectId,
-            input.operationId,
-            requestDigest({ kind: 'image', id: input.operationId, sha256: blob.sha256 }),
-            JSON.stringify({
-              projectId: input.projectId,
-              documentId: section.documentId,
-              revisionId: section.revisionId,
-              headCommitId: head
-            })
-          )
+        owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(
+          input.projectId,
+          input.operationId,
+          requestDigest({ kind: 'image', id: input.operationId, sha256: blob.sha256 }),
+          JSON.stringify({
+            projectId: input.projectId,
+            documentId: section.documentId,
+            revisionId: section.revisionId,
+            headCommitId: head
+          })
+        )
       })
       await this.discovery(owned)
       return { assetId: input.operationId, ...info }
