@@ -12,10 +12,11 @@ import {
   type WorkerExportStart,
   type WorkerExportBatchStart
 } from '../../shared/exports'
-import { ProjectError } from '../../domain/projects/errors'
+import { ProjectError, projectError } from '../../domain/projects/errors'
 import { exportFingerprint as fingerprint } from '../../domain/projects/export-path'
 import { syncDirectory, writeJson } from '../storage/files'
-import { fileHash } from '../projects/streams'
+import { fileHash, requireSpace, withSpaceBudget, errorSpace } from '../projects/streams'
+import { storageBytes, type SpaceIssue } from '../../shared/storage-space'
 import { exportDocx } from './docx'
 import { exportPrintDocument, type PrintDocument } from './html'
 import { exportInterchange } from './interchange'
@@ -71,6 +72,20 @@ async function inspectDocx(path: string): Promise<void> {
 type Running = { job: ExportJob; controller: AbortController; task: Promise<void>; folder: string }
 export class ExportJobs {
   private readonly jobs = new Map<string, Running>()
+  busy(): boolean {
+    return this.jobs.size > 0
+  }
+  private readonly spaceIssues = new Map<string, SpaceIssue[]>()
+  private space(job: ExportJob, issue: SpaceIssue | null): void {
+    if (!issue) return
+    const retained = this.spaceIssues.get(job.id) ?? []
+    this.spaceIssues.set(job.id, [...retained, { ...issue }].slice(-4))
+    if (this.spaceIssues.size > 64) this.spaceIssues.delete(this.spaceIssues.keys().next().value!)
+  }
+  private view(job: ExportJob): ExportJob {
+    const space = this.spaceIssues.get(job.id)
+    return { ...job, ...(space ? { space: space.map((s) => ({ ...s })) } : {}) }
+  }
   constructor(
     private readonly root: string,
     private readonly resources: string,
@@ -147,7 +162,9 @@ export class ExportJobs {
     this.jobs.set(id, running)
     running.task = new Promise<void>((resolve) =>
       setImmediate(() => {
-        void this.render(running, input, model, images).finally(resolve)
+        void withSpaceBudget('Export DOCX', folder, () =>
+          this.render(running, input, model, images)
+        ).finally(resolve)
       })
     )
     return { ...job }
@@ -232,7 +249,9 @@ export class ExportJobs {
     this.jobs.set(id, running)
     running.task = new Promise<void>((resolve) =>
       setImmediate(() => {
-        void this.renderBatch(running, input, model, images).finally(resolve)
+        void withSpaceBudget('Export files', folder, () =>
+          this.renderBatch(running, input, model, images)
+        ).finally(resolve)
       })
     )
     return { ...job }
@@ -249,6 +268,7 @@ export class ExportJobs {
       temporary = join(parent, `.collie-export-${randomUUID()}.incoming`)
     let ownsTemporary = false
     try {
+      await requireSpace(parent, bytes.length)
       const output = await open(
         temporary,
         constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
@@ -329,6 +349,7 @@ export class ExportJobs {
             return image
           })
           if (bytes.length > 512 * 1024 * 1024) throw new ProjectError('LIMIT_EXCEEDED')
+          await requireSpace(folder, bytes.length * 2)
           const candidate = join(folder, `candidate-${index}.docx`),
             output = await open(candidate, 'wx', 0o600)
           try {
@@ -363,6 +384,10 @@ export class ExportJobs {
           losses = result.losses
           file.losses = losses
           if (assets.length) {
+            await requireSpace(
+              dirname(target.path),
+              bytes.length + assets.reduce((n, asset) => n + asset.bytes.length, 0)
+            )
             const sidecarPath = join(dirname(target.path), sidecar)
             await mkdir(sidecarPath, { mode: 0o700 })
             publication.sidecarCreated = true
@@ -389,15 +414,15 @@ export class ExportJobs {
         file.pages = pages
         file.losses = losses
       } catch (error) {
-        const code = signal.aborted
-          ? 'CANCELLED'
-          : error instanceof ProjectError
-            ? error.code
-            : error instanceof Error && error.message === 'PDF_EXPORT_FAILED'
-              ? 'UNAVAILABLE'
-              : 'UNAVAILABLE'
+        const code = signal.aborted ? 'CANCELLED' : projectError(error)
         file.state = code === 'CANCELLED' ? 'cancelled' : 'failed'
         file.error = code
+        const space = errorSpace(error, 'Export files', folder)
+        this.space(job, space)
+        if (space)
+          file.losses.push(
+            `Space check: ${space.required === null ? 'additional bytes unknown' : `${storageBytes(space.required)} additional including margin`}; working folder and destination both need space. Review Data and recovery before retrying with the retained result.`
+          )
         if (publication.outputLinked) {
           retainedPartialOutput = true
           file.losses.push(
@@ -436,7 +461,7 @@ export class ExportJobs {
     const live = this.jobs.get(id)
     if (live) {
       if (live.folder !== join(workspace, 'exports', id)) throw new ProjectError('DENIED')
-      return { ...live.job }
+      return this.view(live.job)
     }
     const path = join(workspace, 'exports', id, 'report.json')
     let raw: unknown
@@ -449,7 +474,8 @@ export class ExportJobs {
       throw new ProjectError('CORRUPT_PROJECT')
     const stored = { ...raw } as Record<string, unknown>
     delete stored.version
-    if (!isExportJob(stored)) throw new ProjectError('CORRUPT_PROJECT')
+    if (Object.hasOwn(stored, 'space') || !isExportJob(stored))
+      throw new ProjectError('CORRUPT_PROJECT')
     const job = stored
     if (job.state === 'rendering' || job.state === 'publishing') {
       job.state = 'interrupted'
@@ -457,7 +483,7 @@ export class ExportJobs {
       job.error = 'JOB_INTERRUPTED'
       await writeJson(path, { version: 1, ...job })
     }
-    return job
+    return this.view(job)
   }
   async cancel(workspace: string, id: string): Promise<ExportJob> {
     const running = this.jobs.get(id)
@@ -493,6 +519,8 @@ export class ExportJobs {
       })
       cancelled(signal)
       if (bytes.length > 512 * 1024 * 1024) throw new ProjectError('LIMIT_EXCEEDED')
+      await requireSpace(folder, bytes.length * 2)
+      await requireSpace(parent, bytes.length)
       const output = await open(candidate, 'wx', 0o600)
       try {
         await output.writeFile(bytes)
@@ -557,10 +585,12 @@ export class ExportJobs {
       job.error = null
       await this.persist(running)
     } catch (error) {
-      const code = error instanceof ProjectError ? error.code : 'UNAVAILABLE'
+      const code = projectError(error)
       job.state =
         code === 'CANCELLED' ? 'cancelled' : job.state === 'publishing' ? 'interrupted' : 'failed'
       job.phase = job.state === 'interrupted' ? 'Publication needs inspection' : 'Export stopped'
+      const space = errorSpace(error, 'Export DOCX', folder)
+      this.space(job, space)
       job.error = code
       await this.persist(running).catch(() => {})
     } finally {

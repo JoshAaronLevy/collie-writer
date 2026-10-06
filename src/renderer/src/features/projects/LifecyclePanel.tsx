@@ -51,7 +51,8 @@ export function ProjectManagement({
           <h3>Location and visibility</h3>
           <p>
             Move selects a new file location and retains the old file. Archive only hides this
-            project from active library views on this computer; it does not delete it.
+            project from active library views on this computer. It keeps the data and does not free
+            storage space.
           </p>
           <div className={styles['project-management-buttons']}>
             <AppButton variant="default" disabled={disabled || !project.destination} onClick={move}>
@@ -183,8 +184,11 @@ export function RecoveryPanel({
             <summary>Picker history and recovery limits</summary>
             <p>
               Local recovery has no automatic expiry. Unacknowledged keystrokes may be lost after
-              force quit or power loss. Removing app data can destroy unsaved work. There are no
-              disposable content caches; picker history is only a folder hint.
+              force quit or power loss. Removing app data can destroy unsaved work. Search indexes
+              are rebuildable caches, but cache clearing is not available yet. Saved source
+              originals, excerpts, writing, conversations and recovery are retained project data.
+              Clear picker history only forgets a folder hint; it removes no project data or search
+              cache.
             </p>
             <AppButton variant="default" disabled={disabled} onClick={cleanup}>
               Clear picker history

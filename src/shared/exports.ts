@@ -1,6 +1,7 @@
 import { hasControlCharacters } from './control-characters'
 import { isId } from '../domain/editor/schema'
 import type { OpenInput } from './projects'
+import { isSpaceIssue, type SpaceIssue } from './storage-space'
 
 export type ExportOptions = OpenInput & {
   documentIds: string[]
@@ -71,6 +72,7 @@ export type ExportJob = {
   counts: ExportPreview['counts']
   losses: string[]
   files?: ExportFile[]
+  space?: SpaceIssue[]
 }
 export type ExportJobInput = OpenInput & { jobId: string }
 
@@ -356,7 +358,8 @@ export function isExportJob(v: unknown): v is ExportJob {
       'error',
       'reportPath',
       'counts',
-      'losses'
+      'losses',
+      ...(Object.hasOwn(v, 'space') ? ['space'] : [])
     ]) ||
       keys(v, [
         'id',
@@ -368,7 +371,8 @@ export function isExportJob(v: unknown): v is ExportJob {
         'reportPath',
         'counts',
         'losses',
-        'files'
+        'files',
+        ...(Object.hasOwn(v, 'space') ? ['space'] : [])
       ])) &&
     isId(v.id) &&
     isId(v.headCommitId) &&
@@ -382,6 +386,8 @@ export function isExportJob(v: unknown): v is ExportJob {
     (v.error === null || (typeof v.error === 'string' && v.error.length <= 2000)) &&
     (v.reportPath === null || (typeof v.reportPath === 'string' && v.reportPath.length <= 4096)) &&
     isExportCounts(v.counts) &&
+    (v.space === undefined ||
+      (Array.isArray(v.space) && v.space.length <= 4 && v.space.every(isSpaceIssue))) &&
     Array.isArray(v.losses) &&
     v.losses.length <= 10000 &&
     v.losses.every((x) => typeof x === 'string' && x.length <= 2000) &&

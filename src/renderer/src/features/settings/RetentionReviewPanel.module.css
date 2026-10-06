@@ -1,0 +1,14 @@
+.retention-review-panel {
+  margin-block: var(--collie-space-4);
+  padding-block: var(--collie-space-3);
+  border-bottom: 1px solid var(--collie-border);
+}
+.retention-file-path {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-block: var(--collie-space-2);
+}
+.retention-review-panel details p {
+  overflow-wrap: anywhere;
+  max-width: 20rem;
+}

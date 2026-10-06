@@ -1,4 +1,24 @@
+import {
+  isWorkingCopyCommand,
+  isWorkingCopyReply,
+  type WorkingCopyInput,
+  type WorkingCopyCommand,
+  type WorkingCopyReply
+} from './working-copy'
+import {
+  isRetentionInput,
+  isRetentionView,
+  type RetentionInput,
+  type RetentionView
+} from './retained-versions'
+import {
+  isSearchCacheInput,
+  isSearchCacheView,
+  type SearchCacheInput,
+  type SearchCacheView
+} from './search-cache'
 import { hasControlCharacters } from './control-characters'
+import { isSpaceIssue, spaceMessage, type SpaceIssue } from './storage-space'
 import {
   isProofreadWorkerInput,
   isProofreadValue,
@@ -196,7 +216,11 @@ export const PROJECT_CHANNELS = {
   evidenceChange: 'evidence.change',
   search: 'search.query',
   searchActivity: 'search.activity',
-  searchAction: 'search.action'
+  searchAction: 'search.action',
+  searchCache: 'search.cache',
+  retainedVersions: 'project.retainedVersions',
+  workingCopy: 'project.workingCopy',
+  localArtifacts: 'project.localArtifacts'
 } as const
 export type ProjectCode =
   | 'VALIDATION'
@@ -255,7 +279,7 @@ export const projectMessages: Record<ProjectCode, string> = {
   OPERATION_CONFLICT:
     'This operation ID was already used for different content. Your text has been kept.',
   DISK_FULL:
-    'The disk is full. Free space, then retry the same local commit; your text is still here.',
+    'There is not enough storage for this operation. Review working-folder and destination space in Data and recovery, then retry the retained operation. Keep this window open if writing needs protection.',
   FORMAT_TOO_NEW: 'This project needs a newer Collie Writer. Its files have not been migrated.',
   CORRUPT_PROJECT:
     'This local project could not be read safely. Its original files have been retained.',
@@ -284,7 +308,7 @@ export type ProjectResult<T> =
   | {
       ok: false
       requestId: string
-      error: { code: ProjectCode; message: string; retryable: boolean }
+      error: { code: ProjectCode; message: string; retryable: boolean; space?: SpaceIssue }
     }
 export type LocationStatus = { state: 'ready' | 'required'; path: string | null; message: string }
 export type DestinationView = {
@@ -379,6 +403,10 @@ export type ProjectCommand =
   | { kind: 'notes' | 'sources' | 'evidence' | 'searchActivity' | 'citations'; input: OpenInput }
   | { kind: 'search'; input: SearchInput }
   | { kind: 'searchAction'; input: SearchActionInput }
+  | { kind: 'searchCache'; input: SearchCacheInput }
+  | { kind: 'retainedVersions'; input: RetentionInput }
+  | { kind: 'localArtifacts'; input: RetentionInput }
+  | { kind: 'workingCopy'; input: WorkingCopyCommand }
   | { kind: 'evidenceChange'; input: EvidenceChangeInput }
   | { kind: 'inspection'; input: InspectionScope }
   | { kind: 'inspectionPage'; input: InspectionPageInput }
@@ -407,6 +435,7 @@ export type ProjectCommand =
   | { kind: 'importImage'; input: WorkerImageImport }
   | { kind: 'readImage'; input: ImageReadInput }
 export type ProjectValue =
+  | WorkingCopyReply
   | ProofreadValue
   | ConversationValue
   | CitationsView
@@ -425,6 +454,8 @@ export type ProjectValue =
   | InspectionPageText
   | WorkerInspectionAsset
   | EvidenceView
+  | RetentionView
+  | SearchCacheView
   | SearchView
   | SearchActivity
   | ExportPreview
@@ -445,6 +476,10 @@ export type ProjectAPI = {
   importInterchange: (input: ImportCommitInput) => Promise<ProjectResult<OpenProject>>
   readCitations: (input: OpenInput) => Promise<ProjectResult<CitationsView>>
   changeCitationStyle: (input: CitationStyleInput) => Promise<ProjectResult<CitationsView>>
+  workingCopy: (input: WorkingCopyInput) => Promise<ProjectResult<WorkingCopyReply>>
+  retainedVersions: (input: RetentionInput) => Promise<ProjectResult<RetentionView>>
+  localArtifacts: (input: RetentionInput) => Promise<ProjectResult<RetentionView>>
+  searchCache: (input: SearchCacheInput) => Promise<ProjectResult<SearchCacheView>>
   search: (input: SearchInput) => Promise<ProjectResult<SearchView>>
   readSearchActivity: (input: OpenInput) => Promise<ProjectResult<SearchActivity>>
   changeSearch: (input: SearchActionInput) => Promise<ProjectResult<SearchActivity>>
@@ -495,13 +530,18 @@ export function exact(v: Record<string, unknown>, names: string[]): boolean {
 export function isProjectCode(v: unknown): v is ProjectCode {
   return typeof v === 'string' && Object.hasOwn(projectMessages, v)
 }
-export function projectFailure(requestId: string, code: ProjectCode): ProjectResult<never> {
+export function projectFailure(
+  requestId: string,
+  code: ProjectCode,
+  space?: SpaceIssue
+): ProjectResult<never> {
   return {
     ok: false,
     requestId,
     error: {
       code,
-      message: projectMessages[code],
+      message: space ? spaceMessage(space) : projectMessages[code],
+      ...(space ? { space } : {}),
       retryable: ['UNAVAILABLE', 'DISK_FULL', 'PROJECT_LOCKED'].includes(code)
     }
   }
@@ -644,6 +684,9 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (v.kind === 'sources' || v.kind === 'evidence' || v.kind === 'searchActivity')
     return isOpenInput(v.input)
   if (v.kind === 'search') return isSearchInput(v.input)
+  if (v.kind === 'retainedVersions' || v.kind === 'localArtifacts') return isRetentionInput(v.input)
+  if (v.kind === 'workingCopy') return isWorkingCopyCommand(v.input)
+  if (v.kind === 'searchCache') return isSearchCacheInput(v.input)
   if (v.kind === 'searchAction') return isSearchActionInput(v.input)
   if (v.kind === 'evidenceChange') return isEvidenceChangeInput(v.input)
   if (v.kind === 'inspection') return isInspectionScope(v.input)
@@ -779,6 +822,9 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
   if (kind === 'history') return isHistoryView(v)
   if (kind === 'notes' || kind === 'noteChange') return isNotesView(v)
   if (kind === 'evidence' || kind === 'evidenceChange') return isEvidenceView(v)
+  if (kind === 'retainedVersions' || kind === 'localArtifacts') return isRetentionView(v)
+  if (kind === 'workingCopy') return isWorkingCopyReply(v)
+  if (kind === 'searchCache') return isSearchCacheView(v)
   if (kind === 'search') return isSearchView(v)
   if (kind === 'searchActivity' || kind === 'searchAction') return isSearchActivity(v)
   if (
@@ -915,9 +961,18 @@ export function isProjectResult<T>(
     v.ok === false &&
     exact(v, ['ok', 'requestId', 'error']) &&
     record(v.error) &&
-    exact(v.error, ['code', 'message', 'retryable']) &&
+    exact(
+      v.error,
+      Object.hasOwn(v.error, 'space')
+        ? ['code', 'message', 'retryable', 'space']
+        : ['code', 'message', 'retryable']
+    ) &&
     isProjectCode(v.error.code) &&
-    v.error.message === projectMessages[v.error.code] &&
+    (!Object.hasOwn(v.error, 'space') ||
+      (['DISK_FULL', 'UNAVAILABLE', 'DESTINATION_UNAVAILABLE'].includes(v.error.code) &&
+        isSpaceIssue(v.error.space))) &&
+    v.error.message ===
+      (isSpaceIssue(v.error.space) ? spaceMessage(v.error.space) : projectMessages[v.error.code]) &&
     typeof v.error.retryable === 'boolean'
   )
 }

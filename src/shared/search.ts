@@ -48,7 +48,9 @@ export type SearchInput = OpenInput & {
   sourceId: string | null
   offset: number
 }
-export type SearchActionInput = OpenInput & { action: 'refresh' | 'rebuild' | 'cancel' }
+export type SearchActionInput = OpenInput & {
+  action: 'activate' | 'refresh' | 'rebuild' | 'cancel'
+}
 
 const object = (x: unknown): x is Record<string, unknown> =>
   !!x && typeof x === 'object' && !Array.isArray(x)
@@ -85,7 +87,7 @@ export function isSearchActionInput(x: unknown): x is SearchActionInput {
     object(x) &&
     exact(x, ['projectId', 'workspaceId', 'action']) &&
     scope(x) &&
-    ['refresh', 'rebuild', 'cancel'].includes(String(x.action))
+    ['activate', 'refresh', 'rebuild', 'cancel'].includes(String(x.action))
   )
 }
 export function isSearchView(x: unknown): x is SearchView {

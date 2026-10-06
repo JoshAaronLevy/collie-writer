@@ -16,6 +16,7 @@ import { StorageWorker } from './storage-worker'
 import { createWindow, protectSession } from './windows'
 import { WorkingLocation } from './paths/working-root'
 import { registerProjectIpc } from './projects-ipc'
+import { registerStorageInventoryIpc } from './storage-inventory-ipc'
 import { ProjectFileIpc } from './project-files-ipc'
 import { ProjectLifecycle } from './lifecycle'
 import { SourceAssets } from './source-assets'
@@ -265,8 +266,15 @@ app
       (value) => {
         unprotected = value
       },
+      ai,
       devOrigin,
       sourceAssets
+    )
+    registerStorageInventoryIpc(
+      () => window?.webContents,
+      storage,
+      devOrigin,
+      () => ai.inventoryOwners()
     )
     files.register()
     lifecycle.register()

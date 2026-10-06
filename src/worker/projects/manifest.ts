@@ -1,5 +1,6 @@
 import { isId } from '../../domain/editor/schema'
 import { exact, record } from '../../shared/projects'
+import type { SpaceIssue } from '../../shared/storage-space'
 
 export const LIMITS = {
   entries: 100000,
@@ -20,7 +21,10 @@ export type SnapshotCode =
   | 'UNAVAILABLE'
   | 'OPERATION_CONFLICT'
 export class SnapshotError extends Error {
-  constructor(readonly code: SnapshotCode) {
+  constructor(
+    readonly code: SnapshotCode,
+    readonly space?: SpaceIssue
+  ) {
     super(code)
   }
 }

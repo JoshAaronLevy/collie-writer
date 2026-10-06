@@ -23,6 +23,12 @@ if (
 )
   throw new Error('Package version does not match the selected release channel')
 const name = channel === 'production' ? 'Collie Writer' : 'Collie Writer Beta'
+const projectFileAssociation = {
+  ext: 'collie',
+  name: 'Collie Writer project',
+  role: 'Editor',
+  rank: 'Owner'
+}
 const feed = `${origin}/direct/${channel}/`
 const publisherName = process.env.COLLIE_WINDOWS_PUBLISHER || null
 if (process.platform === 'darwin' && !process.env.COLLIE_MAC_IDENTITY)
@@ -39,13 +45,12 @@ module.exports = {
   extraMetadata: {
     collieRelease: { channel, distribution: 'direct', appId, updateOrigin: origin, publisherName }
   },
-  // Only production registers the default document association; beta can use Open.
-  fileAssociations:
-    channel === 'production'
-      ? [{ ext: 'collie', name: 'Collie Writer project', role: 'Editor', rank: 'Owner' }]
-      : [],
+  // Each platform uses the approved artwork in build/. Only production registers it.
+  fileAssociations: [],
   publish: { provider: 'generic', url: feed },
   mac: {
+    fileAssociations:
+      channel === 'production' ? [{ ...projectFileAssociation, icon: 'icon.icns' }] : [],
     identity: process.env.COLLIE_MAC_IDENTITY || null,
     forceCodeSigning: true,
     hardenedRuntime: true,
@@ -68,6 +73,8 @@ module.exports = {
     ]
   },
   win: {
+    fileAssociations:
+      channel === 'production' ? [{ ...projectFileAssociation, icon: 'icon.ico' }] : [],
     executableName: channel === 'production' ? 'collie-writer' : 'collie-writer-beta',
     forceCodeSigning: true,
     signAndEditExecutable: true,

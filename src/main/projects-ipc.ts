@@ -1,3 +1,7 @@
+import { isWorkingCopyInput, isWorkingCopyReply } from '../shared/working-copy'
+import type { AiService } from './ai/service'
+import { isRetentionInput } from '../shared/retained-versions'
+import { isSearchCacheInput } from '../shared/search-cache'
 import { hasControlCharacters } from '../shared/control-characters'
 import { isCitationStyleInput } from '../shared/citations'
 import { isOutlineInput, isHistoryInput } from '../shared/outline'
@@ -65,6 +69,7 @@ export function registerProjectIpc(
   location: WorkingLocation,
   storage: StorageWorker,
   dirty: (value: boolean) => void,
+  ai: AiService,
   devOrigin?: string,
   sourceAssets?: SourceAssets
 ): void {
@@ -142,6 +147,32 @@ export function registerProjectIpc(
         return { ok: true, requestId, value: text }
       }
       if (!location.path()) return projectFailure(requestId, 'STORAGE_LOCATION_REQUIRED')
+      if (kind === 'workingCopy') {
+        if (!exact(value, ['requestId', 'input']) || !isWorkingCopyInput(value.input))
+          return projectFailure(requestId, 'VALIDATION')
+        const input = value.input
+        try {
+          if (input.kind === 'remove') ai.reserveWorkspaceRemoval(input.scope, input.id)
+          const evidence =
+            input.kind === 'preview' || input.kind === 'remove'
+              ? ai.workspaceRemovalEvidence(input.scope)
+              : 'unknown'
+          const result = await storage.request(requestId, {
+            kind: 'workingCopy',
+            input: { request: input, ai: evidence }
+          })
+          // Never release on a caller timeout/error. Status is queued through the actual worker owner.
+          if (
+            result.ok &&
+            isWorkingCopyReply(result.value) &&
+            (input.kind === 'remove' || input.kind === 'status')
+          )
+            ai.settleWorkspaceRemoval(input.scope, input.id)
+          return result
+        } catch {
+          return projectFailure(requestId, 'UNAVAILABLE')
+        }
+      }
       if (kind === 'exportStart') {
         if (!exact(value, ['requestId', 'input']) || !isExportStart(value.input))
           return projectFailure(requestId, 'VALIDATION')
@@ -634,6 +665,18 @@ export function registerProjectIpc(
         exact(value, ['requestId', 'input']) &&
         kind === 'search' &&
         isSearchInput(value.input)
+      )
+        command = { kind, input: value.input }
+      else if (
+        exact(value, ['requestId', 'input']) &&
+        (kind === 'retainedVersions' || kind === 'localArtifacts') &&
+        isRetentionInput(value.input)
+      )
+        command = { kind, input: value.input }
+      else if (
+        exact(value, ['requestId', 'input']) &&
+        kind === 'searchCache' &&
+        isSearchCacheInput(value.input)
       )
         command = { kind, input: value.input }
       else if (

@@ -89,7 +89,9 @@ export default function TutorialPanel({
           <p>
             Choose a section in Write and edit a sentence. Local protection keeps changes on this
             device. Save opens a native picker the first time; cancelling keeps local recovery and
-            assigns no file. Save options contains Save As and a separate backup.
+            assigns no file. The .collie file contains the whole saved project, including research,
+            citations, managed originals and saved AI conversations. Closing protects local writing
+            without updating that file. Save options contains Save As and a separate backup.
           </p>
           <AppButton variant="subtle" disabled={!project || disabled} onClick={() => go('write')}>
             Open Write
@@ -142,8 +144,9 @@ export default function TutorialPanel({
           <p>
             Projects lists local work; opening an eligible recent project restores its section.
             Project actions holds details, import, history-related file controls, copies and
-            archive. Settings → Data and recovery holds retained versions. Export never replaces a
-            project backup.
+            archive. Archive hides projects without freeing space. Settings → Data and recovery
+            shows working and selected-file locations and holds retained versions. Reset retains
+            local recovery rather than reclaiming space. Export never replaces a project backup.
           </p>
           <div className={styles['guide-actions']}>
             <AppButton

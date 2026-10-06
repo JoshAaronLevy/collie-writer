@@ -1,0 +1,25 @@
+.project-storage-summary {
+  margin-top: var(--collie-space-6);
+  padding: var(--collie-space-4);
+  border: 1px solid var(--collie-border);
+  border-radius: var(--collie-radius-control);
+  background: var(--collie-surface);
+}
+.project-storage-summary h2 {
+  margin-top: 0;
+}
+.project-storage-summary p {
+  max-width: 55rem;
+}
+.project-storage-title {
+  font-weight: 650;
+}
+.project-storage-path {
+  overflow-wrap: anywhere;
+  color: var(--collie-text-secondary);
+}
+.project-storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--collie-space-3);
+}

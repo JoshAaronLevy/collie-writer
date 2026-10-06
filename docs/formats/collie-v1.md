@@ -9,7 +9,7 @@ blobs/<lowercase SHA-256>
 citation-assets/<lowercase SHA-256>
 ```
 
-There are no directory entries. The writer stores entries without compression, mode 0100600, no archive/file comments. The reader also permits deflate, but never encryption. Only ZIP64 and extended-timestamp extra fields are supported. Paths are ASCII and exact; absolute paths, traversal, backslashes, links, alternate streams, executable entries and aliases are rejected. Archive names never choose user filesystem locations.
+There are no directory entries. Stage 5 originally stored every entry. PS08's October 5 [writer-policy addendum](archive-compression-v1.md) now uses deflate level 6 for the database and small manifest/pinned citation text, while all managed blobs remain stored. Mode 0100600 and no archive/file comments remain. The reader permits stored and deflated entries, but never encryption. Only ZIP64 and extended-timestamp extra fields are supported. Paths are ASCII and exact; absolute paths, traversal, backslashes, links, alternate streams, executable entries and aliases are rejected. Archive names never choose user filesystem locations.
 
 ## Manifest
 

@@ -58,6 +58,10 @@ export function commandCapability(command: ProjectCommand): Capability {
     case 'search':
     case 'searchActivity':
     case 'searchAction':
+    case 'workingCopy':
+    case 'localArtifacts':
+    case 'retainedVersions': // Reviewed local retention; no editing rights.
+    case 'searchCache': // Disposable local maintenance; grants no project editing.
     case 'readImage':
     case 'archive':
     case 'data':
@@ -68,7 +72,16 @@ export function commandCapability(command: ProjectCommand): Capability {
   }
 }
 export function commandScope(command: ProjectCommand): OpenInput | null {
-  if (command.kind === 'rename' || command.kind === 'archive') return command.input.scope
+  if (command.kind === 'workingCopy')
+    return command.input.request.kind === 'history' ? null : command.input.request.scope
+  if (
+    command.kind === 'rename' ||
+    command.kind === 'archive' ||
+    command.kind === 'searchCache' ||
+    command.kind === 'retainedVersions' ||
+    command.kind === 'localArtifacts'
+  )
+    return command.input.scope
   if (
     'input' in command &&
     typeof command.input === 'object' &&

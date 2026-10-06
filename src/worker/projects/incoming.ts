@@ -1,6 +1,9 @@
+import { retiredWorkspace } from './working-copy-records'
+import { isId } from '../../domain/editor/schema'
+import { ProjectError } from '../../domain/projects/errors'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
-import { mkdir, rename } from 'node:fs/promises'
+import { mkdir, rename, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { OpenInput } from '../../shared/projects'
 import { contained, syncDirectory, syncFile, writeJson } from '../storage/files'
@@ -128,9 +131,45 @@ export async function promoteIncoming(
   const parent = join(root, 'workspaces'),
     project = join(parent, projectId)
   await contained(root, parent, true)
-  await mkdir(project, { mode: 0o700 }) // Never replace an existing local workspace.
-  await rename(staging, join(project, workspaceId))
-  await syncDirectory(project)
-  await syncDirectory(parent)
+  let created = true
+  try {
+    await mkdir(project, { mode: 0o700 })
+  } catch (error) {
+    if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'EEXIST')
+      throw error
+    created = false
+  }
+  await contained(root, project, true)
+  for (const suffix of ['', '-wal', '-shm', '-journal']) {
+    try {
+      await contained(root, join(project, 'owner.sqlite') + suffix, false)
+    } catch (error) {
+      if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT')
+        throw error
+    }
+  }
+  const lock = new Database(join(project, 'owner.sqlite'), { nativeBinding, timeout: 0 })
+  try {
+    lock.pragma('trusted_schema=OFF')
+    lock.pragma('journal_mode=DELETE')
+    lock.exec('BEGIN EXCLUSIVE')
+    const names = await readdir(project)
+    // Existing roots are reusable only when every former workspace has durable retirement proof.
+    if (
+      (!created && (copy || !names.some(isId))) ||
+      names.length > 1024 ||
+      names.some(
+        (name) =>
+          name !== 'owner.sqlite' &&
+          !(isId(name) && retiredWorkspace(root, { projectId, workspaceId: name }))
+      )
+    )
+      throw new ProjectError('OPERATION_CONFLICT')
+    await rename(staging, join(project, workspaceId))
+    await syncDirectory(project)
+    await syncDirectory(parent)
+  } finally {
+    lock.close()
+  }
   return { projectId, workspaceId }
 }

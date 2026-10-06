@@ -1,5 +1,11 @@
 import { app, utilityProcess, type UtilityProcess } from 'electron'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import {
+  isInventoryReport,
+  type InventoryCommand,
+  type InventoryAiOwner,
+  type InventoryReport
+} from '../shared/storage-inventory'
 import workerPath from '../worker/index?modulePath'
 import { bundledResources } from './resources'
 import { isId } from '../domain/editor/schema'
@@ -66,6 +72,42 @@ export class StorageWorker {
     string,
     { resolve: (result: ProjectResult<FileStatus>) => void; timer: ReturnType<typeof setTimeout> }
   >()
+  private inventoryPending = new Map<
+    string,
+    {
+      id: string
+      resolve: (result: ProjectResult<InventoryReport>) => void
+      timer: ReturnType<typeof setTimeout>
+    }
+  >()
+  requestInventory(
+    requestId: string,
+    command: InventoryCommand,
+    owners: InventoryAiOwner[] = []
+  ): Promise<ProjectResult<InventoryReport>> {
+    if (
+      !this.child ||
+      this.stopping ||
+      this.status.state !== 'ready' ||
+      this.inventoryPending.size >= 4 ||
+      this.inventoryPending.has(requestId)
+    )
+      return Promise.resolve(projectFailure(requestId, 'UNAVAILABLE'))
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.inventoryPending.delete(requestId)
+        resolve(projectFailure(requestId, 'UNAVAILABLE'))
+      }, 5000)
+      this.inventoryPending.set(requestId, { id: command.id, resolve, timer })
+      try {
+        this.child!.postMessage({ kind: 'inventory', requestId, command, owners })
+      } catch {
+        clearTimeout(timer)
+        this.inventoryPending.delete(requestId)
+        resolve(projectFailure(requestId, 'UNAVAILABLE'))
+      }
+    })
+  }
   private fileChanged: (status: FileStatus) => void = () => {}
   private sourceChanged: (progress: SourceProgress) => void = () => {}
   private readonly prints = new Map<string, AbortController>()
@@ -112,6 +154,11 @@ export class StorageWorker {
     })
   }
   private rejectPending(): void {
+    for (const [id, p] of this.inventoryPending) {
+      clearTimeout(p.timer)
+      p.resolve(projectFailure(id, 'UNAVAILABLE'))
+    }
+    this.inventoryPending.clear()
     for (const [id, p] of this.pending) {
       clearTimeout(p.timer)
       p.resolve(projectFailure(id, 'UNAVAILABLE'))
@@ -211,6 +258,7 @@ export class StorageWorker {
             ? join(process.resourcesPath, 'native', 'better_sqlite3.node')
             : null,
           workingRoot,
+          profileRoot: dirname(app.getPath('userData')),
           resources: bundledResources()
         })
       } catch {
@@ -219,6 +267,29 @@ export class StorageWorker {
     })
     child.on('message', (message: unknown) => {
       if (this.child !== child || this.stopping) return
+      if (
+        record(message) &&
+        exact(message, ['kind', 'result']) &&
+        message.kind === 'inventory-result' &&
+        record(message.result) &&
+        isId(message.result.requestId)
+      ) {
+        const id = message.result.requestId,
+          pending = this.inventoryPending.get(id)
+        if (!pending) return
+        clearTimeout(pending.timer)
+        this.inventoryPending.delete(id)
+        pending.resolve(
+          isProjectResult<InventoryReport>(
+            message.result,
+            id,
+            (value) => isInventoryReport(value) && value.id === pending.id
+          )
+            ? message.result
+            : projectFailure(id, 'UNAVAILABLE')
+        )
+        return
+      }
       if (
         record(message) &&
         message.kind === 'pdf-request' &&

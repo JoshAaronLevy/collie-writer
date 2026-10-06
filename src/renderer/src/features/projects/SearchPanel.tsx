@@ -39,9 +39,11 @@ function highlighted(value: string, query: string): React.JSX.Element {
 }
 export default function SearchPanel({
   project,
+  active,
   navigate
 }: {
   project: OpenProject
+  active: boolean
   navigate: (hit: SearchHit) => void
 }): React.JSX.Element {
   const session = useWorkspaceSession()
@@ -70,6 +72,7 @@ export default function SearchPanel({
     }
   }, [submitted, requestKey, searching])
   useEffect(() => {
+    if (!active) return
     let live = true
     void window.collie
       .readSources({ projectId: project.projectId, workspaceId: project.workspaceId })
@@ -92,8 +95,35 @@ export default function SearchPanel({
     return () => {
       live = false
     }
-  }, [project.projectId, project.workspaceId, project.headCommitId, retry])
+  }, [active, project.projectId, project.workspaceId, project.headCommitId, retry])
   useEffect(() => {
+    let live = true
+    // Only entering Search may create/start the projection. Background polling only observes it.
+    if (active) {
+      void window.collie
+        .changeSearch({
+          projectId: project.projectId,
+          workspaceId: project.workspaceId,
+          action: 'activate'
+        })
+        .then((result) => {
+          if (!live) return
+          if (result.ok) {
+            setActivity(result.value)
+            setError('')
+          } else setError(result.error.message)
+        })
+        .catch(() => {
+          if (live) setError('Search could not be opened. Retry when storage is available.')
+        })
+    }
+    return () => {
+      live = false
+    }
+  }, [active, project.projectId, project.workspaceId, retry])
+  const observingWork = activity?.state === 'queued' || activity?.state === 'running'
+  useEffect(() => {
+    if (!active && !observingWork) return
     let live = true
     const read = (): void => {
       void window.collie
@@ -101,7 +131,13 @@ export default function SearchPanel({
         .then((result) => {
           if (live) {
             if (result.ok) setActivity(result.value)
-            else setError(result.error.message)
+            else {
+              if (result.error.code === 'UNAVAILABLE') {
+                setActivity(null)
+                setView(null)
+              }
+              if (active) setError(result.error.message)
+            }
           }
         })
         .catch(() => {
@@ -117,13 +153,14 @@ export default function SearchPanel({
       live = false
       clearInterval(timer)
     }
-  }, [project.projectId, project.workspaceId, retry])
+  }, [active, observingWork, project.projectId, project.workspaceId, retry])
   const [lastRequestKey, setLastRequestKey] = useState(requestKey)
   if (lastRequestKey !== requestKey) {
     setLastRequestKey(requestKey)
     setSearching(!!query.trim())
   }
   useEffect(() => {
+    if (!active) return
     let live = true
     const timer = setTimeout(() => {
       if (!query.trim()) {
@@ -164,6 +201,7 @@ export default function SearchPanel({
       clearTimeout(timer)
     }
   }, [
+    active,
     project.projectId,
     project.workspaceId,
     project.headCommitId,

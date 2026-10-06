@@ -1,3 +1,9 @@
+import { opendirSync } from 'node:fs'
+import { boundedJson, parentStamp, namedStamp } from '../../worker/projects/retention-files'
+import { pathPresent, removalMarker } from '../../worker/projects/working-copy-records'
+import { sameScope } from '../../shared/project-files'
+import type { OpenInput } from '../../shared/projects'
+import type { WorkspaceAiEvidence } from '../../shared/working-copy'
 import { hasControlCharacters } from '../../shared/control-characters'
 import { safeStorage } from 'electron'
 import { randomUUID } from 'node:crypto'
@@ -114,6 +120,93 @@ export class AiStorage {
   private initialized: Promise<void> | null = null
   private retentionLayout: Promise<void> | null = null
   constructor(private readonly workingRoot: () => string | undefined) {}
+  workspaceRetired(scope: OpenInput): boolean {
+    const root = this.workingRoot()
+    if (!root) return true
+    try {
+      return pathPresent(removalMarker(root, scope))
+    } catch {
+      return true
+    }
+  }
+  /** Read only, bounded hot AND cold records; no credentials, login, initialization or cleanup. */
+  workspaceEvidence(scope: OpenInput): WorkspaceAiEvidence {
+    const root = this.workingRoot()
+    if (!root) return 'unknown'
+    let count = 0,
+      bytes = 0
+    try {
+      for (const folder of ['operations', 'retained-v1/records', 'retained-v1/receipts']) {
+        const path = join(root, 'ai', folder)
+        let dir: ReturnType<typeof opendirSync>
+        try {
+          parentStamp(join(path, 'entry'))
+          dir = opendirSync(path)
+        } catch (error) {
+          if (record(error) && error.code === 'ENOENT') continue
+          throw error
+        }
+        try {
+          for (let entry = dir.readSync(); entry; entry = dir.readSync()) {
+            const marker = folder === 'operations' && entry.name === 'index-v1.json'
+            if (
+              ++count > 256 ||
+              !entry.isFile() ||
+              (!marker && (!entry.name.endsWith('.json') || !isId(entry.name.slice(0, -5))))
+            )
+              return 'unknown'
+            const file = join(path, entry.name),
+              identity = namedStamp(file)
+            if (!identity || (bytes += identity.size) > 32 * 1024 ** 2) return 'unknown'
+            const envelope = boundedJson(file, 4 * 1024 ** 2)
+            if (
+              !record(envelope) ||
+              !exact(envelope, ['version', 'encrypted']) ||
+              envelope.version !== 1 ||
+              typeof envelope.encrypted !== 'string' ||
+              !/^[A-Za-z0-9+/]+=*$/.test(envelope.encrypted) ||
+              !secureAiStorage()
+            )
+              return 'unknown'
+            const value: unknown = JSON.parse(
+              safeStorage.decryptString(Buffer.from(envelope.encrypted, 'base64'))
+            )
+            if (marker) {
+              if (
+                !record(value) ||
+                !exact(value, ['version', 'layout', 'limit']) ||
+                value.version !== 1 ||
+                value.layout !== 'receipt-index-v1' ||
+                value.limit !== AI_LIMITS.jobs
+              )
+                return 'unknown'
+            } else if (folder.endsWith('/receipts')) {
+              if (
+                !record(value) ||
+                !exact(value, ['version', 'receipt', 'recordDigest']) ||
+                value.version !== 1 ||
+                !isAiHandoffReceipt(value.receipt) ||
+                value.receipt.operationId !== entry.name.slice(0, -5) ||
+                typeof value.recordDigest !== 'string' ||
+                !/^[a-f0-9]{64}$/.test(value.recordDigest)
+              )
+                return 'unknown'
+              if (sameScope(value.receipt.scope, scope)) return 'linked'
+            } else {
+              if (!isRetainedOperation(value) || value.view.operationId !== entry.name.slice(0, -5))
+                return 'unknown'
+              if (sameScope(value.view.scope, scope)) return 'linked'
+            }
+          }
+        } finally {
+          dir.closeSync()
+        }
+      }
+      return 'clear'
+    } catch {
+      return 'unknown'
+    }
+  }
   async initialize(): Promise<void> {
     const working = this.workingRoot()
     if (!working || !secureAiStorage())

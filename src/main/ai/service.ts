@@ -1,3 +1,4 @@
+import type { WorkspaceAiEvidence } from '../../shared/working-copy'
 import { app } from 'electron'
 import type { AiHandoffReceipt } from '../../shared/ai-handoff'
 import { handoffMatches } from './handoff'
@@ -129,6 +130,60 @@ export class AiService {
   private prepared = new Map<string, Prepared>()
   private reviewGeneration = randomUUID()
   private retained = new Map<string, RetainedOperation>()
+  private workspaceRemovals = new Map<string, string>()
+  private workspaceKey(scope: OpenInput): string {
+    return `${scope.projectId}:${scope.workspaceId}`
+  }
+  reserveWorkspaceRemoval(scope: OpenInput, id: string): void {
+    const key = this.workspaceKey(scope),
+      previous = this.workspaceRemovals.get(key)
+    if (previous && previous !== id) throw new AiError('busy')
+    if (!previous && this.workspaceRemovals.size >= 16) throw new AiError('busy')
+    this.workspaceRemovals.set(key, id)
+  }
+  settleWorkspaceRemoval(scope: OpenInput, id: string): void {
+    const key = this.workspaceKey(scope)
+    if (this.workspaceRemovals.get(key) === id) this.workspaceRemovals.delete(key)
+  }
+  private requireWorkspaceAvailable(scope: OpenInput): void {
+    if (
+      this.workspaceRemovals.has(this.workspaceKey(scope)) ||
+      this.storage.workspaceRetired(scope)
+    )
+      throw new AiError('context-changed')
+  }
+  workspaceRemovalEvidence(scope: OpenInput): WorkspaceAiEvidence {
+    if (
+      [...this.prepared.values()].some(
+        (item) => sameProject(item.input.scope, scope) && item.receipt.expiresAt >= Date.now()
+      ) ||
+      [
+        ...this.retained.values(),
+        ...this.protectedRecords.values(),
+        ...(this.pendingRetention ? [this.pendingRetention] : [])
+      ].some((item) => sameProject(item.view.scope, scope)) ||
+      this.contentWork().some((item) => sameProject(item.scope, scope))
+    )
+      return 'linked'
+    if (
+      this.running ||
+      this.busy ||
+      this.handoffWork ||
+      this.retentionWriting ||
+      this.journalFailure ||
+      this.unprotectedOperationId
+    )
+      return 'unknown'
+    return this.storage.workspaceEvidence(scope)
+  }
+  inventoryOwners(): import('../../shared/storage-inventory').InventoryAiOwner[] {
+    return Array.from(this.retained.values())
+      .slice(0, 512)
+      .map((item) => ({
+        operationId: item.view.operationId,
+        scope: { ...item.view.scope }
+      }))
+  }
   private retentionLoaded = false
   private protectedRecords = new Map<string, RetainedOperation>()
   private dispatch: AiDispatchSession | null = null
@@ -1095,6 +1150,7 @@ export class AiService {
     session: AiDispatchSession,
     execution: DispatchExecution | null
   ): void {
+    this.requireWorkspaceAvailable(input.scope)
     try {
       this.access.authorizeAi(input.scope, true)
     } catch {
@@ -1195,6 +1251,7 @@ export class AiService {
   /** Public raw prepare stays registered-only. Owner-local routes require a
    * capture committed by the applicable main content adapter and live review. */
   async prepare(input: AiPrepareInput, content?: ContentAuthorization): Promise<AiPrepared> {
+    this.requireWorkspaceAvailable(input.scope)
     await this.ensure()
     this.requireIdle()
     try {
@@ -1254,6 +1311,7 @@ export class AiService {
         : operationDigestV1(input),
       expiresAt: Date.now() + 5 * 60000
     }
+    this.requireWorkspaceAvailable(input.scope)
     this.prepared.set(receipt.authorizationId, {
       receipt,
       input: structuredClone(input),

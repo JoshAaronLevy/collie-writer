@@ -12,6 +12,7 @@ import { LIMITS, SnapshotError, cancelled, type SnapshotManifest } from './manif
 import { projectCitationFiles } from './citation-assets'
 import { leasedBlobFiles } from './blobs'
 import { writeArchive, extractArchive, type ArchiveFile } from './archive'
+import { archivePlan } from './archive-policy'
 
 export type CaptureSource = {
   db: Database.Database
@@ -107,9 +108,9 @@ export async function buildSnapshot(
     blobs: capture.graph.blobs,
     citationAssets: citations.map((asset) => asset.ref)
   }
-  const bytes = files.reduce((n, f) => n + f.ref.bytes, 0)
+  const plan = archivePlan(manifest)
   // Candidate + validation extraction coexist with the captured database and previous candidates.
-  await requireSpace(jobFolder, bytes * 2 + files.length * 512 + LIMITS.manifest)
+  await requireSpace(jobFolder, plan.maximumBytes + plan.expandedBytes)
   const temporary = join(jobFolder, 'candidate.partial')
   await writeArchive(temporary, manifest, files, signal, progress)
   const inspected = await extractArchive(

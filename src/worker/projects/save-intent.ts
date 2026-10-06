@@ -32,6 +32,10 @@ export async function readIntent(
   await contained(root, path, false)
   if ((await lstat(path)).size > 32768) throw new ProjectError('JOB_INTERRUPTED')
   const v: unknown = JSON.parse(await readFile(path, 'utf8'))
+  if (!isSaveIntent(v)) throw new ProjectError('JOB_INTERRUPTED')
+  return v
+}
+export function isSaveIntent(v: unknown): v is SaveIntent {
   if (
     !record(v) ||
     !exact(v, [
@@ -62,10 +66,10 @@ export async function readIntent(
     ![v.snapshotId, v.head, v.snapshotJob].every((id) => id === null || isId(id)) ||
     !(v.candidateHash === null || isHash(v.candidateHash))
   )
-    throw new ProjectError('JOB_INTERRUPTED')
+    return false
   if (v.phase !== 'capturing' && (!v.snapshotId || !v.head || !v.snapshotJob || !v.candidateHash))
-    throw new ProjectError('JOB_INTERRUPTED')
-  return v as SaveIntent
+    return false
+  return true
 }
 export async function persistIntent(
   folder: string,

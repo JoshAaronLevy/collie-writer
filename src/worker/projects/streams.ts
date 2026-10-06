@@ -6,16 +6,112 @@ import { pipeline } from 'node:stream/promises'
 import { crc32 } from 'node:zlib'
 import { LIMITS, SnapshotError, cancelled, type BlobRef } from './manifest'
 import { syncFile } from '../storage/files'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { isSpaceIssue, type SpaceIssue } from '../../shared/storage-space'
+import { dirname, isAbsolute } from 'node:path'
+import { hasControlCharacters } from '../../shared/control-characters'
 
 export type Progress = (bytes: number) => void
+type Budget = {
+  operation: string
+  path: string
+  active: boolean
+  volumes: Map<string, bigint>
+}
+const context = new AsyncLocalStorage<Budget>()
+const budgets = new Set<Budget>()
+export function errorSpace(error: unknown, operation: string, path: string): SpaceIssue | null {
+  if (error && typeof error === 'object') {
+    if ('space' in error && isSpaceIssue(error.space)) return error.space
+    const code = 'code' in error ? String(error.code) : ''
+    if (code === 'DISK_FULL' || code === 'ENOSPC' || code.startsWith('SQLITE_FULL'))
+      return {
+        operation,
+        path:
+          'path' in error &&
+          typeof error.path === 'string' &&
+          error.path.length <= 4096 &&
+          isAbsolute(error.path) &&
+          !hasControlCharacters(error.path)
+            ? dirname(error.path)
+            : path,
+        required: null,
+        available: null,
+        reserved: 0,
+        reason: 'write-failed'
+      }
+  }
+  return null
+}
+/** Reservations cover only this worker's cooperating jobs, and last until their work settles. */
+export async function withSpaceBudget<T>(
+  operation: string,
+  path: string,
+  work: () => Promise<T>
+): Promise<T> {
+  const budget: Budget = { operation, path, active: true, volumes: new Map() }
+  budgets.add(budget)
+  try {
+    return await context.run(budget, work)
+  } catch (error) {
+    const space = errorSpace(error, operation, path)
+    if (space && !(error instanceof SnapshotError)) throw new SnapshotError('DISK_FULL', space)
+    throw error
+  } finally {
+    budget.active = false
+    budgets.delete(budget)
+  }
+}
 export async function requireSpace(directory: string, bytes: number): Promise<void> {
-  const info = await statfs(directory, { bigint: true })
-  if (
-    !Number.isSafeInteger(bytes) ||
-    bytes < 0 ||
-    info.bavail * info.bsize < BigInt(bytes + LIMITS.margin)
+  if (!Number.isSafeInteger(bytes) || bytes < 0 || !Number.isSafeInteger(bytes + LIMITS.margin))
+    throw new SnapshotError('LIMIT_EXCEEDED')
+  const budget = context.getStore()
+  const issue: SpaceIssue = {
+    operation: budget?.operation ?? 'File preparation',
+    path: directory,
+    required: bytes + LIMITS.margin,
+    available: null,
+    reserved: 0,
+    reason: 'unknown'
+  }
+  let device: string, available: bigint
+  try {
+    const before = await lstat(directory, { bigint: true })
+    const info = await statfs(directory, { bigint: true })
+    const after = await lstat(directory, { bigint: true })
+    if (
+      !before.isDirectory() ||
+      before.isSymbolicLink() ||
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      info.bavail < 0n ||
+      info.bsize <= 0n ||
+      info.bavail > info.blocks
+    )
+      throw new Error('capacity')
+    device = String(before.dev)
+    available = info.bavail * info.bsize
+    if (available > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('capacity')
+  } catch {
+    throw new SnapshotError('UNAVAILABLE', issue)
+  }
+  let reserved = 0n
+  for (const other of budgets) if (other !== budget) reserved += other.volumes.get(device) ?? 0n
+  issue.available = Number(available)
+  issue.reserved = Number(
+    reserved > BigInt(Number.MAX_SAFE_INTEGER) ? BigInt(Number.MAX_SAFE_INTEGER) : reserved
   )
-    throw new SnapshotError('DISK_FULL')
+  const required = BigInt(issue.required!)
+  if (available < required + reserved) {
+    issue.reason = 'insufficient'
+    throw new SnapshotError('DISK_FULL', issue)
+  }
+  // Retain the peak per-volume estimate; never add the same staging bytes twice.
+  if (budget?.active)
+    budget.volumes.set(
+      device,
+      required > (budget.volumes.get(device) ?? 0n) ? required : budget.volumes.get(device)!
+    )
 }
 export class HashMeter extends Transform {
   private readonly hash = createHash('sha256')

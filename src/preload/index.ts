@@ -1,4 +1,12 @@
+import { isWorkingCopyReply, type WorkingCopyReply } from '../shared/working-copy'
+import { isRetentionView, type RetentionView } from '../shared/retained-versions'
+import { isSearchCacheView, type SearchCacheView } from '../shared/search-cache'
 import { hasControlCharacters } from '../shared/control-characters'
+import {
+  STORAGE_INVENTORY,
+  isInventoryCommand,
+  isInventoryReport
+} from '../shared/storage-inventory'
 import { proofreadingApi } from './proofreading'
 import { conversationApi } from './conversations'
 import { isCitationsView, type CitationsView } from '../shared/citations'
@@ -120,6 +128,10 @@ ipcRenderer.on(FILE_ACTION, (_event, value: unknown) => {
   else if (pendingFileActions.length < 16) pendingFileActions.push(value)
 })
 const api: CollieAPI = {
+  storageInventory: (command) =>
+    isInventoryCommand(command)
+      ? projectCall(STORAGE_INVENTORY, (v) => isInventoryReport(v) && v.id === command.id, command)
+      : Promise.resolve(projectFailure('', 'VALIDATION')),
   ...aiApi,
   ...conversationApi,
   ...proofreadingApi,
@@ -186,6 +198,14 @@ const api: CollieAPI = {
     projectCall<CitationsView>(PROJECT_CHANNELS.citations, isCitationsView, input),
   changeCitationStyle: (input) =>
     projectCall<CitationsView>(PROJECT_CHANNELS.citationStyle, isCitationsView, input),
+  localArtifacts: (input) =>
+    projectCall<RetentionView>(PROJECT_CHANNELS.localArtifacts, isRetentionView, input),
+  workingCopy: (input) =>
+    projectCall<WorkingCopyReply>(PROJECT_CHANNELS.workingCopy, isWorkingCopyReply, input),
+  retainedVersions: (input) =>
+    projectCall<RetentionView>(PROJECT_CHANNELS.retainedVersions, isRetentionView, input),
+  searchCache: (input) =>
+    projectCall<SearchCacheView>(PROJECT_CHANNELS.searchCache, isSearchCacheView, input),
   search: (input) => projectCall<SearchView>(PROJECT_CHANNELS.search, isSearchView, input),
   readSearchActivity: (input) =>
     projectCall<SearchActivity>(PROJECT_CHANNELS.searchActivity, isSearchActivity, input),

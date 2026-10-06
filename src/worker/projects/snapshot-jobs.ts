@@ -17,6 +17,9 @@ import {
   type SnapshotManifest
 } from './manifest'
 import { captureDatabase, buildSnapshot, type CaptureSource } from './snapshot'
+import { withSpaceBudget, errorSpace } from './streams'
+import type { SpaceIssue } from '../../shared/storage-space'
+import { boundedJson } from './retention-files'
 
 export type SnapshotRequest = {
   operationId: string
@@ -49,6 +52,7 @@ export type SnapshotProgress = Pick<SnapshotJob, 'id' | 'state' | 'phase' | 'byt
 /** One active capture/archive per workspace, plus one coalesced successor per parent lineage. */
 export class SnapshotJobs {
   private readonly jobs = new Map<string, SnapshotJob>()
+  private readonly spaceIssues = new Map<string, SpaceIssue>()
   private pending: SnapshotJob[] = []
   private exactHeads = new Map<string, string>()
   private active: Running | undefined
@@ -103,7 +107,8 @@ export class SnapshotJobs {
       while (this.busy() && this.task) await this.task
       const job = this.jobs.get(id)
       if (!job) throw new SnapshotError('UNAVAILABLE')
-      if (job.state !== 'completed') throw new SnapshotError(job.error ?? 'UNAVAILABLE')
+      if (job.state !== 'completed')
+        throw new SnapshotError(job.error ?? 'UNAVAILABLE', this.spaceIssues.get(id))
       return structuredClone(job)
     } finally {
       signal.removeEventListener('abort', abort)
@@ -112,8 +117,35 @@ export class SnapshotJobs {
   busy(): boolean {
     return !!this.active || this.pending.length > 0
   }
+  hasWork(): boolean {
+    return !!this.task || this.busy()
+  }
   statuses(): SnapshotJob[] {
     return [...this.jobs.values()].map((job) => structuredClone(job))
+  }
+
+  /** Retention holds this control owner inside the repository/file maintenance boundary. */
+  withRetention<T>(work: (read: (id: string) => SnapshotJob) => Promise<T>): Promise<T> {
+    return this.control(async () => {
+      // A terminal event/empty active map can precede actual task settlement.
+      if (this.stopping || this.task || this.busy()) throw new SnapshotError('UNAVAILABLE')
+      return work((id) => {
+        const job = this.jobs.get(id)
+        if (
+          !job ||
+          job.state !== 'completed' ||
+          job.phase !== 'done' ||
+          job.error !== null ||
+          job.lease !== 'released' ||
+          !job.manifest ||
+          !job.operations.length ||
+          requestDigest(boundedJson(join(this.folder(id), 'job.json'), LIMITS.manifest)) !==
+            requestDigest(job)
+        )
+          throw new SnapshotError('UNAVAILABLE')
+        return structuredClone(job)
+      })
+    })
   }
 
   async initialize(): Promise<void> {
@@ -322,7 +354,9 @@ export class SnapshotJobs {
   }
   private pump(): void {
     if (this.task || this.stopping) return
-    this.task = this.drain().finally(() => {
+    this.task = withSpaceBudget('Capture and prepare project file', this.source.workspace, () =>
+      this.drain()
+    ).finally(() => {
       this.task = undefined
       if (this.pending.length && !this.stopping) this.pump()
     })
@@ -401,6 +435,12 @@ export class SnapshotJobs {
         for (const name of ['capture.sqlite', 'inspection'] as const)
           await this.removeOwned(job, name).catch(() => {})
       } catch (error) {
+        const space = errorSpace(error, 'Capture and prepare project file', this.source.workspace)
+        if (space) {
+          this.spaceIssues.set(job.id, space)
+          if (this.spaceIssues.size > 64)
+            this.spaceIssues.delete(this.spaceIssues.keys().next().value!)
+        }
         job.state = controller.signal.aborted ? 'cancelled' : 'failed'
         const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
         job.error = controller.signal.aborted

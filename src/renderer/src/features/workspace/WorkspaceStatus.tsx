@@ -2,12 +2,15 @@ import type { ExportOperation } from './useExportOperations'
 import { useWorkspaceSession } from './workspaceContext'
 import SaveMenu from './SaveMenu'
 import ProjectFileActions from '../projects/ProjectFileActions'
+import { projectFileStatusMessage } from '../projects/project-file-presentation'
 import { sameScope } from '../../../../shared/project-files'
 import { AppButton } from '../../components/ui/Controls'
 import { StatusBanner } from '../../components/ui/Feedback'
 import styles from './WorkspaceNavigation.module.css'
+import { useStorageNotices } from '../settings/storageNoticeContext'
 
 export function WorkspaceStatus(): React.JSX.Element {
+  const storageAdvice = useStorageNotices()
   const {
     destination,
     project,
@@ -110,6 +113,18 @@ export function WorkspaceStatus(): React.JSX.Element {
         </p>
       ) : null}
       {notice && !writing ? <p role="status">{notice}</p> : null}
+      {storageAdvice.visible.length ? (
+        <div className={styles['operation-notice']}>
+          <p>{storageAdvice.visible.length} storage notice(s) from the last measurement.</p>
+          <AppButton
+            variant="subtle"
+            disabled={closing || acting}
+            onClick={() => void navigate({ kind: 'settings', page: 'data' })}
+          >
+            Review storage notices
+          </AppButton>
+        </div>
+      ) : null}
       {storage.state === 'unavailable' ? (
         <StatusBanner tone="error" title="Storage unavailable">
           Keep this window open and copy any unprotected writing.
@@ -131,6 +146,22 @@ export function WorkspaceStatus(): React.JSX.Element {
         <StatusBanner tone="error" title="Your attention is needed">
           {error}
         </StatusBanner>
+      ) : null}
+      {files.job?.space ||
+      files.job?.error === 'DISK_FULL' ||
+      exports.some(
+        (item) =>
+          item.job.space?.length ||
+          item.job.error === 'DISK_FULL' ||
+          item.job.files?.some((file) => file.error === 'DISK_FULL')
+      ) ? (
+        <AppButton
+          variant="subtle"
+          disabled={closing || acting}
+          onClick={() => void navigate({ kind: 'settings', page: 'data' })}
+        >
+          Review storage and recovery
+        </AppButton>
       ) : null}
       {blocker ? (
         <StatusBanner tone="warning" title={blocker.label}>
@@ -202,13 +233,7 @@ export function WorkspaceStatus(): React.JSX.Element {
       fileStateReady &&
       !fileNeedsAttention ? (
         <div className={styles['file-summary']}>
-          <p>
-            {!project.destination
-              ? 'Protected locally · no project file selected'
-              : files.state === 'pending' || dirty
-                ? 'Unsaved changes · use Save to update the project file'
-                : 'Selected project file saved on this device'}
-          </p>
+          <p>{projectFileStatusMessage(files, dirty)}</p>
           <SaveMenu />
           <AppButton
             variant="subtle"

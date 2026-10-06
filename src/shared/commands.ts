@@ -9,6 +9,7 @@ import type { AccessAPI } from './access'
 import type { SupportAPI } from './support'
 import type { DirectAPI } from './direct-access'
 import type { AiAPI } from './ai'
+import type { StorageInventoryAPI } from './storage-inventory'
 
 export const HELP_ACTION = 'app.helpAction'
 export const WINDOW_RECOVERY = 'app.windowRecovery'
@@ -34,6 +35,7 @@ export type Result<T> =
       error: { code: AppErrorCode; message: string; retryable: boolean }
     }
 export type CollieAPI = ProjectAPI &
+  StorageInventoryAPI &
   FileAPI &
   LifecycleAPI &
   AccessAPI &

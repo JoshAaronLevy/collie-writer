@@ -6,10 +6,11 @@ import { isId } from '../../domain/editor/schema'
 import { ProjectError } from '../../domain/projects/errors'
 import { exact, record, isDestination, type DestinationView } from '../../shared/projects'
 import { contained, writeJson } from '../storage/files'
-import { LIMITS, isHash } from './manifest'
+import { isHash } from './manifest'
+import { ARCHIVE_BYTES } from './archive-policy'
 import { transfer, type Progress } from './streams'
 
-export const ARCHIVE_BYTES = LIMITS.expanded + LIMITS.manifest + LIMITS.entries * 512
+export { ARCHIVE_BYTES }
 export type Generation = {
   dev: string
   ino: string

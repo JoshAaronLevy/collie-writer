@@ -4,6 +4,7 @@ import type { StorageStatus } from '../../../../shared/storage'
 import { useWorkspaceController } from './useWorkspaceController'
 import { ResearchDataProvider } from '../research/ResearchData'
 import { DraftContext } from './DraftOwner'
+import StorageNoticesProvider from '../settings/StorageNoticesProvider'
 
 export function WorkspaceSessionProvider({
   storage,
@@ -16,7 +17,9 @@ export function WorkspaceSessionProvider({
   return (
     <Context.Provider value={session}>
       <DraftContext.Provider value={session.drafts}>
-        <ResearchDataProvider project={session.project}>{children}</ResearchDataProvider>
+        <StorageNoticesProvider>
+          <ResearchDataProvider project={session.project}>{children}</ResearchDataProvider>
+        </StorageNoticesProvider>
       </DraftContext.Provider>
     </Context.Provider>
   )

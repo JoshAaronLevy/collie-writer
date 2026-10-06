@@ -18,6 +18,7 @@ import {
 import { citationProfile, validateCitationFile } from './citation-assets'
 import { inspectPortableDatabase } from './portable-db'
 import { requireSpace, transfer, type Progress } from './streams'
+import { ARCHIVE_BYTES, archivePlan } from './archive-policy'
 
 const invalid = (): never => {
   throw new SnapshotError('INVALID_ARCHIVE')
@@ -33,8 +34,7 @@ export async function writeArchive(
   signal?: AbortSignal,
   progress?: Progress
 ): Promise<void> {
-  readManifest(manifest)
-  citationProfile(manifest.citationAssets)
+  const plan = archivePlan(manifest)
   cancelled(signal)
   const expected = entriesFor(manifest)
   if (
@@ -43,55 +43,109 @@ export async function writeArchive(
     files.some((f) => !expected.has(f.name) || !same(expected.get(f.name)!, f.ref))
   )
     invalid()
-  const json = Buffer.from(JSON.stringify(manifest))
-  if (json.length > LIMITS.manifest) throw new SnapshotError('LIMIT_EXCEEDED')
-  // Stored entries bound growth, avoid recompressing PDFs/images, and support predictable preflight.
-  await requireSpace(dirname(path), json.length + files.reduce((n, f) => n + f.ref.bytes + 512, 0))
+  const byName = new Map(files.map((file) => [file.name, file]))
+  await requireSpace(dirname(path), plan.maximumBytes)
+  cancelled(signal)
   const zip = new ZipWriter(),
     output = zip.outputStream as Readable
   const sources = new Set<Readable>()
+  const closing = new Set<Promise<void>>()
+  let failure: Error | undefined
   zip.on('error', (error: Error) => {
+    if (failure) return
+    failure = error
     output.destroy(error)
+    for (const source of sources) source.destroy(error)
   })
+  const stop = (error: Error): void => {
+    // Mark yazl errored as well as stopping the output, so it cannot pump another lazy entry.
+    if (!failure) zip.emit('error', error)
+  }
+  const own = (source: Readable): Readable => {
+    if (sources.has(source) || source.closed) return source
+    sources.add(source)
+    const pipe = source.pipe
+    // yazl pipes through CRC/size counters and DeflateRaw without forwarding their errors.
+    // Own each private stream at the documented pipe handoff, before it starts accepting bytes.
+    source.pipe = function <T extends NodeJS.WritableStream>(
+      destination: T,
+      options?: { end?: boolean }
+    ): T {
+      if (destination instanceof Readable && destination !== output) own(destination)
+      return pipe.call(this, destination, options) as T
+    }
+    source.on('error', stop)
+    const closed = new Promise<void>((resolve) => {
+      source.once('close', () => {
+        source.pipe = pipe
+        sources.delete(source)
+        closing.delete(closed)
+        resolve()
+      })
+    })
+    closing.add(closed)
+    if (failure) source.destroy(failure)
+    return source
+  }
+  const abort = (): void => stop(new SnapshotError('CANCELLED'))
+  signal?.addEventListener('abort', abort, { once: true })
   const writing = pipeline(output, createWriteStream(path, { flags: 'wx', mode: 0o600 }), {
     signal
   })
   // Attach immediately; construction errors must not leave an unhandled pipeline rejection.
-  void writing.catch(() => {})
+  void writing.catch(stop)
   try {
-    zip.addBuffer(json, 'manifest.json', { compress: false, mode: 0o100600 })
-    for (const file of files) {
+    for (const [name, entry] of plan.entries) {
+      const file = byName.get(name)
       zip.addReadStreamLazy(
-        file.name,
-        { compress: false, size: file.ref.bytes, mode: 0o100600 },
+        name,
+        { compressionLevel: entry.compressionLevel, size: entry.bytes, mode: 0o100600 },
         (callback) => {
-          if (signal?.aborted) {
-            callback(new SnapshotError('CANCELLED'), Readable.from([]))
+          if (failure || signal?.aborted) {
+            const empty = Readable.from([])
+            empty.destroy()
+            callback(failure ?? new SnapshotError('CANCELLED'), empty)
             return
           }
-          const input = createReadStream(file.path)
-          sources.add(input)
-          input.on('data', (chunk) => progress?.(Buffer.byteLength(chunk)))
-          input.once('close', () => sources.delete(input))
+          const input = own(file ? createReadStream(file.path) : Readable.from([plan.json]))
+          let bytes = 0
+          input.on('data', (chunk) => {
+            const length = Buffer.byteLength(chunk)
+            bytes += length
+            // A source changing after capture must not grow past the planned expanded allowance.
+            if (bytes > entry.bytes) stop(new SnapshotError('LIMIT_EXCEEDED'))
+            else if (file) progress?.(length)
+          })
           callback(null, input)
         }
       )
     }
     zip.end({ forceZip64Format: true, comment: '' })
     await writing
+    await Promise.all(closing)
+    cancelled(signal)
+    if (failure) throw failure
+    if ((await lstat(path)).size > plan.maximumBytes) throw new SnapshotError('LIMIT_EXCEEDED')
     await syncFile(path)
     await syncDirectory(dirname(path))
   } catch (error) {
-    output.destroy()
-    for (const source of sources) source.destroy()
+    stop(error instanceof Error ? error : new SnapshotError('UNAVAILABLE'))
     await writing.catch(() => {})
+    await Promise.all(closing)
     cancelled(signal)
     throw error
+  } finally {
+    signal?.removeEventListener('abort', abort)
   }
 }
 
-async function inventory(zip: ZipFile, signal?: AbortSignal): Promise<Map<string, Entry>> {
-  if (zip.entryCount > LIMITS.entries || zip.comment !== '') invalid()
+export async function archiveInventory(
+  zip: ZipFile,
+  signal?: AbortSignal,
+  entryLimit: number = LIMITS.entries,
+  expandedLimit: number = LIMITS.expanded
+): Promise<Map<string, Entry>> {
+  if (zip.entryCount > entryLimit || zip.comment !== '') invalid()
   const entries = new Map<string, Entry>(),
     folded = new Set<string>()
   let total = 0
@@ -104,7 +158,7 @@ async function inventory(zip: ZipFile, signal?: AbortSignal): Promise<Map<string
         name
       ) ||
       folded.has(name.toLowerCase()) ||
-      entries.size >= LIMITS.entries
+      entries.size >= entryLimit
     )
       invalid()
     if (
@@ -135,7 +189,7 @@ async function inventory(zip: ZipFile, signal?: AbortSignal): Promise<Map<string
     )
       throw new SnapshotError('LIMIT_EXCEEDED')
     total += entry.uncompressedSize
-    if (total > LIMITS.expanded) throw new SnapshotError('LIMIT_EXCEEDED')
+    if (total > expandedLimit) throw new SnapshotError('LIMIT_EXCEEDED')
     entries.set(name, entry)
     folded.add(name.toLowerCase())
   }
@@ -153,12 +207,7 @@ export async function extractArchive(
 ): Promise<SnapshotManifest> {
   cancelled(signal)
   const source = await lstat(path)
-  if (
-    !source.isFile() ||
-    source.isSymbolicLink() ||
-    source.size > LIMITS.expanded + LIMITS.entries * 512
-  )
-    invalid()
+  if (!source.isFile() || source.isSymbolicLink() || source.size > ARCHIVE_BYTES) invalid()
   await mkdir(staging, { mode: 0o700 }) // Must not exist; caller owns its parent and any later cleanup.
   const zip = await openPromise(path, {
     autoClose: false,
@@ -201,7 +250,7 @@ export async function extractArchive(
     }
   }
   try {
-    const entries = await inventory(zip, signal)
+    const entries = await archiveInventory(zip, signal)
     await requireSpace(
       staging,
       [...entries.values()].reduce((n, e) => n + e.uncompressedSize, 0)

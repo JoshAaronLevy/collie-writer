@@ -1,7 +1,9 @@
 import { fileBusy, type FileChoice, type FileStatus } from '../../../../shared/project-files'
 import { projectMessages } from '../../../../shared/projects'
+import { spaceMessage } from '../../../../shared/storage-space'
 import { AppButton } from '../../components/ui/Controls'
 import styles from './FilePanel.module.css'
+import { projectFileStatusMessage } from './project-file-presentation'
 
 const phases = {
   reading: 'Reading the file; a cloud placeholder may need downloading',
@@ -39,21 +41,6 @@ export default function FilePanel({
   const job = status.job,
     active = fileBusy(job),
     destination = status.destination
-  const labels: Record<FileStatus['state'], string> = {
-    unsaved: dirty
-      ? 'New typing is not yet protected. No file destination selected.'
-      : 'Unsaved project — recovery on this computer.',
-    checking: 'Checking the chosen file…',
-    saved: dirty
-      ? 'The chosen file contains the last saved writing. New typing is not yet protected.'
-      : 'Saved to the selected file on this device.',
-    pending: 'Unsaved changes are protected on this device. Use Save to update the chosen file.',
-    'external-change':
-      'The chosen file differs from its last saved version. Save writes your current local project.',
-    unavailable: 'Destination unavailable. Local recovery remains on this computer.',
-    interrupted:
-      'A previous file operation was interrupted. Retained candidates and previous files need inspection.'
-  }
   return (
     <section
       className={styles['project-file-panel']}
@@ -67,9 +54,7 @@ export default function FilePanel({
       ) : (
         <p>No file destination selected.</p>
       )}
-      <p role="status">
-        {active && job?.kind === 'save' ? 'Saving to chosen location…' : labels[status.state]}
-      </p>
+      <p role="status">{projectFileStatusMessage(status, dirty)}</p>
       <div className={styles['project-file-actions']}>
         <AppButton disabled={disabled || active} onClick={() => save(false)}>
           {status.state === 'unavailable' ? 'Retry Save' : destination ? 'Save' : 'Save…'}
@@ -154,7 +139,18 @@ export default function FilePanel({
           </p>
         </div>
       ) : null}
-      {job?.error ? <p role="alert">{projectMessages[job.error]}</p> : null}
+      {job?.error ? (
+        <p role="alert">
+          {job.space
+            ? spaceMessage(job.space)
+            : `${projectMessages[job.error]}${job.error === 'DISK_FULL' ? ` Operation: project file ${job.kind}. Destination: ${job.path || 'not selected'}. Additional space and the failing volume are unknown; both the local working folder and destination may need space.` : ''}`}
+        </p>
+      ) : null}
+      <p>
+        A .collie file opens the whole saved project, including writing, research, citations,
+        managed original files and saved AI conversations. Account credentials and unsent forms are
+        not included.
+      </p>
       <p>
         Writing is protected automatically on this device and restored when you reopen Collie
         Writer. The project file updates only when you save it. Closing keeps unsaved writing

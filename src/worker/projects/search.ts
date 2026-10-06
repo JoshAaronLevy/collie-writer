@@ -1,3 +1,6 @@
+import { SEARCH_SCHEMA, searchProjection } from './search-schema'
+import { lstatSync } from 'node:fs'
+import { basename } from 'node:path'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { readDocument } from '../../domain/editor/schema'
@@ -113,6 +116,14 @@ const count = (db: Database.Database, sql: string): number =>
 /** Device-local, disposable projection. No search table enters a project archive. */
 export class LocalSearch {
   readonly index: Database.Database
+  readonly identity: string
+  private readonly fileIdentities = new Map<string, string>()
+  ownsFile(name: string, identity: string): boolean {
+    return this.fileIdentities.get(name) === identity
+  }
+  disposable(operations: Database.Database): boolean {
+    return searchProjection(this.index, operations)
+  }
   private coverage: {
     head: string
     expected: number
@@ -124,10 +135,9 @@ export class LocalSearch {
   constructor(path: string, nativeBinding?: string) {
     this.index = openStorageDatabase(path, nativeBinding)
     try {
-      this.index
-        .exec(`CREATE TABLE IF NOT EXISTS search_meta (singleton INTEGER PRIMARY KEY CHECK(singleton=1), version INTEGER NOT NULL, state TEXT NOT NULL, phase INTEGER NOT NULL, cursor TEXT NOT NULL, generation TEXT NOT NULL, target_head TEXT, indexed_head TEXT, job_id TEXT, processed INTEGER NOT NULL, total INTEGER NOT NULL, error TEXT) STRICT;
-      CREATE TABLE IF NOT EXISTS search_entries (id INTEGER PRIMARY KEY, entity_key TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, entity_id TEXT NOT NULL, revision TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, source_id TEXT, document_id TEXT, note_id TEXT, version_id TEXT, page_index INTEGER, anchor_id TEXT, section_ids TEXT NOT NULL, tag_ids TEXT NOT NULL, state TEXT NOT NULL, generation TEXT NOT NULL) STRICT;
-      CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(title,body, tokenize='unicode61 remove_diacritics 2');`)
+      const info = lstatSync(path, { bigint: true })
+      this.identity = `${info.dev}:${info.ino}`
+      this.index.exec(SEARCH_SCHEMA)
       this.index
         .prepare(
           "INSERT OR IGNORE INTO search_meta VALUES (1,1,'partial',0,'','',NULL,NULL,NULL,0,0,NULL)"
@@ -137,6 +147,14 @@ export class LocalSearch {
       if (meta.phase < 0 || meta.phase > phases.length) throw new ProjectError('CORRUPT_PROJECT')
       if (meta.state === 'queued' || meta.state === 'running')
         this.index.prepare("UPDATE search_meta SET state='interrupted' WHERE singleton=1").run()
+      for (const suffix of ['', '-wal', '-shm']) {
+        // Keep the identities associated with this live connection, not just familiar names.
+        const file = lstatSync(path + suffix, { bigint: true, throwIfNoEntry: false })
+        if (!file) continue
+        if (!file.isFile() || file.isSymbolicLink() || file.nlink !== 1n)
+          throw new ProjectError('DENIED')
+        this.fileIdentities.set(basename(path) + suffix, `${file.dev}:${file.ino}`)
+      }
     } catch (error) {
       this.index.close()
       throw error

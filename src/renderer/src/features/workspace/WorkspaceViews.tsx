@@ -24,6 +24,8 @@ import ProjectFileActions from '../projects/ProjectFileActions'
 import AccessPanel from '../projects/AccessPanel'
 import TutorialPanel from '../projects/TutorialPanel'
 import SettingsPanel from '../settings/SettingsPanel'
+import ProjectStorageSummary from '../settings/ProjectStorageSummary'
+import StorageInventoryPanel from '../settings/StorageInventoryPanel'
 import { useWorkspaceSession } from './workspaceContext'
 import { RetainedRegion } from './RetainedRegion'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
@@ -63,6 +65,7 @@ export default function WorkspaceViews(): React.JSX.Element {
     available,
     updateProject,
     refreshData,
+    navigate,
     navigateSection,
     navigateSearch,
     loadHistory,
@@ -263,7 +266,12 @@ export default function WorkspaceViews(): React.JSX.Element {
           </RetainedRegion>
           <RetainedRegion name="search" label="Project search">
             {project ? (
-              <SearchPanel key={project.projectId} project={project} navigate={navigateSearch} />
+              <SearchPanel
+                key={project.projectId}
+                project={project}
+                active={destination.kind === 'workspace' && destination.view === 'search'}
+                navigate={navigateSearch}
+              />
             ) : null}
           </RetainedRegion>
         </div>
@@ -390,8 +398,8 @@ export default function WorkspaceViews(): React.JSX.Element {
             <h1>Data and recovery</h1>
             <p>
               Local protection, selected project files and separate backups are different copies.
-              Recovery material stays retained until you explicitly manage it; clearing picker
-              history removes no content.
+              Recovery material stays retained. Clearing picker history removes no content; Archive
+              and Reset organize or retain local work and do not free storage space.
             </p>
             {!location ? (
               <p role="status">Finding the local working folder…</p>
@@ -400,7 +408,21 @@ export default function WorkspaceViews(): React.JSX.Element {
                 <summary>Working-data location</summary>
                 <p>{location.message}</p>
                 {location.path ? (
-                  <p className={styles['location-path']}>{location.path}</p>
+                  <>
+                    <p className={styles['location-path']}>{location.path}</p>
+                    <AppButton
+                      variant="subtle"
+                      disabled={!available || acting || fileActive || closing}
+                      onClick={() =>
+                        run(async () => {
+                          const result = await window.collie.revealWorkingData()
+                          if (!result.ok) setError(result.error.message)
+                        })
+                      }
+                    >
+                      Show local working folder
+                    </AppButton>
+                  </>
                 ) : (
                   <AppButton
                     variant="default"
@@ -417,17 +439,52 @@ export default function WorkspaceViews(): React.JSX.Element {
                   </AppButton>
                 )}
                 <p>
-                  Keep this folder outside sync or mirroring tools. Portable files can go in your
-                  chosen local cloud folders.
+                  This folder holds local working copies for your projects, including writing,
+                  research, citations and saved conversations. It also retains recovery and
+                  rebuildable search indexes. It is separate from each project&apos;s selected
+                  .collie file.
+                </p>
+                <p>
+                  Keep this folder outside sync or mirroring tools. Portable .collie files can go in
+                  your chosen local cloud folders. Normal close keeps unsaved writing here; deleting
+                  this folder can remove the only copy of that work.
                 </p>
               </details>
             )}
+            <ProjectStorageSummary
+              project={project}
+              status={project && sameScope(project, files.scope) ? files : null}
+              dirty={dirty}
+              disabled={!available || acting || fileActive || closing}
+              reveal={() =>
+                run(async () => {
+                  if (!current.current) return
+                  const result = await window.collie.revealProjectFile({
+                    projectId: current.current.projectId,
+                    workspaceId: current.current.workspaceId
+                  })
+                  if (!result.ok) setError(result.error.message)
+                })
+              }
+              openActions={() => {
+                if (!project) return
+                void navigate({
+                  kind: 'workspace',
+                  scope: { projectId: project.projectId, workspaceId: project.workspaceId },
+                  view: 'details'
+                })
+              }}
+            />
             {storage.state === 'unavailable' ? (
               <p role="alert">
                 The storage process is unavailable. Keep this window open and copy any unprotected
                 text before quitting.
               </p>
             ) : null}
+            <StorageInventoryPanel
+              active={destination.kind === 'settings' && destination.page === 'data'}
+              disabled={!available || closing || navigating}
+            />
             <RecoveryPanel
               data={data}
               openProject={(scope) =>

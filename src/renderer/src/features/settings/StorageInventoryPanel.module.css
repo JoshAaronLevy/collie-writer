@@ -1,0 +1,72 @@
+.storage-inventory-panel {
+  margin-top: var(--collie-space-6);
+  padding: var(--collie-space-4);
+  border: 1px solid var(--collie-border);
+  border-radius: var(--collie-radius-control);
+  background: var(--collie-surface);
+}
+.storage-inventory-panel h2 {
+  margin-top: 0;
+}
+.storage-inventory-panel p {
+  max-width: 65rem;
+}
+.storage-inventory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--collie-space-3);
+}
+.storage-inventory-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--collie-space-4);
+}
+.storage-inventory-totals dt {
+  font-weight: 650;
+}
+.storage-inventory-totals dd {
+  margin: var(--collie-space-2) 0;
+}
+.storage-inventory-groups {
+  display: grid;
+  gap: var(--collie-space-3);
+}
+.storage-inventory-group {
+  border: 1px solid var(--collie-border);
+  border-radius: var(--collie-radius-control);
+  padding: var(--collie-space-3);
+}
+.storage-inventory-group summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.storage-inventory-path {
+  overflow-wrap: anywhere;
+  color: var(--collie-text-secondary);
+}
+.storage-inventory-table-container {
+  overflow-x: auto;
+}
+.storage-inventory-table-container table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.storage-inventory-table-container caption {
+  text-align: left;
+  margin-block: var(--collie-space-3);
+}
+.storage-inventory-table-container th,
+.storage-inventory-table-container td {
+  text-align: left;
+  padding: var(--collie-space-2);
+  border-bottom: 1px solid var(--collie-border);
+}
+.storage-advice-notice {
+  border-inline-start: 3px solid var(--collie-border);
+  padding: var(--collie-space-3);
+  margin-block: var(--collie-space-3);
+}
+.storage-advice-notice h4 {
+  margin-block: 0 var(--collie-space-2);
+}

@@ -2,6 +2,8 @@ import type { ExportOperation } from '../workspace/useExportOperations'
 import { projectMessages } from '../../../../shared/projects'
 import { AppButton } from '../../components/ui/Controls'
 import styles from './ExportWorkspace.module.css'
+import { spaceMessage } from '../../../../shared/storage-space'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
 
 function message(code: string): string {
   if (code === 'DESTINATION_EXISTS') return 'Existing output kept. Choose another name or folder.'
@@ -15,6 +17,7 @@ export default function ExportResults({
   cancel: () => void
 }): React.JSX.Element {
   const { job, issue } = operation
+  const { navigate, closing, acting } = useWorkspaceSession()
   return (
     <section
       id={`export-result-${job.id}`}
@@ -68,6 +71,31 @@ export default function ExportResults({
         </details>
       ) : null}
       {issue ? <p role="alert">{issue}</p> : null}
+      {job.space?.map((space, index) => (
+        <p key={index} role="alert">
+          {spaceMessage(space)}
+        </p>
+      ))}
+      {job.space?.length ||
+      job.error === 'DISK_FULL' ||
+      job.files?.some((file) => file.error === 'DISK_FULL') ? (
+        <>
+          {!job.space?.length ? (
+            <p>
+              The failing volume and additional bytes are unknown. Review both the local working
+              folder and the destinations listed above; retained reports and results remain
+              available.
+            </p>
+          ) : null}
+          <AppButton
+            variant="default"
+            disabled={closing || acting}
+            onClick={() => void navigate({ kind: 'settings', page: 'data' })}
+          >
+            Review storage and recovery
+          </AppButton>
+        </>
+      ) : null}
       {job.state === 'rendering' ? (
         <AppButton variant="default" onClick={cancel}>
           Cancel remaining export work

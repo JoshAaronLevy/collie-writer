@@ -1,3 +1,8 @@
+import { retiredWorkspace } from './working-copy-records'
+import { boundedJson, namedStamp, parentStamp } from './retention-files'
+import type { RetentionContext } from './retained-versions'
+import { SearchCache } from './search-cache'
+import type { SearchCacheInput, SearchCacheView } from '../../shared/search-cache'
 import {
   proofreadingCommand,
   interruptUnboundProofreading,
@@ -361,6 +366,28 @@ export class ProjectRepository {
       return readCitations(owned.db, input, owned.workspace, this.resources)
     })
   }
+  private readonly cache: SearchCache
+  searchCache(input: SearchCacheInput): Promise<SearchCacheView> {
+    return this.serial(async () => {
+      if (input.kind === 'status') return this.cache.status(input.scope, input.id)
+      const owned = this.searchOwner(input.scope)
+      if (this.fileBusy || owned.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
+      const owner = {
+        workspace: owned.workspace,
+        db: owned.db,
+        operations: owned.operations,
+        search: owned.search,
+        stopSearch: (): void => {
+          owned.search?.cancel(owned.operations)
+          owned.search?.close()
+          owned.search = null
+        }
+      }
+      return input.kind === 'preview'
+        ? this.cache.preview(owner, input)
+        : this.cache.clear(owner, input)
+    })
+  }
   private searchScheduled = new WeakSet<Owned>()
   private searchOwner(input: OpenInput): Owned {
     const owned = this.active
@@ -368,8 +395,15 @@ export class ProjectRepository {
       throw new ProjectError('DENIED')
     return owned
   }
-  private availableSearch(owned: Owned): LocalSearch {
-    if (!owned.search) throw new ProjectError('UNAVAILABLE')
+  private async availableSearch(owned: Owned): Promise<LocalSearch> {
+    if (!owned.search) {
+      await this.safeDatabase(join(owned.workspace, 'search.sqlite'))
+      try {
+        owned.search = new LocalSearch(join(owned.workspace, 'search.sqlite'), this.nativeBinding)
+      } catch {
+        throw new ProjectError('UNAVAILABLE')
+      }
+    }
     return owned.search
   }
   private scheduleSearch(owned: Owned): void {
@@ -387,7 +421,7 @@ export class ProjectRepository {
   searchQuery(input: SearchInput): Promise<SearchView> {
     return this.serial(async () => {
       const owned = this.searchOwner(input),
-        search = this.availableSearch(owned)
+        search = await this.availableSearch(owned)
       search.ensure(owned.db, owned.operations)
       this.scheduleSearch(owned)
       return search.search(owned.db, input)
@@ -395,16 +429,21 @@ export class ProjectRepository {
   }
   searchActivity(input: OpenInput): Promise<SearchActivity> {
     return this.serial(async () => {
-      const owned = this.searchOwner(input),
-        search = this.availableSearch(owned)
-      search.ensure(owned.db, owned.operations)
-      this.scheduleSearch(owned)
-      return search.activity(owned.db)
+      const owned = this.searchOwner(input)
+      if (!owned.search) throw new ProjectError('UNAVAILABLE')
+      return owned.search.activity(owned.db)
     })
   }
   searchAction(input: SearchActionInput): Promise<SearchActivity> {
     return this.serial(async () => {
       const owned = this.searchOwner(input)
+      if (!owned.search && input.action === 'rebuild') {
+        try {
+          await this.availableSearch(owned)
+        } catch {
+          /* Preserve unreadable originals below. */
+        }
+      }
       if (!owned.search && input.action === 'rebuild') {
         const old = join(owned.workspace, 'search.sqlite'),
           suffix = `.retained-${randomUUID()}`
@@ -415,8 +454,9 @@ export class ProjectRepository {
           }
         owned.search = new LocalSearch(old, this.nativeBinding)
       }
-      const search = this.availableSearch(owned)
-      if (input.action === 'cancel') search.cancel(owned.operations)
+      const search = await this.availableSearch(owned)
+      if (input.action === 'activate') search.ensure(owned.db, owned.operations)
+      else if (input.action === 'cancel') search.cancel(owned.operations)
       else {
         if (search.needsWork()) throw new ProjectError('PROJECT_LOCKED')
         search.start(owned.db, owned.operations, input.action === 'rebuild')
@@ -570,6 +610,7 @@ export class ProjectRepository {
     ) => Promise<{ bytes: Buffer; pages: number; capturedHead: string }>
   ) {
     this.exports = new ExportJobs(root, resources, renderPdf)
+    this.cache = new SearchCache(root, nativeBinding)
   }
   private serial<T>(work: () => Promise<T>): Promise<T> {
     const task = this.boundary.then(work)
@@ -741,6 +782,70 @@ export class ProjectRepository {
   readImage(input: ImageReadInput): Promise<ImageData> {
     return this.serial(() => this.readImageUnlocked(input))
   }
+  /** Actual worker owners, not main's caller timeout maps, govern retained-file removal. */
+  withFileMaintenance<T>(
+    scope: OpenInput,
+    work: (read: () => RetentionContext) => Promise<T>
+  ): Promise<T> {
+    return this.serial(async () => {
+      const owned = this.searchOwner(scope)
+      if (this.fileBusy || owned.snapshots?.busy() || this.exports.busy())
+        throw new ProjectError('PROJECT_LOCKED')
+      const read = (): RetentionContext => {
+        const context = this.fileContext(scope),
+          database = namedStamp(owned.db.name)
+        if (!database) throw new ProjectError('NOT_FOUND')
+        const pointer = join(owned.workspace, 'active.json')
+        return {
+          ...context,
+          mapping: requestDigest({
+            file: owned.db.name,
+            dev: database.dev,
+            ino: database.ino,
+            parent: parentStamp(owned.db.name),
+            pointer: namedStamp(pointer) ? boundedJson(pointer, 4096) : null
+          })
+        }
+      }
+      this.fileBusy = true
+      try {
+        return await work(read)
+      } finally {
+        this.fileBusy = false
+      }
+    })
+  }
+  /** Inactive removal never acquires/migrates the content DB. Keep the stable project lock. */
+  withInactiveMaintenance<T>(
+    scope: OpenInput,
+    status: boolean,
+    work: () => Promise<T>
+  ): Promise<T> {
+    return this.serial(async () => {
+      if (this.fileBusy || this.exports.busy() || this.active?.snapshots?.hasWork())
+        throw new ProjectError('PROJECT_LOCKED')
+      if (this.active?.projectId === scope.projectId) {
+        if (!status) throw new ProjectError('PROJECT_LOCKED')
+        return work() // This repository already holds this exact project root lock.
+      }
+      const project = join(this.root, 'workspaces', scope.projectId)
+      if (status && !(await exists(project))) return work()
+      await contained(this.root, project, true)
+      const lock = await this.lock(project)
+      this.fileBusy = true
+      try {
+        return await work()
+      } finally {
+        this.fileBusy = false
+        lock.close()
+      }
+    })
+  }
+  private async liveWorkspaces(projectId: string): Promise<string[]> {
+    const names = (await readdir(join(this.root, 'workspaces', projectId))).filter(isId)
+    if (names.length > 1024) throw new ProjectError('LIMIT_EXCEEDED')
+    return names.filter((workspaceId) => !retiredWorkspace(this.root, { projectId, workspaceId }))
+  }
   holdFiles(value: boolean): void {
     this.fileBusy = value
   }
@@ -770,7 +875,8 @@ export class ProjectRepository {
     const folder = join(this.root, 'workspaces', projectId)
     if (!(await exists(folder))) return null
     await contained(this.root, folder, true)
-    const workspaces = (await readdir(folder)).filter(isId)
+    const workspaces = await this.liveWorkspaces(projectId)
+    if (!workspaces.length) return null
     if (workspaces.length !== 1) throw new ProjectError('CORRUPT_PROJECT')
     return { projectId, workspaceId: workspaces[0] }
   }
@@ -866,7 +972,8 @@ export class ProjectRepository {
   }
   resetWorkspaces(expected: string): Promise<void> {
     return this.serial(async () => {
-      if (this.fileBusy || this.active?.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
+      if (this.fileBusy || this.active?.snapshots?.hasWork())
+        throw new ProjectError('PROJECT_LOCKED')
       const list = await this.listUnlocked()
       if (list.issues.length || requestDigest(list) !== expected)
         throw new ProjectError('STALE_REVISION')
@@ -887,7 +994,7 @@ export class ProjectRepository {
   }
   recoverReset(id: string): Promise<void> {
     return this.serial(async () => {
-      if (!isId(id) || this.fileBusy || this.active?.snapshots?.busy())
+      if (!isId(id) || this.fileBusy || this.active?.snapshots?.hasWork())
         throw new ProjectError('PROJECT_LOCKED')
       const source = join(this.root, 'reset-recovery', id, 'workspaces')
       await contained(this.root, source, true)
@@ -1083,6 +1190,7 @@ export class ProjectRepository {
     }).catch(() => {})
   }
   private async acquire(input: OpenInput): Promise<Owned> {
+    if (retiredWorkspace(this.root, input)) throw new ProjectError('NOT_FOUND')
     const project = join(this.root, 'workspaces', input.projectId)
     const workspace = join(project, input.workspaceId)
     await contained(this.root, project, true)
@@ -1090,20 +1198,14 @@ export class ProjectRepository {
     const lock = await this.lock(project)
     let db: Database.Database | undefined
     let operations: Database.Database | undefined
-    let search: LocalSearch | undefined
     try {
+      if (retiredWorkspace(this.root, input)) throw new ProjectError('NOT_FOUND')
       db = await openProjectDatabase(this.root, workspace, this.nativeBinding)
       operations = await this.localDatabase(
         join(workspace, 'operations.sqlite'),
         operationsSchema,
         2
       )
-      await this.safeDatabase(join(workspace, 'search.sqlite'))
-      try {
-        search = new LocalSearch(join(workspace, 'search.sqlite'), this.nativeBinding)
-      } catch {
-        search = undefined
-      }
       // No job is silently replayed after interruption.
       operations
         .prepare(
@@ -1115,7 +1217,7 @@ export class ProjectRepository {
         workspace,
         db,
         operations,
-        search: search ?? null,
+        search: null,
         lock,
         archived: await this.readArchived(workspace),
         destination: await readDestination(this.root, workspace)
@@ -1139,7 +1241,6 @@ export class ProjectRepository {
       return owned
     } catch (error) {
       db?.close()
-      search?.close()
       operations?.close()
       lock.close()
       throw error
@@ -1148,7 +1249,7 @@ export class ProjectRepository {
   private async openUnlocked(input: OpenInput): Promise<OpenProject> {
     if (this.active?.projectId === input.projectId && this.active.workspaceId === input.workspaceId)
       return this.read(this.active)
-    if (this.fileBusy || this.active?.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
+    if (this.fileBusy || this.active?.snapshots?.hasWork()) throw new ProjectError('PROJECT_LOCKED')
     const next = await this.acquire(input)
     if (this.active) this.release(this.active)
     this.active = next
@@ -1162,7 +1263,8 @@ export class ProjectRepository {
       try {
         const project = join(this.root, 'workspaces', projectId)
         await contained(this.root, project, true)
-        const workspaces = (await readdir(project)).filter(isId)
+        const workspaces = await this.liveWorkspaces(projectId)
+        if (!workspaces.length) continue
         if (workspaces.length !== 1) throw new ProjectError('CORRUPT_PROJECT')
         let owned: Owned
         const active =
@@ -1195,7 +1297,7 @@ export class ProjectRepository {
     return result
   }
   private async createUnlocked(input: CreateInput): Promise<OpenProject> {
-    if (this.fileBusy || this.active?.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
+    if (this.fileBusy || this.active?.snapshots?.hasWork()) throw new ProjectError('PROJECT_LOCKED')
     const digest = requestDigest(input)
     // Commit a local intent before touching the workspace. Retrying the same request uses the same IDs.
     const intent = inWriteTransaction(this.catalog, () => {
@@ -1226,10 +1328,24 @@ export class ProjectRepository {
       if (prior?.digest !== digest) throw new ProjectError('OPERATION_CONFLICT')
       return this.read(this.active)
     }
+    if (
+      retiredWorkspace(this.root, {
+        projectId: intent.project_id,
+        workspaceId: intent.workspace_id
+      })
+    )
+      throw new ProjectError('NOT_FOUND')
     const project = join(this.root, 'workspaces', intent.project_id)
     await directory(this.root, project)
     const lock = await this.lock(project)
     try {
+      if (
+        retiredWorkspace(this.root, {
+          projectId: intent.project_id,
+          workspaceId: intent.workspace_id
+        })
+      )
+        throw new ProjectError('NOT_FOUND')
       const workspace = join(project, intent.workspace_id)
       await directory(this.root, workspace)
       await directory(this.root, join(workspace, 'blobs'))

@@ -1,4 +1,5 @@
 import { isId } from '../domain/editor/schema'
+import { isSpaceIssue, type SpaceIssue } from './storage-space'
 import {
   exact,
   record,
@@ -81,6 +82,7 @@ export type FileJobView = {
   bytes: number
   capturedHead: string | null
   error: ProjectCode | null
+  space?: SpaceIssue | null
   inspection: FileInspection | null
   opened: OpenInput | null
   cancellable: boolean
@@ -215,7 +217,8 @@ export function isFileStatus(v: unknown): v is FileStatus {
       'error',
       'inspection',
       'opened',
-      'cancellable'
+      'cancellable',
+      ...(Object.hasOwn(j, 'space') ? ['space'] : [])
     ]) ||
     !isId(j.id) ||
     ![
@@ -248,6 +251,12 @@ export function isFileStatus(v: unknown): v is FileStatus {
     Number(j.bytes) < 0 ||
     !(j.capturedHead === null || isId(j.capturedHead)) ||
     !(j.error === null || isProjectCode(j.error)) ||
+    !(
+      j.space === undefined ||
+      j.space === null ||
+      (['DISK_FULL', 'DESTINATION_UNAVAILABLE', 'UNAVAILABLE'].includes(String(j.error)) &&
+        isSpaceIssue(j.space))
+    ) ||
     !(j.opened === null || isOpenInput(j.opened)) ||
     typeof j.cancellable !== 'boolean'
   )

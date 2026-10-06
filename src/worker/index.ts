@@ -14,11 +14,17 @@ import { isFileCommand } from '../shared/file-worker'
 import { ProjectFiles } from './projects/project-files'
 import type { PrintDocument } from './exports/html'
 import { randomUUID } from 'node:crypto'
+import { StorageInventory } from './projects/storage-inventory'
+import { isInventoryCommand, isInventoryAiOwners } from '../shared/storage-inventory'
+import { exact, record } from '../shared/projects'
+import { withSpaceBudget, errorSpace } from './projects/streams'
 
 const parent = process.parentPort
 let initialized = false
 let repository: ProjectRepository | undefined
 let files: ProjectFiles | undefined
+let inventory: StorageInventory | undefined
+let workingRoot = ''
 let queue = Promise.resolve()
 const pdfPending = new Map<
   string,
@@ -70,6 +76,7 @@ function send(message: StorageWorkerMessage): void {
 async function receive(message: unknown): Promise<void> {
   if (typeof message !== 'object' || message === null || !('kind' in message)) return
   if (message.kind === 'shutdown' && Object.keys(message).length === 1) {
+    inventory?.stop()
     await files?.stop()
     await repository?.close()
     process.exit(0)
@@ -96,7 +103,11 @@ async function receive(message: unknown): Promise<void> {
     } catch (error) {
       parent.postMessage({
         kind: 'file-result',
-        result: projectFailure(message.requestId, projectError(error))
+        result: projectFailure(
+          message.requestId,
+          projectError(error),
+          errorSpace(error, 'Project file operation', workingRoot) ?? undefined
+        )
       })
     }
     return
@@ -203,6 +214,21 @@ async function receive(message: unknown): Promise<void> {
         case 'search':
           value = await repository.searchQuery(command.input)
           break
+        case 'workingCopy':
+          if (!files) throw new Error('UNAVAILABLE')
+          value = await files.workingCopy(command.input)
+          break
+        case 'localArtifacts':
+          if (!files) throw new Error('UNAVAILABLE')
+          value = await files.retainedVersions(command.input, true)
+          break
+        case 'retainedVersions':
+          if (!files) throw new Error('UNAVAILABLE')
+          value = await files.retainedVersions(command.input)
+          break
+        case 'searchCache':
+          value = await repository.searchCache(command.input)
+          break
         case 'searchActivity':
           value = await repository.searchActivity(command.input)
           break
@@ -278,7 +304,11 @@ async function receive(message: unknown): Promise<void> {
       }
       result = { ok: true, requestId: message.requestId, value }
     } catch (error) {
-      result = projectFailure(message.requestId, projectError(error))
+      result = projectFailure(
+        message.requestId,
+        projectError(error),
+        errorSpace(error, `Local project ${message.command.kind}`, workingRoot) ?? undefined
+      )
     }
     parent.postMessage({ kind: 'project-result', result })
     return
@@ -286,10 +316,11 @@ async function receive(message: unknown): Promise<void> {
   if (
     initialized ||
     message.kind !== 'initialize' ||
-    Object.keys(message).length !== 4 ||
+    Object.keys(message).length !== 5 ||
     !('nativeBinding' in message) ||
     !('workingRoot' in message) ||
-    !('resources' in message)
+    !('resources' in message) ||
+    !('profileRoot' in message)
   )
     return
   const binding = message.nativeBinding
@@ -300,6 +331,7 @@ async function receive(message: unknown): Promise<void> {
   )
     return
   if (typeof message.resources !== 'string' || !isAbsolute(message.resources)) return
+  if (typeof message.profileRoot !== 'string' || !isAbsolute(message.profileRoot)) return
   initialized = true
   try {
     const sqliteVersion = storageRuntime(binding ?? undefined)
@@ -311,6 +343,7 @@ async function receive(message: unknown): Promise<void> {
         renderPdf
       )
       await repository.initialize()
+      workingRoot = message.workingRoot
       files = new ProjectFiles(
         message.workingRoot,
         repository,
@@ -325,6 +358,7 @@ async function receive(message: unknown): Promise<void> {
         binding ?? undefined
       )
       await files.initialize()
+      inventory = new StorageInventory(message.workingRoot, message.profileRoot)
     }
     send({
       kind: 'ready',
@@ -345,6 +379,31 @@ async function receive(message: unknown): Promise<void> {
 }
 parent.on('message', (event) => {
   const message: unknown = event.data
+  if (
+    record(message) &&
+    message.kind === 'inventory' &&
+    exact(message, ['kind', 'requestId', 'command', 'owners']) &&
+    isId(message.requestId) &&
+    isInventoryCommand(message.command) &&
+    isInventoryAiOwners(message.owners)
+  ) {
+    const requestId = message.requestId
+    const command = message.command,
+      owners = message.owners
+    void (async () => {
+      try {
+        if (!inventory) throw new Error('STORAGE_LOCATION_REQUIRED')
+        const value = await inventory.command(command, owners)
+        parent.postMessage({ kind: 'inventory-result', result: { ok: true, requestId, value } })
+      } catch (error) {
+        parent.postMessage({
+          kind: 'inventory-result',
+          result: projectFailure(requestId, projectError(error))
+        })
+      }
+    })()
+    return
+  }
   if (
     message &&
     typeof message === 'object' &&
@@ -376,7 +435,7 @@ parent.on('message', (event) => {
   }
   // One command at a time, including reads/capture/migration and shutdown.
   queue = queue
-    .then(() => receive(event.data))
+    .then(() => withSpaceBudget('Local project operation', workingRoot, () => receive(event.data)))
     .catch(() => {
       send({ kind: 'unavailable' })
     })

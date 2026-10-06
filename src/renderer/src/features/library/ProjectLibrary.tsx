@@ -54,7 +54,11 @@ export default function ProjectLibrary(): React.JSX.Element {
     (session.data?.resets.length ?? 0) + (session.data?.issues ?? 0) + list.issues.length
 
   function status(item: ProjectSummary): string {
-    if (!item.destination) return 'Protected on this device · no project file yet'
+    const typing = !!project && sameScope(project, item) && session.dirty
+    if (!item.destination)
+      return typing
+        ? 'New typing needs local protection · no project file yet'
+        : 'Protected on this device · no project file yet'
     if (project && sameScope(project, item) && sameScope(files.scope, item)) {
       if (files.state === 'checking')
         return 'Checking the selected file · local work remains available'
@@ -63,9 +67,16 @@ export default function ProjectLibrary(): React.JSX.Element {
       if (files.state === 'unavailable')
         return 'Selected file unavailable · local work remains available'
       if (files.state === 'interrupted') return 'Interrupted file operation · review recovery'
-      if (files.state === 'pending') return 'Unsaved changes · protected on this device'
-      if (files.state === 'saved') return 'Saved to selected file on this device'
+      if (files.state === 'pending')
+        return typing
+          ? 'Unsaved changes · new typing needs local protection'
+          : 'Unsaved changes · protected on this device'
+      if (files.state === 'saved')
+        return typing
+          ? 'New typing needs local protection · selected file contains the last Save'
+          : 'Saved to selected file on this device'
     }
+    if (typing) return 'New typing needs local protection · selected-file status not yet confirmed'
     return item.headCommitId === item.destination.headCommitId
       ? 'Selected file recorded · availability checked when opened'
       : 'Newer work protected locally · selected file is older'
@@ -80,7 +91,10 @@ export default function ProjectLibrary(): React.JSX.Element {
         <div>
           <p className={styles['project-library-eyebrow']}>Your writing</p>
           <h1 id="project-library-heading">Projects</h1>
-          <p>Pick up where you left off, or begin something new.</p>
+          <p>
+            Pick up where you left off, or begin something new. A .collie file opens a whole saved
+            project, including its research and conversations.
+          </p>
         </div>
         <div className={styles['project-library-primary-actions']}>
           <AppButton
@@ -152,6 +166,11 @@ export default function ProjectLibrary(): React.JSX.Element {
         />
       </div>
 
+      {libraryView === 'archived' ? (
+        <p>
+          Archive keeps project data on this computer. It changes visibility and frees no space.
+        </p>
+      ) : null}
       {startupPending ? (
         <p role="status">Opening the local project list…</p>
       ) : visible.length ? (

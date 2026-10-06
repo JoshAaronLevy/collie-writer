@@ -1,3 +1,10 @@
+import { WorkingCopyRemoval } from './working-copy-removal'
+import type { WorkingCopyCommand, WorkingCopyReply } from '../../shared/working-copy'
+import { RetainedVersions } from './retained-versions'
+import { LocalArtifacts } from './local-artifacts'
+import { localArtifactOutcome } from './local-artifact-receipts'
+import { receiptView, intentionallyRemovedPrevious } from './retention-receipts'
+import type { RetentionInput, RetentionView } from '../../shared/retained-versions'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { createReadStream, watch, type FSWatcher } from 'node:fs'
@@ -18,6 +25,7 @@ import type { FileCommand, FileGrant } from '../../shared/file-worker'
 import { contained, directory, syncDirectory } from '../storage/files'
 import { requestDigest } from '../storage/digest'
 import { extractArchive } from './archive'
+import { archivePlan } from './archive-policy'
 import { cancelled, SnapshotError } from './manifest'
 import {
   ARCHIVE_BYTES,
@@ -29,7 +37,7 @@ import {
   type SavedLocation
 } from './file-state'
 import { requireDestinationVolume } from './destination-volume'
-import { requireSpace, transfer } from './streams'
+import { requireSpace, transfer, withSpaceBudget, errorSpace } from './streams'
 import { promoteIncoming } from './incoming'
 import { persistIntent, readIntent, type SaveIntent } from './save-intent'
 import type { ProjectRepository } from './repository'
@@ -62,6 +70,10 @@ async function present(path: string): Promise<boolean> {
 
 /** One owned file operation at a time. Long work runs outside the IPC queue; capture uses the repository boundary. */
 export class ProjectFiles {
+  private readonly workingRemoval: WorkingCopyRemoval
+  private maintenance = false
+  private readonly retention: RetainedVersions
+  private readonly localRetention: LocalArtifacts
   private scope: OpenInput | null = null
   private state: FileStatus['state'] = 'unsaved'
   private running: Running | undefined
@@ -80,7 +92,11 @@ export class ProjectFiles {
     private readonly repository: ProjectRepository,
     private readonly changed: (status: FileStatus) => void,
     private readonly nativeBinding?: string
-  ) {}
+  ) {
+    this.workingRemoval = new WorkingCopyRemoval(root, nativeBinding)
+    this.retention = new RetainedVersions(root, nativeBinding)
+    this.localRetention = new LocalArtifacts(root, nativeBinding)
+  }
   private get jobsRoot(): string {
     return join(this.root, 'file-operations')
   }
@@ -89,7 +105,7 @@ export class ProjectFiles {
     await syncDirectory(this.root)
   }
   beforeProjectChange(): void {
-    if (this.running) throw new ProjectError('PROJECT_LOCKED')
+    if (this.running || this.maintenance) throw new ProjectError('PROJECT_LOCKED')
     if (this.watchTimer) clearTimeout(this.watchTimer)
     this.watcher?.close()
     this.watcher = undefined
@@ -122,7 +138,7 @@ export class ProjectFiles {
   }
   private attach(scope: OpenInput | null): void {
     if (sameScope(scope, this.scope)) return
-    if (this.running) throw new ProjectError('PROJECT_LOCKED')
+    if (this.running || this.maintenance) throw new ProjectError('PROJECT_LOCKED')
     const destination = scope ? this.repository.fileContext(scope).destination : null
     this.scope = scope
     this.state = destination ? 'checking' : 'unsaved'
@@ -146,7 +162,7 @@ export class ProjectFiles {
         this.needsCheck = true
         if (this.watchTimer) clearTimeout(this.watchTimer)
         this.watchTimer = setTimeout(() => {
-          if (!this.running && this.scope && !this.stopping) {
+          if (!this.running && !this.maintenance && this.scope && !this.stopping) {
             try {
               this.startCheck(this.scope)
             } catch {
@@ -171,7 +187,7 @@ export class ProjectFiles {
     path: string,
     work: (running: Running) => Promise<void>
   ): FileStatus {
-    if (this.stopping || this.running) throw new ProjectError('PROJECT_LOCKED')
+    if (this.stopping || this.running || this.maintenance) throw new ProjectError('PROJECT_LOCKED')
     this.attach(scope)
     const running: Running = {
       view: {
@@ -194,13 +210,16 @@ export class ProjectFiles {
     this.running = running
     this.repository.holdFiles(true)
     running.task = Promise.resolve()
-      .then(() => work(running))
+      .then(() => withSpaceBudget(`Project file ${kind}`, this.root, () => work(running)))
       .then(() => {
         running.view.state = 'completed'
         running.view.phase = 'done'
       })
       .catch((error) => {
         running.view.error = running.controller.signal.aborted ? 'CANCELLED' : fileError(error)
+        running.view.space = running.controller.signal.aborted
+          ? null
+          : errorSpace(error, `Project file ${kind}`, this.root)
         running.view.state = running.view.error === 'CANCELLED' ? 'cancelled' : 'failed'
         if (kind === 'save' || kind === 'move' || kind === 'check' || kind === 'locate') {
           if (running.view.error === 'EXTERNAL_CHANGE') this.state = 'external-change'
@@ -499,7 +518,7 @@ export class ProjectFiles {
       this.remember(input.operationId, digest)
       return this.priorResult(input.operationId)
     }
-    if (this.running) throw new ProjectError('PROJECT_LOCKED')
+    if (this.running || this.maintenance) throw new ProjectError('PROJECT_LOCKED')
     this.remember(input.operationId, digest)
     return this.begin(input.operationId, mode, input.scope, path, async (running) => {
       const signal = running.controller.signal,
@@ -606,10 +625,14 @@ export class ProjectFiles {
       const candidate = jobs.candidate(snapshot.id)
       await contained(this.root, candidate, false)
       const candidateInfo = await lstat(candidate)
+      const plan = archivePlan(snapshot.manifest)
+      if (!candidateInfo.isFile() || candidateInfo.size > plan.maximumBytes)
+        throw new ProjectError('INVALID_ARCHIVE')
       const destinationBytes = candidateInfo.size + Number(expected?.size ?? 0)
       const sharedVolume = (await lstat(folder)).dev === (await lstat(dirname(target))).dev
       await requireSpace(dirname(target), destinationBytes)
-      await requireSpace(folder, candidateInfo.size * 2 + (sharedVolume ? destinationBytes : 0))
+      // Stage and final inspections coexist and expand to full content, even for a tiny archive.
+      await requireSpace(folder, plan.expandedBytes * 2 + (sharedVolume ? destinationBytes : 0))
       const staging = join(dirname(target), `.collie-${intent.id}.staging`)
       const previous = join(dirname(target), `.collie-${intent.id}.previous.collie`)
       if ((await selectedPath(this.root, target)) !== target)
@@ -750,7 +773,7 @@ export class ProjectFiles {
       this.remember(operationId, digest)
       return this.priorResult(operationId)
     }
-    if (this.running) throw new ProjectError('PROJECT_LOCKED')
+    if (this.running || this.maintenance) throw new ProjectError('PROJECT_LOCKED')
     this.remember(operationId, digest)
     return this.begin(
       operationId,
@@ -870,7 +893,7 @@ export class ProjectFiles {
     }
     const context = this.repository.fileContext(scope)
     if (context.head !== expectedHead) throw new ProjectError('STALE_REVISION')
-    if (this.running) throw new ProjectError('PROJECT_LOCKED')
+    if (this.running || this.maintenance) throw new ProjectError('PROJECT_LOCKED')
     this.remember(operationId, digest)
     return this.begin(operationId, 'duplicate', scope, '', async (running) => {
       const folder = this.folder(operationId),
@@ -931,8 +954,77 @@ export class ProjectFiles {
       }
     })
   }
+  async workingCopy({ request: input, ai }: WorkingCopyCommand): Promise<WorkingCopyReply> {
+    if (this.maintenance || this.stopping) throw new ProjectError('PROJECT_LOCKED')
+    this.maintenance = true
+    try {
+      if (this.running?.view.kind === 'check') {
+        this.running.controller.abort()
+        await this.running.task
+      }
+      if (this.running) throw new ProjectError('PROJECT_LOCKED')
+      if (input.kind === 'history') return await this.workingRemoval.history(input.id, input.offset)
+      try {
+        return await this.repository.withInactiveMaintenance(
+          input.scope,
+          input.kind === 'status',
+          async () => ({
+            id: input.id,
+            history: [],
+            more: false,
+            view:
+              input.kind === 'status'
+                ? this.workingRemoval.status(input.scope, input.id)
+                : input.kind === 'preview'
+                  ? await this.workingRemoval.preview(input, ai)
+                  : await this.workingRemoval.remove(input, ai)
+          })
+        )
+      } catch (error) {
+        if (input.kind !== 'preview') throw error
+        return {
+          id: input.id,
+          history: [],
+          more: false,
+          view: this.workingRemoval.refusal(input.scope, input.id, error)
+        }
+      }
+    } finally {
+      this.maintenance = false
+    }
+  }
+  async retainedVersions(input: RetentionInput, local = false): Promise<RetentionView> {
+    if (this.maintenance || this.stopping) throw new ProjectError('PROJECT_LOCKED')
+    this.maintenance = true
+    try {
+      if (this.running?.view.kind === 'check') {
+        this.running.controller.abort()
+        await this.running.task // Settlement, not a timeout or terminal-looking label.
+      }
+      if (this.running) throw new ProjectError('PROJECT_LOCKED')
+      if (input.kind === 'status')
+        return local
+          ? localArtifactOutcome(this.root, input.scope, input.id)
+          : receiptView(this.root, input.scope, input.id)
+      return await this.repository.withFileMaintenance(input.scope, (read) => {
+        if (local)
+          return this.repository
+            .snapshotJobs(input.scope)
+            .withRetention((readJob) =>
+              input.kind === 'preview'
+                ? this.localRetention.preview(read(), input, readJob)
+                : this.localRetention.remove(read(), read, input, readJob)
+            )
+        return input.kind === 'preview'
+          ? this.retention.preview(read(), input)
+          : this.retention.remove(read(), read, input)
+      })
+    } finally {
+      this.maintenance = false
+    }
+  }
   async overview(): Promise<DataLocations> {
-    if (this.running) throw new ProjectError('PROJECT_LOCKED')
+    if (this.running || this.maintenance) throw new ProjectError('PROJECT_LOCKED')
     const projects = await this.repository.list(),
       items: RecoveryItem[] = []
     const artifacts = new Map<string, { path: string; local: boolean; hash: string | null }>()
@@ -991,7 +1083,14 @@ export class ProjectFiles {
               false,
               intent.candidateHash
             )
-          if (intent.expected)
+          if (
+            intent.expected &&
+            !intentionallyRemovedPrevious(
+              this.root,
+              id,
+              join(dirname(intent.path), `.collie-${id}.previous.collie`)
+            )
+          )
             add(
               'previous',
               join(dirname(intent.path), `.collie-${id}.previous.collie`),
@@ -1115,7 +1214,7 @@ export class ProjectFiles {
     return this.overview()
   }
   async recoverReset(id: string): Promise<DataLocations> {
-    if (this.running) throw new ProjectError('PROJECT_LOCKED')
+    if (this.running || this.maintenance) throw new ProjectError('PROJECT_LOCKED')
     await this.repository.recoverReset(id)
     return this.overview()
   }
@@ -1128,7 +1227,7 @@ export class ProjectFiles {
     }
   }
   async cleanup(): Promise<DataLocations> {
-    if (this.running) throw new ProjectError('PROJECT_LOCKED')
+    if (this.running || this.maintenance) throw new ProjectError('PROJECT_LOCKED')
     await this.clearPicker()
     return this.overview()
   }

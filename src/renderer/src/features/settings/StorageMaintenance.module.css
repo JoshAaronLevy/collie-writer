@@ -1,0 +1,24 @@
+.storage-maintenance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--collie-space-3);
+}
+.storage-maintenance-table {
+  overflow-x: auto;
+}
+.storage-maintenance-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.storage-maintenance-table caption {
+  text-align: left;
+  margin-block: var(--collie-space-3);
+}
+.storage-maintenance-table th,
+.storage-maintenance-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: var(--collie-space-2);
+  border-bottom: 1px solid var(--collie-border);
+  overflow-wrap: anywhere;
+}
