@@ -2226,11 +2226,25 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     }
     if (closingRef.current) return blocked('Finish closing or return to setup to continue.')
     if (!sameScope(current.current, scope)) {
-      const opened = await window.collie.openSection({ ...scope, documentId: receipt.documentId })
+      // A retained setup receipt survives restart; the worker's active project
+      // does not. Acquire it through the normal project-opening guards before
+      // requesting a section, which only reads the already-owned project.
+      const opened = await window.collie.openProject(scope)
       if (!opened.ok) return blocked(opened.error.message)
       if (opened.value.archived)
         return blocked('This project was archived. Restore it from Projects before continuing.')
-      await select(opened.value, 'setup')
+      let selected = opened.value
+      const preferred = selected.documents.find((item) => item.id === receipt.documentId)
+      if (
+        preferred?.kind === 'text' &&
+        effectiveState(preferred, selected.documents) === 'active' &&
+        selected.documentId !== preferred.id
+      ) {
+        const section = await window.collie.openSection({ ...scope, documentId: preferred.id })
+        if (!section.ok) return blocked(section.error.message)
+        selected = section.value
+      }
+      await select(selected, 'setup')
     }
     if (mode === 'write') {
       const confirmed = await readSetupAccess()
