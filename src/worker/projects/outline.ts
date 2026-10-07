@@ -5,6 +5,9 @@ import { emptyDocument } from '../../domain/projects/templates'
 import { readDocument, type Block, type DocumentPayload } from '../../domain/editor/schema'
 import {
   canParent,
+  canParentV1,
+  canPlace,
+  isEditableKind,
   effectiveState,
   type CheckpointSummary,
   type HistoryInput,
@@ -89,12 +92,14 @@ function reorder(
   docs: RetainedDocument[],
   doc: RetainedDocument,
   parentId: string | null,
-  position: number
+  position: number,
+  modern: boolean
 ): void {
   const parent = parentId ? docs.find((d) => d.id === parentId) : undefined
   if (
     (parentId && !parent) ||
-    !canParent(doc.kind, parent) ||
+    !(modern ? canParent : canParentV1)(doc.kind, parent) ||
+    !canPlace(docs, doc.kind, parentId, doc.id) ||
     (parent && effectiveState(parent, docs) !== 'active') ||
     parentId === doc.id
   )
@@ -135,6 +140,8 @@ export function changeOutline(db: Database.Database, input: OutlineInput): strin
       after = structuredClone(before),
       docs = after.documents,
       c = input.change
+    const editable = (kind: unknown): boolean =>
+      input.hierarchyVersion === 2 ? isEditableKind(kind) : kind === 'text'
     if (
       project.head_commit_id !== input.expectedHead ||
       Object.keys(input.expectedRevisions).length !== docs.length ||
@@ -149,7 +156,7 @@ export function changeOutline(db: Database.Database, input: OutlineInput): strin
     }
     const activeText = (id: string): RetainedDocument => {
       const d = get(id)
-      if (d.kind !== 'text' || effectiveState(d, docs) !== 'active')
+      if (!editable(d.kind) || effectiveState(d, docs) !== 'active')
         throw new ProjectError('VALIDATION')
       return d
     }
@@ -184,15 +191,16 @@ export function changeOutline(db: Database.Database, input: OutlineInput): strin
           docs,
           d,
           c.parentId,
-          docs.filter((other) => other.id !== d.id && other.parentId === c.parentId).length
+          docs.filter((other) => other.id !== d.id && other.parentId === c.parentId).length,
+          input.hierarchyVersion === 2
         )
-        if (d.kind === 'text') selectedId = d.id
+        if (editable(d.kind)) selectedId = d.id
         break
       }
       case 'move': {
         const d = get(c.documentId)
         if (d.state === 'merged') throw new ProjectError('VALIDATION')
-        reorder(docs, d, c.parentId, c.position)
+        reorder(docs, d, c.parentId, c.position, input.hierarchyVersion === 2)
         break
       }
       case 'split': {
@@ -224,7 +232,11 @@ export function changeOutline(db: Database.Database, input: OutlineInput): strin
       case 'merge': {
         const source = activeText(c.documentId),
           target = activeText(c.targetId)
-        if (source.id === target.id) throw new ProjectError('VALIDATION')
+        if (
+          source.id === target.id ||
+          docs.some((d) => d.parentId === source.id || d.parentId === target.id)
+        )
+          throw new ProjectError('VALIDATION')
         target.payload = readDocument({
           schemaVersion: 1,
           ast: {
@@ -335,11 +347,12 @@ export function changeOutline(db: Database.Database, input: OutlineInput): strin
     }
     let selected = after.documents.find(
       (d) =>
-        d.id === selectedId && d.kind === 'text' && effectiveState(d, after.documents) === 'active'
+        d.id === selectedId && editable(d.kind) && effectiveState(d, after.documents) === 'active'
     )
     selected ??= after.documents.find(
-      (d) => d.kind === 'text' && effectiveState(d, after.documents) === 'active'
+      (d) => editable(d.kind) && effectiveState(d, after.documents) === 'active'
     )!
+    if (!selected) throw new ProjectError('VALIDATION')
     const head = randomUUID(),
       time = new Date().toISOString()
     db.prepare('INSERT INTO commits VALUES (?,?,?,?)').run(

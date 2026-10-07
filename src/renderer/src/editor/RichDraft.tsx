@@ -1,3 +1,13 @@
+import {
+  IconWand,
+  IconBold,
+  IconItalic,
+  IconUnderline,
+  IconStrikethrough,
+  IconArrowBackUp,
+  IconArrowForwardUp
+} from '@tabler/icons-react'
+import { IconButton } from '../components/ui/IconButton'
 import PresentationBoundary from '../components/PresentationBoundary'
 import { useEffectEvent } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -35,6 +45,7 @@ const newCell = (type: TableCellJson['type']): TableCellJson => ({
 })
 
 type Props = {
+  onReviewOptions?: () => void
   noteMode?: boolean
   references?: ReferenceContext
   payload: DocumentPayload
@@ -49,6 +60,7 @@ type Props = {
 
 export default function RichDraft({
   payload,
+  onReviewOptions,
   disabled,
   onReady,
   onChange,
@@ -452,17 +464,30 @@ export default function RichDraft({
           <>
             <div className="editor-toolbar" role="group" aria-label="Writing tools">
               {(['bold', 'italic', 'underline', 'strike'] as const).map((name) => (
-                <AppButton
+                <IconButton
                   key={name}
                   variant="subtle"
                   disabled={disabled}
-                  aria-label={name}
+                  label={name[0].toUpperCase() + name.slice(1)}
+                  description={
+                    disabled
+                      ? 'Editing is currently unavailable. Review the writing status.'
+                      : undefined
+                  }
                   aria-pressed={!!current?.isActive(name)}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => mark(name)}
                 >
-                  {name[0].toUpperCase() + name.slice(1)}
-                </AppButton>
+                  {name === 'bold' ? (
+                    <IconBold aria-hidden="true" />
+                  ) : name === 'italic' ? (
+                    <IconItalic aria-hidden="true" />
+                  ) : name === 'underline' ? (
+                    <IconUnderline aria-hidden="true" />
+                  ) : (
+                    <IconStrikethrough aria-hidden="true" />
+                  )}
+                </IconButton>
               ))}
               <ActionMenu
                 label="Style"
@@ -600,9 +625,13 @@ export default function RichDraft({
                     : [])
                 ]}
               />
-              <AppButton
+              <IconButton
+                label="Undo"
                 variant="subtle"
                 disabled={disabled}
+                description={
+                  disabled ? 'Undo is currently unavailable. Review the writing status.' : undefined
+                }
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() =>
                   command((e) => {
@@ -610,11 +639,15 @@ export default function RichDraft({
                   })
                 }
               >
-                Undo
-              </AppButton>
-              <AppButton
+                <IconArrowBackUp aria-hidden="true" />
+              </IconButton>
+              <IconButton
+                label="Redo"
                 variant="subtle"
                 disabled={disabled}
+                description={
+                  disabled ? 'Redo is currently unavailable. Review the writing status.' : undefined
+                }
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() =>
                   command((e) => {
@@ -622,8 +655,8 @@ export default function RichDraft({
                   })
                 }
               >
-                Redo
-              </AppButton>
+                <IconArrowForwardUp aria-hidden="true" />
+              </IconButton>
               <ActionMenu
                 label="More tools"
                 onOpen={captureTools}
@@ -650,6 +683,17 @@ export default function RichDraft({
                   }
                 ]}
               />
+              {!noteMode && onReviewOptions ? (
+                <IconButton
+                  label="AI review options"
+                  variant="subtle"
+                  disabled={!current || editorIsComposing(current)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={onReviewOptions}
+                >
+                  <IconWand aria-hidden="true" />
+                </IconButton>
+              ) : null}
             </div>
             {tableSelected && !noteMode ? (
               <div className="editor-context-tools" role="group" aria-label="Table actions">

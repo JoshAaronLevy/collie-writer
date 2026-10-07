@@ -4,6 +4,7 @@ import { isProjectTemplate, kindForTemplate } from '../../domain/projects/templa
 import { readProjectDetails } from '../projects/details'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
+import { manuscript, reconcileAnchors, validateManuscript } from '../projects/manuscript'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { backupStorageDatabase, inWriteTransaction, openStorageDatabase } from './driver'
@@ -18,6 +19,7 @@ import {
   citationTables,
   interchangeTables,
   projectDetailsTable,
+  projectDetailsTableV15,
   conversationTables,
   proofreadingTables,
   inspectVersion,
@@ -27,7 +29,7 @@ import { contained, directory, syncFile, syncDirectory, writeJson } from './file
 import { ProjectError } from '../../domain/projects/errors'
 
 import { rebuildCitations } from '../projects/citation-occurrences'
-import { seedOutline, manuscript } from '../projects/manuscript'
+import { seedOutline } from '../projects/manuscript'
 
 type Migration = {
   from: number
@@ -161,6 +163,90 @@ const migrations: readonly Migration[] = [
     // version/provider; new direct attempts use a distinct portable version.
     apply: (db) => {
       db.prepare('UPDATE format SET schema_version=13,minimum_reader=13').run()
+    }
+  },
+  {
+    from: 13,
+    to: 14,
+    validateSource: (db) => validateProjectSchema(db, 13),
+    apply: (db) => {
+      const snapshots = (db.prepare('SELECT id FROM projects').all() as { id: string }[]).map(
+        ({ id }) => ({ id, snapshot: manuscript(db, id) })
+      )
+      db.prepare('UPDATE format SET schema_version=14,minimum_reader=14').run()
+      for (const { id, snapshot } of snapshots) {
+        const original = new Map(snapshot.anchors.map((anchor) => [anchor.id, anchor]))
+        snapshot.version = 2
+        reconcileAnchors(snapshot)
+        validateManuscript(snapshot)
+        const addAnchor = db.prepare('INSERT INTO anchor_targets VALUES (?,?,?,?,?,?,?)')
+        const addEditorId = db.prepare('INSERT INTO editor_ids VALUES (?,?,?,?)')
+        for (const anchor of snapshot.anchors) {
+          const previous = original.get(anchor.id)
+          if (previous) {
+            if (
+              previous.documentId !== anchor.documentId ||
+              previous.kind !== anchor.kind ||
+              previous.state !== anchor.state ||
+              previous.replacementId !== anchor.replacementId
+            )
+              throw new ProjectError('CORRUPT_PROJECT')
+            continue
+          }
+          addAnchor.run(
+            id,
+            anchor.id,
+            anchor.documentId,
+            anchor.kind,
+            anchor.state,
+            anchor.replacementId,
+            anchor.label
+          )
+          if (anchor.state !== 'deleted')
+            addEditorId.run(id, anchor.id, anchor.documentId, anchor.kind)
+        }
+        // Bodies, revisions, history bytes and original operation digests stay untouched.
+      }
+    }
+  },
+  {
+    from: 14,
+    to: 15,
+    validateSource: (db) => {
+      validateProjectSchema(db, 14)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        readProjectDetails(db, row.id)
+    },
+    apply: (db) => {
+      // Only the retained candidate is changed, inside the migration transaction.
+      // Recreate from app-owned DDL so old-version SQL validation stays exact.
+      const rows = db.prepare('SELECT * FROM project_details').all() as {
+        project_id: string
+        byline: string
+        description: string
+        kind: string
+        revision_id: string
+      }[]
+      db.exec('DROP TABLE project_details')
+      db.exec(projectDetailsTableV15)
+      const insert = db.prepare('INSERT INTO project_details VALUES (?,?,?,?,?,?)')
+      for (const row of rows)
+        insert.run(row.project_id, '', row.byline, row.description, row.kind, row.revision_id)
+      db.prepare('UPDATE format SET schema_version=15,minimum_reader=15').run()
+    }
+  },
+  {
+    from: 15,
+    to: 16,
+    validateSource: (db) => {
+      validateProjectSchema(db, 15)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableConversations(db, row.id)
+    },
+    apply: (db) => {
+      // Retained candidate only; no changes to IDs, receipts, messages or capture digests.
+      db.exec('ALTER TABLE conversations ADD COLUMN origin_document_id TEXT')
+      db.prepare('UPDATE format SET schema_version=16,minimum_reader=16').run()
     }
   }
 ]

@@ -135,7 +135,11 @@ export function exportInterchange(
     const literal = (text: string): string =>
       markdown ? escape(text).replace(/([#>+.-])/g, '\\$1') : text
     parts.push(
-      `${markdown ? '# ' : ''}${literal(model.metadata.title)}\n\n${literal(model.metadata.byline)}`
+      [
+        `${markdown ? '# ' : ''}${literal(model.metadata.title)}`,
+        ...(model.metadata.subtitle ? [literal(model.metadata.subtitle)] : []),
+        literal(model.metadata.byline)
+      ].join('\n\n')
     )
     losses.add(
       'The selected title page is opening text; text formats have no native metadata or page layout.'

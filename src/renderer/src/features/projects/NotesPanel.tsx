@@ -1,3 +1,4 @@
+import { isEditableKind } from '../../../../shared/outline'
 import PresentationBoundary from '../../components/PresentationBoundary'
 import { useEffectEvent } from 'react'
 import { useLayoutEffect } from 'react'
@@ -701,7 +702,7 @@ export default function NotesPanel({
                   <legend>Linked sections</legend>
                   <div className="research-checklist">
                     {project.documents
-                      .filter((item) => item.kind === 'text')
+                      .filter((item) => isEditableKind(item.kind))
                       .map((item) => (
                         <Checkbox
                           key={item.id}

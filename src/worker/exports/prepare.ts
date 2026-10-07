@@ -1,3 +1,4 @@
+import { isEditableKind } from '../../shared/outline'
 import { readProjectDetails } from '../projects/details'
 import type Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
@@ -37,13 +38,14 @@ export async function prepareExport(
   ).title
   const metadata = {
     title,
+    subtitle: details.subtitle,
     byline: details.byline,
     description: input.includeDescription ? details.description : null
   }
   const rows = new Map(snapshot.documents.map((d) => [d.id, d]))
   const selected: RetainedDocument[] = input.documentIds.map((id) => {
     const row = rows.get(id)
-    if (!row || row.kind !== 'text' || effectiveState(row, snapshot.documents) !== 'active')
+    if (!row || !isEditableKind(row.kind) || effectiveState(row, snapshot.documents) !== 'active')
       throw new ProjectError('VALIDATION')
     return row
   })
@@ -55,6 +57,7 @@ export async function prepareExport(
   const preview: ExportPreview = {
     headCommitId: sources.headCommitId,
     digest: requestDigest({
+      compilationVersion: 5,
       head: sources.headCommitId,
       style,
       paper: input.paper,
@@ -184,7 +187,8 @@ export async function prepareExport(
         .map((s) => toCsl(s.id, s.metadata) as unknown as Record<string, unknown>),
       { xml: await readFile(styleAsset.path, 'utf8'), locale: await readFile(locale.path, 'utf8') }
     )
-    let previousAncestors: string[] = []
+    const included = new Set(selected.map((d) => d.id)),
+      emitted = new Set<string>()
     const sections = selected.map((d, index) => {
       const ancestors: RetainedDocument[] = []
       let parent = d.parentId
@@ -194,24 +198,21 @@ export async function prepareExport(
         ancestors.unshift(found)
         parent = found.parentId
       }
-      let shared = 0
-      while (shared < ancestors.length && previousAncestors[shared] === ancestors[shared].id)
-        shared++
-      previousAncestors = ancestors.map((a) => a.id)
-      const headings = ancestors.slice(shared).map((a) => ({
-        id: a.id,
-        title: a.title,
-        level: (a.kind === 'part' ? 1 : ancestors.some((p) => p.kind === 'part') ? 2 : 1) as 1 | 2
-      }))
-      const titleLevel = (
-        ancestors.some((a) => a.kind === 'chapter')
-          ? ancestors.some((a) => a.kind === 'part')
-            ? 3
-            : 2
-          : ancestors.length
-            ? 2
-            : 1
-      ) as 1 | 2 | 3
+      const headings = ancestors.flatMap((a, depth) => {
+        if (included.has(a.id) || emitted.has(a.id)) return []
+        emitted.add(a.id)
+        return [{ id: a.id, title: a.title, level: Math.min(3, depth + 1) as 1 | 2 | 3 }]
+      })
+      const titleLevel = Math.min(3, ancestors.length + 1) as 1 | 2 | 3
+      if (
+        ancestors.length >= 3 &&
+        !preview.losses.includes(
+          'Outline headings deeper than level three use heading style three; all selected writing is included.'
+        )
+      )
+        preview.losses.push(
+          'Outline headings deeper than level three use heading style three; all selected writing is included.'
+        )
       return {
         documentId: d.id,
         title: d.title,

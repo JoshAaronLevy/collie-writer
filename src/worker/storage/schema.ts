@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 
 export const PROJECT_APPLICATION_ID = 1129270359
-export const PROJECT_SCHEMA_VERSION = 13
+export const PROJECT_SCHEMA_VERSION = 16
 // Persisted schema is app-owned; never execute DDL or migrations supplied by a project.
 export const projectTablesV1 = [
   `CREATE TABLE format (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, minimum_reader INTEGER NOT NULL, editor_version INTEGER NOT NULL) STRICT`,
@@ -82,7 +82,20 @@ export const proofreadingTables = [
   `CREATE TABLE proofreading_findings (project_id TEXT NOT NULL, id TEXT NOT NULL, run_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id,run_id) REFERENCES proofreading_runs(project_id,id)) STRICT`,
   `CREATE TABLE proofreading_decisions (project_id TEXT NOT NULL, operation_id TEXT NOT NULL, finding_id TEXT NOT NULL, revision_id TEXT NOT NULL, decision TEXT NOT NULL CHECK(decision IN ('pending','ignored','accepted')), decided_at TEXT NOT NULL, checkpoint_id TEXT, PRIMARY KEY(project_id,operation_id), FOREIGN KEY(project_id,finding_id) REFERENCES proofreading_findings(project_id,id), FOREIGN KEY(project_id,operation_id) REFERENCES domain_operations(project_id,operation_id), FOREIGN KEY(project_id,checkpoint_id) REFERENCES history_checkpoints(project_id,id)) STRICT`
 ] as const
-export const projectTables = [...projectTablesV11, ...proofreadingTables] as const
+// Frozen SQL for schemas 12-14: never require subtitle in an old archive image.
+export const projectTablesV14 = [...projectTablesV11, ...proofreadingTables] as const
+export const projectDetailsTableV15 = `CREATE TABLE project_details (project_id TEXT PRIMARY KEY, subtitle TEXT NOT NULL, byline TEXT NOT NULL, description TEXT NOT NULL, kind TEXT NOT NULL, revision_id TEXT NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id)) STRICT`
+export const projectTablesV15 = projectTablesV14.map((sql) =>
+  sql === projectDetailsTable ? projectDetailsTableV15 : sql
+)
+// SQLite ADD COLUMN inserts before the table constraints. Keep old DDL frozen.
+export const conversationTableV16 = conversationTables[0].replace(
+  ', PRIMARY KEY',
+  ', origin_document_id TEXT, PRIMARY KEY'
+)
+export const projectTables = projectTablesV15.map((sql) =>
+  sql === conversationTables[0] ? conversationTableV16 : sql
+)
 const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export function createProjectSchema(db: Database.Database): void {
@@ -136,7 +149,11 @@ export function validateProjectSchema(
                         ? projectTablesV10
                         : expectedVersion === 11
                           ? projectTablesV11
-                          : projectTables
+                          : expectedVersion < 15
+                            ? projectTablesV14
+                            : expectedVersion === 15
+                              ? projectTablesV15
+                              : projectTables
     ).map(sqlKey)
   )
   if (

@@ -22,7 +22,9 @@ export type AiCapture = AiTextCaptureFields & {
   historyIds: string[]
 }
 export type Conversation = {
-  version: 1
+  version: 1 | 2
+  /** v1 has no claimed origin; v2 always carries a nullable stable ID. */
+  originDocumentId?: string | null
   id: string
   revisionId: string
   title: string
@@ -68,6 +70,9 @@ export type ConversationReview = OpenInput & {
 }
 export type ConversationChange = OpenInput & {
   action: 'change'
+  /** Present only on new v2 creation. Old requests retain their exact digest. */
+  version?: 2
+  originDocumentId?: string | null
   operationId: string
   conversationId: string
   expectedRevision: string | null
@@ -83,7 +88,16 @@ export type ConversationSubmit = OpenInput & {
   connectionId: string | null
   model: string | null
 }
+export type ConversationGroup = { items: Conversation[]; total: number }
 export type ConversationRequest =
+  | (OpenInput & {
+      action: 'grouped-list'
+      state: 'active' | 'archived'
+      query: string
+      currentDocumentId: string | null
+      currentOffset: number
+      otherOffset: number
+    })
   | (OpenInput & { action: 'list'; state: 'active' | 'archived'; query: string; offset: number })
   | (OpenInput & { action: 'read'; conversationId: string; before: number | null })
   | ConversationChange
@@ -149,6 +163,12 @@ export type ConversationWorkerInput =
           }
       ))
 export type ConversationValue =
+  | {
+      type: 'grouped-list'
+      currentDocumentId: string | null
+      current: ConversationGroup
+      other: ConversationGroup
+    }
   | { type: 'list'; items: Conversation[]; total: number }
   | {
       type: 'page'
@@ -268,8 +288,20 @@ export function isAiCapture(v: unknown): v is AiCapture {
 export function isConversation(v: unknown): v is Conversation {
   return (
     record(v) &&
-    exact(v, ['version', 'id', 'revisionId', 'title', 'state', 'createdAt', 'updatedAt']) &&
-    v.version === 1 &&
+    ((v.version === 1 &&
+      exact(v, ['version', 'id', 'revisionId', 'title', 'state', 'createdAt', 'updatedAt'])) ||
+      (v.version === 2 &&
+        exact(v, [
+          'version',
+          'originDocumentId',
+          'id',
+          'revisionId',
+          'title',
+          'state',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        (v.originDocumentId === null || isId(v.originDocumentId)))) &&
     isId(v.id) &&
     isId(v.revisionId) &&
     text(v.title, 160) &&
@@ -374,6 +406,22 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
   if (!record(v) || !scope(v)) return false
   const fields = ['projectId', 'workspaceId', 'action']
   switch (v.action) {
+    case 'grouped-list':
+      return (
+        exact(v, [
+          ...fields,
+          'state',
+          'query',
+          'currentDocumentId',
+          'currentOffset',
+          'otherOffset'
+        ]) &&
+        state(v.state) &&
+        text(v.query, 160) &&
+        (v.currentDocumentId === null || isId(v.currentDocumentId)) &&
+        integer(v.currentOffset) &&
+        integer(v.otherOffset)
+      )
     case 'list':
       return (
         exact(v, [...fields, 'state', 'query', 'offset']) &&
@@ -395,8 +443,13 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
           'conversationId',
           'expectedRevision',
           'title',
-          'state'
+          'state',
+          ...('version' in v ? ['version', 'originDocumentId'] : [])
         ]) &&
+        (!('version' in v) ||
+          (v.version === 2 &&
+            v.expectedRevision === null &&
+            (v.originDocumentId === null || isId(v.originDocumentId)))) &&
         isId(v.operationId) &&
         isId(v.conversationId) &&
         (v.expectedRevision === null || isId(v.expectedRevision)) &&
@@ -492,6 +545,7 @@ export function isConversationWorkerInput(v: unknown): v is ConversationWorkerIn
   if (!record(v) || !scope(v)) return false
   const fields = ['projectId', 'workspaceId', 'action']
   switch (v.action) {
+    case 'grouped-list':
     case 'list':
     case 'read':
     case 'change':
@@ -547,6 +601,34 @@ export function isConversationWorkerInput(v: unknown): v is ConversationWorkerIn
 export function isConversationValue(v: unknown): v is ConversationValue {
   if (!record(v)) return false
   switch (v.type) {
+    case 'grouped-list': {
+      const group = (g: unknown): g is ConversationGroup =>
+        record(g) &&
+        exact(g, ['items', 'total']) &&
+        Array.isArray(g.items) &&
+        g.items.length <= CONVERSATION_LIMITS.list &&
+        g.items.every(isConversation) &&
+        integer(g.total) &&
+        g.total >= g.items.length
+      return (
+        exact(v, ['type', 'currentDocumentId', 'current', 'other']) &&
+        (v.currentDocumentId === null || isId(v.currentDocumentId)) &&
+        group(v.current) &&
+        group(v.other) &&
+        (v.currentDocumentId !== null || v.current.total === 0) &&
+        v.current.items.every(
+          (c) =>
+            c.version === 2 &&
+            c.originDocumentId === v.currentDocumentId &&
+            v.currentDocumentId !== null
+        ) &&
+        v.other.items.every(
+          (c) => v.currentDocumentId === null || c.originDocumentId !== v.currentDocumentId
+        ) &&
+        new Set([...v.current.items, ...v.other.items].map((c) => c.id)).size ===
+          v.current.items.length + v.other.items.length
+      )
+    }
     case 'list':
       return (
         exact(v, ['type', 'items', 'total']) &&

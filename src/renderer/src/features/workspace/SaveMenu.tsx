@@ -1,3 +1,4 @@
+import { IconDeviceFloppy, IconChevronDown } from '@tabler/icons-react'
 import { AppButton } from '../../components/ui/Controls'
 import { ActionMenu } from '../../components/ui/ActionMenu'
 import { sameScope } from '../../../../shared/project-files'
@@ -14,6 +15,7 @@ export default function SaveMenu(): React.JSX.Element {
     closing,
     navigating,
     fileActive,
+    saveState,
     run,
     save,
     openFile,
@@ -30,25 +32,42 @@ export default function SaveMenu(): React.JSX.Element {
     closing ||
     navigating ||
     fileActive
+  const saving = saveState === 'saving'
+  const unconfirmed = saveState === 'unconfirmed'
   return (
-    <div className={styles['save-menu']}>
-      <AppButton variant="default" disabled={disabled} onClick={() => run(() => save(false))}>
-        Save
+    <div className={styles['save-menu']} role="group" aria-label="Save project">
+      <AppButton
+        className={styles['save-button']}
+        variant="default"
+        leftSection={<IconDeviceFloppy size={18} aria-hidden="true" />}
+        pending={saving}
+        disabled={disabled}
+        aria-label={unconfirmed ? 'Retry pending Save' : saving ? 'Saving project' : 'Save'}
+        onClick={() => run(() => save(false))}
+      >
+        {saving ? 'Saving…' : unconfirmed ? 'Retry Save' : 'Save'}
       </AppButton>
       <ActionMenu
         label="Save options"
+        icon={<IconChevronDown aria-hidden="true" />}
+        triggerClassName={styles['save-options']}
         actions={[
-          { id: 'save-as', label: 'Save As…', disabled, onSelect: () => run(() => save(true)) },
+          {
+            id: 'save-as',
+            label: 'Save As…',
+            disabled: disabled || unconfirmed,
+            onSelect: () => run(() => save(true))
+          },
           {
             id: 'backup',
             label: 'Make a separate backup…',
-            disabled,
+            disabled: disabled || unconfirmed,
             onSelect: () => run(() => lifecycleFile('backup'))
           },
           {
             id: 'locate',
             label: 'Locate moved file…',
-            disabled: disabled || !files.destination,
+            disabled: disabled || unconfirmed || !files.destination,
             onSelect: () => run(() => openFile(false, true))
           },
           {

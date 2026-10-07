@@ -1,7 +1,8 @@
+import { inspectVersion } from '../storage/schema'
 import type Database from 'better-sqlite3'
 import { isId } from '../../domain/editor/schema'
 import { ProjectError } from '../../domain/projects/errors'
-import { projectText, requiredProjectName } from '../../domain/projects/details'
+import { projectText, requiredProjectName, projectSubtitle } from '../../domain/projects/details'
 import {
   isProjectKind,
   isProjectTemplate,
@@ -10,6 +11,7 @@ import {
 } from '../../domain/projects/templates'
 
 export type StoredDetails = {
+  subtitle: string
   byline: string
   description: string
   projectKind: ProjectKind
@@ -21,8 +23,10 @@ export function readProjectDetails(db: Database.Database, projectId: string): St
     .all() as Record<string, unknown>[]
   if (rows.length !== 1) throw new ProjectError('CORRUPT_PROJECT')
   const d = rows[0]
+  const subtitle = inspectVersion(db) >= 15 ? d.subtitle : ''
   if (
     d.project_id !== projectId ||
+    !projectSubtitle(subtitle) ||
     !(d.byline === '' || requiredProjectName(d.byline)) ||
     !projectText(d.description, 10000) ||
     !isProjectKind(d.kind) ||
@@ -33,6 +37,7 @@ export function readProjectDetails(db: Database.Database, projectId: string): St
   )
     throw new ProjectError('CORRUPT_PROJECT')
   return {
+    subtitle,
     byline: d.byline as string,
     description: d.description,
     projectKind: d.kind,

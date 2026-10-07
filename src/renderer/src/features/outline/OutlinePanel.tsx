@@ -1,8 +1,11 @@
+import { IconPlus, IconDots, IconChevronRight, IconChevronDown } from '@tabler/icons-react'
+import { IconButton } from '../../components/ui/IconButton'
+import { isEditableKind } from '../../../../shared/outline'
 import PresentationBoundary from '../../components/PresentationBoundary'
 import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { TextInput, Textarea } from '@mantine/core'
 import { AppButton, SelectField } from '../../components/ui/Controls'
-import { ActionMenu } from '../../components/ui/ActionMenu'
+import { ActionMenu, type MenuAction } from '../../components/ui/ActionMenu'
 import { AppDialog } from '../../components/ui/AppDialog'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import { scopeOf } from '../workspace/useWorkspaceController'
@@ -10,7 +13,7 @@ import './OutlinePanel.css'
 import { useRef, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
 import {
-  canParent,
+  placementPolicy,
   effectiveState,
   type OutlineChange,
   type OutlineDocument,
@@ -34,6 +37,7 @@ export default function OutlinePanel({
 }): React.JSX.Element {
   const [focusId, setFocusId] = useState(project.documentId),
     [showRemoved, setShowRemoved] = useState(false)
+  const [formTarget, setFormTarget] = useState<OutlineDocument | null>(null)
   const [mode, setMode] = useState<'create' | 'move' | 'split' | 'merge' | 'details' | null>(null)
   const [submittingValue, setSubmittingValue, submitting] = useSynchronousState(false),
     composing = useRef(false)
@@ -43,7 +47,7 @@ export default function OutlinePanel({
     read: () => ({
       scope: scopeOf(project),
       kind: 'outline-form',
-      entityId: focusId,
+      entityId: formTarget?.id ?? null,
       label: 'Outline details',
       dirty: mode !== null && !submitting.current,
       composing: false,
@@ -67,26 +71,34 @@ export default function OutlinePanel({
     [status, setStatus] = useState<'draft' | 'review' | 'complete'>('draft'),
     [synopsis, setSynopsis] = useState('')
   const docs = project.documents,
-    focused = docs.find((d) => d.id === focusId) ?? docs.find((d) => d.id === project.documentId)!
+    focused = formTarget ?? docs.find((d) => d.id === project.documentId)!
+  const targetAvailable =
+    mode === 'create' ||
+    (!!formTarget && docs.some((d) => d.id === formTarget.id && d.state !== 'merged'))
   const [lastDocumentId, setLastDocumentId] = useState(project.documentId)
   if (lastDocumentId !== project.documentId) {
     setLastDocumentId(project.documentId)
     setFocusId(project.documentId)
+    const next = new Set(collapsed)
+    let item = docs.find((d) => d.id === project.documentId)
+    while (item?.parentId) {
+      next.delete(item.parentId)
+      item = docs.find((d) => d.id === item?.parentId)
+    }
+    setCollapsed(next)
   }
-  const state = effectiveState(focused, docs)
-  const siblings = docs
-    .filter((d) => d.parentId === focused.parentId)
-    .sort((a, b) => a.position - b.position)
-  function open(next: typeof mode): void {
+  function open(next: typeof mode, doc = docs.find((d) => d.id === project.documentId)!): void {
+    if (disabled || readOnly || mode !== null || composing.current) return
+    setFormTarget({ ...doc })
     setFailed(false)
     setMode(next)
-    setTitle(next === 'details' ? focused.title : '')
-    setParentId(focused.parentId ?? '')
-    setPosition(focused.position)
+    setTitle(next === 'details' ? doc.title : '')
+    setParentId(doc.parentId ?? '')
+    setPosition(doc.position)
     setTargetId('')
     setBoundary('')
-    setStatus(focused.status as typeof status)
-    setSynopsis(focused.synopsis)
+    setStatus(doc.status as typeof status)
+    setSynopsis(doc.synopsis)
   }
   function closeForm(): void {
     if (!submitting.current && !composing.current) setMode(null)
@@ -95,7 +107,7 @@ export default function OutlinePanel({
     for (const child of docs
       .filter((d) => d.parentId === parent && effectiveState(d, docs) === 'active')
       .sort((a, b) => a.position - b.position)) {
-      if (child.kind === 'text') return child.id
+      if (isEditableKind(child.kind)) return child.id
       const found = firstSection(child.id)
       if (found) return found
     }
@@ -112,6 +124,116 @@ export default function OutlinePanel({
       parentId: destination.parentId,
       position: others.findIndex((d) => d.id === destination.id)
     })
+  }
+  function rowActions(doc: OutlineDocument): MenuAction[] {
+    if (doc.state === 'merged')
+      return [
+        {
+          id: 'replacement',
+          label: 'Open replacement',
+          disabled: disabled || mode !== null,
+          onSelect: () => select(doc.replacementId!)
+        }
+      ]
+    const state = effectiveState(doc, docs)
+    const siblings = docs.filter((d) => d.parentId === doc.parentId)
+    return [
+      ...(!isEditableKind(doc.kind)
+        ? [
+            {
+              id: 'first',
+              label: 'Open first writing item',
+              disabled: disabled || !firstSection(doc.id),
+              onSelect: () => {
+                const id = firstSection(doc.id)
+                if (id) select(id)
+              }
+            }
+          ]
+        : []),
+
+      {
+        id: 'up',
+        label: 'Move up',
+        disabled: disabled || readOnly || doc.position === 0,
+        onSelect: () =>
+          change({
+            type: 'move',
+            documentId: doc.id,
+            parentId: doc.parentId,
+            position: doc.position - 1
+          })
+      },
+      {
+        id: 'down',
+        label: 'Move down',
+        disabled: disabled || readOnly || doc.position === siblings.length - 1,
+        onSelect: () =>
+          change({
+            type: 'move',
+            documentId: doc.id,
+            parentId: doc.parentId,
+            position: doc.position + 1
+          })
+      },
+      {
+        id: 'move',
+        label: 'Move to…',
+        disabled: disabled || readOnly,
+        onSelect: () => open('move', doc)
+      },
+      {
+        id: 'details',
+        label: 'Item details…',
+        disabled: disabled || readOnly,
+        onSelect: () => open('details', doc)
+      },
+      {
+        id: 'split',
+        label:
+          doc.id === project.documentId
+            ? 'Split writing item…'
+            : 'Split unavailable: open this item first',
+        disabled:
+          disabled ||
+          readOnly ||
+          state !== 'active' ||
+          !isEditableKind(doc.kind) ||
+          doc.id !== project.documentId,
+        onSelect: () => open('split', doc)
+      },
+      {
+        id: 'merge',
+        label: docs.some((d) => d.parentId === doc.id)
+          ? 'Merge unavailable: item has children'
+          : 'Merge into…',
+        disabled:
+          disabled ||
+          readOnly ||
+          state !== 'active' ||
+          !isEditableKind(doc.kind) ||
+          docs.some((d) => d.parentId === doc.id),
+        onSelect: () => open('merge', doc)
+      },
+      {
+        id: 'archive',
+        label: 'Archive item',
+        disabled: disabled || readOnly || doc.state === 'archived',
+        onSelect: () => change({ type: 'state', documentId: doc.id, state: 'archived' })
+      },
+      {
+        id: 'trash',
+        label: 'Move to trash',
+        disabled: disabled || readOnly || doc.state === 'trashed',
+        onSelect: () => change({ type: 'state', documentId: doc.id, state: 'trashed' })
+      },
+      {
+        id: 'restore',
+        label: 'Restore item',
+        disabled: disabled || readOnly || doc.state === 'active',
+        onSelect: () => change({ type: 'state', documentId: doc.id, state: 'active' })
+      }
+    ]
   }
   function branch(parent: string | null): React.JSX.Element {
     return (
@@ -149,12 +271,14 @@ export default function OutlinePanel({
                     )
                     if (source) move(source, d)
                   }}
-                  aria-pressed={focused.id === d.id}
+                  aria-pressed={
+                    isEditableKind(d.kind) ? project.documentId === d.id : focusId === d.id
+                  }
                   disabled={disabled || mode !== null}
                   onClick={() => {
-                    setFocusId(d.id)
                     setMode(null)
-                    if (d.kind === 'text') select(d.id)
+                    if (isEditableKind(d.kind) && d.state !== 'merged') select(d.id)
+                    else setFocusId(d.id)
                   }}
                 >
                   <span>{d.title}</span>{' '}
@@ -164,10 +288,10 @@ export default function OutlinePanel({
                   </small>
                 </AppButton>
                 {docs.some((child) => child.parentId === d.id) ? (
-                  <AppButton
+                  <IconButton
                     variant="subtle"
                     className="outline-branch-toggle"
-                    aria-label={`${collapsed.has(d.id) ? 'Expand' : 'Collapse'} ${d.title}`}
+                    label={`${collapsed.has(d.id) ? 'Expand' : 'Collapse'} ${d.title}`}
                     aria-expanded={!collapsed.has(d.id)}
                     onClick={() =>
                       setCollapsed((previous) => {
@@ -178,9 +302,20 @@ export default function OutlinePanel({
                       })
                     }
                   >
-                    {collapsed.has(d.id) ? '+' : '−'}
-                  </AppButton>
+                    {collapsed.has(d.id) ? (
+                      <IconChevronRight aria-hidden="true" />
+                    ) : (
+                      <IconChevronDown aria-hidden="true" />
+                    )}
+                  </IconButton>
                 ) : null}
+                <ActionMenu
+                  label={`Actions for ${d.title}`}
+                  icon={<IconDots aria-hidden="true" />}
+                  triggerClassName="outline-row-menu"
+                  disabled={disabled || mode !== null}
+                  actions={rowActions(d)}
+                />
               </div>
               {docs.some((child) => child.parentId === d.id) && !collapsed.has(d.id)
                 ? branch(d.id)
@@ -190,12 +325,12 @@ export default function OutlinePanel({
       </ol>
     )
   }
-  const parentOptions = docs.filter(
-    (d) =>
-      (mode === 'create' || d.id !== focused.id) &&
-      canParent(mode === 'create' ? kind : focused.kind, d) &&
-      effectiveState(d, docs) === 'active'
+  const canChooseParent = placementPolicy(
+    docs,
+    mode === 'create' ? kind : focused.kind,
+    mode === 'create' ? undefined : focused.id
   )
+  const parentOptions = docs.filter((d) => canChooseParent(d.id))
   return (
     <PresentationBoundary
       label="Manuscript outline"
@@ -203,7 +338,11 @@ export default function OutlinePanel({
         <section className="outline-panel" aria-label="Manuscript outline">
           <h3>Outline</h3>
           <div className="outline-heading-actions">
-            <AppButton
+            <IconButton
+              label="Add item"
+              description={
+                readOnly ? 'Add item is unavailable while this project is read-only.' : undefined
+              }
               variant="default"
               disabled={disabled || readOnly || mode !== null}
               onClick={() => {
@@ -211,10 +350,11 @@ export default function OutlinePanel({
                 setParentId('')
               }}
             >
-              Add item…
-            </AppButton>
+              <IconPlus aria-hidden="true" />
+            </IconButton>
             <ActionMenu
               label="Outline view"
+              disabled={mode !== null}
               actions={[
                 {
                   id: 'removed',
@@ -226,128 +366,25 @@ export default function OutlinePanel({
                   id: 'collapse',
                   label: 'Collapse all containers',
                   onSelect: () =>
-                    setCollapsed(new Set(docs.filter((d) => d.kind !== 'text').map((d) => d.id)))
+                    setCollapsed(
+                      new Set(
+                        docs
+                          .filter((d) => docs.some((child) => child.parentId === d.id))
+                          .map((d) => d.id)
+                      )
+                    )
                 }
               ]}
             />
           </div>
           {branch(null)}
-          <p className="outline-selection" aria-live="polite">
-            {focused.title} · {state}
-          </p>
-          {focused.state === 'merged' ? (
-            <p>
-              This section was merged.{' '}
-              <AppButton
-                variant="subtle"
-                disabled={disabled}
-                onClick={() => select(focused.replacementId!)}
-              >
-                Open replacement
-              </AppButton>
-            </p>
-          ) : (
-            <div className="outline-item-actions">
-              {focused.kind !== 'text' ? (
-                <AppButton
-                  variant="subtle"
-                  disabled={disabled || !firstSection(focused.id)}
-                  onClick={() => {
-                    const id = firstSection(focused.id)
-                    if (id) select(id)
-                  }}
-                >
-                  Open first section
-                </AppButton>
-              ) : null}
-              <ActionMenu
-                label="Selected item"
-                actions={[
-                  {
-                    id: 'up',
-                    label: 'Move up',
-                    disabled: disabled || readOnly || focused.position === 0,
-                    onSelect: () =>
-                      change({
-                        type: 'move',
-                        documentId: focused.id,
-                        parentId: focused.parentId,
-                        position: focused.position - 1
-                      })
-                  },
-                  {
-                    id: 'down',
-                    label: 'Move down',
-                    disabled: disabled || readOnly || focused.position === siblings.length - 1,
-                    onSelect: () =>
-                      change({
-                        type: 'move',
-                        documentId: focused.id,
-                        parentId: focused.parentId,
-                        position: focused.position + 1
-                      })
-                  },
-                  {
-                    id: 'move',
-                    label: 'Move to…',
-                    disabled: disabled || readOnly,
-                    onSelect: () => open('move')
-                  },
-                  {
-                    id: 'details',
-                    label: 'Item details…',
-                    disabled: disabled || readOnly,
-                    onSelect: () => open('details')
-                  },
-                  {
-                    id: 'split',
-                    label: 'Split section…',
-                    disabled:
-                      disabled ||
-                      readOnly ||
-                      state !== 'active' ||
-                      focused.kind !== 'text' ||
-                      focused.id !== project.documentId,
-                    onSelect: () => open('split')
-                  },
-                  {
-                    id: 'merge',
-                    label: 'Merge into…',
-                    disabled: disabled || readOnly || state !== 'active' || focused.kind !== 'text',
-                    onSelect: () => open('merge')
-                  },
-                  {
-                    id: 'archive',
-                    label: 'Archive item',
-                    disabled: disabled || readOnly || focused.state === 'archived',
-                    onSelect: () =>
-                      change({ type: 'state', documentId: focused.id, state: 'archived' })
-                  },
-                  {
-                    id: 'trash',
-                    label: 'Move to trash',
-                    disabled: disabled || readOnly || focused.state === 'trashed',
-                    onSelect: () =>
-                      change({ type: 'state', documentId: focused.id, state: 'trashed' })
-                  },
-                  {
-                    id: 'restore',
-                    label: 'Restore item',
-                    disabled: disabled || readOnly || focused.state === 'active',
-                    onSelect: () =>
-                      change({ type: 'state', documentId: focused.id, state: 'active' })
-                  }
-                ]}
-              />
-            </div>
-          )}
           <AppDialog
             opened={mode !== null}
             title={
               mode === 'merge'
-                ? 'Merge sections'
+                ? 'Merge writing items'
                 : mode === 'split'
-                  ? 'Split section'
+                  ? 'Split writing item'
                   : mode === 'move'
                     ? 'Move outline item'
                     : mode === 'create'
@@ -370,7 +407,18 @@ export default function OutlinePanel({
                 }}
                 onSubmit={(e) => {
                   e.preventDefault()
-                  if (readOnly || disabled || submitting.current || composing.current) return
+                  if (
+                    readOnly ||
+                    disabled ||
+                    !targetAvailable ||
+                    submitting.current ||
+                    composing.current
+                  )
+                    return
+                  if (mode === 'split' && formTarget?.id !== project.documentId) {
+                    setFailed(true)
+                    return
+                  }
                   let input: OutlineChange
                   if (mode === 'create')
                     input = { type: 'create', kind, title, parentId: parentId || null }
@@ -401,7 +449,14 @@ export default function OutlinePanel({
                     an operation already submitted.
                   </p>
                 ) : null}
-                <fieldset disabled={disabled || readOnly}>
+                {!targetAvailable ? (
+                  <p role="alert">
+                    This item is no longer available. Cancel and choose an existing row; no other
+                    item will be edited.
+                  </p>
+                ) : null}
+                {mode !== 'create' ? <p>Editing: {focused.title}</p> : null}
+                <fieldset disabled={disabled || readOnly || !targetAvailable}>
                   {mode === 'create' ? (
                     <SelectField
                       label="Kind"
@@ -443,6 +498,12 @@ export default function OutlinePanel({
                       ))}
                     </SelectField>
                   ) : null}
+                  {mode === 'create' || mode === 'move' ? (
+                    <p>
+                      Only parents that keep the whole branch within eight levels are offered. An
+                      item cannot contain itself or its ancestors.
+                    </p>
+                  ) : null}
                   {mode === 'move' ? (
                     <SelectField
                       label="Position"
@@ -467,9 +528,10 @@ export default function OutlinePanel({
                   {mode === 'split' ? (
                     <>
                       <p>
-                        Split only between complete top-level blocks. A table or list stays
-                        together. Pending edits are protected before the change; a changed boundary
-                        is rejected.
+                        Split only this item’s own body between complete top-level blocks. Its
+                        children stay with the original item. A table or list stays together.
+                        Pending edits are protected before the change; a changed boundary is
+                        rejected.
                       </p>
                       <SelectField
                         label="Split after"
@@ -502,12 +564,13 @@ export default function OutlinePanel({
                         value={targetId}
                         onChange={(e) => setTargetId(e.target.value)}
                       >
-                        <option value="">Choose a section</option>
+                        <option value="">Choose a leaf Chapter or Section</option>
                         {docs
                           .filter(
                             (d) =>
-                              d.kind === 'text' &&
+                              isEditableKind(d.kind) &&
                               d.id !== focused.id &&
+                              !docs.some((child) => child.parentId === d.id) &&
                               effectiveState(d, docs) === 'active'
                           )
                           .map((d) => (
@@ -553,12 +616,14 @@ export default function OutlinePanel({
           <details className="outline-help">
             <summary>Organizing your manuscript</summary>
             <p>
-              Drag a row before another row, or use Selected item → Move up, Move down or Move to.
-              Parts contain chapters or sections; chapters contain sections.
+              Drag a row before another row, or use a row’s actions menu for Move up, Move down or
+              Move to. Chapters and Sections each have their own writing and can contain either
+              kind. Parts group writing at the root. The outline supports eight levels including the
+              root; moves cannot place an item inside itself or its descendants.
             </p>
             <p>
-              Archive and trash keep content. At least one active section must remain. Restore a
-              containing part/chapter to make its children active again.
+              Archive and trash keep content. At least one active Chapter or Section must remain.
+              Restore a containing item to make its children active again.
             </p>
           </details>
         </section>

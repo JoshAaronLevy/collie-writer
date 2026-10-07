@@ -3,6 +3,7 @@ import { isProjectKind, type ProjectKind } from './templates'
 
 export type ProjectDetails = {
   title: string
+  subtitle: string
   byline: string
   description: string
   projectKind: ProjectKind
@@ -21,9 +22,20 @@ export function requiredProjectName(value: unknown): value is string {
     !/[\r\n\t]/u.test(value)
   )
 }
+/** Canonical optional subtitle: one plain-text line, measured in UTF-16 units. */
+export function projectSubtitle(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= 500 &&
+    value === value.trim() &&
+    !hasControlCharacters(value, false, 0x9f) &&
+    !/[\u2028\u2029]/u.test(value)
+  )
+}
 export function validDetails(value: ProjectDetails, creating = false): boolean {
   return (
     requiredProjectName(value.title) &&
+    projectSubtitle(value.subtitle) &&
     (creating
       ? requiredProjectName(value.byline)
       : value.byline === '' || requiredProjectName(value.byline)) &&

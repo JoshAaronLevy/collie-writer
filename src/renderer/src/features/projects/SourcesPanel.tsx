@@ -1,3 +1,4 @@
+import { isEditableKind } from '../../../../shared/outline'
 import PresentationBoundary from '../../components/PresentationBoundary'
 import { useEffectEvent } from 'react'
 import { useLayoutEffect } from 'react'
@@ -899,7 +900,7 @@ export default function SourcesPanel({
                       <p>These links organize research; they do not insert manuscript citations.</p>
                       <div className="research-checklist">
                         {project.documents
-                          .filter((item) => item.kind === 'text')
+                          .filter((item) => isEditableKind(item.kind))
                           .map((item) => (
                             <Checkbox
                               key={item.id}

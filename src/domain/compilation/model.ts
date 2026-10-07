@@ -1,4 +1,9 @@
-import { projectText, storedProjectTitle, requiredProjectName } from '../projects/details'
+import {
+  projectSubtitle,
+  projectText,
+  storedProjectTitle,
+  requiredProjectName
+} from '../projects/details'
 import {
   ContentError,
   isId,
@@ -50,7 +55,12 @@ export type CitationOutput = {
   entrySpacing: number
 }
 export type CitationFormatter = (requests: CitationRequest[]) => CitationOutput
-export type CompilationMetadata = { title: string; byline: string; description: string | null }
+export type CompilationMetadata = {
+  title: string
+  subtitle: string
+  byline: string
+  description: string | null
+}
 export type CompileInput = {
   metadata: CompilationMetadata
   titlePage: boolean
@@ -63,12 +73,12 @@ export type CompileInput = {
     includeTitle: boolean
     pageBreakBefore: boolean
     payload: DocumentPayload
-    headings?: { id: string; title: string; level: 1 | 2 }[]
+    headings?: { id: string; title: string; level: 1 | 2 | 3 }[]
     titleLevel?: 1 | 2 | 3
   }[]
 }
 export type Compilation = {
-  version: 3
+  version: 5
   metadata: CompilationMetadata
   titlePage: boolean
   capturedHead: string
@@ -108,6 +118,7 @@ export function compileManuscript(
   if (
     !input.metadata ||
     !storedProjectTitle(input.metadata.title) ||
+    !projectSubtitle(input.metadata.subtitle) ||
     !(input.metadata.byline === '' || requiredProjectName(input.metadata.byline)) ||
     !(input.metadata.description === null || projectText(input.metadata.description, 10000)) ||
     typeof input.titlePage !== 'boolean'
@@ -240,13 +251,13 @@ export function compileManuscript(
         !isId(heading.id) ||
         typeof heading.title !== 'string' ||
         heading.title.length > 500 ||
-        ![1, 2].includes(heading.level)
+        ![1, 2, 3].includes(heading.level)
       )
         throw new ContentError('INVALID_SECTION', 'heading')
       blocks.push({
         kind: 'paragraph',
         blockId: heading.id,
-        style: heading.level === 1 ? 'heading1' : 'heading2',
+        style: heading.level === 1 ? 'heading1' : heading.level === 2 ? 'heading2' : 'heading3',
         runs: [{ kind: 'text', text: heading.title, marks: [] }]
       })
     }
@@ -301,7 +312,7 @@ export function compileManuscript(
     if (documentId) sourceMap.push({ documentId, blockId: note.originId, kind: 'footnote' })
   }
   return freeze({
-    version: 3,
+    version: 5,
     metadata: { ...input.metadata },
     titlePage: input.titlePage,
     capturedHead: input.capturedHead,

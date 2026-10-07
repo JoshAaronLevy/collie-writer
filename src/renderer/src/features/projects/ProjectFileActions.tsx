@@ -11,6 +11,7 @@ export default function ProjectFileActions(): React.JSX.Element {
     <FilePanel
       status={files}
       dirty={dirty}
+      saveState={session.saveState}
       disabled={!project || !sameScope(project, files.scope) || !available || acting || closing}
       save={(as) => run(() => save(as))}
       reveal={() =>
@@ -23,19 +24,40 @@ export default function ProjectFileActions(): React.JSX.Element {
       locate={() => run(() => session.openFile(false, true))}
       inspect={() => run(() => session.openFile(true))}
       answer={(id, choice) => {
-        void window.collie.answerFileJob({ id, choice }).then((result) => {
-          if (!result.ok) setError(result.error.message)
-        })
+        void window.collie
+          .answerFileJob({ id, choice })
+          .then((result) => {
+            if (!result.ok) setError(result.error.message)
+          })
+          .catch(() =>
+            setError(
+              'The file choice could not be confirmed. Review the retained file operation before continuing.'
+            )
+          )
       }}
       cancel={(id) => {
-        void window.collie.cancelFileJob(id).then((result) => {
-          if (!result.ok) setError(result.error.message)
-        })
+        void window.collie
+          .cancelFileJob(id)
+          .then((result) => {
+            if (!result.ok) setError(result.error.message)
+          })
+          .catch(() =>
+            setError(
+              'File cancellation could not be confirmed. The operation remains pending until its outcome is known.'
+            )
+          )
       }}
       consent={(id) => {
-        void window.collie.confirmFileOverwrite(id).then((result) => {
-          if (!result.ok) setError(result.error.message)
-        })
+        void window.collie
+          .confirmFileOverwrite(id)
+          .then((result) => {
+            if (!result.ok) setError(result.error.message)
+          })
+          .catch(() =>
+            setError(
+              'Replacement consent could not be confirmed. Review the retained file operation before continuing.'
+            )
+          )
       }}
     />
   )

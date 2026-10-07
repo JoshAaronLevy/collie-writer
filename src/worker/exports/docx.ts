@@ -214,6 +214,15 @@ export async function exportDocx(
         spacing: { before: 1440, after: 480 },
         children: textRuns({ kind: 'text', text: model.metadata.title, marks: [{ type: 'bold' }] })
       }),
+      ...(model.metadata.subtitle
+        ? [
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 240 },
+              children: textRuns({ kind: 'text', text: model.metadata.subtitle, marks: [] })
+            })
+          ]
+        : []),
       new Paragraph({
         alignment: AlignmentType.CENTER,
         children: textRuns({ kind: 'text', text: model.metadata.byline, marks: [] })

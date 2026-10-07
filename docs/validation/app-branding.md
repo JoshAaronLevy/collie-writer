@@ -1,5 +1,15 @@
 # App branding implementation — October 3, 2026
 
+## macOS Dock correction — October 6, 2026
+
+Josh's Dock screenshot showed the full square icon extending beyond the apparent size of neighboring app icons. The generator previously resized the opaque square master directly into both the development Dock PNG and packaged ICNS.
+
+`scripts/generate-app-icons.mjs` now uses an offscreen AppKit bitmap to place the artwork in an 832-pixel rounded tile inside a transparent 1024-pixel canvas (96-pixel margins, 185-pixel corner radius). It scales the complete composition before masking the outer corners. All ten macOS iconset representations and the bundle ICNS derive from this same treatment. A separate `build/icon-mac.png` feeds the unpackaged Dock through the existing bundled `?asset` path in `src/main/windows.ts`. The approved master, generic native PNG, Windows ICO and renderer logo retain their existing treatment. Existing macOS bundle and production document-association paths already select the updated ICNS.
+
+Status: **implementation complete — awaiting user testing**. `npm run icons:generate` completed successfully to create the requested icon assets. This is asset creation, not an app build or a runtime observation. After inspecting script/ignore scope, `npm run format`, `npm run lint` and `npm run typecheck` (node and web) completed with exit 0 and no warnings/errors using pinned Node 24.21.0 / npm 11.19.0. No automated tests, app builds, app launches, browser actions or verification screenshots were performed. Dock/Finder appearance and native icon-cache behavior await Josh's observations using the updated [manual guide](../manual-testing/app-branding.md). Existing release gates remain unchanged.
+
+## Original integration record — October 3, 2026
+
 Status: **implementation complete — awaiting user testing**. Josh approved the refined collie-and-pencil artwork in conversation and requested saving it, producing the app iconset and placing it in the UI. Artwork approval is recorded; native and renderer presentation acceptance remains pending. This is a bounded branding request, not completion of MVP Stage 21 or a later improvement stage.
 
 The original approved PNG is retained without re-encoding at `resources/branding/collie-writer-master.png`. `scripts/generate-app-icons.mjs` and the `icons:generate` package command produce the committed native assets and renderer image by resizing that master without cropping. Asset generation was performed successfully with macOS `sips`/`iconutil` and Node; this was requested artifact creation, not an app build or a test. The macOS iconset retains ten standard named PNG representations; the ICO contains seven PNG representations from 16 through 256 pixels.

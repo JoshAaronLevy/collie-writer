@@ -1,3 +1,6 @@
+import { IconDots } from '@tabler/icons-react'
+import { ActionMenu } from '../../../components/ui/ActionMenu'
+import { useProofreading } from '../proofreading/proofreadingState'
 import PresentationBoundary from '../../../components/PresentationBoundary'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { TextInput, Textarea } from '@mantine/core'
@@ -7,7 +10,7 @@ import { useAiConnections } from '../../ai-connections/connectionState'
 import { AiRequestConnection } from '../../ai-connections/AiRequestConnection'
 import { connectionReason, featureDescription } from '../../ai-connections/connection-copy'
 import type { AiReason } from '../../../../../shared/ai'
-import type { ConversationTurn } from '../../../../../shared/conversations'
+import type { Conversation, ConversationTurn } from '../../../../../shared/conversations'
 import { useConversations } from './conversationState'
 import styles from './Conversations.module.css'
 
@@ -143,14 +146,88 @@ function MessageTurn({ turn }: { turn: ConversationTurn }): React.JSX.Element {
     </article>
   )
 }
+function ConversationGroup({
+  label,
+  items,
+  total,
+  offset,
+  setOffset,
+  blocked
+}: {
+  label: string
+  items: Conversation[]
+  total: number
+  offset: number
+  setOffset: React.Dispatch<React.SetStateAction<number>>
+  blocked: boolean
+}): React.JSX.Element {
+  const c = useConversations()
+  return (
+    <section aria-label={label}>
+      <h3>{label}</h3>
+      <ul className={styles['conversation-list']}>
+        {items.map((item) => (
+          <li key={item.id}>
+            <AppButton
+              variant={c.selected === item.id ? 'default' : 'subtle'}
+              className={styles['conversation-list-item']}
+              disabled={blocked}
+              aria-current={c.selected === item.id ? 'true' : undefined}
+              onClick={() => c.choose(item.id)}
+            >
+              {item.title}
+            </AppButton>
+            <span>
+              {new Date(item.updatedAt).toLocaleDateString()}
+              {c.drafts[item.id]?.text ? ' · Unsent draft' : ''}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {!items.length ? (
+        <p>
+          No {c.view} conversations{c.query ? ' match this title' : ''}.
+        </p>
+      ) : null}
+      {total > 20 || offset > 0 ? (
+        <div className={styles['conversation-actions']}>
+          <AppButton
+            variant="subtle"
+            disabled={blocked || offset === 0}
+            onClick={() => setOffset(Math.max(0, offset - 20))}
+          >
+            Previous {label.toLowerCase()}
+          </AppButton>
+          <span>
+            {offset + (items.length ? 1 : 0)}–{offset + items.length} of {total}
+          </span>
+          <AppButton
+            variant="subtle"
+            disabled={blocked || offset + 20 >= total}
+            onClick={() => setOffset(offset + 20)}
+          >
+            More {label.toLowerCase()}
+          </AppButton>
+        </div>
+      ) : null}
+    </section>
+  )
+}
 export function ConversationPanel(): React.JSX.Element {
   const c = useConversations()
   const { composerRef, composingRef } = c,
     session = useWorkspaceSession(),
     connections = useAiConnections(),
     transcript = useRef<HTMLDivElement>(null)
-  const [includeContext, setIncludeContext] = useState(false),
-    [expandedReview, setExpandedReview] = useState(true)
+  const proofreading = useProofreading()
+  const [renaming, setRenaming] = useState(false)
+  const [expandedReview, setExpandedReview] = useState(true)
+  const renameKey = `${c.scope?.projectId}:${c.scope?.workspaceId}:${c.selected}`
+  const [lastRenameKey, setLastRenameKey] = useState(renameKey)
+  if (lastRenameKey !== renameKey) {
+    setLastRenameKey(renameKey)
+    setRenaming(false)
+  }
   const key = `${c.selected ?? 'none'}:${c.before ?? 'latest'}`
   useLayoutEffect(() => {
     if (transcript.current) transcript.current.scrollTop = c.scroll.current.get(key) ?? 0
@@ -174,94 +251,87 @@ export function ConversationPanel(): React.JSX.Element {
             c.draftEvents.onCompositionEndCapture()
           }}
         >
-          <div className={styles['conversation-introduction']}>
-            <h3>Conversations</h3>
-            <p>Think through your writing. Requests and responses stay with this project.</p>
-          </div>
-          <details className={styles['conversation-library']} open={!c.selected}>
-            <summary>Find or start a conversation</summary>
-            <TextInput
-              label="Find by title"
-              value={c.query}
-              maxLength={160}
-              onChange={(e) => {
-                c.setQuery(e.currentTarget.value)
-                c.setOffset(0)
-              }}
+          <div className={styles['conversation-actions']}>
+            <AppButton disabled={c.readOnly || blocked} onClick={() => c.change('create')}>
+              New chat
+            </AppButton>
+            <ActionMenu
+              label="Conversations"
+              accessibleLabel="Conversation options"
+              icon={<IconDots aria-hidden="true" />}
+              disabled={blocked}
+              actions={[
+                {
+                  id: 'account',
+                  label: 'Manage ChatGPT',
+                  onSelect: () => connections.openDialog()
+                },
+                { id: 'list', label: 'Find conversations', onSelect: c.backToList },
+                { id: 'recovery', label: 'Retry local recovery', onSelect: c.recover }
+              ]}
             />
-            <SelectField
-              label="Conversation list"
-              value={c.view}
-              onChange={(e) => {
-                c.setView(e.currentTarget.value as 'active' | 'archived')
-                c.setOffset(0)
-              }}
-            >
-              <option value="active">Active</option>
-              <option value="archived">Archived</option>
-            </SelectField>
-            <ul className={styles['conversation-list']}>
-              {c.items.map((item) => (
-                <li key={item.id}>
-                  <AppButton
-                    variant={c.selected === item.id ? 'default' : 'subtle'}
-                    className={styles['conversation-list-item']}
-                    disabled={blocked}
-                    aria-current={c.selected === item.id ? 'true' : undefined}
-                    onClick={() => c.choose(item.id)}
-                  >
-                    {item.title}
-                  </AppButton>
-                  <span>
-                    {new Date(item.updatedAt).toLocaleDateString()}
-                    {c.drafts[item.id]?.text ? ' · Unsent draft' : ''}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {!c.items.length ? <p>No {c.view} conversations match this title.</p> : null}
-            <div className={styles['conversation-actions']}>
-              <AppButton
-                variant="subtle"
-                disabled={c.offset === 0}
-                onClick={() => c.setOffset(Math.max(0, c.offset - 20))}
-              >
-                Previous conversations
-              </AppButton>
-              <AppButton
-                variant="subtle"
-                disabled={c.offset + 20 >= c.total}
-                onClick={() => c.setOffset(c.offset + 20)}
-              >
-                More conversations
-              </AppButton>
-            </div>
-            <form
-              className={styles['conversation-form']}
-              onSubmit={(e) => {
-                e.preventDefault()
-                c.change('create')
-              }}
-            >
-              <TextInput
-                label="New conversation title"
-                value={c.newTitle}
-                maxLength={160}
-                readOnly={c.readOnly || blocked}
-                onChange={(e) => c.setNewTitle(e.currentTarget.value)}
-              />
-              <div className={styles['conversation-actions']}>
-                <AppButton type="submit" disabled={c.readOnly || blocked || !c.newTitle.trim()}>
-                  New conversation
-                </AppButton>
-                {c.newTitle ? (
-                  <AppButton variant="subtle" disabled={blocked} onClick={() => c.setNewTitle('')}>
-                    Clear title
-                  </AppButton>
-                ) : null}
-              </div>
-            </form>
-          </details>
+          </div>
+          {proofreading.total ||
+          proofreading.issue ||
+          proofreading.bundle ||
+          proofreading.reviewed ||
+          proofreading.pending ||
+          proofreading.event?.pending ||
+          proofreading.event?.issue ||
+          proofreading.proofreadingLocked ? (
+            <AppButton variant="subtle" onClick={() => proofreading.show()}>
+              Saved proofreading reviews
+            </AppButton>
+          ) : null}
+          {c.listOpen ? (
+            <>
+              <details className={styles['conversation-library']}>
+                <summary>Search and history</summary>
+                <TextInput
+                  label="Find by title"
+                  value={c.query}
+                  maxLength={160}
+                  onChange={(e) => c.setQuery(e.currentTarget.value)}
+                />
+                <SelectField
+                  label="Conversation history"
+                  value={c.view}
+                  onChange={(e) => c.setView(e.currentTarget.value as 'active' | 'archived')}
+                >
+                  <option value="active">Active</option>
+                  <option value="archived">Archived</option>
+                </SelectField>
+              </details>
+              {c.listLoading ? (
+                <p role="status">Loading conversations…</p>
+              ) : (
+                <>
+                  {c.currentLabel ? (
+                    <ConversationGroup
+                      label={c.currentLabel}
+                      items={c.currentItems}
+                      total={c.currentTotal}
+                      offset={c.currentOffset}
+                      setOffset={c.setCurrentOffset}
+                      blocked={blocked}
+                    />
+                  ) : null}
+                  <ConversationGroup
+                    label={c.currentLabel ? 'Other conversations' : 'Conversations'}
+                    items={c.items}
+                    total={c.total}
+                    offset={c.offset}
+                    setOffset={c.setOffset}
+                    blocked={blocked}
+                  />
+                </>
+              )}
+            </>
+          ) : (
+            <AppButton variant="subtle" onClick={c.backToList}>
+              Back to conversations
+            </AppButton>
+          )}
           {c.issue ? (
             <p className={styles['conversation-error']} role="alert">
               {c.issue}
@@ -283,19 +353,57 @@ export function ConversationPanel(): React.JSX.Element {
               access. New conversations and requests require an editable project.
             </p>
           ) : null}
-          {c.loading ? <p role="status">Loading conversation…</p> : null}
-          {c.page ? (
+          {!c.listOpen && c.loading ? <p role="status">Loading conversation…</p> : null}
+          {!c.listOpen && c.page ? (
             <>
               <header className={styles['conversation-heading']}>
-                <h3>{c.page.conversation.title}</h3>
-                <p>{archived ? 'Archived conversation' : 'Active conversation'}</p>
+                <h3>
+                  {c.page.conversation.title}
+                  {archived ? ' · Archived' : ''}
+                </h3>
+                <ActionMenu
+                  key={c.page.conversation.id}
+                  label="Chat actions"
+                  accessibleLabel={`Actions for ${c.page.conversation.title}`}
+                  icon={<IconDots aria-hidden="true" />}
+                  disabled={blocked}
+                  actions={[
+                    {
+                      id: 'rename',
+                      label: 'Rename',
+                      disabled: c.readOnly,
+                      onSelect: () => {
+                        setRenaming(true)
+                        c.setRename(c.page!.conversation.title)
+                      }
+                    },
+                    {
+                      id: 'archive',
+                      label: archived ? 'Restore' : 'Archive',
+                      disabled: c.readOnly || c.active || !!c.rename,
+                      onSelect: () => c.change(archived ? 'restore' : 'archive')
+                    },
+                    {
+                      id: 'export',
+                      label: 'Export transcript…',
+                      disabled: c.active,
+                      onSelect: () => c.exportTranscript(false)
+                    },
+                    {
+                      id: 'export-context',
+                      label: 'Export with reviewed context…',
+                      disabled: c.active,
+                      onSelect: () => c.exportTranscript(true)
+                    }
+                  ]}
+                />
               </header>
-              <details className={styles['conversation-management']}>
-                <summary>Conversation actions</summary>
+              {renaming || c.rename ? (
                 <form
                   className={styles['conversation-form']}
                   onSubmit={(e) => {
                     e.preventDefault()
+                    setRenaming(false)
                     c.change('rename')
                   }}
                 >
@@ -310,37 +418,19 @@ export function ConversationPanel(): React.JSX.Element {
                     <AppButton type="submit" disabled={c.readOnly || blocked || !c.rename.trim()}>
                       Save title
                     </AppButton>
-                    <AppButton variant="subtle" disabled={blocked} onClick={() => c.setRename('')}>
-                      Clear rename
+                    <AppButton
+                      variant="subtle"
+                      disabled={blocked}
+                      onClick={() => {
+                        setRenaming(false)
+                        c.setRename('')
+                      }}
+                    >
+                      Done renaming
                     </AppButton>
                   </div>
                 </form>
-                <AppButton
-                  variant="default"
-                  disabled={c.readOnly || blocked || c.active}
-                  onClick={() => c.change(archived ? 'restore' : 'archive')}
-                >
-                  {archived ? 'Restore conversation' : 'Archive conversation'}
-                </AppButton>
-                <p className={styles['conversation-caption']}>
-                  Archiving keeps the entire conversation and any unsent draft.
-                </p>
-                <ChoiceField
-                  label="Include reviewed context in transcript export"
-                  checked={includeContext}
-                  onChange={(e) => setIncludeContext(e.currentTarget.checked)}
-                />
-                <AppButton
-                  variant="default"
-                  disabled={blocked || c.active}
-                  onClick={() => c.exportTranscript(includeContext)}
-                >
-                  Export transcript…
-                </AppButton>
-                <p className={styles['conversation-caption']}>
-                  UTF-8 plain text. Choose a new filename; existing files are kept.
-                </p>
-              </details>
+              ) : null}
               <div className={styles['conversation-actions']}>
                 <AppButton
                   variant="subtle"
@@ -373,11 +463,15 @@ export function ConversationPanel(): React.JSX.Element {
                   </p>
                 )}
               </div>
-              <p className={styles['conversation-caption']}>
-                {c.page.totalMessages} saved messages. Up to five requests are shown per page.
-                Previous messages are not attached automatically.
-              </p>
-              <AiRequestConnection action="conversation" disabled={blocked} />
+              {c.page.totalMessages ? (
+                <p className={styles['conversation-caption']}>
+                  {c.page.totalMessages} saved messages · Five requests per page
+                </p>
+              ) : null}
+              <details className={styles['conversation-capture']}>
+                <summary>ChatGPT availability</summary>
+                <AiRequestConnection action="conversation" disabled={blocked} />
+              </details>
               {!archived || c.draft.text ? (
                 <form
                   className={styles['conversation-form']}
@@ -417,7 +511,7 @@ export function ConversationPanel(): React.JSX.Element {
                       disabled={blocked || c.readOnly || archived}
                       onClick={() => void c.attach('section')}
                     >
-                      Use current section
+                      Use current item
                     </AppButton>
                     {c.draft.source.kind !== 'none' ? (
                       <AppButton
@@ -545,13 +639,11 @@ export function ConversationPanel(): React.JSX.Element {
               ) : null}
             </>
           ) : null}
-          <AppButton variant="subtle" disabled={blocked} onClick={c.recover}>
-            Retry local recovery
-          </AppButton>
-          <p className={styles['conversation-caption']}>
-            Reviewed requests use your own account and its usage settings. Saved conversations
-            remain readable and exportable without a connection.
-          </p>
+          {c.issue && !c.pending ? (
+            <AppButton variant="subtle" disabled={blocked} onClick={c.recover}>
+              Retry local recovery
+            </AppButton>
+          ) : null}
         </section>
       )}
     />
@@ -560,10 +652,7 @@ export function ConversationPanel(): React.JSX.Element {
 export function ConversationNotice(): React.JSX.Element | null {
   const c = useConversations()
   const drafts = Object.values(c.drafts).filter((d) => !!d.text).length
-  if (
-    !c.scope ||
-    (!c.run?.pending && !c.run?.issue && !c.pending && !drafts && !c.newTitle && !c.rename)
-  )
+  if (!c.scope || (!c.run?.pending && !c.run?.issue && !c.pending && !drafts && !c.rename))
     return null
   return (
     <aside className={styles['conversation-notice']} aria-label="Conversation work">

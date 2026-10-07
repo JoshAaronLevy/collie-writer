@@ -1,6 +1,9 @@
+import { WritingPositions, bindWritingPosition, type PositionBinding } from './writing-positions'
+import { isEditableKind } from '../../../../shared/outline'
 import type { ExportJob } from '../../../../shared/exports'
 import type { ExportOperation } from './useExportOperations'
 import type { OutlineDocument } from '../../../../shared/outline'
+import { savePresentation, type SavePresentation } from '../projects/project-file-presentation'
 type WorkspaceControllerState = {
   acceptProjectDetails: (next: OpenProject) => void
   composition: React.RefObject<boolean>
@@ -86,6 +89,7 @@ type WorkspaceControllerState = {
   data: DataLocations | null
   metaPending: React.RefObject<SectionMetaInput | null>
   current: React.RefObject<OpenProject | null>
+  editorReady: (editor: Editor | null) => void
   editorRef: React.RefObject<Editor | null>
   imageUrls: React.RefObject<Map<string, string>>
   anchorToFocus: React.RefObject<string | null>
@@ -94,6 +98,7 @@ type WorkspaceControllerState = {
   sectionDirty: boolean
   dirty: boolean
   fileActive: boolean
+  saveState: SavePresentation
   accessReadOnly: boolean
   accessTransition: boolean
   available: boolean
@@ -233,6 +238,8 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     before: Editor['state']['doc']
     after: DocumentPayload
   } | null>(null)
+  const [positions] = useState(() => new WritingPositions())
+  const positionBinding = useRef<PositionBinding | null>(null)
   const [drafts] = useState(() => new DraftRegistry())
   const draftRevision = useSyncExternalStore(drafts.subscribe, drafts.version)
   const [destination, setDestination] = useState<AppDestination>({ kind: 'setup' })
@@ -311,6 +318,13 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
   const retryCommit = useRef<CommitInput | null>(null),
     committingTask = useRef<Promise<OpenProject | null> | null>(null)
   const pendingSave = useRef<SaveInput | null>(null)
+  // Presentation mirrors the existing request owner; neither field authorizes a file operation.
+  const [pendingSaveScope, setPendingSaveScope] = useState<OpenInput | null>(null)
+  const [savingScope, setSavingScope] = useState<OpenInput | null>(null)
+  function retainSave(input: SaveInput | null): void {
+    pendingSave.current = input
+    setPendingSaveScope(input?.scope ?? null)
+  }
   const pendingImage = useRef<{
     projectId: string
     workspaceId: string
@@ -352,6 +366,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     sourceDirty ||
     drafts.hasUnprotected()
   const fileActive = fileBusy(files.job)
+  const saveState = savePresentation(project, files, savingScope, pendingSaveScope)
   const accessReadOnly = !!project && !canEditProject(access, project)
   const accessTransition = !!access?.transition
   function updateProject(next: OpenProject | null): void {
@@ -377,6 +392,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     updateHead({
       ...p,
       title: next.title,
+      subtitle: next.subtitle,
       byline: next.byline,
       description: next.description,
       projectKind: next.projectKind,
@@ -387,6 +403,9 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     })
   }
   function applyFiles(next: FileStatus): void {
+    // A terminal event can arrive before the original request's running reply.
+    // Keep the settled status; finishJob uses this same bounded outcome cache.
+    if (next.job && fileBusy(next.job) && finishedJobs.current.has(next.job.id)) return
     fileState.current = next
     setFiles(next)
     if (
@@ -398,6 +417,12 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     if (current.current && sameScope(scopeOf(current.current), next.scope))
       updateProject({ ...current.current, destination: next.destination })
     if (next.job && !fileBusy(next.job)) {
+      if (
+        next.job.kind === 'save' &&
+        next.job.id === pendingSave.current?.operationId &&
+        sameScope(next.job.scope, pendingSave.current.scope)
+      )
+        retainSave(null)
       finishedJobs.current.set(next.job.id, next.job)
       if (finishedJobs.current.size > 64)
         finishedJobs.current.delete(finishedJobs.current.keys().next().value!)
@@ -487,7 +512,11 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     if (destination.kind !== 'workspace' || !project || !sameScope(destination.scope, project))
       return
     const selected = project.documents.find((item) => item.id === project.documentId)
-    if (selected?.kind === 'text' && effectiveState(selected, project.documents) === 'active')
+    if (
+      selected &&
+      isEditableKind(selected.kind) &&
+      effectiveState(selected, project.documents) === 'active'
+    )
       rememberLastProject({ ...scopeOf(project), documentId: project.documentId })
   }, [destination, project])
   useEffect(() => {
@@ -554,25 +583,9 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
             'The previous project is archived. Open it from Archived when you are ready.'
           )
         } else {
-          const opened = await window.collie.openProject(last)
+          const opened = await window.collie.openProject(scopeOf(last))
           if (opened.ok) {
-            let selected = opened.value
-            const preferred = opened.value.documents.find((item) => item.id === last.documentId)
-            if (
-              preferred?.kind === 'text' &&
-              effectiveState(preferred, opened.value.documents) === 'active' &&
-              opened.value.documentId !== preferred.id
-            ) {
-              const section = await window.collie.openSection({ ...last, documentId: preferred.id })
-              if (!section.ok) {
-                setLibraryIssue(
-                  'The previous section could not be opened safely. Choose a project from this library.'
-                )
-                if (destinationRef.current.kind === 'setup') showDestination({ kind: 'library' })
-                return
-              }
-              selected = section.value
-            }
+            const selected = await resumeItem(opened.value, last.documentId)
             if (destinationRef.current.kind === 'setup') {
               await select(selected)
               return
@@ -634,53 +647,126 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     if (result.ok) applyFiles(result.value)
     else setError(result.error.message)
   }
+  async function resumeItem(opened: OpenProject, fallbackId?: string): Promise<OpenProject> {
+    const legacy = readLastProject().value
+    const preferredId =
+      positions.selected(scopeOf(opened)) ??
+      (legacy && sameScope(legacy, opened) ? legacy.documentId : fallbackId)
+    const preferred = opened.documents.find((item) => item.id === preferredId)
+    if (
+      !preferred ||
+      !isEditableKind(preferred.kind) ||
+      effectiveState(preferred, opened.documents) !== 'active' ||
+      preferred.id === opened.documentId
+    )
+      return opened
+    const result = await window.collie.openSection({ ...scopeOf(opened), documentId: preferred.id })
+    return result.ok && result.value.documentId === preferred.id ? result.value : opened
+  }
+  function editorReady(editor: Editor | null): void {
+    positionBinding.current?.dispose()
+    positionBinding.current = null
+    editorRef.current = editor
+    const p = current.current
+    if (!editor || !p) return
+    const anchor = anchorToFocus.current
+    positionBinding.current = bindWritingPosition(
+      positions,
+      editor,
+      scopeOf(p),
+      p.documentId,
+      () => {
+        const currentProject = current.current
+        return currentProject &&
+          sameScope(currentProject, p) &&
+          currentProject.documentId === p.documentId &&
+          editVersionRef.current === protectedVersionRef.current
+          ? currentProject.revisionId
+          : null
+      },
+      !!anchor
+    )
+    if (anchor) {
+      anchorToFocus.current = null
+      const target = manuscriptAnchor(editor, anchor)
+      if (target) {
+        if (target.footnote || target.reference) editor.commands.setNodeSelection(target.position)
+        else
+          editor.commands.setTextSelection(
+            Math.min(target.position + 1, editor.state.doc.content.size)
+          )
+        editor.view.dispatch(editor.state.tr.scrollIntoView())
+      } else setError('The exact passage is no longer present in this writing item.')
+    }
+  }
   async function select(
     next: OpenProject,
     after: 'write' | 'setup' | 'details' = 'write'
   ): Promise<void> {
+    positionBinding.current?.capture()
+    const retainEditor =
+      !!current.current &&
+      sameScope(current.current, next) &&
+      current.current.documentId === next.documentId &&
+      !!editorRef.current &&
+      editorRef.current.state.doc.eq(
+        editorRef.current.schema.nodeFromJSON(hydrateDocument(next.payload))
+      )
     if (!sameScope(current.current, next)) {
       setBackTrail([])
       setReferenceAnchor(null)
     }
-    const referenced = new Set<string>()
-    const visit = (node: unknown): void => {
-      if (!node || typeof node !== 'object') return
-      for (const [key, value] of Object.entries(node)) {
-        if (key === 'assetId' && typeof value === 'string') referenced.add(value)
-        else visit(value)
+    let imageIssue = ''
+    if (!retainEditor) {
+      const referenced = new Set<string>()
+      const visit = (node: unknown): void => {
+        if (!node || typeof node !== 'object') return
+        for (const [key, value] of Object.entries(node)) {
+          if (key === 'assetId' && typeof value === 'string') referenced.add(value)
+          else visit(value)
+        }
       }
+      visit(next.payload.ast)
+      const loaded = new Map<string, string>()
+      let imageBytes = 0
+      for (const assetId of referenced) {
+        const result = await window.collie.readImage({ ...scopeOf(next), assetId })
+        if (!result.ok) {
+          imageIssue = `Image ${assetId.slice(0, 8)} could not be loaded: ${result.error.message}`
+          continue
+        }
+        imageBytes += (result.value.base64.length * 3) / 4
+        if (imageBytes > 256 * 1024 * 1024) {
+          imageIssue =
+            'This section has more than 256 MiB of image data. Some images were left as placeholders to keep editing available.'
+          break
+        }
+        const binary = atob(result.value.base64),
+          bytes = new Uint8Array(binary.length)
+        for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
+        loaded.set(
+          assetId,
+          URL.createObjectURL(new Blob([bytes], { type: result.value.mediaType }))
+        )
+      }
+      for (const url of imageUrls.current.values()) URL.revokeObjectURL(url)
+      imageUrls.current = loaded
     }
-    visit(next.payload.ast)
-    const loaded = new Map<string, string>()
-    let imageIssue = '',
-      imageBytes = 0
-    for (const assetId of referenced) {
-      const result = await window.collie.readImage({ ...scopeOf(next), assetId })
-      if (!result.ok) {
-        imageIssue = `Image ${assetId.slice(0, 8)} could not be loaded: ${result.error.message}`
-        continue
-      }
-      imageBytes += (result.value.base64.length * 3) / 4
-      if (imageBytes > 256 * 1024 * 1024) {
-        imageIssue =
-          'This section has more than 256 MiB of image data. Some images were left as placeholders to keep editing available.'
-        break
-      }
-      const binary = atob(result.value.base64),
-        bytes = new Uint8Array(binary.length)
-      for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
-      loaded.set(assetId, URL.createObjectURL(new Blob([bytes], { type: result.value.mediaType })))
-    }
-    for (const url of imageUrls.current.values()) URL.revokeObjectURL(url)
-    imageUrls.current = loaded
     if (current.current?.projectId !== next.projectId) {
       setHistory(null)
       setInspectionTarget(null)
     }
     setAnnotationCapture(null)
+    if (!retainEditor) {
+      positionBinding.current?.dispose()
+      positionBinding.current = null
+    }
     updateProject(next)
+    const item = next.documents.find((d) => d.id === next.documentId)
+    if (item && effectiveState(item, next.documents) === 'active')
+      positions.remember(scopeOf(next), next.documentId)
     setConflict(null)
-    setEditorEpoch((value) => value + 1)
+    if (!retainEditor) setEditorEpoch((value) => value + 1)
     const selected = next.documents.find((doc) => doc.id === next.documentId)!
     setSectionTitle(selected.title)
     setSectionStatus(selected.status as 'draft' | 'review' | 'complete')
@@ -697,17 +783,22 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     setProtectedVersion(0)
     retryCommit.current = null
     setRetry(null)
-    pendingSave.current = null
     window.collie.setUnprotectedChanges(drafts.hasUnprotected())
     setError(imageIssue)
     setNotice('Draft protected locally.')
-    showDestination(
-      after === 'setup'
-        ? { kind: 'setup' }
-        : after === 'details'
-          ? { kind: 'workspace', scope: scopeOf(next), view: 'details' }
-          : writingDestination(next, next.documentId)
-    )
+    if (!(
+      retainEditor &&
+      after === 'write' &&
+      destinationRef.current.kind === 'workspace' &&
+      destinationRef.current.view === 'write'
+    ))
+      showDestination(
+        after === 'setup'
+          ? { kind: 'setup' }
+          : after === 'details'
+            ? { kind: 'workspace', scope: scopeOf(next), view: 'details' }
+            : writingDestination(next, next.documentId)
+      )
     await refreshFiles()
   }
   async function importImage(details: { alt: string; caption: string }): Promise<void> {
@@ -864,6 +955,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
         return false
       }
       outlinePending.current = {
+        hierarchyVersion: 2,
         ...scopeOf(p),
         operationId: crypto.randomUUID(),
         expectedHead: p.headCommitId,
@@ -884,7 +976,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       }
       setError(
         result.error.code === 'VALIDATION'
-          ? 'This outline change is not valid. Keep at least one active section, use a valid parent, and split between existing blocks. The whole change was left unapplied.'
+          ? 'This outline change is not valid. Keep at least one active Chapter or Section. Parents must be outside the moved branch and keep the whole outline within eight levels. Split between existing blocks; merge only items without children. The whole change was left unapplied.'
           : result.error.message
       )
       return false
@@ -1110,7 +1202,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       if (fileState.current.job?.id !== id) return null
     }
     const job = await waitJob(id)
-    if (job?.error) setError(projectMessages[job.error])
+    if (job?.error && job.state !== 'cancelled') setError(projectMessages[job.error])
     return job
   }
   function run(work: () => Promise<unknown>): void {
@@ -1135,58 +1227,61 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     return !!(await waitJob(job.id))
   }
   async function save(as: boolean): Promise<boolean> {
-    if (!(await waitActive())) return false
+    const requested = current.current
+    if (!requested) return false
+    const retained = pendingSave.current
+    if (retained && (as || !sameScope(retained.scope, requested))) {
+      setError('Retry the pending Save in its original project before choosing another location.')
+      return false
+    }
+    setSavingScope(scopeOf(requested))
     setBusy(true)
-    const p = await flush()
-    if (!p) {
-      setBusy(false)
-      return false
-    }
-    await refreshFiles()
-    if (!(await waitActive())) {
-      setBusy(false)
-      return false
-    }
-    let token: string | null = null
-    const destination = fileState.current.destination
-    if ((as || !destination) && !(pendingSave.current && !as)) {
-      const choice = await window.collie.pickProjectFile({ purpose: 'save', scope: scopeOf(p) })
-      if (!choice.ok || !choice.value) {
-        if (!choice.ok) setError(choice.error.message)
-        setBusy(false)
-        return false
-      }
-      token = choice.value.token
-    }
-    const retrying = !!pendingSave.current && !as
-    const input: SaveInput = retrying
-      ? pendingSave.current!
-      : {
-          scope: scopeOf(p),
-          operationId: crypto.randomUUID(),
-          minimumHead: p.headCommitId,
-          expectedGeneration: destination?.generationId ?? null,
-          token
+    try {
+      if (!(await waitActive())) return false
+      const p = await flush()
+      if (!p || !sameScope(p, requested)) return false
+      await refreshFiles()
+      if (!(await waitActive())) return false
+      let token: string | null = null
+      const destination = fileState.current.destination
+      if ((as || !destination) && !retained) {
+        const choice = await window.collie.pickProjectFile({ purpose: 'save', scope: scopeOf(p) })
+        if (!choice.ok || !choice.value) {
+          if (!choice.ok) setError(choice.error.message)
+          return false
         }
-    pendingSave.current = input
-    setBusy(false)
-    setError('')
-    const result = await window.collie.saveProjectFile(input)
-    const job = await finishJob(result, input.operationId)
-    if (job || (!result.ok && result.error.code !== 'UNAVAILABLE')) pendingSave.current = null
-    if (job?.state === 'completed') {
-      // Reconcile the old request before capturing any newer edits submitted with this explicit Save.
-      if (retrying && fileState.current.destination?.headCommitId !== p.headCommitId)
-        return save(false)
-      await refresh()
-      return true
+        token = choice.value.token
+      }
+      const input: SaveInput = retained ?? {
+        scope: scopeOf(p),
+        operationId: crypto.randomUUID(),
+        minimumHead: p.headCommitId,
+        expectedGeneration: destination?.generationId ?? null,
+        token
+      }
+      retainSave(input)
+      setBusy(false)
+      setError('')
+      const result = await window.collie.saveProjectFile(input)
+      const job = await finishJob(result, input.operationId)
+      if (job || (!result.ok && result.error.code !== 'UNAVAILABLE')) retainSave(null)
+      if (job?.state === 'completed') {
+        // Reconcile the old request before capturing newer edits from this explicit Save.
+        if (retained && fileState.current.destination?.headCommitId !== p.headCommitId)
+          return await save(false)
+        await refresh()
+        return true
+      }
+      return false
+    } finally {
+      setSavingScope(null)
+      setBusy(false)
     }
-    return false
   }
   async function openLocal(scope: OpenInput, after: 'write' | 'details' = 'write'): Promise<void> {
     const result = await window.collie.openProject(scope)
     if (result.ok) {
-      await select(result.value, after)
+      await select(await resumeItem(result.value), after)
       setLibraryIssue(null)
     } else setError(result.error.message)
   }
@@ -1367,7 +1462,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     setProtectedVersion(0)
     retryCommit.current = null
     setRetry(null)
-    pendingSave.current = null
+    retainSave(null)
     renamePending.current = null
     applyFiles(emptyFiles)
     window.collie.setUnprotectedChanges(false)
@@ -1437,6 +1532,8 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
         return
       }
       if (!(await flush(false, 'close'))) return
+      positionBinding.current?.capture()
+      positions.flush()
       // Leave the selected file and its saved head unchanged until an explicit Save.
       outcome = isDirty() ? 'failed' : 'local'
     } finally {
@@ -1891,6 +1988,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       }
       // Input is frozen only for this bounded transition; retained jobs continue independently.
       setNavigating(true)
+      positionBinding.current?.capture()
       const previous = captureOrigin(destinationRef.current)
       const p = current.current
       if (p && !(await flush(false, 'navigate'))) return false
@@ -1932,7 +2030,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
           next.documentId !== active.documentId
         ) {
           const requested = active.documents.find((document) => document.id === next.documentId)
-          if (!requested || requested.state === 'merged' || requested.kind !== 'text') {
+          if (!requested || requested.state === 'merged' || !isEditableKind(requested.kind)) {
             setError(
               `The requested section is ${requested?.state ?? 'missing'}. Restore it in the outline, or explicitly open its replacement. No different section was selected.`
             )
@@ -1984,7 +2082,10 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       showDestination(
         next,
         next.kind === 'workspace' && next.view === 'write'
-          ? () => editorRef.current?.commands.focus()
+          ? () => {
+              editorRef.current?.commands.focus(undefined, { scrollIntoView: !!next.anchorId })
+              if (!next.anchorId) positionBinding.current?.resumeScroll()
+            }
           : undefined
       )
       return true
@@ -2047,6 +2148,28 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       read: () => manuscriptHandle.current!.read(),
       flush: (mode) => manuscriptHandle.current!.flush!(mode),
       focus: () => manuscriptHandle.current!.focus?.()
+    })
+  }, [drafts, project])
+  useLayoutEffect(() => {
+    if (!project) return
+    const owner = project
+    return drafts.register('project-file-save', {
+      read: () => ({
+        scope: pendingSave.current?.scope ?? scopeOf(owner),
+        kind: 'project-file-save',
+        entityId: pendingSave.current?.operationId ?? null,
+        label: 'pending project-file Save',
+        dirty: false,
+        composing: false,
+        busy: !!pendingSave.current && !!actionTask.current,
+        pendingOperation: pendingSave.current,
+        policy: 'operation',
+        target: {
+          kind: 'workspace',
+          scope: pendingSave.current?.scope ?? scopeOf(owner),
+          view: 'details'
+        }
+      })
     })
   }, [drafts, project])
   useLayoutEffect(() => {
@@ -2233,17 +2356,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       if (!opened.ok) return blocked(opened.error.message)
       if (opened.value.archived)
         return blocked('This project was archived. Restore it from Projects before continuing.')
-      let selected = opened.value
-      const preferred = selected.documents.find((item) => item.id === receipt.documentId)
-      if (
-        preferred?.kind === 'text' &&
-        effectiveState(preferred, selected.documents) === 'active' &&
-        selected.documentId !== preferred.id
-      ) {
-        const section = await window.collie.openSection({ ...scope, documentId: preferred.id })
-        if (!section.ok) return blocked(section.error.message)
-        selected = section.value
-      }
+      const selected = await resumeItem(opened.value, receipt.documentId)
       await select(selected, 'setup')
     }
     if (mode === 'write') {
@@ -2357,6 +2470,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     data,
     metaPending,
     current,
+    editorReady,
     editorRef,
     imageUrls,
     anchorToFocus,
@@ -2365,6 +2479,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     sectionDirty,
     dirty,
     fileActive,
+    saveState,
     accessReadOnly,
     accessTransition,
     available,

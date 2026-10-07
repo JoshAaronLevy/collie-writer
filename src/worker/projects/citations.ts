@@ -1,3 +1,4 @@
+import { isEditableKind } from '../../shared/outline'
 import { readProjectDetails } from './details'
 import type Database from 'better-sqlite3'
 import { readFile } from 'node:fs/promises'
@@ -66,7 +67,7 @@ export async function readCitations(
     error: null
   }
   for (const d of snapshot.documents) {
-    if (d.kind !== 'text' || d.state === 'merged') continue
+    if (!isEditableKind(d.kind) || d.state === 'merged') continue
     const state = effectiveState(d, snapshot.documents)
     if (state === 'merged') continue
     for (const c of citationOccurrences(d.payload))
@@ -90,7 +91,7 @@ export async function readCitations(
   const walk = (parent: string | null): void => {
     for (const d of children.get(parent) ?? []) {
       if (effectiveState(d, snapshot.documents) !== 'active') continue
-      if (d.kind === 'text') ordered.push(d)
+      if (isEditableKind(d.kind)) ordered.push(d)
       walk(d.id)
     }
   }
@@ -164,7 +165,7 @@ export async function readCitations(
     ).title
     const compiled = compileManuscript(
       {
-        metadata: { title, byline: details.byline, description: null },
+        metadata: { title, subtitle: details.subtitle, byline: details.byline, description: null },
         titlePage: false,
         capturedHead: view.headCommitId,
         style: view.style,

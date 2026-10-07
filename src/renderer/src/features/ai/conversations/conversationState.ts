@@ -1,8 +1,18 @@
+import { effectiveState, isEditableKind } from '../../../../../shared/outline'
+import { selectedChat, rememberChat } from './selected-chat'
 import type { AiActionAvailability } from '../../../../../shared/ai-route'
 import { useCallback, useMemo } from 'react'
 type ConversationControllerState = {
   items: Conversation[]
   total: number
+  currentItems: Conversation[]
+  currentTotal: number
+  currentLabel: string | null
+  currentOffset: number
+  setCurrentOffset: React.Dispatch<React.SetStateAction<number>>
+  listOpen: boolean
+  backToList: () => void
+  listLoading: boolean
   query: string
   setQuery: React.Dispatch<React.SetStateAction<string>>
   view: 'active' | 'archived'
@@ -22,8 +32,6 @@ type ConversationControllerState = {
   draft: Draft
   update: (patch: Partial<Draft>) => void
   drafts: Record<string, Draft>
-  newTitle: string
-  setNewTitle: React.Dispatch<React.SetStateAction<string>>
   rename: string
   setRename: React.Dispatch<React.SetStateAction<string>>
   issue: string
@@ -98,6 +106,15 @@ const emptyDraft = (): Draft => ({
   source: { kind: 'none' },
   review: null
 })
+function originOf(project: ReturnType<typeof useWorkspaceSession>['project']): string | null {
+  const doc = project?.documents.find((d) => d.id === project.documentId)
+  return project &&
+    doc &&
+    isEditableKind(doc.kind) &&
+    effectiveState(doc, project.documents) === 'active'
+    ? doc.id
+    : null
+}
 const activeStates = ['preparing', 'running', 'stopping']
 export function useConversationController(): ConversationControllerState {
   const session = useWorkspaceSession(),
@@ -107,11 +124,16 @@ export function useConversationController(): ConversationControllerState {
     [query, setQuery] = useState(''),
     [view, setView] = useState<'active' | 'archived'>('active'),
     [offset, setOffset] = useState(0)
+  const [currentItems, setCurrentItems] = useState<Conversation[]>([]),
+    [currentTotal, setCurrentTotal] = useState(0),
+    [currentOffset, setCurrentOffset] = useState(0),
+    [listOpen, setListOpen] = useState(true),
+    [listLoading, setListLoading] = useState(true)
   const [selected, setSelected] = useState<string | null>(null),
     [page, setPage] = useState<Extract<ConversationValue, { type: 'page' }> | null>(null),
     [before, setBefore] = useState<number | null>(null)
+  const [readRevision, setReadRevision] = useState(0)
   const [drafts, setDrafts] = useState<Record<string, Draft>>({}),
-    [newTitle, setNewTitle] = useState(''),
     [rename, setRename] = useState('')
   const [issue, setIssue] = useState(''),
     [notice, setNotice] = useState(''),
@@ -124,12 +146,14 @@ export function useConversationController(): ConversationControllerState {
     connectionRef.current = connections
   })
   const current = useRef(session),
-    state = useRef({ selected, query, view, offset, before, rename }),
+    state = useRef({ selected, query, view, offset, currentOffset, before, rename }),
     locked = useRef(false),
     pendingRef = useRef<ConversationRequest | null>(null)
   const readSequence = useRef(0),
     listSequence = useRef(0),
+    groupGeneration = useRef(0),
     refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const newChatFocus = useRef<string | null>(null)
   const scroll = useRef(new Map<string, number>()),
     composer = useRef<HTMLTextAreaElement>(null),
     composing = useRef(false)
@@ -137,7 +161,7 @@ export function useConversationController(): ConversationControllerState {
     current.current = session
   })
   useLayoutEffect(() => {
-    state.current = { selected, query, view, offset, before, rename }
+    state.current = { selected, query, view, offset, currentOffset, before, rename }
   })
   useLayoutEffect(() => {
     pendingRef.current = pending
@@ -170,8 +194,12 @@ export function useConversationController(): ConversationControllerState {
       )
         return
       if (!belongs(captured)) return
-      s.writingView.setAiTool('conversation')
       s.writingView.revealPanel('ai')
+      if (state.current.selected) {
+        setListOpen(false)
+        if (page?.conversation.state === 'active') rememberChat(captured, state.current.selected)
+        setReadRevision((revision) => revision + 1)
+      }
       if (rename || pendingRef.current || locked.current) return
       const target = attemptId ?? (run?.pending || run?.issue ? run.attemptId : null)
       if (target) {
@@ -198,7 +226,7 @@ export function useConversationController(): ConversationControllerState {
       }
     })()
   }
-  const dirty = Object.values(drafts).some((d) => !!d.text) || !!newTitle || !!rename
+  const dirty = Object.values(drafts).some((d) => !!d.text) || !!rename
   const draftEvents = useRetainedDraft('conversations', {
     read: () => ({
       scope: scope ?? { projectId: '', workspaceId: '' },
@@ -232,17 +260,47 @@ export function useConversationController(): ConversationControllerState {
     async (captured: OpenInput): Promise<void> => {
       const seq = ++listSequence.current,
         s = state.current,
+        context = originOf(current.current.project),
+        generation = groupGeneration.current
+      let result: Awaited<ReturnType<typeof window.collie.conversation>>
+      try {
         result = await window.collie.conversation({
           ...captured,
-          action: 'list',
+          action: 'grouped-list',
           state: s.view,
           query: s.query,
-          offset: s.offset
+          currentDocumentId: originOf(current.current.project),
+          currentOffset: s.currentOffset,
+          otherOffset: s.offset
         })
-      if (!belongs(captured) || seq !== listSequence.current) return
-      if (result.ok && result.value.type === 'list') {
-        setItems(result.value.items)
-        setTotal(result.value.total)
+      } catch {
+        if (
+          belongs(captured) &&
+          seq === listSequence.current &&
+          generation === groupGeneration.current
+        ) {
+          setListLoading(false)
+          setIssue('Conversation list could not be read. Try local recovery.')
+        }
+        return
+      }
+      if (
+        !belongs(captured) ||
+        seq !== listSequence.current ||
+        generation !== groupGeneration.current ||
+        context !== originOf(current.current.project) ||
+        s.query !== state.current.query ||
+        s.view !== state.current.view ||
+        s.offset !== state.current.offset ||
+        s.currentOffset !== state.current.currentOffset
+      )
+        return
+      setListLoading(false)
+      if (result.ok && result.value.type === 'grouped-list') {
+        setCurrentItems(result.value.current.items)
+        setCurrentTotal(result.value.current.total)
+        setItems(result.value.other.items)
+        setTotal(result.value.other.total)
       } else if (!result.ok) setIssue(result.error.message)
     },
     [belongs]
@@ -251,12 +309,14 @@ export function useConversationController(): ConversationControllerState {
     async (captured: OpenInput, id: string, cursor: number | null): Promise<void> => {
       const seq = ++readSequence.current
       try {
-        const result = await window.collie.conversation({
-          ...captured,
-          action: 'read',
-          conversationId: id,
-          before: cursor
-        })
+        const result = await window.collie
+          .conversation({
+            ...captured,
+            action: 'read',
+            conversationId: id,
+            before: cursor
+          })
+          .catch(() => null)
         if (
           !belongs(captured) ||
           seq !== readSequence.current ||
@@ -264,7 +324,9 @@ export function useConversationController(): ConversationControllerState {
           state.current.before !== cursor
         )
           return
-        if (result.ok && result.value.type === 'page') setPage(result.value)
+        if (!result)
+          setIssue('This conversation could not be read. Try local recovery or return to the list.')
+        else if (result.ok && result.value.type === 'page') setPage(result.value)
         else if (!result.ok) setIssue(result.error.message)
       } finally {
         if (seq === readSequence.current) setLoading(false)
@@ -287,11 +349,15 @@ export function useConversationController(): ConversationControllerState {
     setLastScope(scope)
     setItems([])
     setTotal(0)
+    setCurrentItems([])
+    setCurrentTotal(0)
+    setCurrentOffset(0)
+    setOffset(0)
+    setListOpen(true)
     setSelected(null)
     setPage(null)
     setBefore(null)
     setDrafts({})
-    setNewTitle('')
     setRename('')
     setIssue('')
     setNotice('')
@@ -303,6 +369,7 @@ export function useConversationController(): ConversationControllerState {
       clearTimeout(refreshTimer.current)
       refreshTimer.current = null
     }
+    newChatFocus.current = null
     readSequence.current++
     listSequence.current++
     scroll.current.clear()
@@ -319,15 +386,71 @@ export function useConversationController(): ConversationControllerState {
           'Conversation recovery could not finish. Stored history is still readable; use Retry local recovery.'
         )
       await refresh(captured)
-    })()
+      const hint = selectedChat(captured)
+      if (!hint || !alive || !belongs(captured) || state.current.selected) return
+      const seq = ++readSequence.current
+      const saved = await window.collie.conversation({
+        ...captured,
+        action: 'read',
+        conversationId: hint,
+        before: null
+      })
+      if (!alive || !belongs(captured) || state.current.selected || seq !== readSequence.current)
+        return
+      if (saved.ok && saved.value.type === 'page' && saved.value.conversation.state === 'active') {
+        state.current.selected = hint
+        setSelected(hint)
+        setPage(saved.value)
+        setListOpen(false)
+      } else {
+        rememberChat(captured, null)
+        setNotice(
+          'The previously selected chat is unavailable or archived. Choose a conversation from the list.'
+        )
+      }
+    })().catch(() => {
+      if (alive && belongs(captured))
+        setIssue(
+          'Conversation recovery could not finish. Use Retry local recovery; saved history is kept.'
+        )
+    })
     return () => {
       alive = false
     }
   }, [scope, refresh, belongs])
+  const currentDocumentId = originOf(project)
+  const currentLabel = currentDocumentId
+    ? project?.documents.find((d) => d.id === currentDocumentId)?.kind === 'chapter'
+      ? 'This chapter'
+      : 'This section'
+    : null
+  const groupKey = `${scope?.projectId}:${scope?.workspaceId}:${currentDocumentId}:${query}:${view}`
+  const [lastGroupKey, setLastGroupKey] = useState(groupKey)
+  if (lastGroupKey !== groupKey) {
+    setLastGroupKey(groupKey)
+    setOffset(0)
+    setCurrentOffset(0)
+    setItems([])
+    setCurrentItems([])
+    setTotal(0)
+    setCurrentTotal(0)
+    setListLoading(true)
+  }
+  const listPageKey = `${groupKey}:${offset}:${currentOffset}`
+  const [lastListPageKey, setLastListPageKey] = useState(listPageKey)
+  if (lastListPageKey !== listPageKey) {
+    setLastListPageKey(listPageKey)
+    setListLoading(true)
+    setItems([])
+    setCurrentItems([])
+  }
+  useLayoutEffect(() => {
+    groupGeneration.current++
+  }, [listPageKey])
   useEffect(() => {
     if (scope) void list(scope)
-  }, [scope, list, query, view, offset])
-  const readKey = `${scope?.projectId ?? ''}:${scope?.workspaceId ?? ''}:${selected ?? ''}:${before ?? ''}`
+  }, [scope, list, query, view, offset, currentOffset, currentDocumentId])
+  const readKey = `${scope?.projectId ?? ''}:${scope?.workspaceId ?? ''}:${selected ?? ''}:${before ?? ''}:${readRevision}`
   const [lastReadKey, setLastReadKey] = useState(readKey)
   if (lastReadKey !== readKey) {
     setLastReadKey(readKey)
@@ -335,7 +458,7 @@ export function useConversationController(): ConversationControllerState {
   }
   useEffect(() => {
     if (scope && selected) void read(scope, selected, before)
-  }, [scope, read, selected, before])
+  }, [scope, read, selected, before, readRevision])
   useEffect(
     () =>
       window.collie.onConversationChanged((event) => {
@@ -432,14 +555,22 @@ export function useConversationController(): ConversationControllerState {
       setIssue('Save or clear the rename draft before opening another conversation.')
       return
     }
+    const samePage = state.current.selected === id && state.current.before === null
+    newChatFocus.current = null
+    setListOpen(false)
     setSelected(id)
     state.current.selected = id
     state.current.before = null
     setBefore(null)
-    setPage(null)
+    if (samePage && scope) setReadRevision((revision) => revision + 1)
+    else setPage(null)
     setRename('')
     setIssue('')
-    setNotice('')
+    setNotice(
+      scope && !rememberChat(scope, id)
+        ? 'This chat is open, but its selection could not be remembered on this device.'
+        : ''
+    )
   }
   async function request(input: ConversationRequest): Promise<void> {
     if (locked.current || composing.current || (pendingRef.current && pendingRef.current !== input))
@@ -479,8 +610,16 @@ export function useConversationController(): ConversationControllerState {
       setPending(null)
       pendingRef.current = null
       if (input.action === 'change' && result.value.type === 'changed') {
-        if (input.expectedRevision === null) setNewTitle('')
-        else setRename('')
+        setRename('')
+        if (input.expectedRevision === null) newChatFocus.current = input.conversationId
+        setListOpen(false)
+        if (
+          !rememberChat(
+            input,
+            result.value.conversation.state === 'active' ? input.conversationId : null
+          )
+        )
+          setNotice('The chat is saved, but its selection could not be remembered on this device.')
         setSelected(input.conversationId)
         state.current.selected = input.conversationId
         setPage(null)
@@ -513,8 +652,14 @@ export function useConversationController(): ConversationControllerState {
   }
   function change(kind: 'create' | 'rename' | 'archive' | 'restore'): void {
     if (!scope || readOnly || !project || composing.current || pendingRef.current) return
+    if (kind === 'create' && state.current.rename) {
+      setIssue('Save or clear the rename draft before starting a new chat.')
+      return
+    }
     const c = page?.conversation,
-      title = (kind === 'create' ? newTitle : kind === 'rename' ? rename : (c?.title ?? '')).trim()
+      title = (
+        kind === 'create' ? 'New chat' : kind === 'rename' ? rename : (c?.title ?? '')
+      ).trim()
     if (!title) {
       setIssue('Enter a conversation title.')
       return
@@ -523,6 +668,7 @@ export function useConversationController(): ConversationControllerState {
     const input: ConversationRequest = {
       ...scope,
       action: 'change',
+      ...(kind === 'create' ? { version: 2 as const, originDocumentId: originOf(project) } : {}),
       operationId: crypto.randomUUID(),
       conversationId: kind === 'create' ? crypto.randomUUID() : c!.id,
       expectedRevision: kind === 'create' ? null : c!.revisionId,
@@ -742,6 +888,30 @@ export function useConversationController(): ConversationControllerState {
       )
     })
   }
+  useEffect(() => {
+    if (busy || listOpen || page?.conversation.id !== selected || !selected) return
+    const id = selected
+    const frame = requestAnimationFrame(() => {
+      const s = current.current,
+        target = composer.current
+      if (
+        newChatFocus.current !== id ||
+        state.current.selected !== id ||
+        s.closing ||
+        s.navigating ||
+        s.composition.current ||
+        composing.current ||
+        !document.hasFocus() ||
+        document.querySelector('[role="dialog"], [role="alertdialog"]') ||
+        !target ||
+        target.closest('[hidden],[inert]')
+      )
+        return
+      newChatFocus.current = null
+      target.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [busy, listOpen, page?.conversation.id, selected])
   const historyOrder = useRef(new Map<string, number>())
   const capability = connections.status?.features.conversation
   const canSend =
@@ -763,6 +933,26 @@ export function useConversationController(): ConversationControllerState {
   return {
     items,
     total,
+    currentItems,
+    currentTotal,
+    currentLabel,
+    currentOffset,
+    setCurrentOffset,
+    listOpen,
+    listLoading,
+    backToList: () => {
+      if (!composing.current) {
+        if (state.current.rename) {
+          setIssue('Save or clear the rename draft before returning to the list.')
+          return
+        }
+        newChatFocus.current = null
+        readSequence.current++
+        setLoading(false)
+        setListOpen(true)
+        if (scope) rememberChat(scope, null)
+      }
+    },
     query,
     setQuery,
     view,
@@ -776,8 +966,6 @@ export function useConversationController(): ConversationControllerState {
     draft,
     update,
     drafts,
-    newTitle,
-    setNewTitle,
     rename,
     setRename,
     issue,

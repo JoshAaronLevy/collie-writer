@@ -1,5 +1,7 @@
+import { hasControlCharacters } from '../../../../shared/control-characters'
 import {
   requiredProjectName,
+  projectSubtitle,
   projectText,
   type ProjectDetails
 } from '../../../../domain/projects/details'
@@ -13,6 +15,12 @@ export function detailsErrors(
       value.title === originalTitle || requiredProjectName(value.title.trim())
         ? undefined
         : 'Enter a title of 1–500 characters without line breaks or control characters.',
+    subtitle:
+      projectSubtitle(value.subtitle.trim()) &&
+      !hasControlCharacters(value.subtitle, false, 0x9f) &&
+      !/[\u2028\u2029]/u.test(value.subtitle)
+        ? undefined
+        : 'Use one line of up to 500 characters without control characters.',
     byline:
       (!creating && value.byline === '') || requiredProjectName(value.byline.trim())
         ? undefined

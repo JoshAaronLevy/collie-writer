@@ -1,4 +1,5 @@
 import { hasControlCharacters } from '../../shared/control-characters'
+import { isEditableKind } from '../../shared/outline'
 import { validatePortableProofreading } from './proofreading'
 import { validatePortableConversations } from './conversations'
 import { readProjectDetails } from './details'
@@ -143,7 +144,8 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
       positions.add(Number(doc.position))
     }
     const merged =
-      doc.kind !== 'text' || snapshot?.documents.find((d) => d.id === doc.id)?.state === 'merged'
+      (version < 14 ? doc.kind !== 'text' : !isEditableKind(doc.kind)) ||
+      snapshot?.documents.find((d) => d.id === doc.id)?.state === 'merged'
     references(readDocument(JSON.parse(doc.payload)), merged ? undefined : doc.id)
   }
   if (

@@ -21,6 +21,7 @@ import DocxExportPanel from '../projects/DocxExportPanel'
 import InterchangeImportPanel from '../projects/InterchangeImportPanel'
 import { ProjectManagement, RecoveryPanel } from '../projects/LifecyclePanel'
 import ProjectFileActions from '../projects/ProjectFileActions'
+import { projectFileNeedsAttention } from '../projects/project-file-presentation'
 import AccessPanel from '../projects/AccessPanel'
 import TutorialPanel from '../projects/TutorialPanel'
 import SettingsPanel from '../settings/SettingsPanel'
@@ -340,8 +341,7 @@ export default function WorkspaceViews(): React.JSX.Element {
             ) : null}
             {project &&
             sameScope(project, files.scope) &&
-            !fileActive &&
-            !['checking', 'external-change', 'unavailable', 'interrupted'].includes(files.state) ? (
+            !projectFileNeedsAttention(files, project) ? (
               <ProjectFileActions />
             ) : null}
             {project ? (

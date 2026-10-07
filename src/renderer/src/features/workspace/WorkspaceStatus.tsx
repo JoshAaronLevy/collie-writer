@@ -2,7 +2,10 @@ import type { ExportOperation } from './useExportOperations'
 import { useWorkspaceSession } from './workspaceContext'
 import SaveMenu from './SaveMenu'
 import ProjectFileActions from '../projects/ProjectFileActions'
-import { projectFileStatusMessage } from '../projects/project-file-presentation'
+import {
+  projectFileNeedsAttention,
+  projectFileStatusMessage
+} from '../projects/project-file-presentation'
 import { sameScope } from '../../../../shared/project-files'
 import { AppButton } from '../../components/ui/Controls'
 import { StatusBanner } from '../../components/ui/Feedback'
@@ -14,7 +17,7 @@ export function WorkspaceStatus(): React.JSX.Element {
   const {
     destination,
     project,
-    fileActive,
+    saveState,
     files,
     dirty,
     acting,
@@ -46,13 +49,13 @@ export function WorkspaceStatus(): React.JSX.Element {
   const operations = drafts
     .states()
     .filter(
-      (s) => (s.policy === 'operation' && (s.status || s.issue)) || (s.pendingOperation && !s.busy)
+      (s) =>
+        s.id !== 'project-file-save' &&
+        ((s.policy === 'operation' && (s.status || s.issue)) || (s.pendingOperation && !s.busy))
     )
   const fileStateReady = !!project && sameScope(project, files.scope)
   const fileNeedsAttention =
-    fileActive ||
-    (fileStateReady &&
-      ['checking', 'external-change', 'unavailable', 'interrupted'].includes(files.state))
+    projectFileNeedsAttention(files, project) || saveState === 'unconfirmed'
   function exportNotice(operation: ExportOperation): React.JSX.Element {
     return (
       <div
@@ -225,7 +228,9 @@ export function WorkspaceStatus(): React.JSX.Element {
       {closing ? (
         <p role="status">Protecting writing and finishing file work before closing…</p>
       ) : null}
-      {project && !fileStateReady ? <p role="status">Checking project-file status…</p> : null}
+      {project && !fileStateReady && !writing ? (
+        <p role="status">Checking project-file status…</p>
+      ) : null}
       {project &&
       destination.kind === 'workspace' &&
       destination.view !== 'details' &&
@@ -249,9 +254,13 @@ export function WorkspaceStatus(): React.JSX.Element {
           </AppButton>
         </div>
       ) : null}
-      {fileNeedsAttention ? (
-        <details open>
-          <summary>Project file needs attention</summary>
+      {(project || files.job) && (!writing || fileNeedsAttention) ? (
+        <details open={fileNeedsAttention || undefined}>
+          <summary>
+            {fileNeedsAttention
+              ? 'Project file needs attention'
+              : 'Project file status and progress'}
+          </summary>
           <ProjectFileActions />
         </details>
       ) : null}

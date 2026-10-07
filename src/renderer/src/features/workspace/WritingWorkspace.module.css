@@ -18,6 +18,13 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+.writing-project-subtitle {
+  margin: var(--collie-space-1) 0 0;
+  color: var(--collie-text-secondary);
+  font-size: 1rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
 .writing-eyebrow {
   color: var(--collie-text-secondary);
   font-size: 0.75rem;
@@ -32,7 +39,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--collie-space-2);
+  gap: var(--collie-space-1);
 }
 .writing-view-actions {
   justify-content: space-between;

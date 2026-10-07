@@ -1,14 +1,10 @@
 import type { EvidenceLink, EvidenceView } from '../../../../shared/evidence'
 import type { OutlineDocument } from '../../../../shared/outline'
 
-export function sectionsWithin(documents: OutlineDocument[], id: string): string[] {
+export function ownBodyIds(documents: OutlineDocument[], id: string): string[] {
   const root = documents.find((item) => item.id === id)
   if (!root) return []
-  if (root.kind === 'text') return [root.id]
-  const children = documents
-    .filter((item) => item.parentId === id)
-    .sort((a, b) => a.position - b.position)
-  return children.flatMap((child) => sectionsWithin(documents, child.id))
+  return root.kind === 'chapter' || root.kind === 'text' ? [root.id] : []
 }
 export function containingChapter(
   documents: OutlineDocument[],

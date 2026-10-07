@@ -1,3 +1,5 @@
+import { templateItemKind } from '../../domain/projects/templates'
+import { isEditableKind } from '../../shared/outline'
 import { retiredWorkspace } from './working-copy-records'
 import { boundedJson, namedStamp, parentStamp } from './retention-files'
 import type { RetentionContext } from './retained-versions'
@@ -661,9 +663,16 @@ export class ProjectRepository {
           .run(input.title, templateForKind(input.projectKind), head, time, input.projectId)
         owned.db
           .prepare(
-            'UPDATE project_details SET byline=?,description=?,kind=?,revision_id=? WHERE project_id=?'
+            'UPDATE project_details SET subtitle=?,byline=?,description=?,kind=?,revision_id=? WHERE project_id=?'
           )
-          .run(input.byline, input.description, input.projectKind, head, input.projectId)
+          .run(
+            input.subtitle,
+            input.byline,
+            input.description,
+            input.projectKind,
+            head,
+            input.projectId
+          )
         owned.db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(
           input.projectId,
           input.operationId,
@@ -1133,7 +1142,7 @@ export class ProjectRepository {
       if (!selected) throw new ProjectError('CORRUPT_PROJECT')
     }
     selected ??= documents.find(
-      (doc) => doc.kind === 'text' && effectiveState(doc, documents) === 'active'
+      (doc) => isEditableKind(doc.kind) && effectiveState(doc, documents) === 'active'
     )
     if (
       project.length !== 1 ||
@@ -1142,7 +1151,7 @@ export class ProjectRepository {
       documents.length < 1 ||
       documents.length > 10000 ||
       !selected ||
-      selected.kind !== 'text' ||
+      !isEditableKind(selected.kind) ||
       !isId(project[0].head_commit_id) ||
       !documents.every(isOutlineDocument)
     )
@@ -1403,8 +1412,9 @@ export class ProjectRepository {
               time,
               time
             )
-            db.prepare('INSERT INTO project_details VALUES (?,?,?,?,?)').run(
+            db.prepare('INSERT INTO project_details VALUES (?,?,?,?,?,?)').run(
               projectId,
+              input.subtitle ?? '',
               input.byline,
               input.description,
               kindForTemplate(input.template),
@@ -1415,7 +1425,7 @@ export class ProjectRepository {
                 projectId,
                 section.documentId,
                 section.position,
-                'text',
+                templateItemKind(input.template, section.position, input.structureVersion),
                 section.title,
                 'draft',
                 '',
@@ -1522,7 +1532,7 @@ export class ProjectRepository {
       const summary = selected.documents.find((d) => d.id === input.documentId)!
       if (
         !summary ||
-        summary.kind !== 'text' ||
+        !isEditableKind(summary.kind) ||
         effectiveState(summary, selected.documents) !== 'active'
       )
         throw new ProjectError('VALIDATION')

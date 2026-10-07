@@ -7,7 +7,7 @@ import {
   linkDocument,
   linkWarnings,
   sectionPath,
-  sectionsWithin,
+  ownBodyIds,
   sourceCounts
 } from './usage'
 import './SourceUsage.css'
@@ -273,7 +273,7 @@ export function SectionSources({
     setSelection(project?.documentId ?? '')
   }
   if (!project) return <></>
-  const ids = new Set(sectionsWithin(project.documents, selection))
+  const ids = new Set(ownBodyIds(project.documents, selection))
   const chapter = containingChapter(project.documents, project.documentId)
   const citations = view?.citations.filter((item) => ids.has(item.documentId)) ?? []
   const sections = view?.sourceSections.filter((item) => ids.has(item.documentId)) ?? []
@@ -313,8 +313,8 @@ export function SectionSources({
         </AppButton>
       ) : null}
       <p className="source-usage-state">
-        Saved writing and research associations. Chapter totals include descendant sections and
-        retain their archived/removed states.
+        Saved writing and research associations for this item’s own body, retaining archived/removed
+        states. Select a child separately to review its sources.
         {dirty ? ' Protect current edits to update saved usage.' : ''}
       </p>
       {view ? (

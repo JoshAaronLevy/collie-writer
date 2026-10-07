@@ -1,3 +1,4 @@
+import { isEditableKind } from '../../shared/outline'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { isId, readDocument } from '../../domain/editor/schema'
@@ -147,7 +148,9 @@ function sectionTarget(
   id: string
 ): { revision_id: string } {
   const row = db
-    .prepare("SELECT revision_id FROM documents WHERE project_id=? AND id=? AND kind='text'")
+    .prepare(
+      "SELECT revision_id FROM documents WHERE project_id=? AND id=? AND kind IN ('text','chapter')"
+    )
     .get(projectId, id) as { revision_id: string } | undefined
   const tree = manuscript(db, projectId).documents
   const target = tree.find((d) => d.id === id)
@@ -270,7 +273,7 @@ export function readEvidence(db: Database.Database, input: OpenInput): EvidenceV
   }))
   const snapshot = manuscript(db, projectId)
   const sections = snapshot.documents
-    .filter((d) => d.kind === 'text')
+    .filter((d) => isEditableKind(d.kind))
     .map((d) => ({
       id: d.id,
       title: d.title,

@@ -11,10 +11,13 @@ Derived assets:
 | `build/icon.iconset/`                       | macOS 16, 32, 128, 256 and 512-point images, each at 1× and 2×                        |
 | `build/icon.icns`                           | macOS application bundle icon                                                         |
 | `build/icon.ico`                            | Windows application/installer icon, with 16, 24, 32, 48, 64, 128 and 256-pixel frames |
-| `build/icon.png`                            | 1024-pixel native image, including the development macOS Dock                         |
+| `build/icon-mac.png`                        | 1024-pixel macOS development Dock icon with transparent padding and rounded corners   |
+| `build/icon.png`                            | 1024-pixel generic native image                                                       |
 | `src/renderer/src/assets/collie-writer.png` | 256-pixel image shared by the header and About screen                                 |
 
-Run `npm run icons:generate` on macOS to regenerate these assets after an explicitly approved master update. The script uses macOS `sips` and `iconutil`, plus Node's standard library for the ICO container. It resizes the complete square artwork, preserves the original master, and never starts or packages the app. No image-generation service, API key or additional package is needed for resizing. Generated assets are committed, so Windows development and packaging do not require these macOS tools.
+Run `npm run icons:generate` on macOS to regenerate these assets after an approved artwork or icon-treatment update. The script uses macOS AppKit through `osascript`, `sips` and `iconutil`, plus Node's standard library for the ICO container. It preserves the original master and never starts or packages the app. No image-generation service, API key or additional package is needed. Generated assets are committed, so Windows development and packaging do not require these macOS tools.
+
+The October 6 Dock correction derives the macOS PNG and every ICNS representation from one offscreen bitmap: an 832-pixel artwork tile centered in a transparent 1024-pixel canvas, with 96-pixel margins and a 185-pixel corner radius. The whole square artwork is scaled into that tile before the corners are masked. This reduces the visible footprint to about 81% of the canvas and gives the Dock and Finder a rounded silhouette. `src/main/windows.ts` selects `build/icon-mac.png` for the unpackaged macOS Dock; packaged macOS uses `build/icon.icns`. Windows, the generic native PNG and the renderer logo continue to use the original square treatment.
 
 Brand placement and native rendering are **implementation complete — awaiting user testing**. See the [implementation record](../../docs/validation/app-branding.md) and [manual guide](../../docs/manual-testing/app-branding.md).
 

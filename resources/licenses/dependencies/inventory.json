@@ -815,5 +815,21 @@
     "notices": [
       "jose-6.2.12-LICENSE.md"
     ]
+  },
+  {
+    "package": "@tabler/icons",
+    "version": "3.49.0",
+    "license": "MIT",
+    "notices": [
+      "@tabler-icons-3.49.0-LICENSE"
+    ]
+  },
+  {
+    "package": "@tabler/icons-react",
+    "version": "3.49.0",
+    "license": "MIT",
+    "notices": [
+      "@tabler-icons-react-3.49.0-LICENSE"
+    ]
   }
 ]

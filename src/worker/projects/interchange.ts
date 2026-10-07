@@ -1,3 +1,4 @@
+import { isEditableKind } from '../../shared/outline'
 import { hasControlCharacters } from '../../shared/control-characters'
 import type Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
@@ -51,7 +52,7 @@ export function readRecipes(db: Database.Database, input: OpenInput): RecipesVie
   const snap = manuscript(db, input.projectId)
   const available = new Set(
     snap.documents
-      .filter((d) => d.kind === 'text' && effectiveState(d, snap.documents) === 'active')
+      .filter((d) => isEditableKind(d.kind) && effectiveState(d, snap.documents) === 'active')
       .map((d) => d.id)
   )
   const rows = db
@@ -98,7 +99,7 @@ export function changeRecipe(db: Database.Database, input: RecipeChangeInput): R
     const snap = manuscript(db, input.projectId)
     const available = new Set(
       snap.documents
-        .filter((d) => d.kind === 'text' && effectiveState(d, snap.documents) === 'active')
+        .filter((d) => isEditableKind(d.kind) && effectiveState(d, snap.documents) === 'active')
         .map((d) => d.id)
     )
     if (input.documentIds.some((id) => !available.has(id))) throw new ProjectError('VALIDATION')
@@ -173,7 +174,7 @@ export function changeRecipe(db: Database.Database, input: RecipeChangeInput): R
     )
     const next = advance(db, input.projectId, current)
     const selected = snap.documents.find(
-      (d) => d.kind === 'text' && effectiveState(d, snap.documents) === 'active'
+      (d) => isEditableKind(d.kind) && effectiveState(d, snap.documents) === 'active'
     )!
     db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(
       input.projectId,

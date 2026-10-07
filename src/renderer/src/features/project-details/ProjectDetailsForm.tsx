@@ -11,6 +11,7 @@ import styles from './ProjectDetails.module.css'
 
 const fields = (p: OpenProject): ProjectDetails => ({
   title: p.title,
+  subtitle: p.subtitle,
   byline: p.byline,
   description: p.description,
   projectKind: p.projectKind
@@ -115,6 +116,7 @@ export default function ProjectDetailsForm({
           state.current.value.title === state.current.baseline.title
             ? state.current.value.title
             : state.current.value.title.trim(),
+        subtitle: state.current.value.subtitle.trim(),
         byline: state.current.value.byline.trim()
       }
       setPending(state.current.pending)
@@ -216,8 +218,8 @@ export default function ProjectDetailsForm({
             </AppButton>
           </div>
           <p className={styles['project-type-description']}>
-            The project title is independent of its filename. Author and description stay with this
-            project, including its backups and independent copies.
+            The project title is independent of its filename. Subtitle, author and description stay
+            with this project, including its backups and independent copies.
           </p>
           {error ? <p role="alert">{error}</p> : null}
           {message ? <p role="status">{message}</p> : null}

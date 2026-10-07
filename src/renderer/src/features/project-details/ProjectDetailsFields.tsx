@@ -20,6 +20,7 @@ export function ProjectDetailsFields({
   originalTitle,
   showType = true,
   titleRef,
+  subtitleRef,
   bylineRef,
   descriptionId,
   afterByline
@@ -32,6 +33,7 @@ export function ProjectDetailsFields({
   originalTitle?: string
   showType?: boolean
   titleRef?: Ref<HTMLInputElement>
+  subtitleRef?: Ref<HTMLInputElement>
   bylineRef?: Ref<HTMLInputElement>
   descriptionId?: string
   afterByline?: ReactNode
@@ -74,6 +76,15 @@ export function ProjectDetailsFields({
         error={errors.title}
         errorProps={{ role: 'alert' }}
         onChange={(event) => onChange({ ...value, title: event.currentTarget.value })}
+      />
+      <TextInput
+        ref={subtitleRef}
+        label="Subtitle (optional)"
+        value={value.subtitle}
+        disabled={disabled}
+        error={errors.subtitle}
+        errorProps={{ role: 'alert' }}
+        onChange={(event) => onChange({ ...value, subtitle: event.currentTarget.value })}
       />
       <TextInput
         ref={bylineRef}

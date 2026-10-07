@@ -1,3 +1,4 @@
+import { isEditableKind, MAX_OUTLINE_DEPTH } from '../../shared/outline'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { readDocument, isId, type DocumentPayload } from '../../domain/editor/schema'
@@ -93,12 +94,12 @@ function document(
     `SELECT d.id,d.title,d.kind,d.revision_id,${withPayload ? 'd.payload' : "'' AS payload"},d.parent_id,s.state FROM documents d JOIN outline_state s ON s.project_id=d.project_id AND s.document_id=d.id WHERE d.project_id=? AND d.id=?`
   )
   const row = find.get(p, id) as DocumentRow | undefined
-  if (!row || row.kind !== 'text' || row.state !== 'active') return null
+  if (!row || !isEditableKind(row.kind) || row.state !== 'active') return null
   let parent = row.parent_id,
     depth = 0
   while (parent) {
     const item = find.get(p, parent) as DocumentRow | undefined
-    if (!item || item.state !== 'active' || ++depth > 3) return null
+    if (!item || item.state !== 'active' || ++depth >= MAX_OUTLINE_DEPTH) return null
     parent = item.parent_id
   }
   return row

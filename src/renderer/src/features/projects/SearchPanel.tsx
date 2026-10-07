@@ -1,3 +1,4 @@
+import { isEditableKind } from '../../../../shared/outline'
 import { TextInput } from '@mantine/core'
 import { useEffect, useRef, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
@@ -318,7 +319,7 @@ export default function SearchPanel({
           >
             <option value="">Any section</option>
             {project.documents
-              .filter((row) => row.kind === 'text')
+              .filter((row) => isEditableKind(row.kind))
               .map((row) => (
                 <option key={row.id} value={row.id}>
                   {sectionPath(project.documents, row.id)} · {row.state}

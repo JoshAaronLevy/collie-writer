@@ -2,6 +2,10 @@ import { hasControlCharacters } from './control-characters'
 import { isId, readDocument, type DocumentPayload } from '../domain/editor/schema'
 
 export type OutlineKind = 'part' | 'chapter' | 'text'
+export const MAX_OUTLINE_DEPTH = 8
+export function isEditableKind(kind: unknown): kind is 'chapter' | 'text' {
+  return kind === 'chapter' || kind === 'text'
+}
 export type OutlineState = 'active' | 'archived' | 'trashed' | 'merged'
 export type OutlineDocument = {
   id: string
@@ -25,7 +29,7 @@ export type AnchorTarget = {
   label: string
 }
 export type ManuscriptSnapshot = {
-  version: 1
+  version: 1 | 2
   documents: RetainedDocument[]
   anchors: AnchorTarget[]
 }
@@ -47,6 +51,7 @@ export type OutlineChange =
   | { type: 'restore'; checkpointId: string }
   | { type: 'prune'; checkpointIds: string[] }
 export type OutlineInput = {
+  hierarchyVersion?: 2
   projectId: string
   workspaceId: string
   operationId: string
@@ -130,7 +135,7 @@ export function isManuscriptSnapshot(v: unknown): v is ManuscriptSnapshot {
   if (
     !obj(v) ||
     !keys(v, ['version', 'documents', 'anchors']) ||
-    v.version !== 1 ||
+    (v.version !== 1 && v.version !== 2) ||
     !Array.isArray(v.documents) ||
     !v.documents.length ||
     v.documents.length > 10000 ||
@@ -161,8 +166,10 @@ export function isOutlineInput(v: unknown): v is OutlineInput {
       'expectedHead',
       'expectedRevisions',
       'selectedId',
-      'change'
+      'change',
+      ...(Object.hasOwn(v, 'hierarchyVersion') ? ['hierarchyVersion'] : [])
     ]) ||
+    (Object.hasOwn(v, 'hierarchyVersion') && v.hierarchyVersion !== 2) ||
     ![v.projectId, v.workspaceId, v.operationId, v.expectedHead, v.selectedId].every(isId) ||
     !obj(v.expectedRevisions) ||
     !Object.keys(v.expectedRevisions).length ||
@@ -297,11 +304,70 @@ export function effectiveState(doc: OutlineDocument, documents: OutlineDocument[
   }
   return result
 }
-export function canParent(kind: OutlineKind, parent: OutlineDocument | undefined): boolean {
+export function canParentV1(kind: OutlineKind, parent: OutlineDocument | undefined): boolean {
   return (
     !parent ||
     (parent.state === 'active' &&
       ((parent.kind === 'part' && kind !== 'part') ||
         (parent.kind === 'chapter' && kind === 'text')))
   )
+}
+export function canParent(kind: OutlineKind, parent: OutlineDocument | undefined): boolean {
+  return !parent || (parent.state === 'active' && kind !== 'part')
+}
+
+/** Build once when offering many parents; account for the entire moved branch. */
+export function placementPolicy(
+  documents: OutlineDocument[],
+  kind: OutlineKind,
+  documentId?: string
+): (parentId: string | null) => boolean {
+  const byId = new Map(documents.map((d) => [d.id, d]))
+  let height = 1
+  if (documentId && !byId.has(documentId)) return () => false
+  if (documentId) {
+    for (const item of documents) {
+      let cursor: OutlineDocument | undefined = item,
+        distance = 1
+      const seen = new Set<string>()
+      while (cursor) {
+        if (seen.has(cursor.id) || distance > MAX_OUTLINE_DEPTH) return () => false
+        seen.add(cursor.id)
+        if (cursor.id === documentId) {
+          height = Math.max(height, distance)
+          break
+        }
+        cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined
+        distance++
+      }
+    }
+  }
+  return (parentId) => {
+    const parent = parentId ? byId.get(parentId) : undefined
+    if ((parentId && !parent) || !canParent(kind, parent)) return false
+    let cursor = parent,
+      depth = 0
+    const seen = new Set<string>()
+    while (cursor) {
+      if (
+        cursor.id === documentId ||
+        seen.has(cursor.id) ||
+        cursor.state !== 'active' ||
+        ++depth + height > MAX_OUTLINE_DEPTH
+      )
+        return false
+      seen.add(cursor.id)
+      if (cursor.parentId && !byId.has(cursor.parentId)) return false
+      cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined
+    }
+    return true
+  }
+}
+export function canPlace(
+  documents: OutlineDocument[],
+  kind: OutlineKind,
+  parentId: string | null,
+  documentId?: string
+): boolean {
+  return placementPolicy(documents, kind, documentId)(parentId)
 }

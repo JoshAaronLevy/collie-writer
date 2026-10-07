@@ -52,7 +52,7 @@ export function rebuildCitations(db: Database.Database, projectId: string): void
   db.prepare('DELETE FROM citation_occurrences WHERE project_id=?').run(projectId)
   for (const doc of db
     .prepare(
-      "SELECT d.id,d.payload FROM documents d JOIN outline_state s ON s.project_id=d.project_id AND s.document_id=d.id WHERE d.project_id=? AND d.kind='text' AND s.state<>'merged'"
+      "SELECT d.id,d.payload FROM documents d JOIN outline_state s ON s.project_id=d.project_id AND s.document_id=d.id WHERE d.project_id=? AND (d.kind='text' OR (d.kind='chapter' AND (SELECT schema_version FROM format)>=14)) AND s.state<>'merged'"
     )
     .all(projectId) as { id: string; payload: string }[])
     projectCitations(db, projectId, doc.id, readDocument(JSON.parse(doc.payload)))
@@ -64,7 +64,7 @@ export function validatePortableCitations(db: Database.Database, projectId: stri
   const expected: string[] = []
   for (const doc of db
     .prepare(
-      "SELECT d.id,d.payload FROM documents d JOIN outline_state s ON s.project_id=d.project_id AND s.document_id=d.id WHERE d.project_id=? AND d.kind='text' AND s.state<>'merged'"
+      "SELECT d.id,d.payload FROM documents d JOIN outline_state s ON s.project_id=d.project_id AND s.document_id=d.id WHERE d.project_id=? AND (d.kind='text' OR (d.kind='chapter' AND (SELECT schema_version FROM format)>=14)) AND s.state<>'merged'"
     )
     .all(projectId) as { id: string; payload: string }[]) {
     for (const c of citationOccurrences(readDocument(JSON.parse(doc.payload))))

@@ -1,15 +1,19 @@
+import { ReviewOptionsDialog, type ReviewOptionsTarget } from './ReviewOptionsDialog'
+import { captureSelection } from '../../editor/selection'
+import { isEditableKind, effectiveState } from '../../../../shared/outline'
+import { IconSearch, IconMaximize, IconMinimize, IconX } from '@tabler/icons-react'
+import { IconButton } from '../../components/ui/IconButton'
 import { useEffectEvent } from 'react'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { TextInput, Textarea } from '@mantine/core'
 import { AppButton, SelectField } from '../../components/ui/Controls'
 import { ActionMenu } from '../../components/ui/ActionMenu'
-import { manuscriptAnchor } from '../../editor/anchors'
 import RichDraft from '../../editor/RichDraft'
 import { editorIsComposing } from '../../editor/adapter'
 import SaveMenu from './SaveMenu'
+import ProjectFileActions from '../projects/ProjectFileActions'
 import OutlinePanel from '../outline/OutlinePanel'
 import { useWorkspaceSession } from './workspaceContext'
-import { scopeOf } from './useWorkspaceController'
 import { PaneResizeHandle } from './PaneResizeHandle'
 import { WritingSidePanel } from './WritingSidePanel'
 import { readableWriting } from './readableWriting'
@@ -22,7 +26,6 @@ export default function WritingWorkspace(): React.JSX.Element {
   const session = useWorkspaceSession()
   const {
     project,
-    list,
     writingView,
     sectionTitle,
     setSectionTitle,
@@ -43,7 +46,7 @@ export default function WritingWorkspace(): React.JSX.Element {
     storage,
     metaPending,
     editorRef,
-    anchorToFocus: anchorToFocusRef,
+    editorReady,
     citationContext,
     dirty,
     editorEpoch,
@@ -64,7 +67,6 @@ export default function WritingWorkspace(): React.JSX.Element {
     workspace,
     navigate,
     captureAnnotation,
-    chooseProject,
     flush,
     refresh,
     conflict
@@ -73,6 +75,14 @@ export default function WritingWorkspace(): React.JSX.Element {
   const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 78rem)').matches)
   const [mobilePane, setMobilePane] = useState<'editor' | 'outline' | 'panel'>('editor')
   const [metadataOpen, setMetadataOpen] = useState(false)
+  const [reviewOptionsOpen, setReviewOptionsOpen] = useState(false)
+  const [reviewOptionsTarget, setReviewOptionsTarget] = useState<ReviewOptionsTarget | null>(null)
+  const optionsContextKey = `${project?.projectId}:${project?.workspaceId}:${project?.documentId}:${session.destination.kind}:${session.destination.kind === 'workspace' ? session.destination.view : ''}`
+  const [lastOptionsContext, setLastOptionsContext] = useState(optionsContextKey)
+  if (lastOptionsContext !== optionsContextKey) {
+    setLastOptionsContext(optionsContextKey)
+    setReviewOptionsOpen(false)
+  }
   const handledReveal = useRef(0)
   const editorPane = useRef<HTMLElement>(null),
     outlinePane = useRef<HTMLElement>(null),
@@ -204,12 +214,14 @@ export default function WritingWorkspace(): React.JSX.Element {
         <div className={styles['writing-project-heading']}>
           <p className={styles['writing-eyebrow']}>Manuscript</p>
           <h1>{project.title}</h1>
+          {project.subtitle ? (
+            <p className={styles['writing-project-subtitle']}>{project.subtitle}</p>
+          ) : null}
           <details className={styles['writing-save-state']}>
-            <summary>
-              <span role="status">
-                {status} · {fileStatus}
-              </span>
-            </summary>
+            <summary>Save and local protection</summary>
+            <p role="status">
+              {status} · {fileStatus}
+            </p>
             <p>
               Local protection restores your writing after closing, including unsaved changes. Save
               updates the project file; your cloud provider manages any upload separately.
@@ -227,21 +239,21 @@ export default function WritingWorkspace(): React.JSX.Element {
             >
               {retry ? 'Retry local protection' : 'Protect pending drafts'}
             </AppButton>
+            <ProjectFileActions />
           </details>
         </div>
         <div className={styles['writing-header-actions']}>
-          {session.backDestination ? (
-            <AppButton variant="subtle" onClick={() => void session.goBack()}>
-              Back to {session.backLabel}
-            </AppButton>
-          ) : null}
           <SaveMenu />
           <AppButton variant="subtle" onClick={() => session.research({ kind: 'sources' })}>
             Research
           </AppButton>
-          <AppButton variant="subtle" onClick={() => go('search')}>
-            Search
-          </AppButton>
+          <IconButton
+            label="Search manuscript and research"
+            variant="subtle"
+            onClick={() => go('search')}
+          >
+            <IconSearch aria-hidden="true" />
+          </IconButton>
           <AppButton variant="subtle" onClick={() => go('export')}>
             Export
           </AppButton>
@@ -269,7 +281,8 @@ export default function WritingWorkspace(): React.JSX.Element {
               }
             ]}
           />
-          <AppButton
+          <IconButton
+            label={preferences.focus ? 'Exit focus mode' : 'Focus mode'}
             variant={preferences.focus ? 'filled' : 'subtle'}
             aria-pressed={preferences.focus}
             onClick={() =>
@@ -280,8 +293,12 @@ export default function WritingWorkspace(): React.JSX.Element {
               })
             }
           >
-            {preferences.focus ? 'Exit focus mode' : 'Focus mode'}
-          </AppButton>
+            {preferences.focus ? (
+              <IconMinimize aria-hidden="true" />
+            ) : (
+              <IconMaximize aria-hidden="true" />
+            )}
+          </IconButton>
         </div>
       </header>
       {issue ? <p role="status">{issue}</p> : null}
@@ -301,7 +318,7 @@ export default function WritingWorkspace(): React.JSX.Element {
                 aria-pressed={mobilePane === 'outline'}
                 onClick={() => changeView(() => setMobilePane('outline'))}
               >
-                Projects and outline
+                Outline
               </AppButton>
             </>
           ) : null}
@@ -337,9 +354,13 @@ export default function WritingWorkspace(): React.JSX.Element {
               }
             />
             {preferences.panel !== 'closed' ? (
-              <AppButton variant="subtle" onClick={() => panel('closed')}>
-                Close panel
-              </AppButton>
+              <IconButton
+                label="Close writing companion"
+                variant="subtle"
+                onClick={() => panel('closed')}
+              >
+                <IconX aria-hidden="true" />
+              </IconButton>
             ) : null}
           </div>
         </div>
@@ -351,39 +372,8 @@ export default function WritingWorkspace(): React.JSX.Element {
           className={styles['writing-outline-pane']}
           hidden={outlineHidden}
           inert={outlineHidden}
-          aria-label="Projects and manuscript outline"
+          aria-label="Manuscript outline"
         >
-          <SelectField
-            label="Switch project"
-            value={project.projectId}
-            disabled={blocked || fileActive || !available}
-            onChange={(event) => {
-              const chosen = list.projects.find(
-                (item) => item.projectId === event.currentTarget.value
-              )
-              if (chosen) run(() => chooseProject(scopeOf(chosen)))
-            }}
-          >
-            {!list.projects.some((item) => item.projectId === project.projectId) ? (
-              <option value={project.projectId}>{project.title}</option>
-            ) : null}
-            {list.projects
-              .filter((item) => !item.archived || item.projectId === project.projectId)
-              .map((item) => (
-                <option key={item.projectId} value={item.projectId}>
-                  {item.title}
-                  {item.archived ? ' (archived)' : ''}
-                </option>
-              ))}
-          </SelectField>
-          <AppButton
-            variant="subtle"
-            onClick={() => {
-              void navigate({ kind: 'library' })
-            }}
-          >
-            Browse all projects
-          </AppButton>
           <OutlinePanel
             key={project.projectId}
             project={project}
@@ -432,17 +422,14 @@ export default function WritingWorkspace(): React.JSX.Element {
           <div className={styles['writing-section-heading']}>
             <div>
               <h2>{sectionTitle}</h2>
-              <p>
-                {sectionStatus}
-                {readOnly ? ' · Reading only' : ''}
-              </p>
+              {readOnly ? <p>Reading only</p> : null}
             </div>
             <AppButton
               variant="subtle"
               aria-expanded={metadataOpen}
               onClick={() => changeView(() => setMetadataOpen(!metadataOpen))}
             >
-              Section details
+              Details
             </AppButton>
           </div>
           {sectionReadOnly ? (
@@ -461,7 +448,7 @@ export default function WritingWorkspace(): React.JSX.Element {
             }}
           >
             <TextInput
-              label="Section title"
+              label="Item title"
               value={sectionTitle}
               maxLength={500}
               required
@@ -496,7 +483,7 @@ export default function WritingWorkspace(): React.JSX.Element {
               }}
             />
             <AppButton type="submit" disabled={blocked || readOnly}>
-              {metaPending.current ? 'Retry section details' : 'Save section details'}
+              {metaPending.current ? 'Retry details' : 'Save details'}
             </AppButton>
           </form>
           <RichDraft
@@ -528,23 +515,34 @@ export default function WritingWorkspace(): React.JSX.Element {
               accessTransition ||
               storage.state !== 'ready'
             }
-            onReady={(editor) => {
-              editorRef.current = editor
-              if (editor && anchorToFocusRef.current) {
-                const id = anchorToFocusRef.current
-                anchorToFocusRef.current = null
-                const target = manuscriptAnchor(editor, id)
-                if (target) {
-                  if (target.footnote) editor.commands.setNodeSelection(target.position)
-                  else
-                    editor.commands.setTextSelection(
-                      Math.min(target.position + 1, editor.state.doc.content.size)
-                    )
-                  editor.commands.focus()
-                  editor.view.dispatch(editor.state.tr.scrollIntoView())
-                } else setError('The exact passage is no longer present in this section.')
-              }
+            onReviewOptions={() => {
+              if (
+                blocked ||
+                !visible ||
+                session.composition.current ||
+                document.querySelector('[role="dialog"], [role="alertdialog"]')
+              )
+                return
+              const doc = project.documents.find((d) => d.id === project.documentId)
+              if (
+                !doc ||
+                !isEditableKind(doc.kind) ||
+                effectiveState(doc, project.documents) !== 'active'
+              )
+                return
+              // Selection positions only; no serialization or AI context capture.
+              setReviewOptionsTarget({
+                scope: { projectId: project.projectId, workspaceId: project.workspaceId },
+                documentId: doc.id,
+                title: doc.title,
+                kind: doc.kind,
+                selection: captureSelection(editorRef.current),
+                opener:
+                  document.activeElement instanceof HTMLElement ? document.activeElement : null
+              })
+              setReviewOptionsOpen(true)
             }}
+            onReady={editorReady}
             onChange={changed}
             onIssue={setError}
             onBlur={() => {
@@ -609,9 +607,6 @@ export default function WritingWorkspace(): React.JSX.Element {
           inert={panelHidden}
           aria-label="Writing companion"
         >
-          <AppButton variant="subtle" onClick={() => panel('closed')}>
-            Return to manuscript
-          </AppButton>
           <WritingSidePanel
             key={project.projectId}
             mode={preferences.panel}
@@ -619,6 +614,11 @@ export default function WritingWorkspace(): React.JSX.Element {
           />
         </aside>
       </div>
+      <ReviewOptionsDialog
+        opened={reviewOptionsOpen}
+        target={reviewOptionsTarget}
+        close={() => setReviewOptionsOpen(false)}
+      />
     </section>
   )
 }

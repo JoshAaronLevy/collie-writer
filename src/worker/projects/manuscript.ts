@@ -6,6 +6,9 @@ import { requestDigest } from '../storage/digest'
 import { ProjectError } from '../../domain/projects/errors'
 import {
   canParent,
+  canParentV1,
+  isEditableKind,
+  MAX_OUTLINE_DEPTH,
   effectiveState,
   isAnchorTarget,
   isManuscriptSnapshot,
@@ -60,7 +63,12 @@ export function manuscript(db: Database.Database, projectId: string): Manuscript
       'SELECT id,kind,document_id AS documentId,state,replacement_id AS replacementId,label FROM anchor_targets WHERE project_id=? ORDER BY id'
     )
     .all(projectId) as AnchorTarget[]
-  const result: ManuscriptSnapshot = { version: 1, documents, anchors }
+  const version =
+    (db.prepare('SELECT schema_version FROM format').get() as { schema_version: number })
+      .schema_version >= 14
+      ? 2
+      : 1
+  const result: ManuscriptSnapshot = { version, documents, anchors }
   validateManuscript(result)
   return result
 }
@@ -69,9 +77,11 @@ export function validateManuscript(value: unknown): asserts value is ManuscriptS
   const docs = value.documents,
     byId = new Map(docs.map((d) => [d.id, d])),
     positions = new Map<string | null, number[]>()
+  const editable = (kind: unknown): boolean =>
+    value.version === 1 ? kind === 'text' : isEditableKind(kind)
   if (
     byId.size !== docs.length ||
-    !docs.some((d) => d.kind === 'text' && effectiveState(d, docs) === 'active')
+    !docs.some((d) => editable(d.kind) && effectiveState(d, docs) === 'active')
   )
     throw new ProjectError('VALIDATION')
   for (const d of docs) {
@@ -79,17 +89,21 @@ export function validateManuscript(value: unknown): asserts value is ManuscriptS
     // Archived/trash parents retain their valid tree shape.
     if (
       (d.parentId && !parent) ||
-      !canParent(d.kind, parent ? { ...parent, state: 'active' } : undefined)
+      !(value.version === 1 ? canParentV1 : canParent)(
+        d.kind,
+        parent ? { ...parent, state: 'active' } : undefined
+      )
     )
       throw new ProjectError('VALIDATION')
     let cursor = d,
       depth = 0
     while (cursor.parentId) {
-      if (++depth > 3) throw new ProjectError('VALIDATION')
+      if (++depth > (value.version === 1 ? 3 : MAX_OUTLINE_DEPTH - 1))
+        throw new ProjectError('VALIDATION')
       cursor = byId.get(cursor.parentId)!
     }
     if (
-      d.kind !== 'text' &&
+      !editable(d.kind) &&
       (d.state === 'merged' ||
         d.payload.ast.content.length !== 1 ||
         d.payload.ast.content[0].type !== 'paragraph' ||
@@ -98,13 +112,15 @@ export function validateManuscript(value: unknown): asserts value is ManuscriptS
     )
       throw new ProjectError('CORRUPT_PROJECT')
     if (d.state === 'merged') {
+      if (value.version === 2 && docs.some((child) => child.parentId === d.id))
+        throw new ProjectError('CORRUPT_PROJECT')
       let replacement = d
       const seen = new Set<string>()
       while (replacement.replacementId) {
         if (seen.has(replacement.id)) throw new ProjectError('CORRUPT_PROJECT')
         seen.add(replacement.id)
         const next = byId.get(replacement.replacementId)
-        if (!next || next.kind !== 'text') throw new ProjectError('CORRUPT_PROJECT')
+        if (!next || !editable(next.kind)) throw new ProjectError('CORRUPT_PROJECT')
         replacement = next
       }
     }
@@ -115,7 +131,7 @@ export function validateManuscript(value: unknown): asserts value is ManuscriptS
   for (const values of positions.values())
     if (values.sort((a, b) => a - b).some((p, i) => p !== i))
       throw new ProjectError('CORRUPT_PROJECT')
-  const occurrences = currentAnchors(docs),
+  const occurrences = currentAnchors(docs, value.version),
     anchorMap = new Map(value.anchors.map((a) => [a.id, a]))
   if (anchorMap.size !== value.anchors.length) throw new ProjectError('CORRUPT_PROJECT')
   for (const anchor of value.anchors) {
@@ -176,10 +192,14 @@ export function payloadAnchors(
   visit(payload)
   return result
 }
-export function currentAnchors(documents: RetainedDocument[]): Map<string, AnchorTarget> {
+export function currentAnchors(
+  documents: RetainedDocument[],
+  version: 1 | 2 = 2
+): Map<string, AnchorTarget> {
   const result = new Map<string, AnchorTarget>()
   for (const d of documents) {
-    if (d.state === 'merged' || d.kind !== 'text') continue
+    if (d.state === 'merged' || (version === 1 ? d.kind !== 'text' : !isEditableKind(d.kind)))
+      continue
     const state = effectiveState(d, documents)
     for (const a of payloadAnchors(d.payload)) {
       if (result.has(a.id)) throw new ProjectError('VALIDATION')
@@ -194,7 +214,7 @@ export function currentAnchors(documents: RetainedDocument[]): Map<string, Ancho
   return result
 }
 export function reconcileAnchors(snapshot: ManuscriptSnapshot): void {
-  const actual = currentAnchors(snapshot.documents),
+  const actual = currentAnchors(snapshot.documents, snapshot.version),
     previous = new Map(snapshot.anchors.map((a) => [a.id, a]))
   for (const [id, old] of previous)
     if (!actual.has(id)) actual.set(id, { ...old, state: 'deleted' })
@@ -300,7 +320,7 @@ export function checkpoint(
     insert.run(projectId, id, content, Buffer.byteLength(content))
     return { documentId: document.id, contentId: id }
   })
-  const payload = JSON.stringify({ version: 1, documents: refs })
+  const payload = JSON.stringify({ version: snapshot.version, documents: refs })
   const checkpointId = randomUUID()
   db.prepare('INSERT INTO history_checkpoints VALUES (?,?,?,?,?,?,?,?,?,?)').run(
     projectId,
@@ -391,7 +411,7 @@ export function checkpointReferences(value: string): { documentId: string; conte
     Array.isArray(raw) ||
     Object.keys(raw).length !== 2 ||
     !('version' in raw) ||
-    raw.version !== 1 ||
+    (raw.version !== 1 && raw.version !== 2) ||
     !('documents' in raw) ||
     !Array.isArray(raw.documents) ||
     !raw.documents.length ||
@@ -422,9 +442,17 @@ export function readCheckpoint(
   projectId: string,
   encoded: string
 ): ManuscriptSnapshot {
-  const snapshot: ManuscriptSnapshot = { version: 1, documents: [], anchors: [] }
+  const refs = checkpointReferences(encoded)
+  const version = (JSON.parse(encoded) as { version: 1 | 2 }).version
+  if (
+    version === 2 &&
+    (db.prepare('SELECT schema_version FROM format').get() as { schema_version: number })
+      .schema_version < 14
+  )
+    throw new ProjectError('CORRUPT_PROJECT')
+  const snapshot: ManuscriptSnapshot = { version, documents: [], anchors: [] }
   let bytes = 0
-  for (const ref of checkpointReferences(encoded)) {
+  for (const ref of refs) {
     const row = db
       .prepare('SELECT content,byte_size FROM history_content WHERE project_id=? AND id=?')
       .get(projectId, ref.contentId) as { content: string; byte_size: number } | undefined

@@ -48,7 +48,7 @@ function CaptureDetails({ capture }: { capture: ProofreadCapture }): React.JSX.E
     <div className={styles['proofreading-capture']}>
       <p>
         <strong>{capture.context[0].label}</strong> ·{' '}
-        {capture.source.kind === 'passage' ? 'Selected passage' : 'Current text section'}
+        {capture.source.kind === 'passage' ? 'Selected passage' : 'Current writing item'}
       </p>
       <p>
         {capture.targets.length} included text runs ·{' '}
@@ -117,13 +117,6 @@ export function ProofreadingPanel(): React.JSX.Element {
       ref={panelRef}
       tabIndex={-1}
     >
-      <header className={styles['proofreading-heading']}>
-        <h3>Spelling, grammar & punctuation</h3>
-        <p>
-          A conservative en-US mechanics review. Running a review never changes your writing; you
-          decide which corrections to apply.
-        </p>
-      </header>
       {p.issue ? (
         <p className={styles['proofreading-error']} role="alert">
           {p.issue}
@@ -152,32 +145,9 @@ export function ProofreadingPanel(): React.JSX.Element {
           this project.
         </p>
       ) : null}
-      <section className={styles['proofreading-scope']} aria-label="Choose review scope">
-        <h4>Choose what to review</h4>
-        <div className={styles['proofreading-actions']}>
-          <AppButton
-            variant="default"
-            disabled={p.blocked || p.readOnly}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => void p.prepare('passage')}
-          >
-            Review selected passage
-          </AppButton>
-          <AppButton
-            variant="default"
-            disabled={p.blocked || p.readOnly}
-            onClick={() => void p.prepare('section')}
-          >
-            Review current section
-          </AppButton>
-        </div>
-        <p>
-          Paragraphs, headings and list text only. Citations, footnotes, images, tables and
-          quotation blocks are excluded. A long section needs a smaller selection; it is never split
-          automatically.
-        </p>
-      </section>
-      <AiRequestConnection action="proofread" disabled={p.blocked} />
+      {p.reviewed ? (
+        <AiRequestConnection action="proofread" disabled={p.blocked} onManage={p.manageChatGPT} />
+      ) : null}
       {p.reviewed ? (
         <section
           className={styles['proofreading-review']}

@@ -384,6 +384,7 @@ export class AccessService {
       let scope: OpenInput
       if (old && exists && !reset) scope = old
       else {
+        // Preserve this durable request's historical shape; omission creates an empty subtitle.
         const created = await this.storage.request(randomUUID(), {
           kind: 'create',
           input: {

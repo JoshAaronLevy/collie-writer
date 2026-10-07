@@ -1,4 +1,31 @@
-import { fileBusy, type FileStatus } from '../../../../shared/project-files'
+import { fileBusy, sameScope, type FileStatus } from '../../../../shared/project-files'
+import type { OpenInput } from '../../../../shared/projects'
+
+export type SavePresentation = 'idle' | 'saving' | 'unconfirmed'
+
+export function projectFileNeedsAttention(status: FileStatus, scope: OpenInput | null): boolean {
+  return (
+    (!!scope &&
+      sameScope(scope, status.scope) &&
+      ['external-change', 'unavailable', 'interrupted'].includes(status.state)) ||
+    !!(status.job && ['awaiting-consent', 'awaiting-choice', 'failed'].includes(status.job.state))
+  )
+}
+
+export function savePresentation(
+  scope: OpenInput | null,
+  status: FileStatus,
+  requestedScope: OpenInput | null,
+  pendingScope: OpenInput | null
+): SavePresentation {
+  if (!scope) return 'idle'
+  if (
+    (requestedScope && sameScope(scope, requestedScope)) ||
+    (status.job?.kind === 'save' && sameScope(scope, status.job.scope) && fileBusy(status.job))
+  )
+    return 'saving'
+  return pendingScope && sameScope(scope, pendingScope) ? 'unconfirmed' : 'idle'
+}
 
 export function projectFileStatusMessage(status: FileStatus, dirty: boolean): string {
   const messages: Record<FileStatus['state'], string> = {

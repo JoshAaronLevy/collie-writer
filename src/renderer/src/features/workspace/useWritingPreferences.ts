@@ -4,8 +4,6 @@ type WritingPreferencesState = {
   issue: string
   revealPanel: (panel: SecondaryPanel) => void
   revealRevision: number
-  aiTool: 'conversation' | 'proofreading'
-  setAiTool: React.Dispatch<React.SetStateAction<'conversation' | 'proofreading'>>
 }
 import { useRef, useState } from 'react'
 import { exact, record } from '../../../../shared/projects'
@@ -54,7 +52,6 @@ export function useWritingPreferences(): WritingPreferencesState {
   const [preferences, setPreferences] = useState(read)
   const preferencesRef = useRef(preferences)
   const [issue, setIssue] = useState('')
-  const [aiTool, setAiTool] = useState<'conversation' | 'proofreading'>('conversation')
   const [revealRevision, setRevealRevision] = useState(0)
   function update(patch: Partial<Omit<WritingPreferences, 'version'>>): void {
     const next = { ...preferencesRef.current, ...patch }
@@ -71,5 +68,5 @@ export function useWritingPreferences(): WritingPreferencesState {
     update({ panel, focus: false })
     setRevealRevision((value) => value + 1)
   }
-  return { preferences, update, issue, revealPanel, revealRevision, aiTool, setAiTool }
+  return { preferences, update, issue, revealPanel, revealRevision }
 }

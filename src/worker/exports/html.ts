@@ -117,7 +117,7 @@ export async function exportPrintDocument(
     ? `<section class="bibliography-section"><h1>${model.style === 'apa' ? 'References' : 'Bibliography'}</h1>${model.bibliography.bibliography.map((entry) => `<p class="bibliography">${runs(entry)}</p>`).join('')}</section>`
     : ''
   const titlePage = model.titlePage
-    ? `<section class="project-title-page"><h1>${escapeHtml(model.metadata.title)}</h1><p>${escapeHtml(model.metadata.byline)}</p></section>`
+    ? `<section class="project-title-page"><h1>${escapeHtml(model.metadata.title)}</h1>${model.metadata.subtitle ? `<p class="project-subtitle">${escapeHtml(model.metadata.subtitle)}</p>` : ''}<p>${escapeHtml(model.metadata.byline)}</p></section>`
     : ''
   const body =
     titlePage +

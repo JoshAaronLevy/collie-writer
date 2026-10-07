@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Menu } from '@mantine/core'
-import { ChevronDown } from 'lucide-react'
+import { IconChevronDown } from '@tabler/icons-react'
+import { IconButton } from './IconButton'
 import { useVisualPreferences } from '../../theme/visualPreferencesContext'
 import { AppButton } from './Controls'
 
-type MenuAction = {
+export type MenuAction = {
   id: string
   label: string
   icon?: ReactNode
@@ -16,12 +17,18 @@ export function ActionMenu({
   label,
   accessibleLabel,
   actions,
-  onOpen
+  onOpen,
+  icon,
+  triggerClassName,
+  disabled = false
 }: {
   label: string
   accessibleLabel?: string
   actions: MenuAction[]
   onOpen?: () => void
+  icon?: ReactNode
+  triggerClassName?: string
+  disabled?: boolean
 }): React.JSX.Element {
   const [opened, setOpened] = useState(false)
   const [selectionMade, setSelectionMade] = useState(false)
@@ -43,6 +50,7 @@ export function ActionMenu({
     <Menu
       opened={opened}
       onChange={(next) => {
+        if (next && disabled) return
         if (next) {
           setSelectionMade(false)
           onOpen?.()
@@ -57,14 +65,29 @@ export function ActionMenu({
       transitionProps={{ transition: 'fade', duration: reducedMotion ? 0 : 120 }}
     >
       <Menu.Target>
-        <AppButton
-          ref={trigger}
-          variant="default"
-          aria-label={accessibleLabel ?? label}
-          rightSection={<ChevronDown size={16} aria-hidden="true" />}
-        >
-          {label}
-        </AppButton>
+        {icon ? (
+          <IconButton
+            ref={trigger}
+            variant="subtle"
+            label={accessibleLabel ?? label}
+            className={triggerClassName}
+            disabled={disabled}
+            tooltipDisabled={opened}
+          >
+            {icon}
+          </IconButton>
+        ) : (
+          <AppButton
+            ref={trigger}
+            variant="default"
+            disabled={disabled}
+            className={triggerClassName}
+            aria-label={accessibleLabel ?? label}
+            rightSection={<IconChevronDown size={16} aria-hidden="true" />}
+          >
+            {label}
+          </AppButton>
+        )}
       </Menu.Target>
       <Menu.Dropdown>
         {actions.map((action, index) => (

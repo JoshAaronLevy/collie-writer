@@ -1,3 +1,4 @@
+import { isEditableKind } from '../../shared/outline'
 import { SEARCH_SCHEMA, searchProjection } from './search-schema'
 import { lstatSync } from 'node:fs'
 import { basename } from 'node:path'
@@ -15,6 +16,7 @@ import type {
 import { inWriteTransaction, openStorageDatabase } from '../storage/driver'
 
 type Meta = {
+  version: number
   state: SearchActivity['state']
   phase: number
   cursor: string
@@ -140,12 +142,19 @@ export class LocalSearch {
       this.index.exec(SEARCH_SCHEMA)
       this.index
         .prepare(
-          "INSERT OR IGNORE INTO search_meta VALUES (1,1,'partial',0,'','',NULL,NULL,NULL,0,0,NULL)"
+          "INSERT OR IGNORE INTO search_meta VALUES (1,2,'partial',0,'','',NULL,NULL,NULL,0,0,NULL)"
         )
         .run()
       const meta = this.meta()
+      if (![1, 2].includes(meta.version)) throw new ProjectError('CORRUPT_PROJECT')
+      if (meta.version === 1)
+        this.index
+          .prepare(
+            "UPDATE search_meta SET version=2,state='partial',phase=0,cursor='',indexed_head=NULL WHERE singleton=1"
+          )
+          .run()
       if (meta.phase < 0 || meta.phase > phases.length) throw new ProjectError('CORRUPT_PROJECT')
-      if (meta.state === 'queued' || meta.state === 'running')
+      if (meta.version === 2 && (meta.state === 'queued' || meta.state === 'running'))
         this.index.prepare("UPDATE search_meta SET state='interrupted' WHERE singleton=1").run()
       for (const suffix of ['', '-wal', '-shm']) {
         // Keep the identities associated with this live connection, not just familiar names.
@@ -226,7 +235,7 @@ export class LocalSearch {
     const id = String(row.id ?? ''),
       version = String(row.version_id ?? '')
     if (phase === 0) {
-      if (row.kind !== 'text') return null
+      if (!isEditableKind(row.kind)) return null
       const payload = readDocument(JSON.parse(String(row.payload)))
       return {
         key: `draft:${id}`,
@@ -501,7 +510,7 @@ export class LocalSearch {
         status: row.status
       }))
       const expected =
-        count(db, "SELECT count(*) n FROM documents WHERE kind='text'") +
+        count(db, "SELECT count(*) n FROM documents WHERE kind IN ('text','chapter')") +
         count(db, 'SELECT count(*) n FROM notes') +
         count(db, 'SELECT count(*) n FROM sources') +
         count(db, 'SELECT count(*) n FROM research_questions') +

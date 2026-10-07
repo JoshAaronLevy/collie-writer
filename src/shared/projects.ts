@@ -35,6 +35,7 @@ import {
   projectText,
   requiredProjectName,
   storedProjectTitle,
+  projectSubtitle,
   type ProjectDetails
 } from '../domain/projects/details'
 import {
@@ -333,6 +334,7 @@ export type ProjectList = {
 }
 export type DocumentSummary = OutlineDocument
 export type OpenProject = ProjectSummary & {
+  subtitle: string
   byline: string
   description: string
   detailsRevisionId: string
@@ -343,6 +345,9 @@ export type OpenProject = ProjectSummary & {
   payload: DocumentPayload
 }
 export type CreateInput = {
+  metadataVersion?: 2
+  subtitle?: string
+  structureVersion?: 2
   operationId: string
   template: ProjectTemplate
   title: string
@@ -554,7 +559,18 @@ export function isOpenInput(v: unknown): v is OpenInput {
 export function isCreateInput(v: unknown): v is CreateInput {
   return (
     record(v) &&
-    exact(v, ['operationId', 'template', 'title', 'byline', 'description']) &&
+    exact(v, [
+      'operationId',
+      'template',
+      'title',
+      'byline',
+      'description',
+      ...(Object.hasOwn(v, 'structureVersion') ? ['structureVersion'] : []),
+      ...(Object.hasOwn(v, 'metadataVersion') ? ['metadataVersion', 'subtitle'] : [])
+    ]) &&
+    (!Object.hasOwn(v, 'structureVersion') || v.structureVersion === 2) &&
+    (!Object.hasOwn(v, 'metadataVersion') ||
+      (v.metadataVersion === 2 && projectSubtitle(v.subtitle))) &&
     isId(v.operationId) &&
     isProjectTemplate(v.template) &&
     requiredProjectName(v.title) &&
@@ -572,12 +588,14 @@ export function isProjectDetailsInput(v: unknown): v is ProjectDetailsInput {
       'expectedHead',
       'expectedRevisionId',
       'title',
+      'subtitle',
       'byline',
       'description',
       'projectKind'
     ]) &&
     [v.projectId, v.workspaceId, v.operationId, v.expectedHead, v.expectedRevisionId].every(isId) &&
     storedProjectTitle(v.title) &&
+    projectSubtitle(v.subtitle) &&
     (v.byline === '' || requiredProjectName(v.byline)) &&
     projectText(v.description, 10000) &&
     isProjectKind(v.projectKind)
@@ -921,6 +939,7 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
       'archived',
       'destination',
       'template',
+      'subtitle',
       'byline',
       'description',
       'detailsRevisionId',
@@ -931,6 +950,7 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
     ]) ||
     !isProjectTemplate(v.template) ||
     kindForTemplate(v.template) !== v.projectKind ||
+    !projectSubtitle(v.subtitle) ||
     !(v.byline === '' || requiredProjectName(v.byline)) ||
     !projectText(v.description, 10000) ||
     !isId(v.detailsRevisionId) ||

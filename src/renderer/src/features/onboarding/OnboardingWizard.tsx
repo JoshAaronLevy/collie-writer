@@ -84,6 +84,7 @@ export default function OnboardingWizard(): React.JSX.Element {
   })
   const heading = useRef<HTMLHeadingElement>(null),
     title = useRef<HTMLInputElement>(null),
+    subtitle = useRef<HTMLInputElement>(null),
     byline = useRef<HTMLInputElement>(null)
   const selected = draft.template
   const created = draft.receipt
@@ -211,6 +212,7 @@ export default function OnboardingWizard(): React.JSX.Element {
       step: 'opening',
       template: input.template,
       title: input.title,
+      subtitle: input.subtitle ?? '',
       byline: input.byline,
       description: input.description,
       request: input,
@@ -237,14 +239,16 @@ export default function OnboardingWizard(): React.JSX.Element {
     if (!current.template) return
     const fields = {
       title: current.title,
+      subtitle: current.subtitle,
       byline: current.byline,
       description: current.description,
       projectKind: projectTypes[current.template].kind
     }
     const errors = detailsErrors(fields, true)
-    if (errors.title || errors.byline || errors.description) {
+    if (Object.values(errors).some(Boolean)) {
       setIssue('Review the highlighted fields before creating this project.')
       if (errors.title) title.current?.focus()
+      else if (errors.subtitle) subtitle.current?.focus()
       else if (errors.byline) byline.current?.focus()
       else document.getElementById('project-setup-description')?.focus()
       return
@@ -291,6 +295,9 @@ export default function OnboardingWizard(): React.JSX.Element {
           return
         }
         const input: CreateInput = {
+          structureVersion: 2,
+          metadataVersion: 2,
+          subtitle: current.subtitle.trim(),
           operationId: crypto.randomUUID(),
           template: current.template!,
           title: current.title.trim(),
@@ -301,6 +308,7 @@ export default function OnboardingWizard(): React.JSX.Element {
           ...current,
           step: 'creating',
           title: input.title,
+          subtitle: input.subtitle ?? '',
           byline: input.byline,
           request: input,
           receipt: null,
@@ -359,7 +367,7 @@ export default function OnboardingWizard(): React.JSX.Element {
       setIssue(result.message)
       return
     }
-    // Persist a completion tombstone before cleanup. Retire v1 first so partial
+    // Persist a completion tombstone before cleanup. Retire v1/v2 first so partial
     // cleanup cannot resurrect an older operation or its retired AI screen.
     if (!save({ ...saved, step: 'completed', completion: saved.completion ?? mode })) {
       session.setError(completionSaveMessage)
@@ -602,6 +610,7 @@ export default function OnboardingWizard(): React.JSX.Element {
             <ProjectDetailsFields
               value={{
                 title: draft.title,
+                subtitle: draft.subtitle,
                 byline: draft.byline,
                 description: draft.description,
                 projectKind: projectTypes[selected].kind
@@ -611,11 +620,13 @@ export default function OnboardingWizard(): React.JSX.Element {
               showErrors={attempted}
               disabled={busy || !!unreadable || !!draft.request}
               titleRef={title}
+              subtitleRef={subtitle}
               bylineRef={byline}
               descriptionId="project-setup-description"
               onChange={(value) =>
                 change({
                   title: value.title,
+                  subtitle: value.subtitle,
                   byline: value.byline,
                   description: value.description
                 })

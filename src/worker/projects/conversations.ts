@@ -1,3 +1,4 @@
+import { isEditableKind, MAX_OUTLINE_DEPTH } from '../../shared/outline'
 import { captureDigest } from '../ai/capture'
 import { activeBindings, localBinding, protectHandoff, retireBinding } from '../ai/handoff'
 import type Database from 'better-sqlite3'
@@ -53,14 +54,32 @@ const parse = <T>(body: unknown, valid: (v: unknown) => v is T): T => {
   return valid(value) ? value : corrupt()
 }
 function conversation(db: Database.Database, p: string, id: string): Conversation {
+  const current = Number(db.pragma('user_version', { simple: true })) >= 16
   const row = db
     .prepare(
-      'SELECT id,revision_id AS revisionId,title,state,created_at AS createdAt,updated_at AS updatedAt FROM conversations WHERE project_id=? AND id=?'
+      `SELECT id,revision_id AS revisionId,title,state,created_at AS createdAt,updated_at AS updatedAt${current ? ',origin_document_id AS originDocumentId' : ''} FROM conversations WHERE project_id=? AND id=?`
     )
     .get(p, id)
   if (!row) throw new ProjectError('NOT_FOUND')
-  const value = { version: 1, ...(row as object) }
+  const value = { version: current ? 2 : 1, ...(row as object) }
   return isConversation(value) ? value : corrupt()
+}
+function activeOrigin(db: Database.Database, p: string, id: string | null): string | null {
+  if (!id) return null
+  const find = db.prepare(
+    'SELECT d.kind,d.parent_id,s.state FROM documents d JOIN outline_state s ON s.project_id=d.project_id AND s.document_id=d.id WHERE d.project_id=? AND d.id=?'
+  )
+  type Row = { kind: string; parent_id: string | null; state: string }
+  const doc = find.get(p, id) as Row | undefined
+  if (!doc || !isEditableKind(doc.kind) || doc.state !== 'active') return null
+  let parent = doc.parent_id,
+    depth = 0
+  while (parent) {
+    const row = find.get(p, parent) as Row | undefined
+    if (!row || row.state !== 'active' || ++depth >= MAX_OUTLINE_DEPTH) return null
+    parent = row.parent_id
+  }
+  return id
 }
 function message(db: Database.Database, p: string, id: string): ConversationMessage {
   const row = db
@@ -175,7 +194,7 @@ function review(
     const doc = find.get(p, source.documentId) as DocumentRow | undefined
     if (
       !doc ||
-      doc.kind !== 'text' ||
+      !isEditableKind(doc.kind) ||
       doc.state !== 'active' ||
       doc.revision_id !== source.revisionId
     )
@@ -184,7 +203,8 @@ function review(
       depth = 0
     while (parent) {
       const row = find.get(p, parent) as DocumentRow | undefined
-      if (!row || row.state !== 'active' || ++depth > 3) throw new ProjectError('STALE_REVISION')
+      if (!row || row.state !== 'active' || ++depth >= MAX_OUTLINE_DEPTH)
+        throw new ProjectError('STALE_REVISION')
       parent = row.parent_id
     }
     let text: string
@@ -270,6 +290,38 @@ export async function conversationCommand(
 ): Promise<ConversationValue> {
   const { db, operations, projectId: p } = context
   switch (input.action) {
+    case 'grouped-list': {
+      const currentDocumentId = activeOrigin(db, p, input.currentDocumentId)
+      const group = (
+        current: boolean,
+        offset: number
+      ): { items: Conversation[]; total: number } => {
+        const match = current
+          ? 'origin_document_id=?'
+          : '(? IS NULL OR origin_document_id IS NULL OR origin_document_id<>?)'
+        const args = current
+          ? [p, input.state, input.query, currentDocumentId]
+          : [p, input.state, input.query, currentDocumentId, currentDocumentId]
+        const filter = `project_id=? AND state=? AND instr(lower(title),lower(?))>0 AND ${match}`
+        const rows = db
+          .prepare(
+            `SELECT id FROM conversations WHERE ${filter} ORDER BY updated_at DESC,id LIMIT ? OFFSET ?`
+          )
+          .all(...args, CONVERSATION_LIMITS.list, offset) as { id: string }[]
+        const total = (
+          db.prepare(`SELECT count(*) AS n FROM conversations WHERE ${filter}`).get(...args) as {
+            n: number
+          }
+        ).n
+        return { items: rows.map((r) => conversation(db, p, r.id)), total }
+      }
+      return {
+        type: 'grouped-list',
+        currentDocumentId,
+        current: group(true, input.currentOffset),
+        other: group(false, input.otherOffset)
+      }
+    }
     case 'list': {
       const filter = `project_id=? AND state=? AND instr(lower(title),lower(?))>0`,
         args = [p, input.state, input.query]
@@ -378,16 +430,13 @@ export async function conversationCommand(
               .get(p, input.conversationId)
           )
             throw new ProjectError('OPERATION_CONFLICT')
+          const origin = input.version === 2 ? (input.originDocumentId ?? null) : null
+          if (origin !== null && activeOrigin(db, p, origin) !== origin)
+            throw new ProjectError('STALE_REVISION')
           const now = new Date().toISOString()
-          db.prepare('INSERT INTO conversations VALUES (?,?,?,?,?,?,?)').run(
-            p,
-            input.conversationId,
-            randomUUID(),
-            input.title,
-            input.state,
-            now,
-            now
-          )
+          db.prepare(
+            'INSERT INTO conversations (project_id,id,revision_id,title,state,created_at,updated_at,origin_document_id) VALUES (?,?,?,?,?,?,?,?)'
+          ).run(p, input.conversationId, randomUUID(), input.title, input.state, now, now, origin)
         } else {
           const c = conversation(db, p, input.conversationId)
           if (c.revisionId !== input.expectedRevision) throw new ProjectError('STALE_REVISION')
@@ -401,7 +450,7 @@ export async function conversationCommand(
         const next = advance(db, p, input.conversationId),
           doc = db
             .prepare(
-              "SELECT id FROM documents WHERE project_id=? AND kind='text' ORDER BY id LIMIT 1"
+              "SELECT id FROM documents WHERE project_id=? AND kind IN ('text','chapter') ORDER BY id LIMIT 1"
             )
             .get(p) as { id: string }
         db.prepare('INSERT INTO domain_operations VALUES (?,?,?,?)').run(

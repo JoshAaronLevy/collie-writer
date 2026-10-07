@@ -1,6 +1,10 @@
 import type { AiActionAvailability } from '../../../../../shared/ai-route'
 import { useCallback, useMemo } from 'react'
 type ProofreadingControllerState = {
+  dialogOpen: boolean
+  closeDialog: () => void
+  manageChatGPT: () => void
+  dialogExited: () => void
   targetSectionOpen: boolean
   scope: OpenInput | null
   items: ProofreadSummary[]
@@ -71,6 +75,12 @@ const sizeMessage =
 export function useProofreadingController(): ProofreadingControllerState {
   const session = useWorkspaceSession(),
     connections = useAiConnections()
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const dialogOpenRef = useRef(false),
+    dialogOpener = useRef<HTMLElement | null>(null),
+    afterDialog = useRef<(() => void) | null>(null)
+  const dialogGeneration = useRef(0),
+    dialogContext = useRef<string | null>(null)
   const [reviewed, setReviewed] = useState<Reviewed | null>(null),
     [items, setItems] = useState<ProofreadSummary[]>([]),
     [total, setTotal] = useState(0),
@@ -118,11 +128,16 @@ export function useProofreadingController(): ProofreadingControllerState {
     const s = current.current
     if (!s.project || s.composition.current) return
     const reveal = (): void => {
-      s.writingView.setAiTool('proofreading')
-      s.writingView.revealPanel('ai')
-      requestAnimationFrame(() => {
-        if (panel.current && !panel.current.closest('[hidden],[inert]')) panel.current.focus()
-      })
+      if (!dialogOpenRef.current && document.querySelector('[role="dialog"], [role="alertdialog"]'))
+        return
+      if (!dialogOpenRef.current)
+        dialogOpener.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null
+      afterDialog.current = null
+      dialogGeneration.current++
+      dialogContext.current = JSON.stringify(current.current.destination)
+      dialogOpenRef.current = true
+      setDialogOpen(true)
     }
     if (s.proofreadingLocked) {
       reveal()
@@ -209,6 +224,7 @@ export function useProofreadingController(): ProofreadingControllerState {
   const [lastScope, setLastScope] = useState(scope)
   if (lastScope !== scope) {
     setLastScope(scope)
+    setDialogOpen(false)
     setSelected(null)
     setBundle(null)
     setItems([])
@@ -221,6 +237,9 @@ export function useProofreadingController(): ProofreadingControllerState {
     setNotice('')
   }
   useEffect(() => {
+    dialogOpenRef.current = false
+    dialogGeneration.current++
+    afterDialog.current = null
     sequence.current++
     listSequence.current++
     state.current.selected = null
@@ -638,7 +657,7 @@ export function useProofreadingController(): ProofreadingControllerState {
       decision
     })
   }
-  async function original(f: ProofreadFinding): Promise<void> {
+  async function originalAfterExit(f: ProofreadFinding): Promise<void> {
     if (
       !scope ||
       !bundle ||
@@ -682,6 +701,11 @@ export function useProofreadingController(): ProofreadingControllerState {
         t = captured.targets.find((t) => t.id === f.targetId)
       if (
         !belongs(scope) ||
+        !document.hasFocus() ||
+        document.querySelector('[role="dialog"], [role="alertdialog"]') ||
+        live.closing ||
+        live.navigating ||
+        live.composition.current ||
         live.manuscriptDirty ||
         live.destination.kind !== 'workspace' ||
         live.destination.view !== 'write' ||
@@ -721,7 +745,7 @@ export function useProofreadingController(): ProofreadingControllerState {
       }
     })
   }
-  async function history(f: ProofreadFinding): Promise<void> {
+  async function historyAfterExit(f: ProofreadFinding): Promise<void> {
     if (!f.checkpointId || !scope) return
     const s = current.current
     if (
@@ -733,6 +757,78 @@ export function useProofreadingController(): ProofreadingControllerState {
       })
     )
       s.run(() => s.loadHistory(f.checkpointId))
+  }
+  function closeDialog(): void {
+    if (current.current.composition.current) return
+    dialogOpenRef.current = false
+    setDialogOpen(false)
+  }
+  function manageChatGPT(): void {
+    const captured = scope
+    if (!captured) return
+    afterDialog.current = () => {
+      if (belongs(captured)) connectionRef.current.openDialog()
+    }
+    closeDialog()
+  }
+  async function original(f: ProofreadFinding): Promise<void> {
+    const captured = scope
+    if (!captured || locked.current || pendingRef.current || current.current.proofreadingLocked)
+      return
+    afterDialog.current = () => {
+      if (belongs(captured)) void originalAfterExit(f)
+    }
+    closeDialog()
+  }
+  async function history(f: ProofreadFinding): Promise<void> {
+    const captured = scope
+    if (
+      !captured ||
+      !f.checkpointId ||
+      locked.current ||
+      pendingRef.current ||
+      current.current.proofreadingLocked
+    )
+      return
+    afterDialog.current = () => {
+      if (belongs(captured)) void historyAfterExit(f)
+    }
+    closeDialog()
+  }
+  function dialogExited(): void {
+    const generation = dialogGeneration.current
+    requestAnimationFrame(() => {
+      const s = current.current
+      if (
+        dialogOpenRef.current ||
+        dialogGeneration.current !== generation ||
+        !document.hasFocus() ||
+        s.composition.current ||
+        s.closing ||
+        s.navigating ||
+        document.querySelector('[role="dialog"], [role="alertdialog"]')
+      )
+        return
+      const action = afterDialog.current
+      afterDialog.current = null
+      if (action) {
+        action()
+        return
+      }
+      const opener = dialogOpener.current
+      dialogOpener.current = null
+      if (
+        dialogContext.current === JSON.stringify(s.destination) &&
+        opener?.isConnected &&
+        !opener.matches(':disabled') &&
+        !opener.closest('[hidden],[inert]')
+      )
+        opener.focus({ preventScroll: true })
+      else
+        document
+          .querySelector<HTMLElement>('[data-destination-region]:not([hidden]):not([inert])')
+          ?.focus({ preventScroll: true })
+    })
   }
   function mayRun(
     capture: Reviewed,
@@ -776,6 +872,10 @@ export function useProofreadingController(): ProofreadingControllerState {
       ? 'stale'
       : bundle.validity)
   return {
+    dialogOpen,
+    closeDialog,
+    manageChatGPT,
+    dialogExited,
     targetSectionOpen: !!bundle && project?.documentId === bundle.capture.source.documentId,
     scope,
     items,

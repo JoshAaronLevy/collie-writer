@@ -1,0 +1,23 @@
+.review-options {
+  display: grid;
+  gap: var(--mantine-spacing-sm);
+}
+.review-options p {
+  margin: 0;
+}
+.review-options-group {
+  display: grid;
+  gap: var(--mantine-spacing-xs);
+  margin: 0;
+  padding: var(--mantine-spacing-sm);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+}
+.review-options-group legend {
+  font-weight: 600;
+  padding-inline: var(--mantine-spacing-xs);
+}
+.review-options-actions {
+  display: flex;
+  gap: var(--mantine-spacing-sm);
+}

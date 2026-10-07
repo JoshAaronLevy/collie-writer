@@ -53,7 +53,7 @@ export function searchProjection(
     }[]
     if (
       meta.length !== 1 ||
-      meta[0].version !== 1 ||
+      ![1, 2].includes(meta[0].version) ||
       meta[0].phase < 0 ||
       meta[0].phase > 6 ||
       !['partial', 'queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted'].includes(

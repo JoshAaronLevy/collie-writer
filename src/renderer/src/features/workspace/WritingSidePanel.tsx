@@ -1,5 +1,4 @@
 import { readableWriting } from './readableWriting'
-import { ProofreadingPanel } from '../ai/proofreading/ProofreadingPanel'
 import { useEffect, useMemo, useState } from 'react'
 import { SelectField, AppButton } from '../../components/ui/Controls'
 import type { Note } from '../../../../shared/notes'
@@ -19,7 +18,7 @@ export function WritingSidePanel({
   mode: SecondaryPanel
   active: boolean
 }): React.JSX.Element {
-  const { project, research, writingView } = useWorkspaceSession()
+  const { project, research } = useWorkspaceSession()
   const researchData = useResearchData()
   const [notes, setNotes] = useState<Note[]>([]),
     [sources, setSources] = useState<SourceRecord[]>([])
@@ -112,30 +111,9 @@ export function WritingSidePanel({
     source = sources.find((item) => item.id === sourceId)
   return (
     <div className={styles['writing-side-content']}>
-      <h2>{mode === 'notes' ? 'Notes' : mode === 'source' ? 'Sources' : 'AI assistance'}</h2>
+      {mode !== 'ai' ? <h2>{mode === 'notes' ? 'Notes' : 'Sources'}</h2> : null}
       <div hidden={mode !== 'ai'} inert={mode !== 'ai'}>
-        <SelectField
-          label="AI assistance"
-          value={writingView.aiTool}
-          onChange={(event) =>
-            writingView.setAiTool(event.currentTarget.value as 'conversation' | 'proofreading')
-          }
-        >
-          <option value="conversation">Conversations</option>
-          <option value="proofreading">Proofreading</option>
-        </SelectField>
-        <div
-          hidden={writingView.aiTool !== 'conversation'}
-          inert={writingView.aiTool !== 'conversation'}
-        >
-          <ConversationPanel />
-        </div>
-        <div
-          hidden={writingView.aiTool !== 'proofreading'}
-          inert={writingView.aiTool !== 'proofreading'}
-        >
-          <ProofreadingPanel />
-        </div>
+        <ConversationPanel />
       </div>
       {mode !== 'ai' ? (
         <>

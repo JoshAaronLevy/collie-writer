@@ -72,3 +72,12 @@ export function emptyDocument(id: () => string): DocumentPayload {
     footnotesById: {}
   }
 }
+
+/** Omitted version keeps already submitted creation requests unchanged. */
+export function templateItemKind(
+  template: ProjectTemplate,
+  position: number,
+  version?: 2
+): 'chapter' | 'text' {
+  return version === 2 && template === 'book' && position === 1 ? 'chapter' : 'text'
+}

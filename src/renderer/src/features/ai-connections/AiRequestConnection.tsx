@@ -35,10 +35,12 @@ function availability(feature: AiActionAvailability | undefined): string {
 /** Feature availability stays contextual; account actions have one shared dialog. */
 export function AiRequestConnection({
   action,
-  disabled = false
+  disabled = false,
+  onManage
 }: {
   action: 'conversation' | 'proofread'
   disabled?: boolean
+  onManage?: () => void
 }): React.JSX.Element {
   const connections = useAiConnections(),
     session = useWorkspaceSession()
@@ -59,7 +61,7 @@ export function AiRequestConnection({
         variant="default"
         disabled={disabled || session.closing || session.navigating}
         aria-haspopup="dialog"
-        onClick={(event) => connections.openDialog(event.currentTarget)}
+        onClick={(event) => (onManage ? onManage() : connections.openDialog(event.currentTarget))}
       >
         Manage ChatGPT
       </AppButton>

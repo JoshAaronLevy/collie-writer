@@ -4,6 +4,8 @@ import { spaceMessage } from '../../../../shared/storage-space'
 import { AppButton } from '../../components/ui/Controls'
 import styles from './FilePanel.module.css'
 import { projectFileStatusMessage } from './project-file-presentation'
+import type { SavePresentation } from './project-file-presentation'
+import { useId } from 'react'
 
 const phases = {
   reading: 'Reading the file; a cloud placeholder may need downloading',
@@ -17,6 +19,7 @@ const phases = {
 export default function FilePanel({
   status,
   dirty,
+  saveState,
   disabled,
   save,
   locate,
@@ -28,6 +31,7 @@ export default function FilePanel({
 }: {
   status: FileStatus
   dirty: boolean
+  saveState: SavePresentation
   disabled: boolean
   save: (as: boolean) => void
   locate: () => void
@@ -37,29 +41,44 @@ export default function FilePanel({
   cancel: (id: string) => void
   consent: (id: string) => void
 }): React.JSX.Element {
+  const headingId = useId()
   const restoring = status.job?.kind === 'restore' || status.job?.kind === 'recover'
   const job = status.job,
     active = fileBusy(job),
     destination = status.destination
   return (
-    <section
-      className={styles['project-file-panel']}
-      aria-labelledby="file-heading"
-      id="project-file"
-      tabIndex={-1}
-    >
-      <h2 id="file-heading">Project file and Save</h2>
+    <section className={styles['project-file-panel']} aria-labelledby={headingId} tabIndex={-1}>
+      <h2 id={headingId}>Project file and Save</h2>
       {destination ? (
         <p className={styles['project-file-path']}>{destination.path}</p>
       ) : (
         <p>No file destination selected.</p>
       )}
       <p role="status">{projectFileStatusMessage(status, dirty)}</p>
+      {saveState === 'unconfirmed' ? (
+        <p role="alert">
+          Save is not confirmed. Retry Save checks the same request before saving newer edits.
+        </p>
+      ) : null}
       <div className={styles['project-file-actions']}>
-        <AppButton disabled={disabled || active} onClick={() => save(false)}>
-          {status.state === 'unavailable' ? 'Retry Save' : destination ? 'Save' : 'Save…'}
+        <AppButton
+          pending={saveState === 'saving'}
+          disabled={disabled || active}
+          onClick={() => save(false)}
+        >
+          {saveState === 'saving'
+            ? 'Saving…'
+            : saveState === 'unconfirmed' || status.state === 'unavailable'
+              ? 'Retry Save'
+              : destination
+                ? 'Save'
+                : 'Save…'}
         </AppButton>
-        <AppButton variant="default" disabled={disabled || active} onClick={() => save(true)}>
+        <AppButton
+          variant="default"
+          disabled={disabled || active || saveState === 'unconfirmed'}
+          onClick={() => save(true)}
+        >
           Save As…
         </AppButton>
         {destination ? (
@@ -67,10 +86,18 @@ export default function FilePanel({
             <AppButton variant="subtle" disabled={disabled || active} onClick={reveal}>
               Show project file
             </AppButton>
-            <AppButton variant="subtle" disabled={disabled || active} onClick={locate}>
+            <AppButton
+              variant="subtle"
+              disabled={disabled || active || saveState === 'unconfirmed'}
+              onClick={locate}
+            >
               Locate moved file…
             </AppButton>
-            <AppButton variant="subtle" disabled={disabled || active} onClick={inspect}>
+            <AppButton
+              variant="subtle"
+              disabled={disabled || active || saveState === 'unconfirmed'}
+              onClick={inspect}
+            >
               Inspect saved file
             </AppButton>
           </>
@@ -139,7 +166,7 @@ export default function FilePanel({
           </p>
         </div>
       ) : null}
-      {job?.error ? (
+      {job?.error && job.state !== 'cancelled' ? (
         <p role="alert">
           {job.space
             ? spaceMessage(job.space)

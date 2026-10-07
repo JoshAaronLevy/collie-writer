@@ -1,0 +1,51 @@
+.icon-button {
+  flex: 0 0 auto;
+  inline-size: var(--collie-control-height);
+  min-inline-size: var(--collie-control-height);
+  min-block-size: var(--collie-control-height);
+  padding: 0.5rem;
+}
+.icon-button svg {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.icon-button[aria-pressed='true'] {
+  background: var(--collie-selected);
+  box-shadow: inset 0 -2px var(--collie-accent);
+}
+.icon-button[data-disabled],
+.icon-button[data-disabled]:hover {
+  color: var(--collie-text-secondary);
+  background: var(--collie-surface-muted);
+  cursor: not-allowed;
+}
+.icon-button:focus-visible {
+  outline: var(--collie-focus-width) solid var(--collie-focus);
+  outline-offset: 2px;
+}
+.icon-description {
+  max-inline-size: min(22rem, calc(100vw - 2rem));
+  padding: 0.5rem 0.75rem;
+  background: var(--collie-text);
+  color: var(--collie-surface);
+  border: 1px solid var(--collie-control-border);
+  border-radius: var(--collie-radius-control);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+@media (forced-colors: active) {
+  .icon-button[aria-pressed='true'] {
+    outline: 2px solid Highlight;
+  }
+  .icon-button[data-disabled] {
+    color: GrayText;
+  }
+  .icon-description {
+    color: CanvasText;
+    background: Canvas;
+    border-color: CanvasText;
+  }
+}

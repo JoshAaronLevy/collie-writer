@@ -1,3 +1,4 @@
+import { isEditableKind } from '../../../../shared/outline'
 import PresentationBoundary from '../../components/PresentationBoundary'
 import { useLayoutEffect } from 'react'
 import { useSynchronousState } from '../../hooks/useSynchronousState'
@@ -63,9 +64,9 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
     current.current = props
   })
   const orderedOutline = outline(props.project.documents)
-  const texts = orderedOutline.filter((d) => d.kind === 'text')
+  const texts = orderedOutline.filter((d) => isEditableKind(d.kind))
   const [selected, setSelected] = useState<string[]>(() =>
-    orderedOutline.filter((d) => d.kind === 'text').map((d) => d.id)
+    orderedOutline.filter((d) => isEditableKind(d.kind)).map((d) => d.id)
   )
   const [paper, setPaper] = useState<'Letter' | 'A4'>('Letter')
   const [capture, setCapture] = useState<{ value: ExportPreview; options: string } | null>(null)
@@ -153,8 +154,9 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
   function toggle(id: string): void {
     const node = orderedOutline.find((d) => d.id === id)
     if (!node) return
-    const descendants =
-      node.kind === 'text' ? [id] : texts.filter((d) => belongsTo(d.id, id)).map((d) => d.id)
+    const descendants = isEditableKind(node.kind)
+      ? [id]
+      : texts.filter((d) => belongsTo(d.id, id)).map((d) => d.id)
     setSelected((old) =>
       descendants.every((x) => old.includes(x))
         ? old.filter((x) => !descendants.includes(x))
@@ -470,16 +472,20 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
           {step === 'options' ? (
             <div className={styles['export-options']}>
               <fieldset className={styles['export-section-list']} disabled={locked}>
-                <legend>Include sections</legend>
+                <legend>Include Chapters and Sections</legend>
+                <p>
+                  Each Chapter or Section selects its own writing. A Part selects all writing within
+                  it.
+                </p>
                 {!texts.length ? (
                   <p>No active writing sections. Add a section in Write before exporting.</p>
                 ) : null}
                 {orderedOutline.map((d) => (
                   <div key={d.id} style={{ paddingInlineStart: `${d.depth * 1.25}rem` }}>
                     <ChoiceField
-                      label={`${d.kind === 'text' ? 'Section' : d.kind === 'chapter' ? 'Chapter' : 'Part'}: ${d.title}`}
+                      label={`${d.kind === 'text' ? 'Section' : d.kind === 'chapter' ? 'Chapter' : 'Part (all writing)'}: ${d.title}`}
                       checked={
-                        d.kind === 'text'
+                        isEditableKind(d.kind)
                           ? selected.includes(d.id)
                           : texts.some((x) => belongsTo(x.id, d.id)) &&
                             texts
@@ -592,7 +598,7 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
                 />
               </div>
               <ChoiceField
-                label="Include a title page with title and byline"
+                label="Include a title page with title, subtitle and byline"
                 disabled={locked}
                 checked={titlePage}
                 onChange={(event) => setTitlePage(event.currentTarget.checked)}
@@ -601,8 +607,8 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
                 <summary>Document properties and format limits</summary>
                 <p>
                   DOCX and PDF properties include “{props.project.title}” and{' '}
-                  {props.project.byline || 'an empty author field'}. The title page contains only
-                  the title and byline.
+                  {props.project.byline || 'an empty author field'}. The title page shows the title,
+                  optional subtitle and byline.
                 </p>
                 <ChoiceField
                   label="Include the project description in DOCX/PDF document properties"
@@ -612,9 +618,9 @@ export default function DocxExportPanel(props: Props): React.JSX.Element {
                 />
                 <p>
                   Descriptions are never printed on the title page or added to Markdown/text.
-                  Markdown/text opening title and byline have no guaranteed page break. Markdown
-                  copies images into an adjacent asset folder. Plain text omits image pixels and
-                  layout; each result reports format losses.
+                  Markdown/text opening title, subtitle and byline have no guaranteed page break.
+                  Markdown copies images into an adjacent asset folder. Plain text omits image
+                  pixels and layout; each result reports format losses.
                 </p>
               </details>
               <details

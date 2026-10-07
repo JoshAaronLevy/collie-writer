@@ -1,13 +1,12 @@
 .outline-panel {
   min-width: 0;
-  margin-top: 1rem;
+  margin-top: 0;
 }
 .outline-panel h3 {
   font-size: 1rem;
   margin: 0 0 0.75rem;
 }
-.outline-panel .outline-heading-actions,
-.outline-panel .outline-item-actions {
+.outline-panel .outline-heading-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
@@ -19,9 +18,9 @@
   margin: 0;
 }
 .outline-panel .outline-tree .outline-tree {
-  padding-left: 0.85rem;
-  border-left: 1px solid var(--collie-border);
-  margin-left: 0.5rem;
+  padding-inline-start: 0.3rem;
+  border-inline-start: 1px solid var(--collie-border);
+  margin-inline-start: 0;
 }
 .outline-panel .outline-row {
   display: flex;
@@ -34,13 +33,14 @@
   flex: 1;
   min-width: 0;
   height: auto;
-  padding: 0.6rem 0.65rem;
+  padding: 0.5rem 0.25rem;
   text-align: left;
   white-space: normal;
 }
 .outline-panel .outline-row-label {
   display: block;
   width: 100%;
+  overflow-wrap: anywhere;
   white-space: normal;
   text-align: left;
 }
@@ -61,7 +61,6 @@
 .outline-panel .outline-branch-toggle {
   flex-shrink: 0;
 }
-.outline-panel .outline-selection,
 .outline-panel .outline-help {
   font-size: 0.875rem;
   color: var(--collie-text-secondary);
@@ -89,5 +88,26 @@
 @media (forced-colors: active) {
   .outline-panel .outline-row-title[aria-pressed='true'] {
     border: 2px solid Highlight;
+  }
+}
+
+/* Reserve the action target at every breakpoint; reveal without moving titles. */
+.outline-panel .outline-row-menu {
+  opacity: 1;
+  flex-shrink: 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  .outline-panel .outline-row-menu {
+    opacity: 0;
+  }
+  .outline-panel .outline-row:hover .outline-row-menu,
+  .outline-panel .outline-row:focus-within .outline-row-menu,
+  .outline-panel .outline-row-menu[data-expanded] {
+    opacity: 1;
+  }
+}
+@media (forced-colors: active) {
+  .outline-panel .outline-row-menu {
+    opacity: 1;
   }
 }

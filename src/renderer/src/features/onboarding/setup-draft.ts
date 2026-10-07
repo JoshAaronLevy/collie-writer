@@ -11,7 +11,8 @@ import {
 } from '../../../../shared/projects'
 
 const LEGACY_KEY = 'collie.project-setup.v1'
-const DRAFT_KEY = 'collie.project-setup.v2'
+const PREVIOUS_KEY = 'collie.project-setup.v2'
+const DRAFT_KEY = 'collie.project-setup.v3'
 const AUTHOR_KEY = 'collie.project-author.v1'
 export const AUTHOR_CHANGED = 'collie-project-author-changed'
 
@@ -25,10 +26,11 @@ export type SetupEditingIntent = {
 export type SetupCompletion = { ok: true } | { ok: false; message: string }
 
 export type SetupDraft = {
-  version: 2
+  version: 3
   step: SetupStep
   template: ProjectTemplate | null
   title: string
+  subtitle: string
   byline: string
   description: string
   rememberAuthor: boolean
@@ -74,10 +76,11 @@ export function writeAuthorPreference(byline: string): boolean {
 export function emptySetupDraft(): SetupDraft {
   const author = readAuthorPreference().byline
   return {
-    version: 2,
+    version: 3,
     step: 'type',
     template: null,
     title: '',
+    subtitle: '',
     byline: author,
     description: '',
     rememberAuthor: !!author,
@@ -106,7 +109,8 @@ function validIntent(value: unknown): value is SetupEditingIntent {
   )
 }
 
-function validDraft(value: unknown, legacy: boolean): boolean {
+function validDraft(value: unknown, version: 1 | 2 | 3): boolean {
+  const legacy = version === 1
   if (
     !record(value) ||
     !exact(value, [
@@ -114,6 +118,7 @@ function validDraft(value: unknown, legacy: boolean): boolean {
       'step',
       'template',
       'title',
+      ...(version === 3 ? ['subtitle'] : []),
       'byline',
       'description',
       'rememberAuthor',
@@ -121,7 +126,7 @@ function validDraft(value: unknown, legacy: boolean): boolean {
       'receipt',
       ...(legacy ? [] : ['editingIntent', 'completion'])
     ]) ||
-    value.version !== (legacy ? 1 : 2) ||
+    value.version !== version ||
     !(
       legacy
         ? ['type', 'details', 'creating', 'connection']
@@ -129,6 +134,7 @@ function validDraft(value: unknown, legacy: boolean): boolean {
     ).includes(String(value.step)) ||
     (value.template !== null && !isProjectTemplate(value.template)) ||
     !projectText(value.title, 4000) ||
+    (version === 3 && !projectText(value.subtitle, 4000)) ||
     !projectText(value.byline, 4000) ||
     !projectText(value.description, 12000) ||
     typeof value.rememberAuthor !== 'boolean' ||
@@ -149,6 +155,8 @@ function validDraft(value: unknown, legacy: boolean): boolean {
     )
   const request = value.request as CreateInput
   if (
+    (version !== 3 && Object.hasOwn(request, 'metadataVersion')) ||
+    (version === 3 && value.subtitle !== (request.subtitle ?? '')) ||
     value.template !== request.template ||
     value.title !== request.title ||
     value.byline !== request.byline ||
@@ -164,22 +172,25 @@ function validDraft(value: unknown, legacy: boolean): boolean {
 
 export function readSetupDraft(): { draft: SetupDraft | null; issue: string | null } {
   try {
-    // An unreadable v2 must never fall back to a potentially conflicting v1 request.
+    // Never fall back past an unreadable higher version to a conflicting request.
     const current = localStorage.getItem(DRAFT_KEY)
-    const raw = current ?? localStorage.getItem(LEGACY_KEY)
+    const previous = current === null ? localStorage.getItem(PREVIOUS_KEY) : null
+    const version = current !== null ? 3 : previous !== null ? 2 : 1
+    const raw = current ?? previous ?? localStorage.getItem(LEGACY_KEY)
     if (raw === null) return { draft: null, issue: null }
     if (raw.length > 40000) throw new Error('LIMIT')
     const parsed: unknown = JSON.parse(raw)
-    if (!validDraft(parsed, current === null) || !record(parsed)) throw new Error('INVALID_DRAFT')
+    if (!validDraft(parsed, version) || !record(parsed)) throw new Error('INVALID_DRAFT')
     if (current !== null) return { draft: parsed as SetupDraft, issue: null }
     // Conversion preserves the exact request and receipt, without inventing switch consent.
     return {
       draft: {
         ...parsed,
-        version: 2,
-        step: parsed.receipt ? 'opening' : parsed.step,
-        editingIntent: null,
-        completion: null
+        version: 3,
+        subtitle: '',
+        step: version === 1 && parsed.receipt ? 'opening' : parsed.step,
+        editingIntent: version === 1 ? null : parsed.editingIntent,
+        completion: version === 1 ? null : parsed.completion
       } as SetupDraft,
       issue: null
     }
@@ -198,12 +209,13 @@ export function hasResumableSetup(): boolean {
 }
 
 export function writeSetupDraft(draft: SetupDraft): boolean {
-  if (!validDraft(draft, false)) return false
+  if (!validDraft(draft, 3)) return false
   try {
     const serialized = JSON.stringify(draft)
     if (serialized.length > 40000) return false
     localStorage.setItem(DRAFT_KEY, serialized)
     localStorage.removeItem(LEGACY_KEY)
+    localStorage.removeItem(PREVIOUS_KEY)
     return true
   } catch {
     return false
@@ -212,8 +224,9 @@ export function writeSetupDraft(draft: SetupDraft): boolean {
 
 export function discardSetupDraft(): boolean {
   try {
-    // Keep the v2 completion tombstone until the old active key is gone.
+    // Keep the v3 completion tombstone until both old active keys are gone.
     localStorage.removeItem(LEGACY_KEY)
+    localStorage.removeItem(PREVIOUS_KEY)
     localStorage.removeItem(DRAFT_KEY)
     return true
   } catch {

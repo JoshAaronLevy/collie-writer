@@ -1,8 +1,10 @@
 import { app, BrowserWindow, Menu, type MenuItemConstructorOptions, type Session } from 'electron'
 import { join } from 'node:path'
 import appIcon from '../../build/icon.png?asset'
+import macIcon from '../../build/icon-mac.png?asset'
 import windowsIcon from '../../build/icon.ico?asset'
 import { APP_URL, allowedRequest, contentSecurityPolicy } from './security'
+import { WindowPlacement } from './window-placement'
 
 function bundledDevToolsRequest(raw: string): boolean {
   if (app.isPackaged) return false
@@ -54,14 +56,12 @@ export function protectWindow(window: BrowserWindow): void {
 }
 export function createWindow(devOrigin?: string): BrowserWindow {
   // Packaged macOS uses its bundle's ICNS; development otherwise shows Electron's icon.
-  if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(appIcon)
+  if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(macIcon)
+  const placement = new WindowPlacement()
   const window = new BrowserWindow({
     title: 'Collie Writer',
     icon: process.platform === 'win32' ? windowsIcon : appIcon,
-    width: 1280,
-    height: 720,
-    minWidth: 420,
-    minHeight: 400,
+    ...placement.options,
     show: false,
     backgroundColor: '#f5f4f0',
     webPreferences: {
@@ -105,7 +105,7 @@ export function createWindow(devOrigin?: string): BrowserWindow {
     const menu = Menu.buildFromTemplate(entries)
     menu.popup({ window })
   })
-  window.once('ready-to-show', () => window.show())
+  placement.manage(window)
   void window.loadURL(devOrigin ? `${devOrigin}/` : APP_URL).catch(() => {
     // No exception serialization: loader errors can contain paths.
     console.error('SHELL_LOAD_FAILED')

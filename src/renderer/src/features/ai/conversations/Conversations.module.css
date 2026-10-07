@@ -3,20 +3,23 @@
   gap: var(--collie-space-3);
   min-width: 0;
 }
-.conversation-introduction,
 .conversation-heading {
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--collie-space-2);
 }
-.conversation-introduction p,
-.conversation-heading p,
+.conversation-heading h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
 .conversation-caption {
   color: var(--collie-text-secondary);
   font-size: 0.8125rem;
   line-height: 1.5;
 }
 .conversation-library,
-.conversation-management,
 .conversation-capture {
   border-block-start: 1px solid var(--collie-border);
   padding-block: var(--collie-space-3);
@@ -26,8 +29,7 @@
   font-weight: 600;
   margin-block-end: var(--collie-space-3);
 }
-.conversation-library > *,
-.conversation-management > * {
+.conversation-library > * {
   margin-block-end: var(--collie-space-3);
 }
 .conversation-list {

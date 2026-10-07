@@ -80,3 +80,9 @@ jose 6.2.12 (MIT). Its complete notice is in dependencies/. The development
 Codex CLI 0.160.0 dependency is not redistributed in application packages.
 Its Apache-2.0 package metadata does not confer provider account, funding or
 commercial integration permission. Runtime distribution remains pending.
+
+Writing controls use @tabler/icons-react 3.49.0 and @tabler/icons 3.49.0
+(MIT), copyright (c) 2020-2026 Paweł Kuna. Complete unmodified licenses
+are in dependencies/ and recorded in its inventory.json. Only imported
+SVG components are used locally; no remote icon service is contacted.
+Lucide remains in use by other interface components with its notices intact.
