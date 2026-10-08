@@ -1,6 +1,17 @@
 .ai-work-notice {
   margin-block: var(--collie-space-4);
 }
+.ai-work-summary {
+  border-block: 1px solid var(--collie-border);
+  padding-block: var(--collie-space-2);
+}
+.ai-work-summary > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.ai-work-summary[open] > summary {
+  margin-block-end: var(--collie-space-3);
+}
 .ai-work-list {
   list-style: none;
   display: grid;

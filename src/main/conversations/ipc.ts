@@ -1,9 +1,11 @@
-import { BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
+import { confirmExternalLink } from '../menus'
+import { BrowserWindow, clipboard, dialog, ipcMain, type WebContents } from 'electron'
 import { isAbsolute } from 'node:path'
 import { isId } from '../../domain/editor/schema'
 import { ProjectError, projectError } from '../../domain/projects/errors'
 import {
   CONVERSATION_CHANNEL,
+  CONVERSATION_PRESENTATION,
   CONVERSATION_CHANGED,
   isConversationEvent,
   isConversationRequest,
@@ -11,14 +13,39 @@ import {
 } from '../../shared/conversations'
 import { exact, record, projectFailure, type ProjectResult } from '../../shared/projects'
 import { isTrustedSender } from '../ipc'
-import { trustedDocument } from '../security'
+import { externalHttpUrl, trustedDocument } from '../security'
 import type { ConversationService } from './service'
 
 export function registerConversationIpc(
   owner: () => WebContents | undefined,
   service: ConversationService,
-  devOrigin?: string
+  devOrigin?: string,
+  testMode = false
 ): void {
+  ipcMain.handle(CONVERSATION_PRESENTATION, async (event, payload: unknown): Promise<boolean> => {
+    if (
+      !isTrustedSender(event, owner(), devOrigin) ||
+      !record(payload) ||
+      !exact(payload, ['action', 'text']) ||
+      typeof payload.text !== 'string' ||
+      payload.text.length > 128000 ||
+      payload.text.includes('\0')
+    )
+      return false
+    try {
+      if (payload.action === 'copy') {
+        clipboard.writeText(payload.text)
+        return true
+      }
+      if (payload.action === 'open-link' && externalHttpUrl(payload.text)) {
+        await confirmExternalLink(payload.text, testMode)
+        return true
+      }
+    } catch {
+      return false
+    }
+    return false
+  })
   ipcMain.handle(
     CONVERSATION_CHANNEL,
     async (event, payload: unknown): Promise<ProjectResult<ConversationValue>> => {

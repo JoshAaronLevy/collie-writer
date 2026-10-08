@@ -154,7 +154,7 @@ const prepareUpdateRestart = async (): Promise<boolean> => {
   if (shutdownStarted || shutdownFinished) return false
   shutdownStarted = true
   try {
-    if (!(await lifecycle.close())) {
+    if (!(await lifecycle.closeForUpdate())) {
       shutdownStarted = false
       return false
     }
@@ -255,7 +255,7 @@ app
     )
     access.register()
     registerProofreadingIpc(() => window?.webContents, proofreading, devOrigin)
-    registerConversationIpc(() => window?.webContents, conversations, devOrigin)
+    registerConversationIpc(() => window?.webContents, conversations, devOrigin, testMode)
     registerAiIpc(() => window?.webContents, ai, devOrigin)
     directAccess.register()
     support.register()

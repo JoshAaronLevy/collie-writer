@@ -47,7 +47,15 @@ export function ChatGptConnectionDetails(): React.JSX.Element {
           <>
             <div>
               <dt>Conversations</dt>
-              <dd>{featureDescription(status.features.conversation)}</dd>
+              <dd>{featureDescription(status.capabilities.text)}</dd>
+            </div>
+            <div>
+              <dt>Web research</dt>
+              <dd>
+                {status.capabilities.webResearch.contract === 'documented'
+                  ? 'Not enabled in Collie yet. This connection has a documented web-search path, but support for your account and model has not been confirmed. A model listing or completed text answer does not confirm browsing access.'
+                  : 'Unavailable with this connection. A web-research route has not been established for this build.'}
+              </dd>
             </div>
             <div>
               <dt>Proofreading</dt>

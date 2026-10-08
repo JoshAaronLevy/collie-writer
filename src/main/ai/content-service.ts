@@ -539,7 +539,8 @@ export class AiContentService {
         review.expiresAt < Date.now() ||
         review.reviewDigest !== requestDigest(input.review) ||
         review.captureDigest !== input.digest ||
-        review.template !== templateFor(action) ||
+        (review.template !== templateFor(action) &&
+          !(action === 'conversation' && review.template === 'conversation-v2')) ||
         review.reviewStamp !== (await this.ai.reviewStamp(action)))
     )
       throw new ProjectError('STALE_REVISION')
@@ -696,9 +697,14 @@ export class AiContentService {
         const action = this.kind === 'conversation' ? 'conversation' : 'proofread',
           reviewStamp = await this.ai.reviewStamp(action)
         const result = await this.worker(input)
-        if (result.type !== 'review' || result.capture.template !== templateFor(action))
+        if (
+          result.type !== 'review' ||
+          (result.capture.template !== templateFor(action) &&
+            !(action === 'conversation' && result.capture.template === 'conversation-v2'))
+        )
           throw new ProjectError('UNAVAILABLE')
-        if (!this.ai.requestFits(result.capture, action)) throw new ProjectError('LIMIT_EXCEEDED')
+        if (!this.ai.requestFits(result.capture, action, result.capture.template))
+          throw new ProjectError('LIMIT_EXCEEDED')
         if (this.reviews.size >= 64) this.reviews.delete(this.reviews.keys().next().value!)
         this.reviews.set(input.captureId, {
           reviewStamp,

@@ -1,6 +1,7 @@
 import { ipcRenderer } from 'electron'
 import {
   CONVERSATION_CHANNEL,
+  CONVERSATION_PRESENTATION,
   CONVERSATION_CHANGED,
   isConversationEvent,
   isConversationValue,
@@ -9,6 +10,13 @@ import {
 } from '../shared/conversations'
 import { isProjectResult, projectFailure } from '../shared/projects'
 export const conversationApi: ConversationAPI = {
+  conversationPresentation: async (action, text) => {
+    try {
+      return (await ipcRenderer.invoke(CONVERSATION_PRESENTATION, { action, text })) === true
+    } catch {
+      return false
+    }
+  },
   conversation: async (input) => {
     const requestId = crypto.randomUUID()
     try {

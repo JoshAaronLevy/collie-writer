@@ -51,7 +51,14 @@ function DialogContents(): React.JSX.Element {
   const blocked =
     busy || session.closing || session.navigating || !session.available || statusUnavailable
   useLayoutEffect(() => {
-    const target = view.action === 'model' ? model : view.action === 'account' ? accounts : null
+    const target =
+      view.action === 'model'
+        ? model
+        : view.action === 'account'
+          ? accounts
+          : view.action === 'details'
+            ? details
+            : null
     if (target?.current) target.current.open = true
   }, [view.action])
   const expose = (name: 'model' | 'account' | 'details'): void => {

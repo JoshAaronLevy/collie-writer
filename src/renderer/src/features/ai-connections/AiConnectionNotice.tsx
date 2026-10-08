@@ -15,7 +15,13 @@ export function AiConnectionNotice(): React.JSX.Element | null {
     connections.busy
   )
   const localIssue = connections.status?.local?.issue
-  const directIssue = connections.status?.direct?.issue
+  const directDiagnostic = connections.status?.direct?.issue
+  // Request errors are shown with the message. Only evidence about the
+  // connection belongs in this global account notice.
+  const directIssue =
+    directDiagnostic?.stage === 'inference-http' || directDiagnostic?.stage === 'inference-stream'
+      ? null
+      : directDiagnostic
   const cleanup = connections.status?.local?.cleanupCount ?? 0
   const health = connections.status?.connectionHealth
   const preparationAttention =

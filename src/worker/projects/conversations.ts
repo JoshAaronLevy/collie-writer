@@ -1,3 +1,9 @@
+import {
+  AUTOMATIC_HISTORY_LIMIT,
+  readContextHistory,
+  type ContextMessage
+} from '../../shared/conversation-context'
+import { conversationOverview } from './conversation-overview'
 import { isEditableKind, MAX_OUTLINE_DEPTH } from '../../shared/outline'
 import { captureDigest } from '../ai/capture'
 import { activeBindings, localBinding, protectHandoff, retireBinding } from '../ai/handoff'
@@ -53,8 +59,14 @@ const parse = <T>(body: unknown, valid: (v: unknown) => v is T): T => {
   }
   return valid(value) ? value : corrupt()
 }
+function schemaVersion(db: Database.Database): number {
+  // Schema admission has already matched format.schema_version to user_version.
+  // Unlike db.pragma(), this read is also legal inside portable-validation iterators.
+  return (db.prepare('SELECT schema_version FROM format').get() as { schema_version: number })
+    .schema_version
+}
 function conversation(db: Database.Database, p: string, id: string): Conversation {
-  const current = Number(db.pragma('user_version', { simple: true })) >= 16
+  const current = schemaVersion(db) >= 16
   const row = db
     .prepare(
       `SELECT id,revision_id AS revisionId,title,state,created_at AS createdAt,updated_at AS updatedAt${current ? ',origin_document_id AS originDocumentId' : ''} FROM conversations WHERE project_id=? AND id=?`
@@ -98,8 +110,7 @@ function attempt(db: Database.Database, p: string, id: string): ConversationAtte
     .get(p, id) as { body: string } | undefined
   if (!row) throw new ProjectError('NOT_FOUND')
   const value = parse(row.body, isConversationAttempt)
-  if (value.version === 2 && Number(db.pragma('user_version', { simple: true })) < 13)
-    return corrupt()
+  if (value.version === 2 && schemaVersion(db) < 13) return corrupt()
   return value
 }
 function turn(db: Database.Database, p: string, id: string): ConversationTurn {
@@ -221,6 +232,82 @@ function review(
       text
     })
   }
+  if (input.version === 2) {
+    if (schemaVersion(db) < 17) corrupt()
+    const history: ContextMessage[] = []
+    if (input.contextPolicy !== 'message') {
+      // Read whole eligible exchanges by ordinal, never from a renderer page or selection.
+      const rows = db
+        .prepare(
+          `SELECT a.id FROM conversation_attempts a
+        JOIN conversation_messages m ON m.project_id=a.project_id AND m.attempt_id=a.id AND m.role='user'
+        WHERE a.project_id=? AND a.conversation_id=? AND json_extract(a.body,'$.state')='completed'
+        ORDER BY m.ordinal LIMIT ?`
+        )
+        .all(p, c.id, AUTOMATIC_HISTORY_LIMIT / 2 + 1) as { id: string }[]
+      if (rows.length * 2 > AUTOMATIC_HISTORY_LIMIT) throw new ProjectError('LIMIT_EXCEEDED')
+      for (const row of rows) {
+        const a = attempt(db, p, row.id)
+        if (!a.provider || !a.assistantMessageId) corrupt()
+        const user = message(db, p, a.userMessageId),
+          assistant = message(db, p, a.assistantMessageId!)
+        if (
+          user.role !== 'user' ||
+          assistant.role !== 'assistant' ||
+          user.conversationId !== c.id ||
+          assistant.conversationId !== c.id ||
+          assistant.ordinal !== user.ordinal + 1
+        )
+          corrupt()
+        for (const m of [user, assistant])
+          history.push({ id: m.id, revision: m.revisionId, role: m.role, text: m.text })
+        if (JSON.stringify({ version: 1, messages: history }).length > AI_LIMITS.context)
+          throw new ProjectError('LIMIT_EXCEEDED')
+      }
+    }
+    if (input.contextPolicy === 'project')
+      context.push({
+        kind: 'note',
+        id: input.captureId,
+        revision: input.expectedHead,
+        label: 'Project overview · structure and synopses',
+        text: conversationOverview(db, p)
+      })
+    if (history.length)
+      context.push({
+        kind: 'history',
+        id: c.id,
+        revision: c.revisionId,
+        label: 'Completed exchanges in this chat',
+        text: JSON.stringify({ version: 1, messages: history })
+      })
+    if (context.reduce((n, item) => n + item.text.length, 0) > AI_LIMITS.context)
+      throw new ProjectError('LIMIT_EXCEEDED')
+    const capture: AiCapture = {
+      version: 2,
+      id: input.captureId,
+      conversationId: c.id,
+      template: 'conversation-v2',
+      contextPolicy: input.contextPolicy!,
+      createdAt: input.createdAt,
+      head: input.expectedHead,
+      prompt: input.prompt,
+      source: input.source,
+      historyIds: history.map((m) => m.id),
+      context,
+      digest: ''
+    }
+    capture.digest = captureDigest(capture)
+    if (!isAiCapture(capture)) throw new ProjectError('VALIDATION')
+    const total = (
+      db
+        .prepare(
+          'SELECT count(*) AS n FROM conversation_messages WHERE project_id=? AND conversation_id=?'
+        )
+        .get(p, c.id) as { n: number }
+    ).n
+    return { type: 'review', capture, excludedMessages: total - history.length }
+  }
   let last = -1
   for (const id of input.historyIds) {
     const m = message(db, p, id),
@@ -277,7 +364,7 @@ function sameBinding(
   return !!left && !!right && requestDigest(left) === requestDigest(right)
 }
 function bindProvider(a: ConversationAttempt, binding: ConversationBinding): void {
-  const direct = bindingVersion(binding) === 4,
+  const direct = bindingVersion(binding) >= 4,
     provider = direct ? 'openai-chatgpt-plan' : 'openai-codex'
   if (a.provider !== null && a.provider !== provider) throw new ProjectError('OPERATION_CONFLICT')
   a.version = direct ? 2 : 1
@@ -383,7 +470,7 @@ export async function conversationCommand(
         a.state !== op.state ||
         a.model !== op.model ||
         a.provider !==
-          (bindingVersion(input.binding) === 4 ? 'openai-chatgpt-plan' : 'openai-codex') ||
+          (bindingVersion(input.binding) >= 4 ? 'openai-chatgpt-plan' : 'openai-codex') ||
         a.reason !== op.reason ||
         a.finishedAt !== new Date(op.finishedAt ?? 0).toISOString() ||
         (t.assistant?.text ?? '') !== op.text
@@ -545,6 +632,16 @@ export async function conversationCommand(
           finishedAt: null,
           requestDigest: digest
         }
+        if (capture.version === 2 && ordinal === 0) {
+          // Local title only, on the first accepted message; never an extra provider call.
+          db.prepare(
+            "UPDATE conversations SET title=? WHERE project_id=? AND id=? AND title='New chat'"
+          ).run(
+            s.review.prompt.replace(/\s+/gu, ' ').trim().slice(0, CONVERSATION_LIMITS.title),
+            p,
+            s.review.conversationId
+          )
+        }
         db.prepare('INSERT INTO ai_captures VALUES (?,?,?,?)').run(
           p,
           capture.id,
@@ -572,6 +669,7 @@ export async function conversationCommand(
           localBinding(context, 'conversation', input.binding.attemptId).binding ?? undefined
       if (
         value.capture.digest !== input.binding.captureDigest ||
+        (value.capture.version === 2) !== (bindingVersion(input.binding) === 5) ||
         (value.attempt.state !== 'not-sent' && !existing)
       )
         throw new ProjectError('OPERATION_CONFLICT')
@@ -711,10 +809,17 @@ export async function conversationCommand(
           )
         if (input.includeContext) {
           append(
-            `\nReviewed context (${t.capture.template}; captured ${new Date(t.capture.createdAt).toUTCString()})\n`
+            `\nSent context (${t.capture.template}; captured ${new Date(t.capture.createdAt).toUTCString()})\n`
           )
-          for (const item of t.capture.context)
-            append(`${item.label} · ${item.kind}\n${item.text}\n`)
+          for (const item of t.capture.context) {
+            const history =
+              t.capture.version === 2 && item.kind === 'history' ? readContextHistory([item]) : null
+            append(`${item.label} · ${item.kind}\n`)
+            if (history)
+              for (const m of history)
+                append(`${m.role === 'user' ? 'You' : 'Assistant'} [${m.id}]\n${m.text}\n`)
+            else append(`${item.text}\n`)
+          }
           if (!t.capture.context.length) append('No attached context.\n')
         }
       }
@@ -796,7 +901,12 @@ export function validatePortableConversations(db: Database.Database, p: string):
     )
     .iterate(p) as Iterable<{ id: string; conversation_id: string; body: string }>) {
     const capture = parse(row.body, isAiCapture)
-    if (capture.id !== row.id || capture.conversationId !== row.conversation_id) corrupt()
+    if (
+      capture.id !== row.id ||
+      capture.conversationId !== row.conversation_id ||
+      (capture.version === 2 && schemaVersion(db) < 17)
+    )
+      corrupt()
   }
   let messageCount = 0
   for (const row of db
@@ -823,25 +933,47 @@ export function validatePortableConversations(db: Database.Database, p: string):
       const m = message(db, p, id)
       if (m.conversationId !== t.attempt.conversationId || m.ordinal >= t.user.ordinal) corrupt()
     }
-    const history = t.capture.context.filter((c) => c.kind === 'history'),
-      writing = t.capture.context.filter((c) => c.kind !== 'history')
-    if (
-      history.some((c) => {
-        const m = message(db, p, c.id)
-        return c.text !== m.text || c.revision !== m.revisionId
-      }) ||
-      history.length !== t.capture.historyIds.length ||
-      history.some((c, i) => c.id !== t.capture.historyIds[i]) ||
-      writing.length !== (t.capture.source.kind === 'none' ? 0 : 1)
-    )
-      corrupt()
-    if (
-      t.capture.source.kind !== 'none' &&
-      (writing[0].kind !== t.capture.source.kind ||
-        writing[0].id !== t.capture.source.documentId ||
-        writing[0].revision !== t.capture.source.revisionId)
-    )
-      corrupt()
+    if (t.capture.version === 2) {
+      const history = readContextHistory(t.capture.context)
+      if (!history) corrupt()
+      let last = -1
+      for (let i = 0; i < history!.length; i++) {
+        const item = history![i],
+          m = message(db, p, item.id),
+          a = attempt(db, p, m.attemptId)
+        if (
+          m.text !== item.text ||
+          m.revisionId !== item.revision ||
+          m.role !== item.role ||
+          m.ordinal <= last ||
+          a.state !== 'completed' ||
+          !a.provider ||
+          (i % 2 === 1 && m.attemptId !== message(db, p, history![i - 1].id).attemptId)
+        )
+          corrupt()
+        last = m.ordinal
+      }
+    } else {
+      const history = t.capture.context.filter((c) => c.kind === 'history'),
+        writing = t.capture.context.filter((c) => c.kind !== 'history')
+      if (
+        history.some((c) => {
+          const m = message(db, p, c.id)
+          return c.text !== m.text || c.revision !== m.revisionId
+        }) ||
+        history.length !== t.capture.historyIds.length ||
+        history.some((c, i) => c.id !== t.capture.historyIds[i]) ||
+        writing.length !== (t.capture.source.kind === 'none' ? 0 : 1)
+      )
+        corrupt()
+      if (
+        t.capture.source.kind !== 'none' &&
+        (writing[0].kind !== t.capture.source.kind ||
+          writing[0].id !== t.capture.source.documentId ||
+          writing[0].revision !== t.capture.source.revisionId)
+      )
+        corrupt()
+    }
     messageCount += t.assistant ? 2 : 1
   }
   if (messageCount !== counts('conversation_messages')) corrupt()

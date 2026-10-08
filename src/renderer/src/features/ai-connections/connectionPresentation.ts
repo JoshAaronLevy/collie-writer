@@ -41,6 +41,18 @@ export function connectionPresentation(
             : connectionLabel(status),
       action: 'none'
     }
+  const requestIssue = status.direct?.issue
+  if (
+    health?.state === 'ready' &&
+    !issue &&
+    requestIssue &&
+    (requestIssue.stage === 'inference-http' || requestIssue.stage === 'inference-stream')
+  )
+    return {
+      title: 'ChatGPT is connected',
+      description: 'Your last response needs review. Open the error details before trying again.',
+      action: 'details'
+    }
   const account = status.connections.find((a) => a.id === status.activeConnectionId)
   let action: ConnectionDialogAction = 'details'
   if (status.actions.protectConnection) action = 'protect'
@@ -50,11 +62,7 @@ export function connectionPresentation(
   else if (health?.action === 'resume') action = 'resume'
   else if (health?.action === 'choose-model')
     action = status.catalog?.state === 'loaded' ? 'model' : 'retry'
-  else if (
-    health?.action === 'refresh-models' ||
-    ['offline', 'provider-unavailable'].includes(health?.reason ?? '')
-  )
-    action = 'retry'
+  else if (health?.action === 'refresh-models') action = 'retry'
   else if (health?.action === 'check-status') action = 'check'
   return {
     title:

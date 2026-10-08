@@ -1,3 +1,9 @@
+import {
+  conversationFits,
+  conversationFrame,
+  CONVERSATION_INSTRUCTIONS_V2,
+  type DirectTextExecution
+} from './direct-conversation'
 import { randomUUID } from 'node:crypto'
 import type { AiConnectInput, AiPrepareInput, AiStatus } from '../../shared/ai'
 import type { AiCatalog, AiSelectModelInput } from '../../shared/ai-catalog'
@@ -27,8 +33,7 @@ import {
   DIRECT_INSTRUCTIONS,
   directAccountIdentity,
   directFits,
-  directFrame,
-  type DirectExecution
+  directFrame
 } from './direct-operation'
 import type { AiDispatchSession } from './dispatch-session'
 import { DirectConnectionIssues } from './connection-health'
@@ -46,6 +51,9 @@ export class DirectPlanSession {
   private preparation: { id: string; generation: string } | null = null
   private preparing = false
   private rejectedModels = new Map<string, string>()
+  // One sanitized diagnostic per saved account (at most eight), never content
+  // or credentials. Reconnecting or loading models cannot erase this evidence.
+  private requestFailures = new Map<string, NonNullable<AiDirectStatus['lastRequestFailure']>>()
   private pendingWrite: PlanCredentials | null = null
   private work: Promise<void> | null = null
   private controller: AbortController | null = null
@@ -62,6 +70,7 @@ export class DirectPlanSession {
     planAuthorized: false,
     inference: 'not-run',
     issue: null,
+    lastRequestFailure: null,
     preparation: 'idle',
     preferences: 'ready',
     protectionPending: false
@@ -345,8 +354,12 @@ export class DirectPlanSession {
       tokens = account.tokens
     if (!tokens || account.pending) throw new AiError('session-expired')
     if (tokens.expiresAt > Date.now() + 120000) return
-    if (!tokens.refresh || Date.now() < tokens.earliestRefreshAt)
+    if (!tokens.refresh || Date.now() < tokens.earliestRefreshAt) {
+      // An early-refresh restriction does not revoke a still-valid access token.
+      // Never submit a refresh before the provider's permitted time.
+      if (tokens.expiresAt > Date.now()) return
       throw new AiError('session-expired')
+    }
     this.stage('renewal')
     await this.save({
       ...this.data,
@@ -580,13 +593,37 @@ export class DirectPlanSession {
       throw new DirectError(directIssue('plan-authorization', 'consent-required'))
     return a
   }
-  execution(input: AiPrepareInput, captureDigest: string): DirectExecution {
+  execution(
+    input: AiPrepareInput,
+    captureDigest: string,
+    template: 'conversation-v1' | 'conversation-v2' = 'conversation-v1'
+  ): DirectTextExecution {
     this.requireIdle()
     const a = this.requireAccount(input.connectionId),
       catalog = this.catalog
-    if (input.action !== 'conversation' || !directFits(input)) throw new AiError('invalid-request')
+    const contractIssue = this.healthIssues.requestContractIssue(a.id)
+    if (contractIssue) throw new DirectError(contractIssue)
+    if (
+      input.action !== 'conversation' ||
+      !(template === 'conversation-v2' ? conversationFits(input) : directFits(input))
+    )
+      throw new AiError('invalid-request')
     if (catalog.state !== 'loaded' || catalog.selectedModelId !== input.model)
       throw new AiError('model-unavailable')
+    if (template === 'conversation-v2')
+      return {
+        route: 'local-chatgpt-plan',
+        policyRevision: 1,
+        framingVersion: 2,
+        template,
+        outputContract: 'responses-text-v1',
+        accountFingerprint: directAccountIdentity(a.clientId, a.subject!),
+        sessionGeneration: this.epoch,
+        catalogRevision: catalog.revision,
+        captureDigest,
+        framedText: conversationFrame(input),
+        instructions: CONVERSATION_INSTRUCTIONS_V2
+      }
     return {
       route: 'local-chatgpt-plan',
       policyRevision: 1,
@@ -606,7 +643,7 @@ export class DirectPlanSession {
     const authorize: AiDispatchSession['authorize'] = (input, execution) => {
       if (!execution || execution.route !== 'local-chatgpt-plan')
         throw new AiError('context-changed')
-      const current = this.execution(input, execution.captureDigest)
+      const current = this.execution(input, execution.captureDigest, execution.template)
       if (JSON.stringify(current) !== JSON.stringify(execution))
         throw new AiError('context-changed')
     }
@@ -669,6 +706,13 @@ export class DirectPlanSession {
               : issue.reason === 'cancelled'
                 ? 'cancelled'
                 : 'failed'
+          if (sent)
+            this.requestFailures.set(input.connectionId, {
+              operationId: input.operationId,
+              model: input.model,
+              occurredAt: Date.now(),
+              issue: { ...this.detail.issue }
+            })
           try {
             await this.discardConfirmedInvalid(input.connectionId, issue.code)
           } catch {
@@ -676,10 +720,11 @@ export class DirectPlanSession {
             // protection action can finish before the conversation handoff.
             this.detail.issue = directIssue('credential-storage', 'storage-unavailable')
           }
-          // Pause further sends after admission/usage/contract refusals. A later
-          // explicit catalog refresh and selection is required before a new review.
-          if (!uncertain && issue.reason !== 'cancelled') {
-            this.catalog = { state: 'not-loaded' }
+          // A request failure is not a lost account or model catalog. Confirmed
+          // invalid credentials are handled above; fixed contract refusals remain
+          // blocked by healthIssues. Only a model refusal clears the selection.
+          if (issue.reason === 'model-unavailable' && this.catalog.state === 'loaded') {
+            this.catalog = { ...this.catalog, revision: randomUUID(), selectedModelId: null }
             this.changed(true)
           }
           update({
@@ -747,13 +792,17 @@ export class DirectPlanSession {
                 ? 'reconnect-required'
                 : !authorized
                   ? 'plan-authorization-required'
-                  : this.catalog.state !== 'loaded'
-                    ? 'model-refresh-required'
-                    : !this.catalog.models.length
-                      ? 'no-text-models'
-                      : !this.catalog.selectedModelId
-                        ? 'model-selection-required'
-                        : null))
+                  : this.healthIssues.blocksRequestContract(a.id)
+                    ? 'request-contract-unavailable'
+                    : this.catalog.state === 'failed'
+                      ? this.catalog.reason
+                      : this.catalog.state !== 'loaded'
+                        ? 'model-refresh-required'
+                        : !this.catalog.models.length
+                          ? 'no-text-models'
+                          : !this.catalog.selectedModelId
+                            ? 'model-selection-required'
+                            : null))
     const conversation: AiActionAvailability = reason
       ? { state: 'unavailable', reason }
       : {
@@ -780,6 +829,8 @@ export class DirectPlanSession {
       catalog: structuredClone(this.catalog),
       direct: {
         ...this.detail,
+        issue: this.detail.issue ?? this.healthIssues.requestContractIssue(this.data.activeId),
+        lastRequestFailure: a ? structuredClone(this.requestFailures.get(a.id) ?? null) : null,
         authentication: usable ? 'verified' : a?.tokens ? 'reconnect-required' : 'signed-out',
         planAuthorized: authorized,
         preparation: this.preparing ? 'running' : this.preparation ? 'waiting' : 'idle',

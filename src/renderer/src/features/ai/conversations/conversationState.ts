@@ -1,3 +1,4 @@
+import type { ConversationContextPolicy } from '../../../../../shared/conversation-context'
 import { effectiveState, isEditableKind } from '../../../../../shared/outline'
 import { selectedChat, rememberChat } from './selected-chat'
 import type { AiActionAvailability } from '../../../../../shared/ai-route'
@@ -49,11 +50,8 @@ type ConversationControllerState = {
   composerRef: React.RefObject<HTMLTextAreaElement | null>
   choose: (id: string) => void
   change: (kind: 'create' | 'rename' | 'archive' | 'restore') => void
-  attach: (kind: 'none' | 'section' | 'passage') => Promise<void>
-  review: () => Promise<void>
-  submit: (send: boolean) => void
+  send: () => Promise<void>
   retryAsNew: (t: ConversationTurn) => void
-  history: (id: string, checked: boolean) => void
   show: (attemptId?: string) => void
   request: (input: ConversationRequest) => Promise<void>
   refresh: (captured: OpenInput) => Promise<void>
@@ -71,9 +69,6 @@ import { useLayoutEffect } from 'react'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { AI_LIMITS } from '../../../../../shared/ai'
 import {
-  CONVERSATION_LIMITS,
-  type AiCapture,
-  type CaptureSource,
   type Conversation,
   type ConversationEvent,
   type ConversationRequest,
@@ -87,25 +82,13 @@ import { useWorkspaceSession } from '../../workspace/workspaceContext'
 import { scopeOf } from '../../workspace/useWorkspaceController'
 import { useRetainedDraft } from '../../workspace/DraftOwner'
 import { useAiConnections } from '../../ai-connections/connectionState'
-import { selectedRanges } from '../selection'
 import { editorIsComposing } from '../../../editor/adapter'
-import { reviewConnection, sameReviewConnection, type ReviewConnection } from '../review-connection'
+import { reviewConnection, sameReviewConnection } from '../review-connection'
 
-type Draft = {
-  text: string
-  historyIds: string[]
-  source: CaptureSource
-  review:
-    ({ input: ConversationReview; capture: AiCapture; excluded: number } & ReviewConnection) | null
-}
+type Draft = { text: string; contextPolicy: ConversationContextPolicy }
 const sizeMessage =
-  'This request exceeds a supported limit: 16,000 prompt characters, 64,000 context characters, or 80,000 including the structured request and instructions. Shorten the prompt, choose a smaller passage or select fewer previous messages. Nothing has been trimmed.'
-const emptyDraft = (): Draft => ({
-  text: '',
-  historyIds: [],
-  source: { kind: 'none' },
-  review: null
-})
+  'This chat or writing is too long to send in full. In Context, choose This chat only to leave out writing, or Message only to explicitly leave out earlier messages. You can also start a new chat. Your draft and full history are kept.'
+const emptyDraft = (): Draft => ({ text: '', contextPolicy: 'project' })
 function originOf(project: ReturnType<typeof useWorkspaceSession>['project']): string | null {
   const doc = project?.documents.find((d) => d.id === project.documentId)
   return project &&
@@ -373,7 +356,6 @@ export function useConversationController(): ConversationControllerState {
     readSequence.current++
     listSequence.current++
     scroll.current.clear()
-    historyOrder.current.clear()
     if (!scope) return
     const captured = scope
     let alive = true
@@ -513,29 +495,6 @@ export function useConversationController(): ConversationControllerState {
       }, 300)
   }, [scope, work, active, refresh])
   const selectedConnection = reviewConnection(connections.status)
-  const connectionKey = JSON.stringify(selectedConnection)
-  const [lastConnectionKey, setLastConnectionKey] = useState(connectionKey)
-  if (lastConnectionKey !== connectionKey) {
-    setLastConnectionKey(connectionKey)
-    if (
-      Object.values(drafts).some(
-        (d) => d.review && !sameReviewConnection(d.review, selectedConnection)
-      )
-    )
-      setNotice(
-        'The connection or model changed. Your draft and selected context are kept; review them again.'
-      )
-    setDrafts((previous) =>
-      Object.fromEntries(
-        Object.entries(previous).map(([id, d]) => [
-          id,
-          d.review && !sameReviewConnection(d.review, selectedConnection)
-            ? { ...d, review: null }
-            : d
-        ])
-      )
-    )
-  }
   function update(patch: Partial<Draft>): void {
     if (!selected || pendingRef.current || locked.current) return
     if (!drafts[selected]?.text && Object.values(drafts).filter((d) => !!d.text).length >= 20) {
@@ -546,7 +505,7 @@ export function useConversationController(): ConversationControllerState {
     }
     setDrafts((previous) => ({
       ...previous,
-      [selected]: { ...(previous[selected] ?? emptyDraft()), ...patch, review: null }
+      [selected]: { ...(previous[selected] ?? emptyDraft()), ...patch }
     }))
   }
   function choose(id: string): void {
@@ -572,8 +531,12 @@ export function useConversationController(): ConversationControllerState {
         : ''
     )
   }
-  async function request(input: ConversationRequest): Promise<void> {
-    if (locked.current || composing.current || (pendingRef.current && pendingRef.current !== input))
+  async function request(input: ConversationRequest, prepared = false): Promise<void> {
+    if (
+      (!prepared && locked.current) ||
+      composing.current ||
+      (pendingRef.current && pendingRef.current !== input)
+    )
       return
     locked.current = true
     setBusy(true)
@@ -589,18 +552,11 @@ export function useConversationController(): ConversationControllerState {
           setPending(null)
           pendingRef.current = null
         }
-        if (input.action === 'submit' && result.error.code === 'STALE_REVISION')
-          setDrafts((previous) => {
-            const d = previous[input.review.conversationId]
-            return d
-              ? { ...previous, [input.review.conversationId]: { ...d, review: null } }
-              : previous
-          })
         setIssue(
           result.error.code === 'LIMIT_EXCEEDED'
             ? sizeMessage
             : result.error.code === 'STALE_REVISION'
-              ? 'The reviewed writing, conversation or connection changed, or the review expired. Review the request again; your draft is kept.'
+              ? 'The writing, conversation or connection changed. Your draft is kept; press Send again when ready.'
               : result.error.code === 'DESTINATION_EXISTS'
                 ? 'That file already exists. Export again using a new filename. The existing file was kept.'
                 : result.error.message
@@ -627,16 +583,21 @@ export function useConversationController(): ConversationControllerState {
         state.current.before = null
       }
       if (input.action === 'submit') {
-        setDrafts((previous) => ({ ...previous, [input.review.conversationId]: emptyDraft() }))
+        setDrafts((previous) => {
+          const d = previous[input.review.conversationId]
+          return d &&
+            d.text === input.review.prompt &&
+            (input.review.version !== 2 || d.contextPolicy === input.review.contextPolicy)
+            ? { ...previous, [input.review.conversationId]: { ...d, text: '' } }
+            : previous
+        })
         setBefore(null)
         state.current.before = null
         const outcome = result.value.type === 'turn' ? result.value.turn.attempt.state : null
         setNotice(
-          !input.send
-            ? 'Request saved in the local working project. Nothing was sent or queued. Use project Save to update its selected file.'
-            : outcome === 'not-sent'
-              ? 'Request saved locally, but sending was refused. Read the reason below; nothing is queued for later delivery.'
-              : 'Request retained in the local working project. Its status and any actual response appear below; project Save updates the selected file.'
+          outcome === 'not-sent'
+            ? 'Sending was refused. Your message is saved below; use its menu to copy it into a fresh draft.'
+            : ''
         )
       }
       if (result.value.type === 'exported') setNotice(`Transcript exported to ${result.value.path}`)
@@ -677,216 +638,128 @@ export function useConversationController(): ConversationControllerState {
     }
     void request(input)
   }
-  async function attach(kind: 'none' | 'section' | 'passage'): Promise<void> {
+  async function send(): Promise<void> {
     if (
       !scope ||
       !selected ||
-      locked.current ||
-      pendingRef.current ||
-      readOnly ||
-      page?.conversation.state !== 'active'
-    )
-      return
-    if (kind === 'none') {
-      update({ source: { kind: 'none' } })
-      return
-    }
-    const s = current.current,
-      editor = s.editorRef.current,
-      original = s.project
-    if (
-      !original ||
-      !editor ||
-      editor.isDestroyed ||
-      editorIsComposing(editor) ||
-      s.composition.current
-    ) {
-      setIssue('Finish composing in the manuscript first.')
-      return
-    }
-    const document = editor.state.doc,
-      ranges = kind === 'passage' ? selectedRanges(editor) : null
-    if (kind === 'passage' && !ranges) {
-      setIssue(
-        'Select a continuous text passage in the manuscript first. Images and non-text selections are not supported.'
-      )
-      return
-    }
-    locked.current = true
-    setBusy(true)
-    try {
-      const saved = await s.flush(false, 'save', ['conversations'])
-      if (
-        !saved ||
-        !belongs(original) ||
-        current.current.editorRef.current !== editor ||
-        editor.isDestroyed ||
-        editorIsComposing(editor) ||
-        current.current.project?.documentId !== original.documentId ||
-        saved.documentId !== original.documentId ||
-        !editor.state.doc.eq(document)
-      ) {
-        setIssue('The writing changed while being protected. Select the intended passage again.')
-        return
-      }
-      const source: CaptureSource =
-        kind === 'passage'
-          ? { kind, documentId: saved.documentId, revisionId: saved.revisionId, ranges: ranges! }
-          : { kind, documentId: saved.documentId, revisionId: saved.revisionId }
-      setDrafts((previous) => ({
-        ...previous,
-        [selected]: { ...(previous[selected] ?? emptyDraft()), source, review: null }
-      }))
-      setNotice(
-        `${kind === 'passage' ? 'Selected passage' : 'Current section'} chosen. Review the exact text before saving or sending.`
-      )
-    } catch {
-      setIssue(
-        'The writing could not be protected for this context. Your draft is kept; choose the intended passage again.'
-      )
-    } finally {
-      locked.current = false
-      setBusy(false)
-    }
-  }
-  async function review(): Promise<void> {
-    if (
-      !scope ||
-      !selected ||
-      !page ||
-      page.conversation.state !== 'active' ||
-      readOnly ||
-      active ||
+      !canSend ||
       locked.current ||
       pendingRef.current ||
       composing.current ||
       !draft.text.trim()
     )
       return
+    const s = current.current,
+      original = s.project,
+      editor = s.editorRef.current,
+      document = editor && !editor.isDestroyed ? editor.state.doc : null,
+      id = selected,
+      submitted = { ...draft },
+      account = reviewConnection(connectionRef.current.status)
+    if (!original || s.composition.current || (editor && editorIsComposing(editor))) {
+      setIssue('Finish composing in the manuscript first.')
+      return
+    }
     locked.current = true
     setBusy(true)
     setIssue('')
-    const id = selected,
-      original = { ...draft },
-      account = reviewConnection(connectionRef.current.status)
+    setNotice('')
+    const stillCurrent = (): boolean =>
+      belongs(scope) &&
+      state.current.selected === id &&
+      current.current.project?.documentId === original.documentId &&
+      (submitted.contextPolicy !== 'project' ||
+        !originOf(original) ||
+        (!!editor &&
+          !editor.isDestroyed &&
+          current.current.editorRef.current === editor &&
+          !!document &&
+          editor.state.doc.eq(document) &&
+          !editorIsComposing(editor)))
     try {
-      const saved = await current.current.flush(false, 'save', ['conversations'])
-      if (!saved || !belongs(scope)) return
+      const saved = await s.flush(false, 'save', ['conversations'])
+      if (!saved || !stillCurrent() || saved.documentId !== original.documentId) {
+        setIssue(
+          'The writing could not be captured at the selected revision. Your draft is kept; press Send again when ready.'
+        )
+        return
+      }
       const latest = await window.collie.conversation({
         ...scope,
         action: 'read',
         conversationId: id,
         before: null
       })
-      if (!latest.ok || latest.value.type !== 'page') {
-        setIssue('The conversation could not be read for review.')
+      if (!latest.ok || latest.value.type !== 'page' || !stillCurrent()) {
+        setIssue(
+          'The conversation changed during preparation. Your draft is kept; press Send again.'
+        )
         return
       }
       const input: ConversationReview = {
         ...scope,
         action: 'review',
+        version: 2,
+        contextPolicy: submitted.contextPolicy,
         conversationId: id,
         expectedRevision: latest.value.conversation.revisionId,
         expectedHead: saved.headCommitId,
         captureId: crypto.randomUUID(),
         createdAt: new Date().toISOString(),
-        prompt: original.text,
-        source: original.source,
-        historyIds: original.historyIds
+        prompt: submitted.text,
+        historyIds: [],
+        source:
+          submitted.contextPolicy === 'project' && originOf(original)
+            ? { kind: 'section', documentId: saved.documentId, revisionId: saved.revisionId }
+            : { kind: 'none' }
       }
       const result = await window.collie.conversation(input)
-      if (!belongs(scope) || state.current.selected !== id) return
-      if (!sameReviewConnection(account, reviewConnection(connectionRef.current.status))) {
+      if (
+        !stillCurrent() ||
+        !sameReviewConnection(account, reviewConnection(connectionRef.current.status))
+      ) {
         setIssue(
-          'The connection or model changed during review. Your draft is kept; review it again.'
+          'The writing, account or model changed during preparation. Your draft is kept; press Send again.'
         )
         return
       }
-      if (result.ok && result.value.type === 'review') {
-        const value = result.value
-        setDrafts((previous) => ({
-          ...previous,
-          [id]: {
-            ...original,
-            review: { input, capture: value.capture, excluded: value.excludedMessages, ...account }
-          }
-        }))
-      } else
+      if (!result.ok || result.value.type !== 'review') {
         setIssue(
           !result.ok && result.error.code === 'LIMIT_EXCEEDED'
             ? sizeMessage
-            : !result.ok && result.error.code === 'STALE_REVISION'
-              ? 'The source or conversation changed. Choose the passage or section again, then review.'
-              : !result.ok
-                ? result.error.message
-                : 'Review could not be prepared.'
+            : !result.ok
+              ? result.error.message
+              : 'Your message could not be prepared. Nothing was sent.'
         )
+        return
+      }
+      await request(
+        {
+          ...scope,
+          action: 'submit',
+          attemptId: crypto.randomUUID(),
+          review: input,
+          digest: result.value.capture.digest,
+          send: true,
+          connectionId: account.connectionId,
+          model: account.model
+        },
+        true
+      )
     } catch {
-      setIssue('Review could not be prepared. Your draft is kept; nothing was sent.')
+      setIssue('Your message could not be prepared. Your draft is kept; nothing was queued.')
     } finally {
       locked.current = false
       setBusy(false)
     }
   }
-  function submit(send: boolean): void {
-    const reviewed = draft.review
-    if (
-      !scope ||
-      !reviewed ||
-      readOnly ||
-      page?.conversation.state !== 'active' ||
-      active ||
-      composing.current ||
-      locked.current ||
-      pendingRef.current
-    )
-      return
-    if (!sameReviewConnection(reviewed, reviewConnection(connectionRef.current.status))) {
-      setIssue('The connection or model changed. Review the request again.')
-      return
-    }
-    if (send && !canSend) {
-      setIssue(
-        'Sending is unavailable. Read the connection status below; you can still save this reviewed request locally.'
-      )
-      return
-    }
-    void request({
-      ...scope,
-      action: 'submit',
-      attemptId: crypto.randomUUID(),
-      review: reviewed.input,
-      digest: reviewed.capture.digest,
-      send,
-      connectionId: reviewed.connectionId,
-      model: reviewed.model
-    })
-  }
   function retryAsNew(t: ConversationTurn): void {
     if (!selected || draft.text || readOnly || busy || pending) return
     // Context and old account authority are never silently carried into another attempt.
-    update({ text: t.capture.prompt, source: { kind: 'none' }, historyIds: [] })
+    update({ text: t.capture.prompt })
     setNotice(
-      'Prompt copied into a new draft. Choose any context and review it before a new request.'
+      'Prompt copied into a new draft. Send starts a new request with your current context choice.'
     )
-  }
-  function history(id: string, checked: boolean): void {
-    const chosen = new Set(draft.historyIds)
-    if (checked) chosen.add(id)
-    else chosen.delete(id)
-    if (chosen.size > CONVERSATION_LIMITS.history) {
-      setIssue('Choose at most 12 previous messages.')
-      return
-    }
-    // Selected messages can span pages; stable transcript ordinals are retained separately.
-    const messages =
-      page?.turns.flatMap((t) => (t.assistant ? [t.user, t.assistant] : [t.user])) ?? []
-    for (const m of messages) historyOrder.current.set(m.id, m.ordinal)
-    update({
-      historyIds: [...chosen].sort(
-        (a, b) => (historyOrder.current.get(a) ?? 0) - (historyOrder.current.get(b) ?? 0)
-      )
-    })
   }
   useEffect(() => {
     if (busy || listOpen || page?.conversation.id !== selected || !selected) return
@@ -912,14 +785,11 @@ export function useConversationController(): ConversationControllerState {
     })
     return () => cancelAnimationFrame(frame)
   }, [busy, listOpen, page?.conversation.id, selected])
-  const historyOrder = useRef(new Map<string, number>())
   const capability = connections.status?.features.conversation
   const canSend =
     capability?.state === 'available' &&
-    !!draft.review &&
-    sameReviewConnection(draft.review, selectedConnection) &&
-    capability.connectionId === draft.review.connectionId &&
-    capability.model === draft.review.model &&
+    capability.connectionId === selectedConnection.connectionId &&
+    capability.model === selectedConnection.model &&
     !connections.busy &&
     connections.issue !== 'outcome-unknown' &&
     !readOnly &&
@@ -941,7 +811,7 @@ export function useConversationController(): ConversationControllerState {
     listOpen,
     listLoading,
     backToList: () => {
-      if (!composing.current) {
+      if (!composing.current && !locked.current && !pendingRef.current) {
         if (state.current.rename) {
           setIssue('Save or clear the rename draft before returning to the list.')
           return
@@ -983,11 +853,8 @@ export function useConversationController(): ConversationControllerState {
     composerRef: composer,
     choose,
     change,
-    attach,
-    review,
-    submit,
+    send,
     retryAsNew,
-    history,
     show,
     request,
     refresh,

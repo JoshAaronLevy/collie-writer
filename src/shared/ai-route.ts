@@ -40,6 +40,7 @@ export type AiConnectionReason =
   | 'operation-capacity-full'
   | 'local-workspace-identity-unavailable'
   | 'plan-authorization-required'
+  | 'request-contract-unavailable'
 const connectionReasons: readonly AiConnectionReason[] = [
   'local-login-not-implemented',
   'local-execution-not-implemented',
@@ -76,7 +77,8 @@ const connectionReasons: readonly AiConnectionReason[] = [
   'output-protection-required',
   'operation-capacity-full',
   'local-workspace-identity-unavailable',
-  'plan-authorization-required'
+  'plan-authorization-required',
+  'request-contract-unavailable'
 ]
 export type AiRoute =
   | {
@@ -117,8 +119,7 @@ export type AiFunding =
       appBillingChanges: false
     }
   | { kind: 'unavailable'; apiKeyFallback: false; appBillingChanges: false }
-/** Main's current decision, not an execution grant or proof of provider access.
- * CD03 still produces an unavailable execution policy; no ready flag is added. */
+/** Main's current decision, not an execution grant or proof of provider access. */
 export type AiActionAvailability =
   | { state: 'unavailable'; reason: AiConnectionReason }
   | { state: 'available'; connectionId: string; model: string }
@@ -188,16 +189,18 @@ export function isAiFeatureAvailability(value: unknown): value is AiFeatureAvail
   return (
     record(value) &&
     exact(value, ['conversation', 'proofread']) &&
-    Object.values(value).every(
-      (action) =>
-        record(action) &&
-        ((exact(action, ['state', 'reason']) &&
-          action.state === 'unavailable' &&
-          isAiConnectionReason(action.reason)) ||
-          (exact(action, ['state', 'connectionId', 'model']) &&
-            action.state === 'available' &&
-            isId(action.connectionId) &&
-            isCatalogModelId(action.model)))
-    )
+    Object.values(value).every(isAiActionAvailability)
+  )
+}
+export function isAiActionAvailability(action: unknown): action is AiActionAvailability {
+  return (
+    record(action) &&
+    ((exact(action, ['state', 'reason']) &&
+      action.state === 'unavailable' &&
+      isAiConnectionReason(action.reason)) ||
+      (exact(action, ['state', 'connectionId', 'model']) &&
+        action.state === 'available' &&
+        isId(action.connectionId) &&
+        isCatalogModelId(action.model)))
   )
 }

@@ -13,6 +13,7 @@ type Evidence = 'authorization' | 'catalog' | 'response'
  * another account action or refreshing models. They are session-local only. */
 export class DirectConnectionIssues {
   private accounts = new Map<string, Map<AiConnectionHealthReason, Evidence>>()
+  private contractIssues = new Map<string, DirectIssue>()
 
   record(id: string, issue: DirectIssue): void {
     if (issue.reason === 'cancelled' || issue.kind === 'incomplete') return
@@ -31,11 +32,26 @@ export class DirectConnectionIssues {
     } else if (issue.reason === 'quota-exhausted') {
       reason = 'usage-limited'
       evidence = 'response'
-    } else if (issue.code === 'subscription_sharing_user_not_eligible') {
+    } else if (
+      issue.code === 'subscription_sharing_user_not_eligible' ||
+      issue.code === 'subscription_sharing_invalid_user' ||
+      issue.code === 'chatpass_v2_scope_not_authorized' ||
+      issue.code === 'chatpass_v2_invalid_authorization_context' ||
+      issue.httpStatus === 401
+    ) {
       reason = 'account-unavailable'
       evidence = 'response'
-    } else if (issue.code === 'subscription_sharing_usage_unavailable') {
+    } else if (
+      issue.code === 'subscription_sharing_usage_unavailable' ||
+      issue.code === 'subscription_sharing_user_unavailable'
+    ) {
       reason = 'provider-unavailable'
+      evidence = 'response'
+    } else if (
+      issue.code === 'subscription_sharing_unsupported_capability' &&
+      issue.reason !== 'model-unavailable'
+    ) {
+      reason = 'setup-required'
       evidence = 'response'
     } else if (issue.reason === 'offline') {
       // An interrupted response stream says nothing about current account health.
@@ -51,6 +67,8 @@ export class DirectConnectionIssues {
       reason = 'account-unavailable'
       evidence = 'response'
     } else return // Request validation, output, cancellation and browser errors stay with their action.
+    if (reason === 'route-unavailable' || reason === 'setup-required')
+      this.contractIssues.set(id, { ...issue })
     const issues = this.accounts.get(id) ?? new Map<AiConnectionHealthReason, Evidence>()
     // A metadata failure cannot weaken evidence needed to clear an admission refusal.
     if (issues.get(reason) !== 'response') issues.set(reason, evidence)
@@ -58,6 +76,7 @@ export class DirectConnectionIssues {
   }
 
   confirm(id: string, evidence: Evidence): void {
+    if (evidence === 'response') this.contractIssues.delete(id)
     const issues = this.accounts.get(id)
     if (!issues) return
     for (const [reason, required] of issues) {
@@ -78,12 +97,21 @@ export class DirectConnectionIssues {
     this.accounts.get(id)?.delete('model-unavailable')
   }
 
+  blocksRequestContract(id: string): boolean {
+    return this.contractIssues.has(id)
+  }
+
+  requestContractIssue(id: string | null): DirectIssue | null {
+    return id ? (this.contractIssues.get(id) ?? null) : null
+  }
+
   reason(id: string | null): AiConnectionHealthReason | null {
     const issues = id ? this.accounts.get(id) : undefined
     if (!issues) return null
     const priority: AiConnectionHealthReason[] = [
       'registration-invalid',
       'route-unavailable',
+      'setup-required',
       'reconnect-required',
       'permission-required',
       'account-unavailable',
@@ -99,7 +127,7 @@ export class DirectConnectionIssues {
 
 /** Deliberately excludes features, work, capacity and project access. */
 export function deriveConnectionHealth(
-  status: Omit<AiStatus, 'connectionHealth'>,
+  status: Omit<AiStatus, 'connectionHealth' | 'capabilities'>,
   storage: 'starting' | 'ready' | 'failed',
   secure: boolean,
   directIssue: AiConnectionHealthReason | null

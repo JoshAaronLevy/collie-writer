@@ -7,7 +7,7 @@ import type {
 } from '../../../../shared/ai-route'
 
 export const connectionHealthDescription: Record<AiConnectionHealthReason, string> = {
-  ready: 'Connected and ready for reviewed conversation requests.',
+  ready: 'Connected. You can send a message from your conversation.',
   preparing: 'Setting up ChatGPT…',
   'model-preference-pending':
     'Your model choice could not be saved. Retry saving it on this device.',
@@ -109,6 +109,8 @@ export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
     'Codex has not supplied a usable account and workspace identity. Open Manage ChatGPT and explicitly resume or reconnect the intended account; no request has been sent.',
   'plan-authorization-required':
     'Sign-in succeeded, but ChatGPT plan use is not authorized. Use Continue with ChatGPT for this saved account and review the plan-use consent.',
+  'request-contract-unavailable':
+    'OpenAI refused this request route or a fixed request capability. New requests are paused for this account session. Open Manage ChatGPT for the reported field and request reference; refreshing models or reconnecting does not repair the integration.',
   'configuration-required': 'Sign-in has not been configured for this build.',
   'development-access-unavailable':
     'Supported development sign-in is not available in this build yet.',

@@ -1,3 +1,6 @@
+import { useState } from 'react'
+import { AppButton } from '../../components/ui/Controls'
+import type { DirectIssue } from '../../../../shared/ai-direct'
 import type { AiStatus } from '../../../../shared/ai'
 import type { DirectStage } from '../../../../shared/ai-direct'
 import { connectionReason } from './connection-copy'
@@ -18,7 +21,7 @@ const stages: Record<DirectStage, string> = {
 }
 const inference: Record<NonNullable<AiStatus['direct']>['inference'], string> = {
   'not-run': 'No request completed in this account session.',
-  sending: 'Submitting the reviewed request…',
+  sending: 'Sending your message…',
   streaming: 'Receiving text; completion is still pending.',
   completed:
     'OpenAI reported a completed response. The conversation shows its local saving status.',
@@ -34,11 +37,19 @@ const recovery: Record<string, string> = {
   subscription_sharing_usage_limit_exceeded:
     'The account reached its shared usage limit. Review app access and usage in ChatGPT Settings; Collie will not buy credits or change spending settings.',
   subscription_sharing_usage_unavailable:
-    'OpenAI could not determine available usage. Try a new reviewed request later; this saved attempt will not resend.',
+    'OpenAI could not determine available usage. Try a new message later; this saved attempt will not resend.',
   subscription_sharing_route_not_supported:
     'OpenAI refused this authorization route. Retain the stage, status and code for review before changing the integration.',
   chatpass_v2_scope_not_authorized:
-    'Plan-use permission was refused. Reauthorize this saved account and review its app permissions in ChatGPT.',
+    'OpenAI refused the signed plan-use context. Retain the request reference for review of the client and grant configuration; repeated sign-in or billing changes do not resolve this refusal.',
+  chatpass_v2_invalid_authorization_context:
+    'OpenAI could not accept the signed authorization context. Retain the request reference for integration review; no other billing route will be used.',
+  subscription_sharing_invalid_user:
+    'OpenAI could not validate the subscriber context. Credentials are retained. Review the request reference before reconnecting; this code alone does not establish revocation.',
+  subscription_sharing_unsupported_capability:
+    'OpenAI refused a request capability. Review the reported field before a new request. A model refusal needs another explicit model choice; other fields require an integration correction. Refreshing models does not correct an unsupported request body.',
+  subscription_sharing_user_unavailable:
+    'OpenAI could not read account or workspace information. Credentials are retained. Try a new message later; this attempt will not resend.',
   invalid_grant:
     'Use Continue with ChatGPT for this saved account. Collie retains its issued registration and starts a fresh authorization code flow.',
   invalid_client:
@@ -104,34 +115,102 @@ export function DirectConnectionProgress({
         </div>
       </dl>
       {direct.stage ? <p>Latest connection stage: {stages[direct.stage]}.</p> : null}
-      {issue ? (
-        <div role="alert" className={styles['ai-request-error']}>
-          <p>
-            {stages[issue.stage]}:{' '}
-            {issue.kind === 'invalid-response'
-              ? 'The response did not match the supported contract.'
-              : issue.kind === 'incomplete'
-                ? 'The provider returned an incomplete response.'
-                : connectionReason[issue.reason]}
-          </p>
-          {issue.code && recovery[issue.code] ? <p>{recovery[issue.code]}</p> : null}
-          {issue.stage === 'credential-storage' ? (
-            <p>
-              Keep Collie open and retry saving connection state. This action writes the retained
-              state locally; it does not repeat sign-in or inference.
-            </p>
-          ) : null}
-          {issue.httpStatus !== null || issue.code || issue.bodyKind ? (
-            <p>
-              {issue.httpStatus !== null ? `HTTP ${issue.httpStatus} · ` : ''}
-              {issue.code ? `Code: ${issue.code}` : 'No safe machine error code'}
-              {issue.bodyKind ? ` · Error shape: ${issue.bodyKind}` : ''}
-              {issue.parameter ? ` · Field: ${issue.parameter}` : ''}
-            </p>
-          ) : null}
-          {issue.requestId ? <p>OpenAI request reference: {issue.requestId}</p> : null}
-        </div>
+      {issue &&
+      (!direct.lastRequestFailure ||
+        (issue.stage !== 'inference-http' && issue.stage !== 'inference-stream')) ? (
+        <DirectIssueDetails key={JSON.stringify(issue)} issue={issue} />
       ) : null}
+      {direct.lastRequestFailure ? (
+        <section aria-label="Last failed request">
+          <h4>Last failed request</h4>
+          <p>
+            {new Date(direct.lastRequestFailure.occurredAt).toLocaleString()} ·{' '}
+            {direct.lastRequestFailure.model}
+          </p>
+          <DirectIssueDetails
+            key={direct.lastRequestFailure.operationId}
+            issue={direct.lastRequestFailure.issue}
+            failure={direct.lastRequestFailure}
+          />
+        </section>
+      ) : null}
+    </div>
+  )
+}
+
+function DirectIssueDetails({
+  issue,
+  failure
+}: {
+  issue: DirectIssue
+  failure?: NonNullable<NonNullable<AiStatus['direct']>['lastRequestFailure']>
+}): React.JSX.Element {
+  const [copyNotice, setCopyNotice] = useState('')
+  return (
+    <div role="alert" className={styles['ai-request-error']}>
+      <p>
+        {stages[issue.stage]}:{' '}
+        {issue.kind === 'invalid-response'
+          ? 'The response did not match the supported contract.'
+          : issue.kind === 'incomplete'
+            ? 'The provider returned an incomplete response.'
+            : failure && issue.reason === 'outcome-unknown'
+              ? 'The response stopped before completion was confirmed. Any partial text stays in the conversation.'
+              : failure && issue.reason === 'provider-failed'
+                ? 'ChatGPT could not complete this message.'
+                : connectionReason[issue.reason]}
+      </p>
+      {issue.code && recovery[issue.code] ? <p>{recovery[issue.code]}</p> : null}
+      {issue.stage === 'credential-storage' ? (
+        <p>
+          Keep Collie open and retry saving connection state. This action writes the retained state
+          locally; it does not repeat sign-in or inference.
+        </p>
+      ) : null}
+      {issue.httpStatus !== null || issue.code || issue.bodyKind ? (
+        <p>
+          {issue.httpStatus !== null ? `HTTP ${issue.httpStatus} · ` : ''}
+          {issue.code ? `Code: ${issue.code}` : 'No safe machine error code'}
+          {issue.bodyKind ? ` · Error shape: ${issue.bodyKind}` : ''}
+          {issue.parameter ? ` · Field: ${issue.parameter}` : ''}
+        </p>
+      ) : null}
+      {issue.requestId ? <p>OpenAI request reference: {issue.requestId}</p> : null}
+      {issue.responseType ? <p>Response format: {issue.responseType}</p> : null}
+      <AppButton
+        variant="subtle"
+        onClick={() => {
+          setCopyNotice('')
+          void window.collie
+            .conversationPresentation(
+              'copy',
+              JSON.stringify(
+                {
+                  route: 'local-chatgpt-plan',
+                  ...(failure
+                    ? {
+                        operationId: failure.operationId,
+                        model: failure.model,
+                        occurredAt: new Date(failure.occurredAt).toISOString()
+                      }
+                    : {}),
+                  ...issue
+                },
+                null,
+                2
+              )
+            )
+            .then((ok) =>
+              setCopyNotice(
+                ok ? 'Copied' : 'Could not copy. Select the details to copy them manually.'
+              )
+            )
+            .catch(() => setCopyNotice('Could not copy. Select the details to copy them manually.'))
+        }}
+      >
+        Copy error details
+      </AppButton>
+      {copyNotice ? <p role="status">{copyNotice}</p> : null}
     </div>
   )
 }

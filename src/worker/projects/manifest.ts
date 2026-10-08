@@ -33,8 +33,8 @@ export type CitationRef = BlobRef & { id: string; kind: 'style' | 'locale' | 'no
 export type SnapshotManifest = {
   format: 'collie'
   formatVersion: 1
-  minimumReader: 1 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16
-  schemaVersion: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16
+  minimumReader: 1 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17
+  schemaVersion: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17
   editorVersion: 1
   projectId: string
   snapshotId: string
@@ -93,8 +93,8 @@ export function readManifest(value: unknown): SnapshotManifest {
     if (value[key] !== supported) return invalid()
   }
   if (
-    (typeof value.schemaVersion === 'number' && value.schemaVersion > 16) ||
-    (typeof value.minimumReader === 'number' && value.minimumReader > 16)
+    (typeof value.schemaVersion === 'number' && value.schemaVersion > 17) ||
+    (typeof value.minimumReader === 'number' && value.minimumReader > 17)
   )
     throw new SnapshotError('FORMAT_TOO_NEW')
   if (!(
@@ -112,7 +112,8 @@ export function readManifest(value: unknown): SnapshotManifest {
     (value.schemaVersion === 13 && value.minimumReader === 13) ||
     (value.schemaVersion === 14 && value.minimumReader === 14) ||
     (value.schemaVersion === 15 && value.minimumReader === 15) ||
-    (value.schemaVersion === 16 && value.minimumReader === 16)
+    (value.schemaVersion === 16 && value.minimumReader === 16) ||
+    (value.schemaVersion === 17 && value.minimumReader === 17)
   ))
     return invalid()
   if (

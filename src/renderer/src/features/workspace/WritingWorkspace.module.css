@@ -189,3 +189,21 @@
   white-space: normal;
   text-align: left;
 }
+
+.writing-companion-pane[data-chat='true'] {
+  position: sticky;
+  top: 1rem;
+  height: calc(100dvh - 12rem);
+  min-height: 24rem;
+}
+.writing-side-content[data-ai='true'],
+.writing-chat-slot {
+  height: 100%;
+  min-height: 0;
+}
+.writing-side-content[data-ai='true'] {
+  display: block;
+}
+.writing-chat-slot[hidden] {
+  display: none;
+}

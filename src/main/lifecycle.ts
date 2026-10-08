@@ -11,8 +11,9 @@ import type { AiService } from './ai/service'
 /** Close never races a buffer flush, file replacement, or a still-pending local acknowledgment. */
 export class ProjectLifecycle {
   private request: Promise<boolean> | undefined
-  private intent: 'close' | 'restart' | undefined
-  private lostOwners = new WeakSet<WebContents>()
+  private intent: 'close' | 'restart' | 'update' | undefined
+  private lostOwners = new WeakMap<WebContents, number>()
+  private recoveryClose: { owner: WebContents; generation: number } | undefined
   private restarting: WebContents | undefined
   private pending: { id: string; resolve: (outcome: string) => void } | undefined
   constructor(
@@ -74,9 +75,12 @@ export class ProjectLifecycle {
   close(): Promise<boolean> {
     return this.settle('close')
   }
+  closeForUpdate(): Promise<boolean> {
+    return this.settle('update')
+  }
   /** Losing a renderer owner is not evidence that its drafts were protected. */
   rendererLost(owner: WebContents): void {
-    this.lostOwners.add(owner)
+    this.lostOwners.set(owner, (this.lostOwners.get(owner) ?? 0) + 1)
     if (this.restarting === owner) this.restarting = undefined
     this.pending?.resolve('failed')
   }
@@ -89,7 +93,7 @@ export class ProjectLifecycle {
   rendererLoadFailed(owner: WebContents): void {
     if (this.restarting === owner) this.rendererLost(owner)
   }
-  private settle(intent: 'close' | 'restart'): Promise<boolean> {
+  private settle(intent: 'close' | 'restart' | 'update'): Promise<boolean> {
     // A native close/update and a recovery request must never share permission
     // to perform two different destructive transitions.
     if (this.restarting) return Promise.resolve(false)
@@ -97,9 +101,19 @@ export class ProjectLifecycle {
       return intent === 'close' && this.intent === 'close' ? this.request : Promise.resolve(false)
     const owner = this.owner()
     this.intent = intent
-    this.request = this.closeOnce()
+    this.request = this.closeOnce(intent)
       .then((allowed) => {
-        if (owner && (owner.isDestroyed() || owner !== this.owner() || this.lostOwners.has(owner)))
+        const acknowledgedLoss =
+          intent === 'close' &&
+          owner &&
+          this.recoveryClose?.owner === owner &&
+          this.recoveryClose.generation === this.lostOwners.get(owner)
+        if (
+          owner &&
+          (owner.isDestroyed() ||
+            owner !== this.owner() ||
+            (this.lostOwners.has(owner) && !acknowledgedLoss))
+        )
           allowed = false
         if (allowed && intent === 'restart') {
           if (!owner || owner.isDestroyed() || owner !== this.owner() || this.lostOwners.has(owner))
@@ -125,6 +139,7 @@ export class ProjectLifecycle {
       .finally(() => {
         this.request = undefined
         this.intent = undefined
+        this.recoveryClose = undefined
       })
     return this.request
   }
@@ -132,26 +147,42 @@ export class ProjectLifecycle {
     const job = this.files.current().job
     return fileBusy(job) && job?.kind !== 'check'
   }
-  private async closeOnce(): Promise<boolean> {
+  private async closeOnce(intent: 'close' | 'restart' | 'update'): Promise<boolean> {
     const owner = this.owner(),
       window = owner ? BrowserWindow.fromWebContents(owner) : null
-    if (owner && this.lostOwners.has(owner)) {
-      const options = {
-        type: 'warning' as const,
-        title: 'Recovery needs attention',
-        message: 'Collie cannot confirm protection after the workspace stopped.',
-        detail:
-          'Previously protected local writing and saved project files remain on disk. Unsaved forms, composing text and other renderer-only changes may already be lost. Automatic restart and close are paused; reopening cannot reconstruct lost memory. Keep this window open and retain your local working folder for recovery.',
-        buttons: ['Keep window open'],
-        noLink: true
-      }
-      if (window && !window.isDestroyed()) await dialog.showMessageBox(window, options)
-      else await dialog.showMessageBox(options)
-      return false
-    }
     // Establish the barrier before a native dialog can yield to other IPC.
     // Keeping the window open must not implicitly stop an active request.
     this.ai?.beginClose()
+    const lostGeneration = owner ? this.lostOwners.get(owner) : undefined
+    if (lostGeneration !== undefined) {
+      const options = {
+        type: 'warning' as const,
+        title: 'Recovery needs attention',
+        message: 'The workspace stopped. Some unsaved changes may be missing.',
+        detail:
+          'Copy any unsaved text you can still see before closing. Closing keeps existing local recovery data and saved project files, but does not save changes that exist only in this window. Automatic restart is paused.',
+        buttons:
+          intent === 'close'
+            ? ['Keep window open', 'Close and keep local recovery']
+            : ['Keep window open'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true
+      }
+      const answer =
+        window && !window.isDestroyed()
+          ? await dialog.showMessageBox(window, options)
+          : await dialog.showMessageBox(options)
+      if (
+        intent !== 'close' ||
+        answer.response !== 1 ||
+        !owner ||
+        owner !== this.owner() ||
+        owner.isDestroyed() ||
+        this.lostOwners.get(owner) !== lostGeneration
+      )
+        return false
+    }
     let stopProvider = false
     if (this.ai?.hasProviderWork()) {
       const options = {
@@ -185,6 +216,25 @@ export class ProjectLifecycle {
       if (window && !window.isDestroyed()) await dialog.showMessageBox(window, options)
       else await dialog.showMessageBox(options)
       return false
+    }
+    if (owner && lostGeneration !== undefined) {
+      if (this.hasFileWork()) {
+        const options = {
+          type: 'warning' as const,
+          title: 'Finishing local work',
+          message: 'A project file operation is still running.',
+          detail: 'Wait for it to finish or cancel it, then try closing again.',
+          buttons: ['Keep window open'],
+          noLink: true
+        }
+        if (window && !window.isDestroyed()) await dialog.showMessageBox(window, options)
+        else await dialog.showMessageBox(options)
+        return false
+      }
+      // Native consent acknowledges uncertain window-only state, never a successful Save.
+      // AI/content settlement above still applies; a newer loss invalidates this consent.
+      this.recoveryClose = { owner, generation: lostGeneration }
+      return true
     }
     if (!owner || !window) return !this.dirty() && !this.hasFileWork()
     const id = randomUUID()

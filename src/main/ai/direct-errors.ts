@@ -29,7 +29,8 @@ export function directIssue(
     code: null,
     parameter: null,
     requestId: null,
-    bodyKind: null
+    bodyKind: null,
+    responseType: null
   }
 }
 export function directFailure(stage: DirectStage, error: unknown): DirectIssue {
@@ -53,14 +54,23 @@ export function httpFailure(
   // Codes/field names are bounded machine identifiers. Never return raw message
   // or detail strings (which may echo submitted text or credential material).
   const code =
-    typeof supplied === 'string' && /^[a-z][a-z0-9_]{0,127}$/.test(supplied) ? supplied : null
-  const reason: AiReason =
-    terminal.has(code ?? '') || status === 401
-      ? 'session-expired'
-      : code === 'access_denied' || code === 'chatpass_v2_scope_not_authorized'
-        ? 'consent-required'
-        : code === 'invalid_client'
-          ? 'configuration-required'
+    typeof supplied === 'string' && /^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(supplied)
+      ? supplied
+      : null
+  const parameter =
+    typeof error?.param === 'string' && /^[a-z][a-z0-9_.[\]]{0,127}$/.test(error.param)
+      ? error.param
+      : null
+  const reason: AiReason = unusableCredential(code)
+    ? 'session-expired'
+    : code === 'access_denied'
+      ? 'consent-required'
+      : code === 'invalid_client'
+        ? 'configuration-required'
+        : code === 'subscription_sharing_unsupported_capability'
+          ? parameter === 'model'
+            ? 'model-unavailable'
+            : 'invalid-request'
           : status === 429 || code === 'subscription_sharing_usage_limit_exceeded'
             ? 'quota-exhausted'
             : status >= 500
@@ -70,10 +80,7 @@ export function httpFailure(
     ...directIssue(stage, reason),
     httpStatus: status,
     code,
-    parameter:
-      typeof error?.param === 'string' && /^[a-z][a-z0-9_.]{0,127}$/.test(error.param)
-        ? error.param
-        : null,
+    parameter,
     requestId: requestId && /^[A-Za-z0-9_.:-]{1,128}$/.test(requestId) ? requestId : null,
     bodyKind: error
       ? 'structured'

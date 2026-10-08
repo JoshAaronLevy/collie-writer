@@ -3,7 +3,6 @@ import type { AiContentWork } from '../../../../shared/ai'
 import { sameScope } from '../../../../shared/project-files'
 import { AppButton } from '../../components/ui/Controls'
 import { AppDialog } from '../../components/ui/AppDialog'
-import { StatusBanner } from '../../components/ui/Feedback'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import { AiCapacity } from '../ai-connections/AiCapacity'
@@ -17,12 +16,12 @@ const key = (work: AiContentWork): string =>
   `${work.feature}:${work.scope.projectId}:${work.scope.workspaceId}:${work.attemptId}`
 const labels: Record<AiContentWork['state'], string> = {
   running: 'Request in progress',
-  stopping: 'Stop requested; outcome not yet confirmed',
-  protecting: 'Protecting the actual outcome locally',
-  'protection-required': 'Local protection needs attention',
-  'retained-outcome': 'Outcome retained; acknowledgment needed to release capacity',
-  'handoff-required': 'Completed outcome awaiting local handoff',
-  'record-unavailable': 'Execution record unavailable; local binding remains reserved'
+  stopping: 'Stopping response…',
+  protecting: 'Saving response…',
+  'protection-required': 'Response could not be saved',
+  'retained-outcome': 'Saved result needs review',
+  'handoff-required': 'Response is waiting to be saved to the project',
+  'record-unavailable': 'Saved request needs recovery'
 }
 
 /** Always mounted. An exact acknowledgment survives removal of its work item. */
@@ -42,6 +41,18 @@ export function AiWorkNotice(): React.JSX.Element | null {
   const capacity = connections.status?.capacity
   const capacityNeedsAttention =
     !!capacity && (capacity.used === null || capacity.used > 0 || capacity.projects.length > 0)
+  const needsAttention =
+    !!issue ||
+    capacity?.used === null ||
+    (!!capacity && capacity.used === capacity.limit) ||
+    work.some(
+      (item) =>
+        item.state === 'protection-required' ||
+        item.state === 'record-unavailable' ||
+        item.state === 'handoff-required'
+    )
+  const running = work.some((item) => item.state === 'running' || item.state === 'stopping')
+  const savedResults = work.filter((item) => item.state === 'retained-outcome').length
   useRetainedDraft('ai-work-action', {
     read: () => ({
       scope: pending?.work.scope ?? { projectId: '', workspaceId: '' },
@@ -99,24 +110,22 @@ export function AiWorkNotice(): React.JSX.Element | null {
   if (!work.length && !pending && !issue && !acknowledge && !capacityNeedsAttention) return null
   return (
     <div ref={region} tabIndex={-1} className={styles['ai-work-notice']}>
-      <StatusBanner
-        title="AI work"
-        tone={
-          issue ||
-          capacity?.used === null ||
-          capacity?.used === capacity?.limit ||
-          work.some(
-            (item) => item.state === 'protection-required' || item.state === 'record-unavailable'
-          )
-            ? 'warning'
-            : 'info'
-        }
+      <details
+        className={styles['ai-work-summary']}
+        open={needsAttention || !!pending || undefined}
       >
-        <p>
-          {work.length
-            ? 'Running requests and unprotected output must settle before account changes. Stop keeps partial output and does not guarantee restored usage.'
-            : 'Local AI work needs review. Open the recovery details below; saved history remains available.'}
-        </p>
+        <summary>
+          {needsAttention
+            ? 'AI work needs attention'
+            : running
+              ? 'AI response in progress'
+              : savedResults
+                ? `${savedResults} saved AI result${savedResults === 1 ? '' : 's'} to review`
+                : work.length
+                  ? 'Saving AI response…'
+                  : 'AI recovery details'}
+        </summary>
+        {running ? <p>Wait for the response to finish saving before changing accounts.</p> : null}
         {issue ? <p role="alert">{issue}</p> : null}
         {pending ? (
           <AppButton disabled={busy} pending={busy} onClick={() => void act(pending)}>
@@ -143,7 +152,7 @@ export function AiWorkNotice(): React.JSX.Element | null {
                       : proofreading.show(item.attemptId)
                   }
                 >
-                  Open saved request
+                  View request
                 </AppButton>
                 {item.state === 'running' ? (
                   <AppButton
@@ -166,8 +175,8 @@ export function AiWorkNotice(): React.JSX.Element | null {
                     onClick={() => void act({ work: item, action: 'protect' })}
                   >
                     {item.state === 'handoff-required'
-                      ? 'Finish local handoff'
-                      : 'Retry local output protection'}
+                      ? 'Finish saving response'
+                      : 'Retry saving response'}
                   </AppButton>
                 ) : null}
                 {item.state === 'retained-outcome' ? (
@@ -181,7 +190,7 @@ export function AiWorkNotice(): React.JSX.Element | null {
                     }
                     onClick={() => setAcknowledge(item)}
                   >
-                    Retain outcome and release capacity…
+                    Review saved result…
                   </AppButton>
                 ) : null}
                 {item.state === 'record-unavailable' ? (
@@ -233,21 +242,20 @@ export function AiWorkNotice(): React.JSX.Element | null {
             Dismiss notice
           </AppButton>
         ) : null}
-      </StatusBanner>
+      </details>
       <AppDialog
         opened={acknowledge !== null}
         onClose={() => setAcknowledge(null)}
-        title="Retain outcome and release capacity"
+        title="Dismiss saved result?"
       >
         <div className={styles['ai-retention-confirmation']}>
           <p>
-            The saved request keeps its actual text and outcome, including any partial output or
-            uncertainty. Collie keeps the original encrypted record on this device and does not
-            resend the request or mark it successful.
+            Your request and any partial response stay saved. Dismissing this notice lets Collie
+            accept more AI work. It does not send your message again.
           </p>
           <p>
-            Review the saved request before confirming. This action releases a slot only after local
-            protection is complete and no request is running.
+            You can reopen the saved request at any time. A failed or interrupted response keeps
+            that status.
           </p>
           <div className={styles['ai-work-actions']}>
             <AppButton
@@ -261,10 +269,10 @@ export function AiWorkNotice(): React.JSX.Element | null {
                 }
               }}
             >
-              Read saved request
+              View request
             </AppButton>
             <AppButton variant="default" onClick={() => setAcknowledge(null)}>
-              Keep slot reserved
+              Cancel
             </AppButton>
             <AppButton
               disabled={
@@ -282,7 +290,7 @@ export function AiWorkNotice(): React.JSX.Element | null {
                 }
               }}
             >
-              Acknowledge and retain outcome
+              Dismiss
             </AppButton>
           </div>
         </div>

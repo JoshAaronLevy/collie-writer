@@ -248,6 +248,19 @@ const migrations: readonly Migration[] = [
       db.exec('ALTER TABLE conversations ADD COLUMN origin_document_id TEXT')
       db.prepare('UPDATE format SET schema_version=16,minimum_reader=16').run()
     }
+  },
+  {
+    from: 16,
+    to: 17,
+    validateSource: (db) => {
+      validateProjectSchema(db, 16)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableConversations(db, row.id)
+    },
+    apply: (db) => {
+      // Reader floor for v2 automatic captures. Original rows and digests are untouched.
+      db.prepare('UPDATE format SET schema_version=17,minimum_reader=17').run()
+    }
   }
 ]
 

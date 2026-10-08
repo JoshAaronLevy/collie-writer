@@ -110,9 +110,9 @@ export function WritingSidePanel({
   const note = notes.find((item) => item.id === noteId),
     source = sources.find((item) => item.id === sourceId)
   return (
-    <div className={styles['writing-side-content']}>
+    <div className={styles['writing-side-content']} data-ai={mode === 'ai'}>
       {mode !== 'ai' ? <h2>{mode === 'notes' ? 'Notes' : 'Sources'}</h2> : null}
-      <div hidden={mode !== 'ai'} inert={mode !== 'ai'}>
+      <div className={styles['writing-chat-slot']} hidden={mode !== 'ai'} inert={mode !== 'ai'}>
         <ConversationPanel />
       </div>
       {mode !== 'ai' ? (

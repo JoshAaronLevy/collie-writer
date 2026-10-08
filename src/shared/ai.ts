@@ -1,4 +1,9 @@
 import { isId } from '../domain/editor/schema'
+import {
+  capabilitiesMatchStatus,
+  isAiConversationCapabilities,
+  type AiConversationCapabilities
+} from './ai-capabilities'
 import { isAiDirectStatus, type AiDirectStatus } from './ai-direct'
 import { isAiConnectionHealth, type AiConnectionHealth } from './ai-connection-health'
 import { exact, isOpenInput, record, type OpenInput } from './projects'
@@ -143,6 +148,7 @@ export type AiStatus = {
   session: AiSession
   funding: AiFunding
   features: AiFeatureAvailability
+  capabilities: AiConversationCapabilities
   catalog: AiCatalog | null
   execution: AiExecutionReadiness | null
   direct: AiDirectStatus | null
@@ -410,6 +416,7 @@ export function isAiStatus(v: unknown): v is AiStatus {
       'session',
       'funding',
       'features',
+      'capabilities',
       'catalog',
       'execution',
       'direct',
@@ -459,6 +466,16 @@ export function isAiStatus(v: unknown): v is AiStatus {
     isAiSession(v.session) &&
     isAiFunding(v.funding) &&
     isAiFeatureAvailability(v.features) &&
+    isAiConversationCapabilities(v.capabilities) &&
+    capabilitiesMatchStatus(v.capabilities, {
+      route,
+      activeConnectionId: nullableId(v.activeConnectionId)
+        ? (v.activeConnectionId as string | null)
+        : null,
+      catalog: isAiCatalog(catalog) ? catalog : null,
+      reviewRevision: String(v.reviewRevision),
+      features
+    }) &&
     (route.kind === 'local-chatgpt-plan'
       ? isAiDirectStatus(v.direct) &&
         isAiCatalog(catalog) &&

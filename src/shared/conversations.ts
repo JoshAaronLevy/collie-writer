@@ -1,3 +1,9 @@
+import {
+  AUTOMATIC_HISTORY_LIMIT,
+  isContextPolicy,
+  readContextHistory,
+  type ConversationContextPolicy
+} from './conversation-context'
 import type { CaptureSource, AiTextCaptureFields, AiAttemptFields } from './ai-content'
 import { isAiHandoffReceipt, type AiHandoffReceipt } from './ai-handoff'
 export type { CaptureSource, AttemptState } from './ai-content'
@@ -7,6 +13,7 @@ import { exact, record, isOpenInput, type OpenInput, type ProjectResult } from '
 
 export const CONVERSATION_CHANNEL = 'conversations.command'
 export const CONVERSATION_CHANGED = 'conversations.changed'
+export const CONVERSATION_PRESENTATION = 'conversations.presentation'
 export const CONVERSATION_LIMITS = {
   title: 160,
   list: 20,
@@ -16,11 +23,17 @@ export const CONVERSATION_LIMITS = {
   exportBytes: 64 * 1024 * 1024
 } as const
 /** Portable authorization evidence, never an execution grant or account identifier. */
-export type AiCapture = AiTextCaptureFields & {
+export type AiCaptureV1 = AiTextCaptureFields & {
   conversationId: string
   template: 'conversation-v1'
   historyIds: string[]
 }
+export type AiCaptureV2 = Omit<AiCaptureV1, 'version' | 'template'> & {
+  version: 2
+  template: 'conversation-v2'
+  contextPolicy: ConversationContextPolicy
+}
+export type AiCapture = AiCaptureV1 | AiCaptureV2
 export type Conversation = {
   version: 1 | 2
   /** v1 has no claimed origin; v2 always carries a nullable stable ID. */
@@ -59,6 +72,9 @@ export type ConversationTurn = {
 }
 export type ConversationReview = OpenInput & {
   action: 'review'
+  /** Omitted version retains the original manual-context contract. */
+  version?: 2
+  contextPolicy?: ConversationContextPolicy
   conversationId: string
   expectedRevision: string
   expectedHead: string
@@ -123,10 +139,10 @@ type ConversationBindingFields = {
   captureDigest: string
 }
 /** Local operations database only. Legacy bindings deliberately have no version
- * key. v2/v3 are Codex; v4 is a direct ChatGPT-plan conversation. The readers
- * keep v3 mechanics-only and v4 conversation-only. No binding confers authority. */
+ * key. v2/v3 are Codex; v4/v5 are direct ChatGPT-plan conversations. The readers
+ * keep v3 mechanics-only and v4/v5 conversation-only. No binding confers authority. */
 export type ConversationBinding =
-  ConversationBindingFields | (ConversationBindingFields & { version: 2 | 3 | 4 })
+  ConversationBindingFields | (ConversationBindingFields & { version: 2 | 3 | 4 | 5 })
 export type ConversationWorkerInput =
   | Exclude<
       ConversationRequest,
@@ -196,6 +212,7 @@ export type ConversationEvent = OpenInput & {
   issue: string | null
 }
 export type ConversationAPI = {
+  conversationPresentation(action: 'copy' | 'open-link', text: string): Promise<boolean>
   conversation(input: ConversationRequest): Promise<ProjectResult<ConversationValue>>
   onConversationChanged(listener: (event: ConversationEvent) => void): () => void
 }
@@ -243,7 +260,7 @@ export function isCaptureSource(v: unknown): v is CaptureSource {
     new Set(v.ranges.map((r) => r.blockId)).size === v.ranges.length
   )
 }
-export function isAiCapture(v: unknown): v is AiCapture {
+function isAiCaptureV1(v: unknown): v is AiCaptureV1 {
   return (
     record(v) &&
     exact(v, [
@@ -283,6 +300,73 @@ export function isAiCapture(v: unknown): v is AiCapture {
         text(c.text, AI_LIMITS.context)
     ) &&
     v.context.reduce((n, c) => n + c.text.length, 0) <= AI_LIMITS.context
+  )
+}
+export function isAiCapture(v: unknown): v is AiCapture {
+  if (isAiCaptureV1(v)) return true
+  if (
+    !record(v) ||
+    !exact(v, [
+      'version',
+      'id',
+      'conversationId',
+      'template',
+      'createdAt',
+      'head',
+      'prompt',
+      'source',
+      'historyIds',
+      'context',
+      'digest',
+      'contextPolicy'
+    ]) ||
+    v.version !== 2 ||
+    v.template !== 'conversation-v2' ||
+    !isContextPolicy(v.contextPolicy) ||
+    !isId(v.id) ||
+    !isId(v.conversationId) ||
+    !isId(v.head) ||
+    !date(v.createdAt) ||
+    !text(v.prompt, AI_LIMITS.prompt) ||
+    !v.prompt.trim() ||
+    !isCaptureSource(v.source) ||
+    v.source.kind === 'passage' ||
+    !isCaptureDigest(v.digest) ||
+    !Array.isArray(v.historyIds) ||
+    v.historyIds.length > AUTOMATIC_HISTORY_LIMIT ||
+    !v.historyIds.every(isId) ||
+    !Array.isArray(v.context) ||
+    v.context.length > 3 ||
+    !v.context.every(
+      (c) =>
+        record(c) &&
+        exact(c, ['kind', 'id', 'revision', 'label', 'text']) &&
+        ['section', 'note', 'history'].includes(String(c.kind)) &&
+        isId(c.id) &&
+        isId(c.revision) &&
+        text(c.label, 200) &&
+        text(c.text, AI_LIMITS.context)
+    ) ||
+    v.context.reduce((n, c) => n + c.text.length, 0) > AI_LIMITS.context
+  )
+    return false
+  const historyIds = v.historyIds
+  const historyChunks = v.context.filter((c) => c.kind === 'history')
+  const history = readContextHistory(v.context),
+    writing = v.context.filter((c) => c.kind === 'section'),
+    overview = v.context.filter((c) => c.kind === 'note')
+  return (
+    !!history &&
+    history.length === historyIds.length &&
+    historyChunks.every((c) => c.id === v.conversationId) &&
+    history.every((m, i) => m.id === historyIds[i]) &&
+    (v.contextPolicy !== 'message' || (!history.length && !v.context.length)) &&
+    (v.contextPolicy === 'project' || (v.source.kind === 'none' && !overview.length)) &&
+    overview.length === (v.contextPolicy === 'project' ? 1 : 0) &&
+    (!overview.length || (overview[0].id === v.id && overview[0].revision === v.head)) &&
+    writing.length === (v.source.kind === 'none' ? 0 : 1) &&
+    (v.source.kind === 'none' ||
+      (writing[0].id === v.source.documentId && writing[0].revision === v.source.revisionId))
   )
 }
 export function isConversation(v: unknown): v is Conversation {
@@ -469,14 +553,22 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
           'createdAt',
           'prompt',
           'source',
-          'historyIds'
+          'historyIds',
+          ...('version' in v ? ['version', 'contextPolicy'] : [])
         ]) &&
         [v.conversationId, v.expectedRevision, v.expectedHead, v.captureId].every(isId) &&
         date(v.createdAt) &&
         text(v.prompt, AI_LIMITS.prompt) &&
         !!v.prompt.trim() &&
         isCaptureSource(v.source) &&
-        ids(v.historyIds)
+        (v.version === undefined
+          ? ids(v.historyIds)
+          : v.version === 2 &&
+            isContextPolicy(v.contextPolicy) &&
+            Array.isArray(v.historyIds) &&
+            v.historyIds.length === 0 &&
+            v.source.kind !== 'passage' &&
+            (v.contextPolicy === 'project' || v.source.kind === 'none'))
       )
     case 'submit':
       return (
@@ -516,7 +608,7 @@ export function isContentBinding(v: unknown): v is ConversationBinding {
   return (
     record(v) &&
     (exact(v, ['attemptId', 'operationId', 'connectionId', 'model', 'digest', 'captureDigest']) ||
-      ((v.version === 2 || v.version === 3 || v.version === 4) &&
+      ((v.version === 2 || v.version === 3 || v.version === 4 || v.version === 5) &&
         exact(v, [
           'version',
           'attemptId',
@@ -536,9 +628,9 @@ export function isConversationBinding(v: unknown): v is ConversationBinding {
   return isContentBinding(v) && bindingVersion(v) !== 3
 }
 export function isProofreadingBinding(v: unknown): v is ConversationBinding {
-  return isContentBinding(v) && bindingVersion(v) !== 4
+  return isContentBinding(v) && bindingVersion(v) !== 4 && bindingVersion(v) !== 5
 }
-export function bindingVersion(binding: ConversationBinding): 1 | 2 | 3 | 4 {
+export function bindingVersion(binding: ConversationBinding): 1 | 2 | 3 | 4 | 5 {
   return 'version' in binding ? binding.version : 1
 }
 export function isConversationWorkerInput(v: unknown): v is ConversationWorkerInput {

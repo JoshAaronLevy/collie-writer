@@ -606,6 +606,7 @@ export default function WritingWorkspace(): React.JSX.Element {
           ref={sidePane}
           tabIndex={-1}
           className={styles['writing-companion-pane']}
+          data-chat={preferences.panel === 'ai'}
           hidden={panelHidden}
           inert={panelHidden}
           aria-label="Writing companion"
