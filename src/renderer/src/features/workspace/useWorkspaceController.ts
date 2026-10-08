@@ -1,3 +1,4 @@
+import type { CapturedSelection } from '../../editor/selection'
 import { WritingPositions, bindWritingPosition, type PositionBinding } from './writing-positions'
 import { isEditableKind } from '../../../../shared/outline'
 import type { ExportJob } from '../../../../shared/exports'
@@ -74,6 +75,10 @@ type WorkspaceControllerState = {
       versionId: string | null
       pageIndex: number | null
     } | null>
+  >
+  citationRequest: { sourceId: string; selection: CapturedSelection } | null
+  setCitationRequest: React.Dispatch<
+    React.SetStateAction<{ sourceId: string; selection: CapturedSelection } | null>
   >
   citationContext: { projectId: string; sources: SourceRecord[]; view: CitationsView | null } | null
   setCitationContext: React.Dispatch<
@@ -299,6 +304,10 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     excerptId: string | null
     versionId: string | null
     pageIndex: number | null
+  } | null>(null)
+  const [citationRequest, setCitationRequest] = useState<{
+    sourceId: string
+    selection: CapturedSelection
   } | null>(null)
   const [citationContext, setCitationContext] = useState<{
     projectId: string
@@ -2505,6 +2514,8 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     sourceDirty,
     inspectionTarget,
     setInspectionTarget,
+    citationRequest,
+    setCitationRequest,
     citationContext,
     setCitationContext,
     outlineRetry,

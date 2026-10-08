@@ -1,4 +1,36 @@
 import {
+  linkedReferenceMatches,
+  sourceReferenceHistory,
+  checkReference,
+  referenceCandidates,
+  saveReference,
+  referenceReceipts,
+  validateReferenceReceipts
+} from './conversation-sources'
+import { isWebResearch } from '../../shared/conversation-research'
+import { knowledgeText } from '../../shared/conversation-knowledge'
+import {
+  readKnowledgeSettings,
+  knowledgeSettingsValue,
+  knowledgeCandidates,
+  changeKnowledge,
+  buildKnowledge,
+  passage,
+  matchResearch,
+  validateKnowledgeSettings,
+  validateKnowledgeCapture
+} from './conversation-knowledge'
+const visibleMessage = `NOT EXISTS (SELECT 1 FROM conversation_attempts ma JOIN ai_captures mc ON mc.project_id=ma.project_id AND mc.id=ma.capture_id WHERE ma.project_id=conversation_messages.project_id AND ma.id=conversation_messages.attempt_id AND json_extract(mc.body,'$.purpose') IN ('chat-summary','overview-summary'))`
+import {
+  memoryPlan,
+  memoryReview,
+  settleMemory,
+  listMemory,
+  editMemory,
+  validateMemory,
+  validateMemoryCapture
+} from './conversation-memory'
+import {
   AUTOMATIC_HISTORY_LIMIT,
   readContextHistory,
   type ContextMessage
@@ -25,6 +57,8 @@ import {
   isConversationTurn,
   type AiCapture,
   type Conversation,
+  type ConversationSummary,
+  type ConversationMatch,
   type ConversationAttempt,
   type ConversationBinding,
   type ConversationMessage,
@@ -93,6 +127,19 @@ function activeOrigin(db: Database.Database, p: string, id: string | null): stri
   }
   return id
 }
+function summary(db: Database.Database, p: string, id: string): ConversationSummary {
+  const c = conversation(db, p, id)
+  const recent = db
+    .prepare(
+      `SELECT role,substr(text,1,180) AS text FROM conversation_messages WHERE project_id=? AND conversation_id=? AND text<>'' AND ${visibleMessage} ORDER BY ordinal DESC LIMIT 1`
+    )
+    .get(p, id) as { role: 'user' | 'assistant'; text: string } | undefined
+  return {
+    ...c,
+    preview: recent?.text.replace(/\s+/gu, ' ').slice(0, 180) ?? '',
+    previewRole: recent?.role ?? null
+  }
+}
 function message(db: Database.Database, p: string, id: string): ConversationMessage {
   const row = db
     .prepare(
@@ -118,11 +165,32 @@ function turn(db: Database.Database, p: string, id: string): ConversationTurn {
     row = db
       .prepare('SELECT substr(body,1,1000001) AS body FROM ai_captures WHERE project_id=? AND id=?')
       .get(p, a.captureId) as { body: string } | undefined
+  const capture = parse(row?.body, isAiCapture)
+  const research =
+    capture.version === 5
+      ? (db
+          .prepare(
+            'SELECT substr(body,1,64001) AS body FROM conversation_research WHERE project_id=? AND attempt_id=?'
+          )
+          .get(p, a.id) as { body: string } | undefined)
+      : undefined
+  const assistant = a.assistantMessageId ? message(db, p, a.assistantMessageId) : null
   const value = {
+    ...(capture.version === 5
+      ? {
+          research: research
+            ? parse(
+                research.body,
+                (v): v is import('../../shared/conversation-research').WebResearch =>
+                  isWebResearch(v, assistant?.text ?? '')
+              )
+            : null
+        }
+      : {}),
     attempt: a,
-    capture: parse(row?.body, isAiCapture),
+    capture,
     user: message(db, p, a.userMessageId),
-    assistant: a.assistantMessageId ? message(db, p, a.assistantMessageId) : null
+    assistant
   }
   return isConversationTurn(value) ? value : corrupt()
 }
@@ -181,13 +249,49 @@ function writeAttempt(db: Database.Database, p: string, a: ConversationAttempt):
 function review(
   db: Database.Database,
   p: string,
-  input: ConversationReview
-): Extract<ConversationValue, { type: 'review' }> {
+  input: ConversationReview,
+  plan: true
+): Extract<ConversationValue, { type: 'memory-plan' }>
+function review(
+  db: Database.Database,
+  p: string,
+  input: ConversationReview,
+  plan?: false
+): Extract<ConversationValue, { type: 'review' }>
+function review(
+  db: Database.Database,
+  p: string,
+  input: ConversationReview,
+  plan = false
+): Extract<ConversationValue, { type: 'review' | 'memory-plan' }> {
+  if (input.version === 5) {
+    if (schemaVersion(db) < 20 || input.purpose !== 'chat') throw new ProjectError('VALIDATION')
+    const base = { ...input, version: 4 as const }
+    if (plan) return review(db, p, base, true)
+    const result = review(db, p, base)
+    const capture: AiCapture = {
+      ...(result.capture as import('../../shared/conversations').AiCaptureV4),
+      version: 5,
+      template: 'conversation-research-v1',
+      purpose: 'chat'
+    }
+    capture.digest = captureDigest(capture)
+    if (!isAiCapture(capture)) throw new ProjectError('VALIDATION')
+    return { ...result, capture }
+  }
   const c = conversation(db, p, input.conversationId)
   if (c.state !== 'active') throw new ProjectError('DENIED')
   if (c.revisionId !== input.expectedRevision || head(db, p).head !== input.expectedHead)
     throw new ProjectError('STALE_REVISION')
   const context: AiCapture['context'] = []
+  const settings = input.version === 4 ? readKnowledgeSettings(db, p, input.conversationId) : null
+  const excludedCurrent =
+    input.source.kind !== 'none' &&
+    [...(settings?.excluded ?? []), ...(settings?.pins ?? [])].some(
+      (t) =>
+        t.kind === 'document' && input.source.kind !== 'none' && t.id === input.source.documentId
+    )
+  if (excludedCurrent) input = { ...input, source: { kind: 'none' } }
   if (input.source.kind !== 'none') {
     const source = input.source
     type DocumentRow = {
@@ -229,9 +333,37 @@ function review(
       id: doc.id,
       revision: doc.revision_id,
       label: doc.title.slice(0, 200),
-      text
+      text: input.version === 4 ? passage(text, input.prompt, 8000).text : text
     })
+    if (input.version === 4 && text.length > 8000) {
+      const excerpt = passage(text, input.prompt, 8000)
+      context[0].label = `${doc.title.slice(0, 120)} · passage ${excerpt.start}–${excerpt.start + excerpt.text.length} of ${excerpt.total}`
+    }
   }
+  if (input.version === 3 || input.version === 4) {
+    if (schemaVersion(db) < (input.version === 4 ? 19 : 18)) corrupt()
+    const knowledge =
+      input.version === 4 && input.purpose === 'chat' && input.contextPolicy === 'project'
+        ? buildKnowledge(
+            db,
+            p,
+            c.id,
+            input.prompt,
+            input.source.kind === 'none' ? null : input.source.documentId,
+            settings!
+          )
+        : null
+    if (knowledge)
+      context.push({
+        kind: 'note',
+        id: input.captureId,
+        revision: input.expectedHead,
+        label: 'Project knowledge',
+        text: knowledgeText(knowledge)
+      })
+    return plan ? memoryPlan(db, p, input, context) : memoryReview(db, p, input, context, knowledge)
+  }
+  if (plan) throw new ProjectError('VALIDATION')
   if (input.version === 2) {
     if (schemaVersion(db) < 17) corrupt()
     const history: ContextMessage[] = []
@@ -241,7 +373,9 @@ function review(
         .prepare(
           `SELECT a.id FROM conversation_attempts a
         JOIN conversation_messages m ON m.project_id=a.project_id AND m.attempt_id=a.id AND m.role='user'
+        JOIN ai_captures ac ON ac.project_id=a.project_id AND ac.id=a.capture_id
         WHERE a.project_id=? AND a.conversation_id=? AND json_extract(a.body,'$.state')='completed'
+        AND coalesce(json_extract(ac.body,'$.purpose'),'chat')='chat'
         ORDER BY m.ordinal LIMIT ?`
         )
         .all(p, c.id, AUTOMATIC_HISTORY_LIMIT / 2 + 1) as { id: string }[]
@@ -377,12 +511,165 @@ export async function conversationCommand(
 ): Promise<ConversationValue> {
   const { db, operations, projectId: p } = context
   switch (input.action) {
+    case 'context-read':
+      conversation(db, p, input.conversationId)
+      return knowledgeSettingsValue(db, p, input.conversationId)
+    case 'context-candidates':
+      return {
+        type: 'context-candidates',
+        ...knowledgeCandidates(db, p, input.kind, input.query, input.offset)
+      }
+    case 'reference-history':
+      return {
+        type: 'reference-history',
+        ...sourceReferenceHistory(db, p, input.sourceId, input.offset)
+      }
+    case 'reference-preview':
+      checkReference(turn(db, p, input.origin.attemptId), input.origin)
+      return { type: 'reference-preview', candidates: referenceCandidates(db, p, input.metadata) }
+    case 'reference-save':
+      return {
+        type: 'reference-saved',
+        receipt: saveReference(db, p, input.save, (id) => turn(db, p, id))
+      }
+    case 'web-matches': {
+      const t = turn(db, p, input.attemptId)
+      const savedReferences = referenceReceipts(db, p, input.attemptId)
+      const references = t.research ? [...t.research.citations, ...t.research.sources] : []
+      return {
+        type: 'web-matches',
+        items: [...new Map(references.map((r) => [r.url, r])).values()].map((ref) => ({
+          url: ref.url,
+          matches: [
+            ...new Map(
+              [
+                ...matchResearch(db, p, `${ref.url}\n${ref.title}`, ref.url),
+                ...linkedReferenceMatches(db, p, input.attemptId, ref.url, savedReferences)
+              ].map((m) => [m.id, m])
+            ).values()
+          ].slice(0, 20)
+        }))
+      }
+    }
+    case 'source-matches':
+      return {
+        type: 'source-matches',
+        items: [
+          ...new Map(
+            [
+              ...matchResearch(db, p, turn(db, p, input.attemptId).assistant?.text ?? ''),
+              ...linkedReferenceMatches(db, p, input.attemptId)
+            ].map((m) => [m.id, m])
+          ).values()
+        ].slice(0, 20)
+      }
+    case 'context-change':
+      return inWriteTransaction(db, () => {
+        if (conversation(db, p, input.conversationId).state !== 'active')
+          throw new ProjectError('DENIED')
+        if (
+          db
+            .prepare(
+              "SELECT 1 FROM conversation_attempts WHERE project_id=? AND json_extract(body,'$.state') IN ('preparing','running','stopping') LIMIT 1"
+            )
+            .get(p)
+        )
+          throw new ProjectError('ACCESS_BUSY')
+        if (
+          changeKnowledge(
+            db,
+            p,
+            input.conversationId,
+            input.operationId,
+            input.expectedRevision,
+            input.change
+          )
+        )
+          advance(db, p, input.conversationId)
+        return knowledgeSettingsValue(db, p, input.conversationId)
+      })
+    case 'memory-plan':
+      return review(db, p, input.review, true)
+    case 'memory-list':
+      conversation(db, p, input.conversationId)
+      return listMemory(db, p, input.conversationId, input.before)
+    case 'memory-edit':
+      return inWriteTransaction(db, () => {
+        conversation(db, p, input.conversationId)
+        if (
+          editMemory(db, p, input.conversationId, input.operationId, input.expectedId, input.text)
+        )
+          advance(db, p, input.conversationId)
+        return listMemory(db, p, input.conversationId, null)
+      })
+
+    case 'summaries': {
+      const items: ConversationSummary[] = []
+      for (const id of input.ids)
+        if (db.prepare('SELECT 1 FROM conversations WHERE project_id=? AND id=?').get(p, id))
+          items.push(summary(db, p, id))
+      return { type: 'list', items, total: items.length }
+    }
+    case 'find': {
+      conversation(db, p, input.conversationId)
+      const items: ConversationMatch[] = [],
+        query = input.query.trim().toLowerCase()
+      let scanned = 0,
+        characters = 0,
+        cursor = input.after ?? -1,
+        more = false
+      // Search one bounded batch of authoritative messages, independent of displayed pages.
+      for (const row of db
+        .prepare(
+          `SELECT id,attempt_id,ordinal,role,substr(text,1,128001) AS text FROM conversation_messages WHERE project_id=? AND conversation_id=? AND ordinal>? AND ${visibleMessage} ORDER BY ordinal LIMIT 201`
+        )
+        .iterate(p, input.conversationId, cursor) as Iterable<{
+        id: string
+        attempt_id: string
+        ordinal: number
+        role: 'user' | 'assistant'
+        text: string
+      }>) {
+        if (
+          scanned >= 200 ||
+          characters + row.text.length > 1_000_000 ||
+          items.length === CONVERSATION_LIMITS.findMatches
+        ) {
+          more = true
+          break
+        }
+        if (row.text.length > AI_LIMITS.output) corrupt()
+        scanned++
+        characters += row.text.length
+        cursor = row.ordinal
+        const at = row.text.toLowerCase().indexOf(query)
+        if (at >= 0)
+          items.push({
+            attemptId: row.attempt_id,
+            messageId: row.id,
+            ordinal: row.ordinal,
+            role: row.role,
+            preview:
+              `${at > 60 ? '…' : ''}${row.text.slice(Math.max(0, at - 60), at + 150).replace(/\s+/gu, ' ')}`.slice(
+                0,
+                220
+              )
+          })
+      }
+      return {
+        type: 'matches',
+        conversationId: input.conversationId,
+        query: input.query,
+        items,
+        nextAfter: more ? cursor : null
+      }
+    }
     case 'grouped-list': {
       const currentDocumentId = activeOrigin(db, p, input.currentDocumentId)
       const group = (
         current: boolean,
         offset: number
-      ): { items: Conversation[]; total: number } => {
+      ): { items: ConversationSummary[]; total: number } => {
         const match = current
           ? 'origin_document_id=?'
           : '(? IS NULL OR origin_document_id IS NULL OR origin_document_id<>?)'
@@ -400,7 +687,7 @@ export async function conversationCommand(
             n: number
           }
         ).n
-        return { items: rows.map((r) => conversation(db, p, r.id)), total }
+        return { items: rows.map((r) => summary(db, p, r.id)), total }
       }
       return {
         type: 'grouped-list',
@@ -419,7 +706,7 @@ export async function conversationCommand(
         .all(...args, CONVERSATION_LIMITS.list, input.offset) as { id: string }[]
       return {
         type: 'list',
-        items: rows.map((r) => conversation(db, p, r.id)),
+        items: rows.map((r) => summary(db, p, r.id)),
         total: (
           db.prepare(`SELECT count(*) AS n FROM conversations WHERE ${filter}`).get(...args) as {
             n: number
@@ -431,7 +718,7 @@ export async function conversationCommand(
       const c = conversation(db, p, input.conversationId),
         rows = db
           .prepare(
-            "SELECT attempt_id,ordinal FROM conversation_messages WHERE project_id=? AND conversation_id=? AND role='user' AND ordinal<? ORDER BY ordinal DESC LIMIT ?"
+            `SELECT attempt_id,ordinal FROM conversation_messages WHERE project_id=? AND conversation_id=? AND role='user' AND ordinal<? ORDER BY ordinal DESC LIMIT ?`
           )
           .all(p, c.id, input.before ?? 1_000_000_000, CONVERSATION_LIMITS.turns + 1) as {
           attempt_id: string
@@ -473,7 +760,8 @@ export async function conversationCommand(
           (bindingVersion(input.binding) >= 4 ? 'openai-chatgpt-plan' : 'openai-codex') ||
         a.reason !== op.reason ||
         a.finishedAt !== new Date(op.finishedAt ?? 0).toISOString() ||
-        (t.assistant?.text ?? '') !== op.text
+        (t.assistant?.text ?? '') !== op.text ||
+        requestDigest(t.research ?? null) !== requestDigest(op.research ?? null)
       )
         throw new ProjectError('OPERATION_CONFLICT')
       return {
@@ -632,7 +920,15 @@ export async function conversationCommand(
           finishedAt: null,
           requestDigest: digest
         }
-        if (capture.version === 2 && ordinal === 0) {
+        if (
+          capture.version >= 2 &&
+          ((capture.version !== 3 && capture.version !== 4) || capture.purpose === 'chat') &&
+          !db
+            .prepare(
+              `SELECT 1 FROM conversation_messages WHERE project_id=? AND conversation_id=? AND role='user' AND ${visibleMessage} LIMIT 1`
+            )
+            .get(p, capture.conversationId)
+        ) {
           // Local title only, on the first accepted message; never an extra provider call.
           db.prepare(
             "UPDATE conversations SET title=? WHERE project_id=? AND id=? AND title='New chat'"
@@ -658,7 +954,13 @@ export async function conversationCommand(
         insertMessage(db, p, user)
         return {
           type: 'turn' as const,
-          turn: { attempt: a, capture, user, assistant: null },
+          turn: {
+            attempt: a,
+            capture,
+            user,
+            assistant: null,
+            ...(capture.version === 5 ? { research: null } : {})
+          },
           fresh: true,
           ...advance(db, p, a.conversationId)
         }
@@ -669,7 +971,11 @@ export async function conversationCommand(
           localBinding(context, 'conversation', input.binding.attemptId).binding ?? undefined
       if (
         value.capture.digest !== input.binding.captureDigest ||
-        (value.capture.version === 2) !== (bindingVersion(input.binding) === 5) ||
+        (value.capture.version === 5
+          ? bindingVersion(input.binding) !== 6
+          : value.capture.version >= 2
+            ? bindingVersion(input.binding) !== 5
+            : bindingVersion(input.binding) >= 5) ||
         (value.attempt.state !== 'not-sent' && !existing)
       )
         throw new ProjectError('OPERATION_CONFLICT')
@@ -722,7 +1028,8 @@ export async function conversationCommand(
             op.digest !== existing.digest ||
             op.connectionId !== existing.connectionId ||
             op.model !== existing.model ||
-            op.action !== 'conversation'
+            op.action !== 'conversation' ||
+            (bindingVersion(existing) === 6) !== 'research' in op
           )
             throw new ProjectError('DENIED')
           if (op.sequence + 1 <= a.sequence)
@@ -737,6 +1044,17 @@ export async function conversationCommand(
                 : op.state
           a.reason = op.reason
           a.finishedAt = op.finishedAt === null ? null : new Date(op.finishedAt).toISOString()
+          if (op.research) {
+            if (
+              schemaVersion(db) < 20 ||
+              !isWebResearch(op.research, op.text) ||
+              op.state !== 'completed'
+            )
+              throw new ProjectError('DENIED')
+            db.prepare(
+              'INSERT INTO conversation_research VALUES (?,?,?) ON CONFLICT(project_id,attempt_id) DO UPDATE SET body=excluded.body'
+            ).run(p, a.id, JSON.stringify(op.research))
+          }
           if (op.text) {
             const user = message(db, p, a.userMessageId)
             if (!a.assistantMessageId) {
@@ -776,6 +1094,7 @@ export async function conversationCommand(
             return { type: 'turn' as const, turn: turn(db, p, a.id), fresh: false, ...head(db, p) }
         }
         writeAttempt(db, p, a)
+        settleMemory(db, p, turn(db, p, a.id))
         return {
           type: 'turn' as const,
           turn: turn(db, p, a.id),
@@ -799,6 +1118,8 @@ export async function conversationCommand(
         )
         .iterate(p, c.id) as Iterable<{ attempt_id: string }>) {
         const t = turn(db, p, row.attempt_id)
+        if ((t.capture.version === 3 || t.capture.version === 4) && t.capture.purpose !== 'chat')
+          append('\nContext preparation (not a user chat message)\n')
         append(`\nUser · ${new Date(t.user.createdAt).toUTCString()}\n${t.user.text}\n`)
         append(
           `Outcome: ${t.attempt.state}${t.attempt.reason ? ' (' + t.attempt.reason + ')' : ''}\nProvider: ${t.attempt.provider ?? 'Not established'}; model: ${t.attempt.model ?? 'Not established'}\n`
@@ -807,13 +1128,24 @@ export async function conversationCommand(
           append(
             `\nAssistant · ${new Date(t.assistant.createdAt).toUTCString()}\n${t.assistant.text}\n`
           )
+        if (t.capture.version === 5) append('\nWeb search requested\n')
+        if (t.research)
+          append(
+            `\nWeb research references (canonical text offsets)\n${JSON.stringify(t.research, null, 2)}\n`
+          )
+        if (schemaVersion(db) >= 21) {
+          for (const receipt of referenceReceipts(db, p, t.attempt.id))
+            append(
+              `\nSaved Research reference (reviewed metadata; not a verified quotation)\n${JSON.stringify(receipt, null, 2)}\n`
+            )
+        }
         if (input.includeContext) {
           append(
             `\nSent context (${t.capture.template}; captured ${new Date(t.capture.createdAt).toUTCString()})\n`
           )
           for (const item of t.capture.context) {
             const history =
-              t.capture.version === 2 && item.kind === 'history' ? readContextHistory([item]) : null
+              t.capture.version >= 2 && item.kind === 'history' ? readContextHistory([item]) : null
             append(`${item.label} · ${item.kind}\n`)
             if (history)
               for (const m of history)
@@ -823,6 +1155,21 @@ export async function conversationCommand(
           if (!t.capture.context.length) append('No attached context.\n')
         }
       }
+      if (schemaVersion(db) >= 18) {
+        for (const row of db
+          .prepare(
+            "SELECT body FROM conversation_memory WHERE project_id=? AND (conversation_id=? OR scope='overview') ORDER BY rowid"
+          )
+          .iterate(p, c.id) as Iterable<{ body: string }>)
+          append(`\nRetained memory checkpoint\n${row.body}\n`)
+      }
+      if (schemaVersion(db) >= 19)
+        for (const row of db
+          .prepare(
+            'SELECT body FROM conversation_context WHERE project_id=? AND conversation_id=? ORDER BY rowid'
+          )
+          .iterate(p, c.id) as Iterable<{ body: string }>)
+          append(`\nRetained context selection\n${row.body}\n`)
       await requireSpace(dirname(input.destinationPath), bytes)
       const file = await open(
         input.destinationPath,
@@ -871,11 +1218,13 @@ export function interruptUnboundConversations(
   })
 }
 export function validatePortableConversations(db: Database.Database, p: string): void {
+  if (schemaVersion(db) >= 21) validateReferenceReceipts(db, p, (id) => turn(db, p, id))
   for (const table of [
     'conversations',
     'ai_captures',
     'conversation_attempts',
-    'conversation_messages'
+    'conversation_messages',
+    ...(schemaVersion(db) >= 20 ? ['conversation_research'] : [])
   ])
     if (
       (db.prepare(`SELECT count(*) AS n FROM ${table} WHERE project_id<>?`).get(p) as { n: number })
@@ -904,11 +1253,15 @@ export function validatePortableConversations(db: Database.Database, p: string):
     if (
       capture.id !== row.id ||
       capture.conversationId !== row.conversation_id ||
-      (capture.version === 2 && schemaVersion(db) < 17)
+      (capture.version === 2 && schemaVersion(db) < 17) ||
+      (capture.version === 3 && schemaVersion(db) < 18) ||
+      (capture.version === 4 && schemaVersion(db) < 19) ||
+      (capture.version === 5 && schemaVersion(db) < 20)
     )
       corrupt()
   }
-  let messageCount = 0
+  let messageCount = 0,
+    researchCount = 0
   for (const row of db
     .prepare('SELECT id,conversation_id,capture_id FROM conversation_attempts WHERE project_id=?')
     .iterate(p) as Iterable<{ id: string; conversation_id: string; capture_id: string }>) {
@@ -933,7 +1286,7 @@ export function validatePortableConversations(db: Database.Database, p: string):
       const m = message(db, p, id)
       if (m.conversationId !== t.attempt.conversationId || m.ordinal >= t.user.ordinal) corrupt()
     }
-    if (t.capture.version === 2) {
+    if (t.capture.version >= 2) {
       const history = readContextHistory(t.capture.context)
       if (!history) corrupt()
       let last = -1
@@ -974,7 +1327,15 @@ export function validatePortableConversations(db: Database.Database, p: string):
       )
         corrupt()
     }
+    if (t.capture.version === 3 || t.capture.version === 4 || t.capture.version === 5)
+      validateMemoryCapture(db, p, t)
+    if (t.capture.version === 4 || t.capture.version === 5)
+      validateKnowledgeCapture(db, p, t.capture)
+    if (t.research) researchCount++
     messageCount += t.assistant ? 2 : 1
   }
   if (messageCount !== counts('conversation_messages')) corrupt()
+  if (schemaVersion(db) >= 20 && counts('conversation_research') !== researchCount) corrupt()
+  if (schemaVersion(db) >= 19) validateKnowledgeSettings(db, p)
+  if (schemaVersion(db) >= 18) validateMemory(db, p, (id) => turn(db, p, id))
 }

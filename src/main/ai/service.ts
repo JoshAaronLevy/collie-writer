@@ -1,3 +1,4 @@
+import { operationDigestV6, researchFits } from './direct-research'
 import { conversationFits, operationDigestV5 } from './direct-conversation'
 import type { WorkspaceAiEvidence } from '../../shared/working-copy'
 import { app } from 'electron'
@@ -331,10 +332,12 @@ export class AiService {
     template?: ContentTemplate
   ): boolean {
     return selectAiRoute().kind === 'local-chatgpt-plan' && action === 'conversation'
-      ? template === 'conversation-v2'
-        ? conversationFits(input)
-        : directFits(input)
-      : template === 'conversation-v2'
+      ? template === 'conversation-research-v1'
+        ? researchFits(input)
+        : template === 'conversation-v2'
+          ? conversationFits(input)
+          : directFits(input)
+      : template === 'conversation-v2' || template === 'conversation-research-v1'
         ? false
         : localRequestFits(input, action)
   }
@@ -502,7 +505,7 @@ export class AiService {
     const snapshot = this.statusSnapshot()
     return {
       ...snapshot,
-      capabilities: conversationCapabilities(snapshot),
+      capabilities: conversationCapabilities(snapshot, this.direct.researchEvidence()),
       connectionHealth: deriveConnectionHealth(
         snapshot,
         this.accountStorageState,
@@ -1270,7 +1273,11 @@ export class AiService {
     if (
       content &&
       ((content.template !== templateFor(input.action) &&
-        !(input.action === 'conversation' && content.template === 'conversation-v2')) ||
+        !(
+          input.action === 'conversation' &&
+          (content.template === 'conversation-v2' ||
+            content.template === 'conversation-research-v1')
+        )) ||
         content.reviewStamp !== this.currentReviewStamp(input.action))
     )
       throw new AiError('context-changed')
@@ -1284,7 +1291,12 @@ export class AiService {
       execution = this.direct.execution(input, content.captureDigest, content.template)
       session = this.direct.dispatchSession()
     } else if (route.kind === 'local-codex-chatgpt') {
-      if (!content || content.template === 'conversation-v2') throw new AiError('invalid-request')
+      if (
+        !content ||
+        content.template === 'conversation-v2' ||
+        content.template === 'conversation-research-v1'
+      )
+        throw new AiError('invalid-request')
       execution = localExecution(
         input,
         this.local.executionIdentity(input),
@@ -1313,9 +1325,11 @@ export class AiService {
       operationId: input.operationId,
       digest: execution
         ? execution.route === 'local-chatgpt-plan'
-          ? execution.template === 'conversation-v2'
-            ? operationDigestV5(input, execution)
-            : operationDigestV4(input, execution)
+          ? execution.template === 'conversation-research-v1'
+            ? operationDigestV6(input, execution)
+            : execution.template === 'conversation-v2'
+              ? operationDigestV5(input, execution)
+              : operationDigestV4(input, execution)
           : isSchemaExecution(execution)
             ? operationDigestV3(input, execution)
             : operationDigestV2(input, execution)
@@ -1331,14 +1345,16 @@ export class AiService {
     })
     return { ...receipt }
   }
-  preparedVersion(authorizationId: string): 1 | 2 | 3 | 4 | 5 {
+  preparedVersion(authorizationId: string): 1 | 2 | 3 | 4 | 5 | 6 {
     const prepared = this.prepared.get(authorizationId)
     if (!prepared) throw new AiError('context-changed')
     return prepared.execution
       ? prepared.execution.route === 'local-chatgpt-plan'
-        ? prepared.execution.template === 'conversation-v2'
-          ? 5
-          : 4
+        ? prepared.execution.template === 'conversation-research-v1'
+          ? 6
+          : prepared.execution.template === 'conversation-v2'
+            ? 5
+            : 4
         : isSchemaExecution(prepared.execution)
           ? 3
           : 2
@@ -1389,21 +1405,29 @@ export class AiService {
     const execution = prepared.execution
     const item: RetainedOperation = execution
       ? execution.route === 'local-chatgpt-plan'
-        ? execution.template === 'conversation-v2'
+        ? execution.template === 'conversation-research-v1'
           ? {
-              version: 5,
+              version: 6,
               input: prepared.input,
               execution,
-              view,
+              view: { ...view, research: null },
               output: { commentary: '', finalText: null }
             }
-          : {
-              version: 4,
-              input: prepared.input,
-              execution,
-              view,
-              output: { commentary: '', finalText: null }
-            }
+          : execution.template === 'conversation-v2'
+            ? {
+                version: 5,
+                input: prepared.input,
+                execution,
+                view,
+                output: { commentary: '', finalText: null }
+              }
+            : {
+                version: 4,
+                input: prepared.input,
+                execution,
+                view,
+                output: { commentary: '', finalText: null }
+              }
         : isSchemaExecution(execution)
           ? {
               version: 3,
@@ -1498,6 +1522,9 @@ export class AiService {
       item.view = {
         ...item.view,
         text: value.text,
+        ...(item.version === 6
+          ? { research: value.state === 'completed' ? (value.research ?? null) : null }
+          : {}),
         state:
           value.state === 'running' && item.view.state === 'cancelling'
             ? 'cancelling'
@@ -1624,13 +1651,16 @@ export class AiService {
     if (item && !sameProject(item.view.scope, input.scope)) throw new AiError('invalid-request')
     return item ? structuredClone(item) : null
   }
-  protectedContentOperation(operationId: string, version: 1 | 2 | 3 | 4 | 5): AiOperation | null {
+  protectedContentOperation(
+    operationId: string,
+    version: 1 | 2 | 3 | 4 | 5 | 6
+  ): AiOperation | null {
     const item = this.protectedRecords.get(operationId)
     return item?.version === version ? contentOperation(item) : null
   }
   protectedContentState(
     operationId: string,
-    version: 1 | 2 | 3 | 4 | 5
+    version: 1 | 2 | 3 | 4 | 5 | 6
   ): AiOperation['state'] | null {
     const item = this.protectedRecords.get(operationId)
     return item?.version === version ? contentState(item) : null

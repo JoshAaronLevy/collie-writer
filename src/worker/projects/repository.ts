@@ -269,9 +269,17 @@ export class ProjectRepository {
   conversation(input: ConversationWorkerInput): Promise<ConversationValue> {
     return this.serial(async () => {
       this.fileContext(input)
-      const mutating = ['change', 'append', 'bind', 'settle', 'handoff', 'retire'].includes(
-        input.action
-      )
+      const mutating = [
+        'change',
+        'memory-edit',
+        'context-change',
+        'reference-save',
+        'append',
+        'bind',
+        'settle',
+        'handoff',
+        'retire'
+      ].includes(input.action)
       if (mutating && this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
       const owned = this.active!,
         value = await conversationCommand(owned, input)

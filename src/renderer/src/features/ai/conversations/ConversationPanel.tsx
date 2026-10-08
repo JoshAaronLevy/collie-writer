@@ -1,3 +1,7 @@
+import { sameScope } from '../../../../../shared/project-files'
+import { ResearchAnswer } from './ResearchAnswer'
+import { ConversationKnowledge, ConversationReferences } from './ConversationKnowledge'
+import { ConversationMemory } from './ConversationMemory'
 import {
   IconArrowLeft,
   IconArrowDown,
@@ -5,7 +9,8 @@ import {
   IconPlus,
   IconPlayerStop,
   IconCopy,
-  IconDots
+  IconDots,
+  IconWorld
 } from '@tabler/icons-react'
 import { ActionMenu } from '../../../components/ui/ActionMenu'
 import { IconButton } from '../../../components/ui/IconButton'
@@ -18,16 +23,30 @@ import { useWorkspaceSession } from '../../workspace/workspaceContext'
 import { useAiConnections } from '../../ai-connections/connectionState'
 import { connectionReason } from '../../ai-connections/connection-copy'
 import type { AiReason } from '../../../../../shared/ai'
-import type { AiCapture, Conversation, ConversationTurn } from '../../../../../shared/conversations'
+import type {
+  AiCapture,
+  ConversationSummary,
+  ConversationTurn
+} from '../../../../../shared/conversations'
 import {
   readContextHistory,
   type ConversationContextPolicy
 } from '../../../../../shared/conversation-context'
 import { useConversations } from './conversationState'
-import { ChatMarkdown } from './ChatMarkdown'
+import { ConversationFind } from './ConversationFind'
+import { ConversationDraftRecovery } from './ConversationDraftRecovery'
 import styles from './Conversations.module.css'
 
 const activeStates = ['preparing', 'running', 'stopping']
+function readingPosition(target: HTMLDivElement): { id: string; offset: number } | null {
+  const top = target.getBoundingClientRect().top
+  const item = [...target.querySelectorAll<HTMLElement>('[data-attempt]')].find(
+    (node) => node.getBoundingClientRect().bottom > top
+  )
+  return item?.dataset.attempt
+    ? { id: item.dataset.attempt, offset: item.getBoundingClientRect().top - top }
+    : null
+}
 function requestReason(reason: AiReason, hasResponse = false): string {
   if (['auth-failed', 'session-expired', 'signed-out'].includes(reason))
     return 'Connect ChatGPT again, then send a new message. This attempt will not resend.'
@@ -46,12 +65,15 @@ function requestReason(reason: AiReason, hasResponse = false): string {
   return connectionReason[reason]
 }
 function SentContext({ capture }: { capture: AiCapture }): React.JSX.Element {
-  const history = capture.version === 2 ? readContextHistory(capture.context) : null
+  const history = capture.version >= 2 ? readContextHistory(capture.context) : null
   return (
     <div className={styles['conversation-capture']}>
       <p className={styles['conversation-caption']}>
-        Sent {new Date(capture.createdAt).toLocaleString()}. This snapshot stays unchanged.
+        Captured {new Date(capture.createdAt).toLocaleString()}. This snapshot stays unchanged.
       </p>
+      {capture.version === 5 ? (
+        <p>Web search was requested. Shared context could inform search queries.</p>
+      ) : null}
       {!capture.context.length ? <p>No writing or earlier messages included.</p> : null}
       {capture.context
         .filter((item) => !history || item.kind !== 'history')
@@ -76,6 +98,20 @@ function SentContext({ capture }: { capture: AiCapture }): React.JSX.Element {
   )
 }
 function MessageTurn({ turn }: { turn: ConversationTurn }): React.JSX.Element {
+  if ((turn.capture.version !== 3 && turn.capture.version !== 4) || turn.capture.purpose === 'chat')
+    return <MessageTurnContent turn={turn} />
+  return (
+    <details
+      data-attempt={turn.attempt.id}
+      className={styles['conversation-capture']}
+      open={['failed', 'unknown', 'cancelled', 'not-sent'].includes(turn.attempt.state)}
+    >
+      <summary>Context preparation · {turn.attempt.state}</summary>
+      <MessageTurnContent turn={turn} />
+    </details>
+  )
+}
+function MessageTurnContent({ turn }: { turn: ConversationTurn }): React.JSX.Element {
   const c = useConversations(),
     connections = useAiConnections(),
     [contextOpen, setContextOpen] = useState(false),
@@ -84,6 +120,7 @@ function MessageTurn({ turn }: { turn: ConversationTurn }): React.JSX.Element {
     active = activeStates.includes(a.state)
   return (
     <article
+      data-attempt={turn.attempt.id}
       className={styles['conversation-turn']}
       aria-label={`Message from ${new Date(turn.user.createdAt).toLocaleString()}`}
     >
@@ -94,8 +131,11 @@ function MessageTurn({ turn }: { turn: ConversationTurn }): React.JSX.Element {
       {turn.assistant ? (
         <div className={styles['conversation-message']} data-role="assistant">
           <span className={styles['conversation-message-heading']}>Assistant</span>
-          <ChatMarkdown text={turn.assistant.text} />
+          <ResearchAnswer key={turn.assistant.revisionId} turn={turn} />
         </div>
+      ) : null}
+      {a.state === 'completed' && turn.assistant ? (
+        <ConversationReferences key={turn.assistant.revisionId} turn={turn} />
       ) : null}
       {active ? (
         <span className={styles['conversation-caption']} role="status">
@@ -115,6 +155,22 @@ function MessageTurn({ turn }: { turn: ConversationTurn }): React.JSX.Element {
                 ? 'Response could not be finalized'
                 : 'Response failed'}
         </p>
+      ) : null}
+      {turn.capture.version === 5 && !active && a.state !== 'completed' ? (
+        <AppButton
+          variant="subtle"
+          size="compact-sm"
+          disabled={
+            c.busy ||
+            !!c.pending ||
+            c.readOnly ||
+            !!c.draft.text ||
+            c.page?.conversation.state !== 'active'
+          }
+          onClick={() => c.retryAsNew(turn, true)}
+        >
+          Try without web search
+        </AppButton>
       ) : null}
       {a.reason ? (
         <p className={styles['conversation-caption']}>
@@ -144,6 +200,7 @@ function MessageTurn({ turn }: { turn: ConversationTurn }): React.JSX.Element {
                     ok ? 'Copied' : 'Could not copy. Select the text to copy it manually.'
                   )
                 )
+                .catch(() => setCopyNotice('Could not copy. Select the text to copy it manually.'))
             }}
           >
             <IconCopy aria-hidden="true" />
@@ -157,14 +214,19 @@ function MessageTurn({ turn }: { turn: ConversationTurn }): React.JSX.Element {
           actions={[
             {
               id: 'context',
-              label: contextOpen ? 'Hide sent context' : 'View sent context',
+              label: contextOpen ? 'Hide message context' : 'View message context',
               onSelect: () => setContextOpen(!contextOpen)
             },
             {
               id: 'reuse',
               label: 'Copy prompt to composer',
               disabled:
-                active || c.readOnly || !!c.draft.text || c.page?.conversation.state !== 'active',
+                active ||
+                c.readOnly ||
+                !!c.draft.text ||
+                ((turn.capture.version === 3 || turn.capture.version === 4) &&
+                  turn.capture.purpose !== 'chat') ||
+                c.page?.conversation.state !== 'active',
               onSelect: () => c.retryAsNew(turn)
             }
           ]}
@@ -197,7 +259,7 @@ function ConversationGroup({
   blocked
 }: {
   label: string
-  items: Conversation[]
+  items: ConversationSummary[]
   total: number
   offset: number
   setOffset: React.Dispatch<React.SetStateAction<number>>
@@ -215,6 +277,7 @@ function ConversationGroup({
               className={styles['conversation-list-item']}
               disabled={blocked}
               aria-current={c.selected === item.id ? 'true' : undefined}
+              data-conversation-id={item.id}
               onClick={() => c.choose(item.id)}
             >
               {item.title}
@@ -223,6 +286,11 @@ function ConversationGroup({
               {new Date(item.updatedAt).toLocaleDateString()}
               {c.drafts[item.id]?.text ? ' · Unsent draft' : ''}
             </span>
+            {item.preview ? (
+              <p className={styles['recent-preview']}>
+                {item.previewRole === 'assistant' ? 'Assistant' : 'You'}: {item.preview}
+              </p>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -282,16 +350,20 @@ function ContextChoice({ blocked }: { blocked: boolean }): React.JSX.Element {
         </SelectField>
         <p>
           {c.draft.contextPolicy === 'project'
-            ? `Completed exchanges in this chat, current writing (${project?.documents.find((d) => d.id === project.documentId)?.title || 'none'}), and a bounded project outline with existing synopses.`
+            ? `Completed exchanges in this chat, current writing (${project?.documents.find((d) => d.id === project.documentId)?.title || 'none'}), and a relevant selection of manuscript, research and prior active chats.`
             : c.draft.contextPolicy === 'chat'
               ? 'Completed exchanges in this chat. Project writing is excluded.'
               : 'Only your next message. Earlier messages and project writing are excluded.'}
         </p>
         <p>
-          Research, other chapters’ text and other chats are not included yet. Failed, stopped and
-          local-only attempts are excluded from automatic history.
+          Selection is bounded; it does not imply every page was read. Archived chats, unsent
+          drafts, failed and stopped attempts are excluded from automatic recall.
         </p>
         <p>View the exact snapshot from each message’s menu.</p>
+        <ConversationKnowledge
+          key={`knowledge:${c.scope?.projectId}:${c.scope?.workspaceId}:${c.selected}`}
+        />
+        <ConversationMemory key={`${c.scope?.projectId}:${c.scope?.workspaceId}:${c.selected}`} />
       </Popover.Dropdown>
     </Popover>
   )
@@ -303,44 +375,133 @@ export function ConversationPanel(): React.JSX.Element {
     proofreading = useProofreading()
   const { composerRef, composingRef } = c
   const transcript = useRef<HTMLDivElement>(null),
+    library = useRef<HTMLDivElement>(null),
+    returnFocus = useRef(false),
     follow = useRef(true),
-    shownKey = useRef('')
+    shownKey = useRef(''),
+    revealed = useRef('')
+  const anchor = useRef<{ id: string; offset: number } | null>(null),
+    matchTarget = useRef<{ key: string; id: string } | null>(null)
   const [away, setAway] = useState(false),
-    [renaming, setRenaming] = useState(false)
+    [renaming, setRenaming] = useState(false),
+    [findOpen, setFindOpen] = useState(false),
+    [draftsOpen, setDraftsOpen] = useState(false)
   const [disclosed, setDisclosed] = useState(() => {
     try {
-      return localStorage.getItem('collie.chat-sharing.v1') === 'acknowledged'
+      return localStorage.getItem('collie.chat-project-sharing.v1') === 'acknowledged'
     } catch {
       return false
     }
   })
-  const key = `${c.scope?.projectId}:${c.scope?.workspaceId}:${c.selected}:${c.before ?? 'latest'}`
+  const key = `${c.scope?.projectId}:${c.scope?.workspaceId}:${c.selected}`
   const [lastKey, setLastKey] = useState(key)
   if (lastKey !== key) {
     setLastKey(key)
     setRenaming(false)
     setAway(false)
+    setFindOpen(false)
+    setDraftsOpen(false)
   }
+  useLayoutEffect(() => {
+    if (!c.listOpen || !returnFocus.current) return
+    returnFocus.current = false
+    const target = library.current
+    if (
+      !target ||
+      target.closest('[hidden],[inert]') ||
+      composingRef.current ||
+      session.closing ||
+      session.navigating ||
+      !document.hasFocus() ||
+      document.visibilityState !== 'visible' ||
+      document.querySelector('[role="dialog"], [role="alertdialog"]') ||
+      document.activeElement !== document.body
+    )
+      return
+    const selected = [...target.querySelectorAll<HTMLButtonElement>('[data-conversation-id]')].find(
+      (button) => button.dataset.conversationId === c.selected
+    )
+    ;(selected ?? target).focus({ preventScroll: true })
+  }, [c.listOpen, c.selected, composingRef, session.closing, session.navigating])
   useLayoutEffect(() => {
     const target = transcript.current
     if (!target || c.listOpen || target.closest('[hidden],[inert]')) return
+    if (
+      c.reveal &&
+      c.reveal.conversationId === c.selected &&
+      c.reveal.requestId !== revealed.current
+    ) {
+      matchTarget.current = { key, id: c.reveal.attemptId }
+      revealed.current = c.reveal.requestId
+      follow.current = false
+    }
+    if (matchTarget.current?.key !== key) matchTarget.current = null
+    if (matchTarget.current) {
+      const hit = [...target.querySelectorAll<HTMLElement>('[data-attempt]')].find(
+        (node) => node.dataset.attempt === matchTarget.current?.id
+      )
+      if (hit) {
+        target.scrollTop += hit.getBoundingClientRect().top - target.getBoundingClientRect().top
+        matchTarget.current = null
+        follow.current = false
+        anchor.current = readingPosition(target)
+        if (
+          document.hasFocus() &&
+          document.visibilityState === 'visible' &&
+          !document.querySelector('[role="dialog"], [role="alertdialog"]') &&
+          (document.activeElement === document.body || document.activeElement === target)
+        )
+          target.focus({ preventScroll: true })
+        shownKey.current = key
+        return
+      }
+    }
     if (shownKey.current !== key) {
       shownKey.current = key
       const saved = c.scroll.current.get(key)
       target.scrollTop = saved ?? (c.before === null ? target.scrollHeight : 0)
       follow.current = target.scrollHeight - target.clientHeight - target.scrollTop < 48
-    } else if (follow.current) target.scrollTop = target.scrollHeight
-  }, [key, c.page, c.listOpen, c.scroll, c.before])
+      anchor.current = readingPosition(target)
+    } else if (follow.current && c.before === null) target.scrollTop = target.scrollHeight
+    else if (anchor.current) {
+      const item = [...target.querySelectorAll<HTMLElement>('[data-attempt]')].find(
+        (node) => node.dataset.attempt === anchor.current?.id
+      )
+      if (item)
+        target.scrollTop +=
+          item.getBoundingClientRect().top -
+          target.getBoundingClientRect().top -
+          anchor.current.offset
+    }
+  }, [key, c.page, c.listOpen, c.scroll, c.before, c.loading, c.reveal, c.selected])
   const blocked = c.busy || !!c.pending || session.closing || session.navigating,
     archived = c.page?.conversation.state === 'archived',
     catalog = connections.status?.catalog,
     activeTurn = c.page?.turns.find((t) => activeStates.includes(t.attempt.state)),
-    unavailable = c.capability?.state !== 'available' && !c.active && !c.busy
+    runningWork = connections.status?.work.find(
+      (w) =>
+        w.feature === 'conversation' &&
+        sameScope(w.scope, c.scope) &&
+        ['running', 'stopping'].includes(w.state)
+    ),
+    needsRecovery =
+      !!c.issue ||
+      !!c.run?.issue ||
+      !!connections.status?.work.some(
+        (w) =>
+          w.feature === 'conversation' &&
+          sameScope(w.scope, c.scope) &&
+          !['running', 'stopping'].includes(w.state)
+      ),
+    stopId = activeTurn?.attempt.id ?? runningWork?.attemptId,
+    stopping = activeTurn?.attempt.state === 'stopping' || runningWork?.state === 'stopping',
+    unavailable =
+      c.capability?.state !== 'available' && !c.active && !c.busy && !c.run?.pending && !runningWork
   const send = (): void => {
     if (!c.canSend || !c.draft.text.trim() || composingRef.current) return
     if (!disclosed) {
       try {
-        localStorage.setItem('collie.chat-sharing.v1', 'acknowledged')
+        localStorage.setItem('collie.chat-project-sharing.v1', 'acknowledged')
         setDisclosed(true)
       } catch {
         /* Keep the explanation visible if preferences cannot be saved. */
@@ -351,6 +512,7 @@ export function ConversationPanel(): React.JSX.Element {
     void c.send()
   }
   const jump = (): void => {
+    matchTarget.current = null
     follow.current = true
     setAway(false)
     if (c.before !== null) c.setBefore(null)
@@ -379,7 +541,10 @@ export function ConversationPanel(): React.JSX.Element {
                 label="Back to conversations"
                 variant="subtle"
                 disabled={blocked}
-                onClick={c.backToList}
+                onClick={() => {
+                  if (!c.rename && !composingRef.current) returnFocus.current = true
+                  c.backToList()
+                }}
               >
                 <IconArrowLeft aria-hidden="true" />
               </IconButton>
@@ -412,8 +577,27 @@ export function ConversationPanel(): React.JSX.Element {
               icon={<IconDots aria-hidden="true" />}
               disabled={blocked}
               actions={[
+                ...(c.references.draft
+                  ? [
+                      {
+                        id: 'reference-review',
+                        label: c.references.pending
+                          ? 'Review pending source save'
+                          : 'Resume reference review',
+                        onSelect: c.references.resume
+                      }
+                    ]
+                  : []),
                 ...(!c.listOpen && c.page
                   ? [
+                      {
+                        id: 'find',
+                        label: 'Find in this chat',
+                        onSelect: () => {
+                          setDraftsOpen(false)
+                          setFindOpen((open) => !open)
+                        }
+                      },
                       {
                         id: 'rename',
                         label: 'Rename',
@@ -444,6 +628,14 @@ export function ConversationPanel(): React.JSX.Element {
                     ]
                   : []),
                 {
+                  id: 'drafts',
+                  label: 'Saved drafts on this device',
+                  onSelect: () => {
+                    setFindOpen(false)
+                    setDraftsOpen((open) => !open)
+                  }
+                },
+                {
                   id: 'account',
                   label: 'Manage ChatGPT',
                   onSelect: () => connections.openDialog()
@@ -464,23 +656,87 @@ export function ConversationPanel(): React.JSX.Element {
                       }
                     ]
                   : []),
-                { id: 'recovery', label: 'Retry local recovery', onSelect: c.recover }
+                ...(needsRecovery
+                  ? [{ id: 'recovery', label: 'Retry local recovery', onSelect: c.recover }]
+                  : [])
               ]}
             />
           </header>
+          {c.preparingMemory ? (
+            <div className={styles['conversation-actions']} role="status">
+              <span>Preparing context…</span>
+              <AppButton size="compact-sm" variant="subtle" onClick={c.stopPreparation}>
+                Stop
+              </AppButton>
+            </div>
+          ) : null}
           {c.issue ? (
             <p className={styles['conversation-error']} role="alert">
               {c.issue}
             </p>
+          ) : null}
+          {!c.draftProtection.ready && !c.draftProtection.issue ? (
+            <p role="status" className={styles['conversation-caption']}>
+              Restoring chat drafts…
+            </p>
+          ) : null}
+          {c.draftProtection.issue ? (
+            <div role="alert" className={styles['conversation-error']}>
+              <p>{c.draftProtection.issue}</p>
+              <AppButton variant="subtle" size="compact-sm" onClick={c.draftProtection.retry}>
+                Retry draft protection
+              </AppButton>
+              <AppButton
+                variant="subtle"
+                size="compact-sm"
+                onClick={() => {
+                  setFindOpen(false)
+                  setDraftsOpen(true)
+                }}
+              >
+                Review drafts
+              </AppButton>
+            </div>
+          ) : null}
+          {draftsOpen ? (
+            <details
+              open
+              className={styles['chat-tools']}
+              onToggle={(e) => {
+                if (!e.currentTarget.open) setDraftsOpen(false)
+              }}
+            >
+              <summary>Saved drafts on this device</summary>
+              <ConversationDraftRecovery />
+            </details>
+          ) : null}
+          {findOpen && c.scope && c.selected && !c.listOpen ? (
+            <ConversationFind
+              key={key}
+              scope={c.scope}
+              conversationId={c.selected}
+              onClose={() => {
+                setFindOpen(false)
+                transcript.current?.focus({ preventScroll: true })
+              }}
+              onSelect={(hit) => {
+                if (composingRef.current || blocked) return
+                matchTarget.current = { key, id: hit.attemptId }
+                follow.current = false
+                setAway(true)
+                setFindOpen(false)
+                c.openMatch(hit)
+              }}
+            />
           ) : null}
           {c.notice ? (
             <p className={styles['conversation-caption']} role="status">
               {c.notice}
             </p>
           ) : null}
-          {c.pending ? (
+          {c.pending && !c.busy ? (
             <AppButton disabled={c.busy} onClick={c.retry}>
-              Retry the same local action
+              Retry saved action
             </AppButton>
           ) : null}
           {c.readOnly ? (
@@ -489,7 +745,13 @@ export function ConversationPanel(): React.JSX.Element {
             </p>
           ) : null}
           {c.listOpen ? (
-            <div className={styles['conversation-library-scroll']}>
+            <div
+              ref={library}
+              tabIndex={-1}
+              role="region"
+              aria-label="Conversation list"
+              className={styles['conversation-library-scroll']}
+            >
               <details className={styles['conversation-library']}>
                 <summary>Search and history</summary>
                 <TextInput
@@ -511,6 +773,12 @@ export function ConversationPanel(): React.JSX.Element {
                 <p role="status">Loading conversations…</p>
               ) : (
                 <>
+                  {Object.keys(c.drafts).length ? (
+                    <details className={styles['conversation-library']}>
+                      <summary>Saved drafts ({Object.keys(c.drafts).length})</summary>
+                      <ConversationDraftRecovery />
+                    </details>
+                  ) : null}
                   {c.currentLabel ? (
                     <ConversationGroup
                       label={c.currentLabel}
@@ -580,6 +848,11 @@ export function ConversationPanel(): React.JSX.Element {
                   follow.current = target.scrollHeight - target.clientHeight - target.scrollTop < 48
                   setAway(!follow.current)
                   c.scroll.current.set(key, target.scrollTop)
+                  if (c.scroll.current.size > 128) {
+                    const oldest = c.scroll.current.keys().next().value
+                    if (oldest) c.scroll.current.delete(oldest)
+                  }
+                  anchor.current = readingPosition(target)
                 }}
               >
                 {c.loading ? (
@@ -594,7 +867,8 @@ export function ConversationPanel(): React.JSX.Element {
                     disabled={blocked || c.loading}
                     onClick={() => {
                       follow.current = false
-                      c.setBefore(c.page!.olderThan)
+                      if (transcript.current) anchor.current = readingPosition(transcript.current)
+                      void c.loadOlder()
                     }}
                   >
                     Load earlier messages
@@ -612,6 +886,28 @@ export function ConversationPanel(): React.JSX.Element {
                   <IconArrowDown size={16} aria-hidden="true" /> Jump to latest
                 </AppButton>
               ) : null}
+              {runningWork && !activeTurn ? (
+                <div className={styles['conversation-actions']} role="status">
+                  <span>
+                    {stopping ? 'Stopping response…' : 'A response is running in this project.'}
+                  </span>
+                  <AppButton
+                    variant="subtle"
+                    size="compact-sm"
+                    onClick={() => c.show(runningWork.attemptId)}
+                  >
+                    Open response
+                  </AppButton>
+                  <AppButton
+                    variant="subtle"
+                    size="compact-sm"
+                    disabled={blocked || stopping}
+                    onClick={() => c.cancel(runningWork.attemptId)}
+                  >
+                    Stop
+                  </AppButton>
+                </div>
+              ) : null}
               {!archived || c.draft.text ? (
                 <form
                   className={styles['chat-composer']}
@@ -620,7 +916,35 @@ export function ConversationPanel(): React.JSX.Element {
                     send()
                   }}
                 >
-                  <ContextChoice blocked={blocked || c.readOnly || !!archived} />
+                  <div className={styles['context-controls']}>
+                    <ContextChoice
+                      blocked={blocked || c.readOnly || !!archived || !c.draftProtection.ready}
+                    />
+                    {connections.status?.capabilities.binding.route === 'local-chatgpt-plan' ? (
+                      <AppButton
+                        className={styles['research-choice']}
+                        variant="subtle"
+                        size="compact-sm"
+                        aria-pressed={c.searchWeb}
+                        disabled={
+                          blocked ||
+                          c.readOnly ||
+                          !!archived ||
+                          !!stopId ||
+                          (!c.searchWeb &&
+                            connections.status.capabilities.webResearch.state !== 'available')
+                        }
+                        onClick={() => c.setSearchWeb(!c.searchWeb)}
+                      >
+                        <IconWorld size={16} aria-hidden="true" /> Search the web
+                      </AppButton>
+                    ) : null}
+                  </div>
+                  {c.searchWeb ? (
+                    <p className={styles['conversation-caption']}>
+                      Shared context may inform ChatGPT’s search queries.
+                    </p>
+                  ) : null}
                   <Textarea
                     ref={composerRef}
                     aria-label="Message"
@@ -630,7 +954,7 @@ export function ConversationPanel(): React.JSX.Element {
                     maxRows={7}
                     value={c.draft.text}
                     maxLength={16000}
-                    readOnly={blocked || c.readOnly || archived}
+                    readOnly={blocked || c.readOnly || archived || !c.draftProtection.ready}
                     onChange={(e) => c.update({ text: e.currentTarget.value })}
                     onKeyDown={(e) => {
                       if (
@@ -733,8 +1057,9 @@ export function ConversationPanel(): React.JSX.Element {
                   ) : null}
                   {!disclosed ? (
                     <p className={styles['conversation-caption']}>
-                      Send shares your message and the selected context with your connected ChatGPT
-                      account. Change what’s included in Context.
+                      Send shares your message and relevant writing, research and active chats from
+                      this project with your ChatGPT account. Long context may need up to two extra
+                      AI requests to prepare memory. Inspect or edit it in Context.
                     </p>
                   ) : null}
                 </form>
@@ -748,19 +1073,27 @@ export function ConversationPanel(): React.JSX.Element {
 }
 export function ConversationNotice(): React.JSX.Element | null {
   const c = useConversations()
-  const drafts = Object.values(c.drafts).filter((d) => !!d.text).length
-  if (!c.scope || (!c.run?.pending && !c.run?.issue && !c.pending && !drafts && !c.rename))
+  if (
+    !c.scope ||
+    (!c.run?.pending &&
+      !c.run?.issue &&
+      !c.pending &&
+      !c.draftProtection.issue &&
+      !c.memoryEdit &&
+      !c.rename)
+  )
     return null
   return (
     <aside className={styles['conversation-notice']} aria-label="Conversation work">
       <span>
         {c.run?.issue ??
+          (c.draftProtection.issue || null) ??
           (c.pending
             ? 'A conversation action needs acknowledgment.'
             : c.run?.pending
               ? 'Protecting conversation work…'
-              : drafts
-                ? `${drafts} unsent conversation draft${drafts === 1 ? '' : 's'}.`
+              : c.memoryEdit
+                ? 'A memory edit is unsaved. Open Context → Memory to save or cancel it.'
                 : 'A conversation title is unsaved.')}
       </span>
       <AppButton variant="subtle" onClick={() => c.show()}>

@@ -493,6 +493,8 @@ export default function WritingWorkspace(): React.JSX.Element {
             key={`${project.projectId}-${project.documentId}-${editorEpoch}`}
             payload={project.payload}
             references={{
+              citationRequest: session.citationRequest,
+              handledCitation: () => session.setCitationRequest(null),
               focusAnchor:
                 session.referenceAnchor?.documentId === project.documentId
                   ? session.referenceAnchor.id

@@ -1,3 +1,4 @@
+import { ResearchResponse } from './research-response'
 import { hasControlCharacters } from '../../shared/control-characters'
 import { request } from 'node:https'
 import type { IncomingMessage } from 'node:http'
@@ -183,13 +184,15 @@ export async function planResponse(
   update: (value: CodexTextUpdate) => void,
   onStreaming: () => void
 ): Promise<void> {
+  const research = execution.template === 'conversation-research-v1' ? new ResearchResponse() : null
   const body = JSON.stringify({
     model,
     instructions: execution.instructions,
     input:
-      execution.template === 'conversation-v2'
+      execution.template !== 'conversation-v1'
         ? JSON.parse(execution.framedText)
         : [{ role: 'user', content: execution.framedText }],
+    ...(execution.template === 'conversation-research-v1' ? execution.researchPolicy : {}),
     store: false,
     stream: true
   })
@@ -236,6 +239,7 @@ export async function planResponse(
         )
       if (!record(value) || typeof value.type !== 'string')
         throw protocolFailure('inference-stream', 'collie_invalid_stream_event')
+      research?.receive(value)
       if (value.type === 'response.output_text.delta' || value.type === 'response.refusal.delta') {
         if (
           !aiText(value.delta, AI_LIMITS.output) ||
@@ -245,12 +249,20 @@ export async function planResponse(
         text += value.delta
         update({ text, commentary: '', finalText: null, state: 'running', reason: null })
       } else if (value.type === 'response.completed') {
-        const final = completedText(value.response, text)
+        const researched = research?.complete(value.response, text)
+        const final = researched?.text ?? completedText(value.response, text)
         if (text && text !== final)
           throw protocolFailure('inference-stream', 'collie_response_text_mismatch')
         text = final
         terminal = true
-        update({ text, commentary: '', finalText: text, state: 'completed', reason: null })
+        update({
+          text,
+          commentary: '',
+          finalText: text,
+          state: 'completed',
+          reason: null,
+          ...(researched ? { research: researched.research } : {})
+        })
       } else if (value.type === 'response.failed' || value.type === 'error') {
         throw httpFailure(
           'inference-stream',

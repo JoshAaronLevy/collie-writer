@@ -8,7 +8,7 @@ export type AiHandoffReceipt = {
   purpose: 'conversation' | 'proofread'
   attemptId: string
   operationId: string
-  operationVersion: 1 | 2 | 3 | 4 | 5
+  operationVersion: 1 | 2 | 3 | 4 | 5 | 6
   payloadDigest: string
   captureDigest: string
   resultDigest: string
@@ -48,9 +48,11 @@ export function isAiHandoffReceipt(v: unknown): v is AiHandoffReceipt {
       v.operationVersion === 2 ||
       v.operationVersion === 3 ||
       v.operationVersion === 4 ||
-      v.operationVersion === 5) &&
+      v.operationVersion === 5 ||
+      v.operationVersion === 6) &&
     (v.purpose !== 'conversation' || v.operationVersion !== 3) &&
-    (v.purpose !== 'proofread' || (v.operationVersion !== 4 && v.operationVersion !== 5)) &&
+    (v.purpose !== 'proofread' ||
+      (v.operationVersion !== 4 && v.operationVersion !== 5 && v.operationVersion !== 6)) &&
     [v.payloadDigest, v.captureDigest, v.resultDigest, v.portableDigest].every(digest) &&
     Number.isSafeInteger(v.sequence) &&
     Number(v.sequence) >= 0 &&

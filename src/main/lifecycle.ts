@@ -22,7 +22,8 @@ export class ProjectLifecycle {
     private readonly dirty: () => boolean,
     private readonly devOrigin?: string,
     private readonly ai?: AiService,
-    private readonly conversationPending: () => boolean = () => false
+    private readonly conversationPending: () => boolean = () => false,
+    private readonly settleDrafts: () => Promise<void> = async () => {}
   ) {}
   register(): void {
     ipcMain.handle(
@@ -203,6 +204,7 @@ export class ProjectLifecycle {
       if (answer.response !== 1) return false
       stopProvider = true
     }
+    await this.settleDrafts()
     if ((this.ai && !(await this.ai.prepareClose(stopProvider))) || this.conversationPending()) {
       const options = {
         type: 'warning' as const,
@@ -249,8 +251,15 @@ export class ProjectLifecycle {
     this.pending = undefined
     if (window.isDestroyed() || owner !== this.owner() || this.lostOwners.has(owner)) return false
     // A protected local draft is sufficient. Closing never requires a portable-file Save.
-    if ((outcome === 'saved' || outcome === 'local') && !this.dirty() && !this.hasFileWork())
-      return !this.conversationPending() && (!this.ai || (await this.ai.prepareClose()))
+    if ((outcome === 'saved' || outcome === 'local') && !this.dirty() && !this.hasFileWork()) {
+      await this.settleDrafts()
+      return (
+        !this.dirty() &&
+        !this.hasFileWork() &&
+        !this.conversationPending() &&
+        (!this.ai || (await this.ai.prepareClose()))
+      )
+    }
     if (outcome === 'cancel') return false
     await dialog.showMessageBox(window, {
       type: 'warning',

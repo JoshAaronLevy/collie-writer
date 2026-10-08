@@ -7,7 +7,7 @@ import { isAiActionAvailability, type AiActionAvailability, type AiRoute } from 
 /** Transient main-owned presentation, never a dispatch grant or portable record.
  * Account IDs are local registration IDs, not provider subjects or credentials. */
 export type AiConversationCapabilities = {
-  version: 1
+  version: 2
   binding: {
     route: AiRoute['kind']
     connectionId: string | null
@@ -17,12 +17,12 @@ export type AiConversationCapabilities = {
   }
   text: AiActionAvailability
   webResearch: {
-    state: 'unavailable'
-    reason: 'research-adapter-not-ready' | 'route-not-established'
+    state: 'available' | 'unavailable'
+    reason: 'text-unavailable' | 'route-not-established' | null
     contract: 'documented' | 'unestablished'
     eligibility: {
-      state: 'unknown'
-      reason: 'account-model-unverified' | 'route-unverified'
+      state: 'unknown' | 'observed-success' | 'observed-refusal'
+      reason: 'account-model-unverified' | 'route-unverified' | 'last-research-request'
     }
   }
 }
@@ -32,7 +32,7 @@ export function isAiConversationCapabilities(v: unknown): v is AiConversationCap
   const b = v.binding,
     web = v.webResearch
   return (
-    v.version === 1 &&
+    v.version === 2 &&
     record(b) &&
     exact(b, ['route', 'connectionId', 'model', 'catalogRevision', 'reviewRevision']) &&
     ['local-chatgpt-plan', 'local-codex-chatgpt', 'registered-openai', 'unavailable'].includes(
@@ -46,16 +46,22 @@ export function isAiConversationCapabilities(v: unknown): v is AiConversationCap
     isAiActionAvailability(v.text) &&
     record(web) &&
     exact(web, ['state', 'reason', 'contract', 'eligibility']) &&
-    web.state === 'unavailable' &&
+    (web.state === 'available' || web.state === 'unavailable') &&
     record(web.eligibility) &&
     exact(web.eligibility, ['state', 'reason']) &&
-    web.eligibility.state === 'unknown' &&
     (b.route === 'local-chatgpt-plan'
       ? web.contract === 'documented' &&
-        web.reason === 'research-adapter-not-ready' &&
-        web.eligibility.reason === 'account-model-unverified'
+        (v.text.state === 'available'
+          ? web.state === 'available' && web.reason === null
+          : web.state === 'unavailable' && web.reason === 'text-unavailable') &&
+        (web.eligibility.state === 'unknown'
+          ? web.eligibility.reason === 'account-model-unverified'
+          : ['observed-success', 'observed-refusal'].includes(String(web.eligibility.state)) &&
+            web.eligibility.reason === 'last-research-request')
       : web.contract === 'unestablished' &&
+        web.state === 'unavailable' &&
         web.reason === 'route-not-established' &&
+        web.eligibility.state === 'unknown' &&
         web.eligibility.reason === 'route-unverified')
   )
 }

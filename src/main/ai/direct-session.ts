@@ -1,3 +1,4 @@
+import { RESEARCH_INSTRUCTIONS, RESEARCH_POLICY, researchFits } from './direct-research'
 import {
   conversationFits,
   conversationFrame,
@@ -50,6 +51,25 @@ export class DirectPlanSession {
   private pendingPreferences: PlanPreferences | null = null
   private preparation: { id: string; generation: string } | null = null
   private preparing = false
+  private researchObservation: {
+    connectionId: string
+    model: string
+    epoch: string
+    catalog: string
+    state: 'observed-success' | 'observed-refusal'
+  } | null = null
+  researchEvidence(): 'observed-success' | 'observed-refusal' | null {
+    const o = this.researchObservation,
+      catalog = this.catalog
+    return o &&
+      o.connectionId === this.data.activeId &&
+      o.epoch === this.epoch &&
+      catalog.state === 'loaded' &&
+      catalog.revision === o.catalog &&
+      catalog.selectedModelId === o.model
+      ? o.state
+      : null
+  }
   private rejectedModels = new Map<string, string>()
   // One sanitized diagnostic per saved account (at most eight), never content
   // or credentials. Reconnecting or loading models cannot erase this evidence.
@@ -596,7 +616,7 @@ export class DirectPlanSession {
   execution(
     input: AiPrepareInput,
     captureDigest: string,
-    template: 'conversation-v1' | 'conversation-v2' = 'conversation-v1'
+    template: 'conversation-v1' | 'conversation-v2' | 'conversation-research-v1' = 'conversation-v1'
   ): DirectTextExecution {
     this.requireIdle()
     const a = this.requireAccount(input.connectionId),
@@ -605,11 +625,30 @@ export class DirectPlanSession {
     if (contractIssue) throw new DirectError(contractIssue)
     if (
       input.action !== 'conversation' ||
-      !(template === 'conversation-v2' ? conversationFits(input) : directFits(input))
+      !(template === 'conversation-research-v1'
+        ? researchFits(input)
+        : template === 'conversation-v2'
+          ? conversationFits(input)
+          : directFits(input))
     )
       throw new AiError('invalid-request')
     if (catalog.state !== 'loaded' || catalog.selectedModelId !== input.model)
       throw new AiError('model-unavailable')
+    if (template === 'conversation-research-v1')
+      return {
+        route: 'local-chatgpt-plan',
+        policyRevision: 1,
+        researchPolicy: structuredClone(RESEARCH_POLICY),
+        framingVersion: 3,
+        template,
+        outputContract: 'responses-research-v1',
+        accountFingerprint: directAccountIdentity(a.clientId, a.subject!),
+        sessionGeneration: this.epoch,
+        catalogRevision: catalog.revision,
+        captureDigest,
+        framedText: conversationFrame(input),
+        instructions: RESEARCH_INSTRUCTIONS
+      }
     if (template === 'conversation-v2')
       return {
         route: 'local-chatgpt-plan',
@@ -673,6 +712,14 @@ export class DirectPlanSession {
               text = value.text
               update(value)
               if (value.state === 'completed') {
+                if (execution.template === 'conversation-research-v1' && value.research?.searched)
+                  this.researchObservation = {
+                    connectionId: input.connectionId,
+                    model: input.model,
+                    epoch: execution.sessionGeneration,
+                    catalog: execution.catalogRevision,
+                    state: 'observed-success'
+                  }
                 this.detail.inference = 'completed'
                 this.healthIssues.confirm(input.connectionId, 'response')
                 this.rejectedModels.delete(input.connectionId)
@@ -686,7 +733,22 @@ export class DirectPlanSession {
           )
         } catch (error) {
           const issue = directFailure(this.detail.stage ?? 'inference-http', error)
-          if (sent) {
+          const searchRefusal =
+            execution?.route === 'local-chatgpt-plan' &&
+            execution.template === 'conversation-research-v1' &&
+            (issue.reason === 'model-unavailable' ||
+              issue.code === 'subscription_sharing_unsupported_capability' ||
+              (issue.httpStatus === 403 &&
+                (issue.parameter === 'tools' || issue.parameter?.startsWith('tools[') === true)))
+          if (searchRefusal && execution?.route === 'local-chatgpt-plan')
+            this.researchObservation = {
+              connectionId: input.connectionId,
+              model: input.model,
+              epoch: execution.sessionGeneration,
+              catalog: execution.catalogRevision,
+              state: 'observed-refusal'
+            }
+          if (sent && !searchRefusal) {
             this.healthIssues.record(input.connectionId, issue)
             if (issue.reason === 'model-unavailable')
               this.rejectedModels.set(input.connectionId, input.model)
@@ -723,7 +785,11 @@ export class DirectPlanSession {
           // A request failure is not a lost account or model catalog. Confirmed
           // invalid credentials are handled above; fixed contract refusals remain
           // blocked by healthIssues. Only a model refusal clears the selection.
-          if (issue.reason === 'model-unavailable' && this.catalog.state === 'loaded') {
+          if (
+            !searchRefusal &&
+            issue.reason === 'model-unavailable' &&
+            this.catalog.state === 'loaded'
+          ) {
             this.catalog = { ...this.catalog, revision: randomUUID(), selectedModelId: null }
             this.changed(true)
           }

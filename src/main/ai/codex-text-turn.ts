@@ -1,3 +1,4 @@
+import type { WebResearch } from '../../shared/conversation-research'
 import { isId } from '../../domain/editor/schema'
 import { AI_LIMITS, aiText, type AiReason } from '../../shared/ai'
 import { record } from '../../shared/projects'
@@ -6,6 +7,7 @@ import { AiError } from './errors'
 // Main-only output. CD04 binds/protects these distinct channels before feature
 // settlement. No opaque provider IDs or hidden reasoning leave here.
 export type CodexTextUpdate = {
+  research?: WebResearch
   text: string
   commentary: string
   finalText: string | null

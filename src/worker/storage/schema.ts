@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 
 export const PROJECT_APPLICATION_ID = 1129270359
-export const PROJECT_SCHEMA_VERSION = 17
+export const PROJECT_SCHEMA_VERSION = 21
 // Persisted schema is app-owned; never execute DDL or migrations supplied by a project.
 export const projectTablesV1 = [
   `CREATE TABLE format (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, minimum_reader INTEGER NOT NULL, editor_version INTEGER NOT NULL) STRICT`,
@@ -93,9 +93,17 @@ export const conversationTableV16 = conversationTables[0].replace(
   ', PRIMARY KEY',
   ', origin_document_id TEXT, PRIMARY KEY'
 )
-export const projectTables = projectTablesV15.map((sql) =>
+export const projectTablesV17 = projectTablesV15.map((sql) =>
   sql === conversationTables[0] ? conversationTableV16 : sql
 )
+export const memoryTable = `CREATE TABLE conversation_memory (project_id TEXT NOT NULL, id TEXT NOT NULL, conversation_id TEXT NOT NULL, scope TEXT NOT NULL CHECK(scope IN ('chat','overview')), current INTEGER NOT NULL CHECK(current IN (0,1)), body TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id,conversation_id) REFERENCES conversations(project_id,id)) STRICT`
+export const projectTablesV18 = [...projectTablesV17, memoryTable]
+export const knowledgeTable = `CREATE TABLE conversation_context (project_id TEXT NOT NULL, id TEXT NOT NULL, conversation_id TEXT NOT NULL, current INTEGER NOT NULL CHECK(current IN (0,1)), request TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id,conversation_id) REFERENCES conversations(project_id,id)) STRICT`
+export const projectTablesV19 = [...projectTablesV18, knowledgeTable]
+export const researchTable = `CREATE TABLE conversation_research (project_id TEXT NOT NULL, attempt_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,attempt_id), FOREIGN KEY(project_id,attempt_id) REFERENCES conversation_attempts(project_id,id)) STRICT`
+export const projectTablesV20 = [...projectTablesV19, researchTable]
+export const conversationSourcesTable = `CREATE TABLE conversation_sources (project_id TEXT NOT NULL, operation_id TEXT NOT NULL, attempt_id TEXT NOT NULL, source_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,operation_id), FOREIGN KEY(project_id,attempt_id) REFERENCES conversation_attempts(project_id,id), FOREIGN KEY(project_id,source_id) REFERENCES sources(project_id,id)) STRICT`
+export const projectTables = [...projectTablesV20, conversationSourcesTable]
 const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export function createProjectSchema(db: Database.Database): void {
@@ -153,7 +161,15 @@ export function validateProjectSchema(
                             ? projectTablesV14
                             : expectedVersion === 15
                               ? projectTablesV15
-                              : projectTables
+                              : expectedVersion < 18
+                                ? projectTablesV17
+                                : expectedVersion === 18
+                                  ? projectTablesV18
+                                  : expectedVersion === 19
+                                    ? projectTablesV19
+                                    : expectedVersion === 20
+                                      ? projectTablesV20
+                                      : projectTables
     ).map(sqlKey)
   )
   if (

@@ -1,4 +1,5 @@
 import { opendirSync } from 'node:fs'
+import { isDraftFile, type DraftFile } from '../../shared/conversation-drafts'
 import { boundedJson, parentStamp, namedStamp } from '../../worker/projects/retention-files'
 import { pathPresent, removalMarker } from '../../worker/projects/working-copy-records'
 import { sameScope } from '../../shared/project-files'
@@ -136,6 +137,24 @@ export class AiStorage {
     let count = 0,
       bytes = 0
     try {
+      const draftsPath = join(root, 'ai', 'conversation-drafts-v1.json')
+      if (pathPresent(draftsPath)) {
+        const envelope = boundedJson(draftsPath, 8 * 1024 ** 2)
+        if (
+          !record(envelope) ||
+          !exact(envelope, ['version', 'encrypted']) ||
+          envelope.version !== 1 ||
+          typeof envelope.encrypted !== 'string' ||
+          !/^[A-Za-z0-9+/]+=*$/.test(envelope.encrypted) ||
+          !secureAiStorage()
+        )
+          return 'unknown'
+        const drafts: unknown = JSON.parse(
+          safeStorage.decryptString(Buffer.from(envelope.encrypted, 'base64'))
+        )
+        if (!isDraftFile(drafts)) return 'unknown'
+        if (drafts.entries.some((d) => sameScope(d, scope))) return 'linked'
+      }
       for (const folder of ['operations', 'retained-v1/records', 'retained-v1/receipts']) {
         const path = join(root, 'ai', folder)
         let dir: ReturnType<typeof opendirSync>
@@ -293,6 +312,16 @@ export class AiStorage {
     } catch {
       throw new AiError('storage-unavailable')
     }
+  }
+  async conversationDrafts(): Promise<DraftFile> {
+    const value = await this.read('conversation-drafts-v1.json', 8 * 1024 ** 2)
+    if (value === null) return { version: 1, revision: randomUUID(), entries: [] }
+    if (!isDraftFile(value)) throw new AiError('storage-unavailable')
+    return value
+  }
+  async saveConversationDrafts(value: DraftFile): Promise<void> {
+    if (!isDraftFile(value)) throw new AiError('storage-unavailable')
+    await this.write('conversation-drafts-v1.json', value, 8 * 1024 ** 2)
   }
   async credentials(): Promise<Credentials> {
     const value = await this.read('credentials-v1.json')

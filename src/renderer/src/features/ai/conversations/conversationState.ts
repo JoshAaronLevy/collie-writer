@@ -1,12 +1,17 @@
-import type { ConversationContextPolicy } from '../../../../../shared/conversation-context'
+import { useReferenceSave } from './useReferenceSave'
+import { MEMORY_PROMPT } from '../../../../../shared/conversation-memory'
 import { effectiveState, isEditableKind } from '../../../../../shared/outline'
 import { selectedChat, rememberChat } from './selected-chat'
 import type { AiActionAvailability } from '../../../../../shared/ai-route'
 import { useCallback, useMemo } from 'react'
+import { useConversationDrafts } from './useConversationDrafts'
+import type { ChatDraft } from '../../../../../shared/conversation-drafts'
 type ConversationControllerState = {
-  items: Conversation[]
+  reveal: { conversationId: string; attemptId: string; requestId: string } | null
+  references: ReturnType<typeof useReferenceSave>
+  items: ConversationSummary[]
   total: number
-  currentItems: Conversation[]
+  currentItems: ConversationSummary[]
   currentTotal: number
   currentLabel: string | null
   currentOffset: number
@@ -30,14 +35,26 @@ type ConversationControllerState = {
   } | null
   before: number | null
   setBefore: React.Dispatch<React.SetStateAction<number | null>>
+  loadOlder: () => Promise<void>
+  openMatch: (match: ConversationMatch) => void
+  draftProtection: ReturnType<typeof useConversationDrafts>
   draft: Draft
+  searchWeb: boolean
+  setSearchWeb: (value: boolean) => void
   update: (patch: Partial<Draft>) => void
   drafts: Record<string, Draft>
+  memoryEdit: { id: string; text: string; original: string } | null
+  setMemoryEdit: React.Dispatch<
+    React.SetStateAction<{ id: string; text: string; original: string } | null>
+  >
+  saveMemory: () => Promise<void>
   rename: string
   setRename: React.Dispatch<React.SetStateAction<string>>
   issue: string
   notice: string
   busy: boolean
+  preparingMemory: boolean
+  stopPreparation: () => void
   loading: boolean
   pending: ConversationRequest | null
   readOnly: boolean
@@ -51,8 +68,9 @@ type ConversationControllerState = {
   choose: (id: string) => void
   change: (kind: 'create' | 'rename' | 'archive' | 'restore') => void
   send: () => Promise<void>
-  retryAsNew: (t: ConversationTurn) => void
+  retryAsNew: (t: ConversationTurn, textOnly?: boolean) => void
   show: (attemptId?: string) => void
+  discussSource: (id: string, title: string) => Promise<void>
   request: (input: ConversationRequest) => Promise<void>
   refresh: (captured: OpenInput) => Promise<void>
   composingRef: React.RefObject<boolean>
@@ -69,7 +87,10 @@ import { useLayoutEffect } from 'react'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { AI_LIMITS } from '../../../../../shared/ai'
 import {
+  CONVERSATION_LIMITS,
   type Conversation,
+  type ConversationSummary,
+  type ConversationMatch,
   type ConversationEvent,
   type ConversationRequest,
   type ConversationReview,
@@ -85,9 +106,9 @@ import { useAiConnections } from '../../ai-connections/connectionState'
 import { editorIsComposing } from '../../../editor/adapter'
 import { reviewConnection, sameReviewConnection } from '../review-connection'
 
-type Draft = { text: string; contextPolicy: ConversationContextPolicy }
+type Draft = ChatDraft
 const sizeMessage =
-  'This chat or writing is too long to send in full. In Context, choose This chat only to leave out writing, or Message only to explicitly leave out earlier messages. You can also start a new chat. Your draft and full history are kept.'
+  'This context cannot fit within one bounded preparation. In Context, choose This chat only to leave out writing, or Message only to leave out earlier messages. You can also start a new chat. Your draft, existing memory and full history are kept.'
 const emptyDraft = (): Draft => ({ text: '', contextPolicy: 'project' })
 function originOf(project: ReturnType<typeof useWorkspaceSession>['project']): string | null {
   const doc = project?.documents.find((d) => d.id === project.documentId)
@@ -100,14 +121,17 @@ function originOf(project: ReturnType<typeof useWorkspaceSession>['project']): s
 }
 const activeStates = ['preparing', 'running', 'stopping']
 export function useConversationController(): ConversationControllerState {
+  const references = useReferenceSave()
+  const [reveal, setReveal] = useState<ConversationControllerState['reveal']>(null)
+  const presentationSequence = useRef(0)
   const session = useWorkspaceSession(),
     connections = useAiConnections()
-  const [items, setItems] = useState<Conversation[]>([]),
+  const [items, setItems] = useState<ConversationSummary[]>([]),
     [total, setTotal] = useState(0),
     [query, setQuery] = useState(''),
     [view, setView] = useState<'active' | 'archived'>('active'),
     [offset, setOffset] = useState(0)
-  const [currentItems, setCurrentItems] = useState<Conversation[]>([]),
+  const [currentItems, setCurrentItems] = useState<ConversationSummary[]>([]),
     [currentTotal, setCurrentTotal] = useState(0),
     [currentOffset, setCurrentOffset] = useState(0),
     [listOpen, setListOpen] = useState(true),
@@ -115,28 +139,39 @@ export function useConversationController(): ConversationControllerState {
   const [selected, setSelected] = useState<string | null>(null),
     [page, setPage] = useState<Extract<ConversationValue, { type: 'page' }> | null>(null),
     [before, setBefore] = useState<number | null>(null)
+  const [searchChoice, setSearchChoice] = useState<{ id: string; enabled: boolean } | null>(null)
+  const searchWeb = searchChoice?.id === selected && searchChoice.enabled
   const [readRevision, setReadRevision] = useState(0)
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({}),
-    [rename, setRename] = useState('')
+  const [rename, setRename] = useState('')
+  const [memoryEdit, setMemoryEdit] = useState<{
+    id: string
+    text: string
+    original: string
+  } | null>(null)
   const [issue, setIssue] = useState(''),
     [notice, setNotice] = useState(''),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false),
     [run, setRun] = useState<ConversationEvent | null>(null)
+  const [preparingMemory, setPreparingMemory] = useState(false)
+  const preparationIntent = useRef<{ cancelled: boolean; attemptId: string | null } | null>(null)
   const [pending, setPending] = useState<ConversationRequest | null>(null)
   const connectionRef = useRef(connections)
   useLayoutEffect(() => {
     connectionRef.current = connections
   })
   const current = useRef(session),
-    state = useRef({ selected, query, view, offset, currentOffset, before, rename }),
+    state = useRef({ selected, query, view, offset, currentOffset, before, rename, memoryEdit }),
     locked = useRef(false),
     pendingRef = useRef<ConversationRequest | null>(null)
   const readSequence = useRef(0),
     listSequence = useRef(0),
     groupGeneration = useRef(0),
     refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const olderRead = useRef<string | null>(null)
+  const deferredRead = useRef<{ scope: OpenInput; id: string } | null>(null)
   const newChatFocus = useRef<string | null>(null)
+  const focusOrigin = useRef<Element | null>(null)
   const scroll = useRef(new Map<string, number>()),
     composer = useRef<HTMLTextAreaElement>(null),
     composing = useRef(false)
@@ -144,7 +179,7 @@ export function useConversationController(): ConversationControllerState {
     current.current = session
   })
   useLayoutEffect(() => {
-    state.current = { selected, query, view, offset, currentOffset, before, rename }
+    state.current = { selected, query, view, offset, currentOffset, before, rename, memoryEdit }
   })
   useLayoutEffect(() => {
     pendingRef.current = pending
@@ -155,7 +190,12 @@ export function useConversationController(): ConversationControllerState {
     scope = useMemo(
       () => (projectId && workspaceId ? { projectId, workspaceId } : null),
       [projectId, workspaceId]
-    ),
+    )
+  useLayoutEffect(() => {
+    presentationSequence.current++
+  }, [scope])
+  const draftProtection = useConversationDrafts(scope),
+    drafts = draftProtection.drafts,
     draft = selected ? (drafts[selected] ?? emptyDraft()) : emptyDraft()
   const readOnly = session.accessReadOnly || session.accessTransition,
     active = !!page?.turns.some((t) => activeStates.includes(t.attempt.state))
@@ -165,7 +205,8 @@ export function useConversationController(): ConversationControllerState {
   function show(attemptId?: string): void {
     const s = current.current
     if (!s.project || composing.current || s.composition.current) return
-    const captured = scopeOf(s.project)
+    const captured = scopeOf(s.project),
+      presentation = ++presentationSequence.current
     void (async () => {
       if (
         !(await s.navigate({
@@ -176,7 +217,7 @@ export function useConversationController(): ConversationControllerState {
         }))
       )
         return
-      if (!belongs(captured)) return
+      if (!belongs(captured) || presentation !== presentationSequence.current) return
       s.writingView.revealPanel('ai')
       if (state.current.selected) {
         setListOpen(false)
@@ -192,24 +233,58 @@ export function useConversationController(): ConversationControllerState {
           action: 'attempt',
           attemptId: target
         })
+        if (belongs(captured) && presentation === presentationSequence.current && !result.ok) {
+          setIssue(result.error.message)
+          return
+        }
         if (
           belongs(captured) &&
+          presentation === presentationSequence.current &&
           state.current.selected === origin &&
           !state.current.rename &&
+          !state.current.memoryEdit &&
+          !current.current.closing &&
+          current.current.destination.kind === 'workspace' &&
+          current.current.destination.view === 'write' &&
           !composing.current &&
           !locked.current &&
           !pendingRef.current &&
           result.ok &&
           result.value.type === 'turn'
-        )
-          choose(result.value.turn.attempt.conversationId)
+        ) {
+          const t = result.value.turn
+          if (choose(t.attempt.conversationId)) {
+            newChatFocus.current = null
+            openMatch({
+              attemptId: t.attempt.id,
+              messageId: t.user.id,
+              ordinal: t.user.ordinal,
+              role: 'user',
+              preview: ''
+            })
+            setReveal({
+              conversationId: t.attempt.conversationId,
+              attemptId: t.attempt.id,
+              requestId: crypto.randomUUID()
+            })
+          }
+        }
       } else if (!drafts[selected ?? '']?.text) {
         const unsent = Object.entries(drafts).find(([, d]) => !!d.text)
         if (unsent) choose(unsent[0])
       }
-    })()
+    })().catch(() => {
+      if (belongs(captured) && presentation === presentationSequence.current)
+        setIssue('This saved message could not be opened. Your conversation is kept; try again.')
+    })
   }
-  const dirty = Object.values(drafts).some((d) => !!d.text) || !!rename
+  // Await initial recovery, but a failed read has no newly editable text to lose.
+  // Keep its on-disk copy and allow normal close rather than trapping the window.
+  const dirty =
+    draftProtection.dirty ||
+    (!!scope && !draftProtection.ready && !draftProtection.issue) ||
+    !!rename ||
+    !!memoryEdit
   const draftEvents = useRetainedDraft('conversations', {
     read: () => ({
       scope: scope ?? { projectId: '', workspaceId: '' },
@@ -220,8 +295,8 @@ export function useConversationController(): ConversationControllerState {
       composing: composing.current,
       busy,
       pendingOperation: pending ?? (run?.pending ? run : null),
-      policy: 'retain',
-      issue: issue || undefined,
+      policy: rename || memoryEdit || pending || run?.pending || busy ? 'retain' : 'flush',
+      issue: draftProtection.issue || issue || undefined,
       target: project
         ? {
             kind: 'workspace',
@@ -231,6 +306,7 @@ export function useConversationController(): ConversationControllerState {
           }
         : { kind: 'library' }
     }),
+    flush: () => draftProtection.flush(),
     focus: () => {
       show()
       requestAnimationFrame(() => {
@@ -290,6 +366,10 @@ export function useConversationController(): ConversationControllerState {
   )
   const read = useCallback(
     async (captured: OpenInput, id: string, cursor: number | null): Promise<void> => {
+      if (olderRead.current === id) {
+        deferredRead.current = { scope: captured, id }
+        return
+      }
       const seq = ++readSequence.current
       try {
         const result = await window.collie
@@ -309,14 +389,81 @@ export function useConversationController(): ConversationControllerState {
           return
         if (!result)
           setIssue('This conversation could not be read. Try local recovery or return to the list.')
-        else if (result.ok && result.value.type === 'page') setPage(result.value)
-        else if (!result.ok) setIssue(result.error.message)
+        else if (result.ok && result.value.type === 'page') {
+          const next = result.value
+          setPage((previous) => {
+            if (!previous || previous.conversation.id !== id) return next
+            const turns = [
+              ...new Map([...previous.turns, ...next.turns].map((t) => [t.attempt.id, t])).values()
+            ]
+              .filter((t) => cursor === null || t.user.ordinal < cursor)
+              .sort((a, b) => a.user.ordinal - b.user.ordinal)
+              .slice(-CONVERSATION_LIMITS.mountedTurns)
+            return {
+              ...next,
+              turns,
+              olderThan: turns[0]?.user.ordinal ? turns[0].user.ordinal : null
+            }
+          })
+        } else if (!result.ok) setIssue(result.error.message)
       } finally {
         if (seq === readSequence.current) setLoading(false)
       }
     },
     [belongs]
   )
+  async function loadOlder(): Promise<void> {
+    if (!scope || !page || page.olderThan === null || loading || olderRead.current) return
+    const captured = scope,
+      id = page.conversation.id,
+      cursor = page.olderThan
+    const seq = ++readSequence.current
+    olderRead.current = id
+    setLoading(true)
+    try {
+      const result = await window.collie.conversation({
+        ...captured,
+        action: 'read',
+        conversationId: id,
+        before: cursor
+      })
+      if (!belongs(captured) || state.current.selected !== id || seq !== readSequence.current)
+        return
+      if (!result.ok || result.value.type !== 'page') {
+        setIssue(
+          !result.ok ? result.error.message : 'Earlier messages could not be read. Try again.'
+        )
+        return
+      }
+      const combined = [...result.value.turns, ...page.turns]
+      const turns = combined.slice(0, CONVERSATION_LIMITS.mountedTurns)
+      if (combined.length > turns.length) {
+        const upper = turns[turns.length - 1].user.ordinal + 1
+        state.current.before = upper
+        setBefore(upper)
+      }
+      setPage({ ...result.value, turns })
+    } catch {
+      if (belongs(captured))
+        setIssue('Earlier messages could not be read. Your current place is kept; try again.')
+    } finally {
+      olderRead.current = null
+      if (seq === readSequence.current) setLoading(false)
+      const deferred = deferredRead.current
+      deferredRead.current = null
+      if (deferred && belongs(deferred.scope) && state.current.selected === deferred.id)
+        void read(deferred.scope, deferred.id, state.current.before)
+    }
+  }
+  function openMatch(match: ConversationMatch): void {
+    if (composing.current || locked.current || pendingRef.current) return
+    const cursor = match.ordinal + (match.role === 'user' ? 1 : 0)
+    readSequence.current++
+    state.current.before = cursor
+    setBefore(cursor)
+    setPage(null)
+    setReadRevision((r) => r + 1)
+  }
   const refresh = useCallback(
     async (captured: OpenInput): Promise<void> => {
       await current.current.refreshConversationHead(captured)
@@ -330,6 +477,7 @@ export function useConversationController(): ConversationControllerState {
   const [lastScope, setLastScope] = useState(scope)
   if (lastScope !== scope) {
     setLastScope(scope)
+    setReveal(null)
     setItems([])
     setTotal(0)
     setCurrentItems([])
@@ -340,8 +488,9 @@ export function useConversationController(): ConversationControllerState {
     setSelected(null)
     setPage(null)
     setBefore(null)
-    setDrafts({})
     setRename('')
+    setMemoryEdit(null)
+    setSearchChoice(null)
     setIssue('')
     setNotice('')
     setPending(null)
@@ -497,30 +646,26 @@ export function useConversationController(): ConversationControllerState {
   const selectedConnection = reviewConnection(connections.status)
   function update(patch: Partial<Draft>): void {
     if (!selected || pendingRef.current || locked.current) return
-    if (!drafts[selected]?.text && Object.values(drafts).filter((d) => !!d.text).length >= 20) {
-      setIssue(
-        'Save or clear an existing conversation draft before keeping another. Up to 20 unsent drafts can be retained in this session.'
-      )
-      return
-    }
-    setDrafts((previous) => ({
-      ...previous,
-      [selected]: { ...(previous[selected] ?? emptyDraft()), ...patch }
-    }))
+    draftProtection.change(selected, patch)
   }
-  function choose(id: string): void {
-    if (composing.current || locked.current || pendingRef.current) return
-    if (rename) {
-      setIssue('Save or clear the rename draft before opening another conversation.')
-      return
+  function choose(id: string): boolean {
+    if (composing.current || locked.current || pendingRef.current) return false
+    if (rename || memoryEdit) {
+      setIssue('Save or cancel the title or memory edit before opening another conversation.')
+      return false
     }
-    const samePage = state.current.selected === id && state.current.before === null
-    newChatFocus.current = null
+    presentationSequence.current++
+    setReveal(null)
+    const samePage = state.current.selected === id
+    newChatFocus.current = id
+    focusOrigin.current = document.activeElement
     setListOpen(false)
     setSelected(id)
     state.current.selected = id
-    state.current.before = null
-    setBefore(null)
+    if (!samePage) {
+      state.current.before = null
+      setBefore(null)
+    }
     if (samePage && scope) setReadRevision((revision) => revision + 1)
     else setPage(null)
     setRename('')
@@ -530,6 +675,7 @@ export function useConversationController(): ConversationControllerState {
         ? 'This chat is open, but its selection could not be remembered on this device.'
         : ''
     )
+    return true
   }
   async function request(input: ConversationRequest, prepared = false): Promise<void> {
     if (
@@ -554,7 +700,9 @@ export function useConversationController(): ConversationControllerState {
         }
         setIssue(
           result.error.code === 'LIMIT_EXCEEDED'
-            ? sizeMessage
+            ? input.action === 'context-change'
+              ? 'This context selection has reached its storage or size limit. Existing pins are kept; reduce the selection when possible or start a new chat.'
+              : sizeMessage
             : result.error.code === 'STALE_REVISION'
               ? 'The writing, conversation or connection changed. Your draft is kept; press Send again when ready.'
               : result.error.code === 'DESTINATION_EXISTS'
@@ -583,15 +731,17 @@ export function useConversationController(): ConversationControllerState {
         state.current.before = null
       }
       if (input.action === 'submit') {
-        setDrafts((previous) => {
-          const d = previous[input.review.conversationId]
-          return d &&
-            d.text === input.review.prompt &&
-            (input.review.version !== 2 || d.contextPolicy === input.review.contextPolicy)
-            ? { ...previous, [input.review.conversationId]: { ...d, text: '' } }
-            : previous
-        })
+        const d = drafts[input.review.conversationId]
+        if (
+          d &&
+          d.text === input.review.prompt &&
+          (input.review.version === undefined || d.contextPolicy === input.review.contextPolicy) &&
+          ((input.review.version !== 3 && input.review.version !== 4) ||
+            input.review.purpose === 'chat')
+        )
+          draftProtection.change(input.review.conversationId, { text: '' })
         setBefore(null)
+        if (state.current.before !== null) setPage(null)
         state.current.before = null
         const outcome = result.value.type === 'turn' ? result.value.turn.attempt.state : null
         setNotice(
@@ -600,6 +750,7 @@ export function useConversationController(): ConversationControllerState {
             : ''
         )
       }
+      if (input.action === 'memory-edit' && result.value.type === 'memories') setMemoryEdit(null)
       if (result.value.type === 'exported') setNotice(`Transcript exported to ${result.value.path}`)
       await refresh({ projectId: input.projectId, workspaceId: input.workspaceId })
     } catch {
@@ -613,8 +764,8 @@ export function useConversationController(): ConversationControllerState {
   }
   function change(kind: 'create' | 'rename' | 'archive' | 'restore'): void {
     if (!scope || readOnly || !project || composing.current || pendingRef.current) return
-    if (kind === 'create' && state.current.rename) {
-      setIssue('Save or clear the rename draft before starting a new chat.')
+    if (kind === 'create' && (state.current.rename || memoryEdit)) {
+      setIssue('Save or cancel the title or memory edit before starting a new chat.')
       return
     }
     const c = page?.conversation,
@@ -626,6 +777,7 @@ export function useConversationController(): ConversationControllerState {
       return
     }
     if (kind !== 'create' && !c) return
+    if (kind === 'create') focusOrigin.current = document.activeElement
     const input: ConversationRequest = {
       ...scope,
       action: 'change',
@@ -655,6 +807,7 @@ export function useConversationController(): ConversationControllerState {
       document = editor && !editor.isDestroyed ? editor.state.doc : null,
       id = selected,
       submitted = { ...draft },
+      submittedSearch = !!searchWeb,
       account = reviewConnection(connectionRef.current.status)
     if (!original || s.composition.current || (editor && editorIsComposing(editor))) {
       setIssue('Finish composing in the manuscript first.')
@@ -664,7 +817,14 @@ export function useConversationController(): ConversationControllerState {
     setBusy(true)
     setIssue('')
     setNotice('')
+    const intent = { cancelled: false, attemptId: null as string | null }
+    preparationIntent.current = intent
     const stillCurrent = (): boolean =>
+      !intent.cancelled &&
+      !current.current.closing &&
+      !current.current.navigating &&
+      !current.current.accessTransition &&
+      sameReviewConnection(account, reviewConnection(connectionRef.current.status)) &&
       belongs(scope) &&
       state.current.selected === id &&
       current.current.project?.documentId === original.documentId &&
@@ -677,14 +837,15 @@ export function useConversationController(): ConversationControllerState {
           editor.state.doc.eq(document) &&
           !editorIsComposing(editor)))
     try {
-      const saved = await s.flush(false, 'save', ['conversations'])
+      if (!(await draftProtection.flush())) return
+      let saved = await s.flush(false, 'save', ['conversations'])
       if (!saved || !stillCurrent() || saved.documentId !== original.documentId) {
         setIssue(
           'The writing could not be captured at the selected revision. Your draft is kept; press Send again when ready.'
         )
         return
       }
-      const latest = await window.collie.conversation({
+      let latest = await window.collie.conversation({
         ...scope,
         action: 'read',
         conversationId: id,
@@ -696,10 +857,11 @@ export function useConversationController(): ConversationControllerState {
         )
         return
       }
-      const input: ConversationReview = {
+      let input: ConversationReview = {
         ...scope,
         action: 'review',
-        version: 2,
+        version: submittedSearch ? 5 : 4,
+        purpose: 'chat',
         contextPolicy: submitted.contextPolicy,
         conversationId: id,
         expectedRevision: latest.value.conversation.revisionId,
@@ -713,6 +875,173 @@ export function useConversationController(): ConversationControllerState {
             ? { kind: 'section', documentId: saved.documentId, revisionId: saved.revisionId }
             : { kind: 'none' }
       }
+      const selection = await window.collie.conversation({
+        ...scope,
+        action: 'context-read',
+        conversationId: id
+      })
+      if (!selection.ok || selection.value.type !== 'context-settings' || !stillCurrent()) {
+        setIssue('Project context could not be read. Your draft is kept.')
+        return
+      }
+      const selectionRevision = selection.value.settings.revision
+      const plan = await window.collie.conversation({
+        ...scope,
+        action: 'memory-plan',
+        review: input
+      })
+      if (!plan.ok || plan.value.type !== 'memory-plan' || !stillCurrent()) {
+        setIssue(
+          !plan.ok && plan.error.code === 'LIMIT_EXCEEDED'
+            ? sizeMessage
+            : 'Context preparation is unavailable or changed. Your draft is kept; nothing was queued.'
+        )
+        return
+      }
+      for (const purpose of plan.value.needed) {
+        if (!stillCurrent()) {
+          setIssue('Preparation stopped because the context changed. Your draft is kept.')
+          return
+        }
+        setPreparingMemory(true)
+        const summary: ConversationReview = {
+          ...input,
+          version: 4,
+          purpose,
+          source: { kind: 'none' },
+          prompt: MEMORY_PROMPT,
+          captureId: crypto.randomUUID(),
+          createdAt: new Date().toISOString()
+        }
+        const reviewed = await window.collie.conversation(summary)
+        if (!reviewed.ok || reviewed.value.type !== 'review' || !stillCurrent()) {
+          setIssue('Context preparation could not start. Your draft and existing memory are kept.')
+          return
+        }
+        const attemptId = crypto.randomUUID()
+        intent.attemptId = attemptId
+        await request(
+          {
+            ...scope,
+            action: 'submit',
+            attemptId,
+            review: summary,
+            digest: reviewed.value.capture.digest,
+            send: true,
+            connectionId: account.connectionId,
+            model: account.model
+          },
+          true
+        )
+        locked.current = true
+        setBusy(true)
+        if (pendingRef.current) return
+        const deadline = Date.now() + 10 * 60 * 1000
+        let completed = false
+        while (Date.now() < deadline) {
+          if (!stillCurrent()) {
+            await window.collie.conversation({ ...scope, action: 'cancel', attemptId })
+            setIssue('Context preparation stopped. Your draft and any retained output are kept.')
+            return
+          }
+          const actual = await window.collie.conversation({
+            ...scope,
+            action: 'attempt',
+            attemptId
+          })
+          if (!actual.ok || actual.value.type !== 'turn') {
+            setIssue(
+              'Context preparation could not be checked. Your draft is kept; review the preparation result before trying again.'
+            )
+            return
+          }
+          if (actual.value.turn.attempt.state === 'completed') {
+            // Settle the existing protected result; this never dispatches another request.
+            const acknowledged = await window.collie.conversation({
+              ...scope,
+              action: 'acknowledge',
+              attemptId
+            })
+            if (acknowledged.ok) {
+              completed = true
+              break
+            }
+            if (acknowledged.error.code !== 'ACCESS_BUSY') {
+              setIssue(
+                'The context summary needs local protection. Your draft is kept; use the preparation result’s recovery action.'
+              )
+              return
+            }
+          } else if (
+            !['preparing', 'running', 'stopping'].includes(actual.value.turn.attempt.state)
+          ) {
+            setIssue(
+              'Context preparation did not complete. Your draft and prior memory are kept; the result below has details.'
+            )
+            return
+          }
+          await new Promise<void>((resolve) => setTimeout(resolve, 500))
+        }
+        if (!completed) {
+          await window.collie.conversation({ ...scope, action: 'cancel', attemptId })
+          setIssue(
+            'Context preparation took too long. Stop was requested; your draft and retained output are kept.'
+          )
+          return
+        }
+        const memories = await window.collie.conversation({
+          ...scope,
+          action: 'memory-list',
+          conversationId: id,
+          before: null
+        })
+        if (
+          !memories.ok ||
+          memories.value.type !== 'memories' ||
+          !memories.value.items.some((m) => m.checkpoint.id === attemptId && m.current && !m.stale)
+        ) {
+          setIssue(
+            'The summary was too long or its coverage changed. Your draft is kept. Inspect Context → Memory or the preparation result before trying again.'
+          )
+          return
+        }
+        intent.attemptId = null
+        await current.current.refreshConversationHead(scope)
+        saved = await current.current.flush(false, 'save', ['conversations'])
+        latest = await window.collie.conversation({
+          ...scope,
+          action: 'read',
+          conversationId: id,
+          before: null
+        })
+        if (!saved || !latest.ok || latest.value.type !== 'page' || !stillCurrent()) {
+          setIssue(
+            'The context changed after preparation. Your draft is kept; press Send again when ready.'
+          )
+          return
+        }
+        input = {
+          ...input,
+          expectedHead: saved.headCommitId,
+          expectedRevision: latest.value.conversation.revisionId,
+          captureId: crypto.randomUUID(),
+          createdAt: new Date().toISOString()
+        }
+      }
+      const finalSelection = await window.collie.conversation({
+        ...scope,
+        action: 'context-read',
+        conversationId: id
+      })
+      if (
+        !finalSelection.ok ||
+        finalSelection.value.type !== 'context-settings' ||
+        finalSelection.value.settings.revision !== selectionRevision
+      ) {
+        setIssue('The project context selection changed. Your draft is kept; press Send again.')
+        return
+      }
+      setPreparingMemory(false)
       const result = await window.collie.conversation(input)
       if (
         !stillCurrent() ||
@@ -747,18 +1076,33 @@ export function useConversationController(): ConversationControllerState {
         true
       )
     } catch {
-      setIssue('Your message could not be prepared. Your draft is kept; nothing was queued.')
+      setIssue(
+        'Your message could not be prepared. Your draft and any actual preparation results are kept; nothing will resend automatically.'
+      )
     } finally {
+      preparationIntent.current = null
+      setPreparingMemory(false)
       locked.current = false
       setBusy(false)
     }
   }
-  function retryAsNew(t: ConversationTurn): void {
-    if (!selected || draft.text || readOnly || busy || pending) return
+  function retryAsNew(t: ConversationTurn, textOnly = false): void {
+    if (
+      !selected ||
+      draft.text ||
+      readOnly ||
+      busy ||
+      pending ||
+      ((t.capture.version === 3 || t.capture.version === 4) && t.capture.purpose !== 'chat')
+    )
+      return
     // Context and old account authority are never silently carried into another attempt.
     update({ text: t.capture.prompt })
+    setSearchChoice({ id: selected, enabled: !textOnly && t.capture.version === 5 })
     setNotice(
-      'Prompt copied into a new draft. Send starts a new request with your current context choice.'
+      textOnly
+        ? 'Prompt copied with web search off. Press Send to ask without searching.'
+        : 'Prompt copied into a new draft. Send starts a new request with your current context choice.'
     )
   }
   useEffect(() => {
@@ -767,40 +1111,49 @@ export function useConversationController(): ConversationControllerState {
     const frame = requestAnimationFrame(() => {
       const s = current.current,
         target = composer.current
+      if (newChatFocus.current !== id) return
+      newChatFocus.current = null
       if (
-        newChatFocus.current !== id ||
         state.current.selected !== id ||
         s.closing ||
         s.navigating ||
         s.composition.current ||
         composing.current ||
         !document.hasFocus() ||
+        document.visibilityState !== 'visible' ||
+        (document.activeElement !== document.body &&
+          document.activeElement !== focusOrigin.current) ||
         document.querySelector('[role="dialog"], [role="alertdialog"]') ||
         !target ||
         target.closest('[hidden],[inert]')
       )
         return
-      newChatFocus.current = null
       target.focus({ preventScroll: true })
     })
     return () => cancelAnimationFrame(frame)
   }, [busy, listOpen, page?.conversation.id, selected])
   const capability = connections.status?.features.conversation
   const canSend =
+    (!searchWeb || connections.status?.capabilities.webResearch.state === 'available') &&
     capability?.state === 'available' &&
     capability.connectionId === selectedConnection.connectionId &&
     capability.model === selectedConnection.model &&
     !connections.busy &&
     connections.issue !== 'outcome-unknown' &&
     !readOnly &&
+    !memoryEdit &&
     !busy &&
     !pending &&
     !active &&
+    !run?.pending &&
+    draftProtection.ready &&
     page?.conversation.state === 'active' &&
     session.available &&
     !session.closing &&
     !session.navigating
   return {
+    reveal,
+    references,
     items,
     total,
     currentItems,
@@ -812,8 +1165,8 @@ export function useConversationController(): ConversationControllerState {
     listLoading,
     backToList: () => {
       if (!composing.current && !locked.current && !pendingRef.current) {
-        if (state.current.rename) {
-          setIssue('Save or clear the rename draft before returning to the list.')
+        if (state.current.rename || memoryEdit) {
+          setIssue('Save or cancel the title or memory edit before returning to the list.')
           return
         }
         newChatFocus.current = null
@@ -832,15 +1185,53 @@ export function useConversationController(): ConversationControllerState {
     selected,
     page,
     before,
-    setBefore,
+    setBefore: (next) => {
+      const cursor = typeof next === 'function' ? next(state.current.before) : next
+      state.current.before = cursor
+      readSequence.current++
+      setBefore(cursor)
+      setPage(null)
+      setReadRevision((r) => r + 1)
+    },
+    loadOlder,
+    openMatch,
+    draftProtection,
     draft,
+    searchWeb: !!searchWeb,
+    setSearchWeb: (enabled) => {
+      if (selected && !busy && !pending && !active && !readOnly)
+        setSearchChoice({ id: selected, enabled })
+    },
     update,
     drafts,
+    memoryEdit,
+    setMemoryEdit,
+    saveMemory: async () => {
+      if (scope && selected && memoryEdit && !readOnly && !busy && !pending && !run?.pending)
+        await request({
+          ...scope,
+          action: 'memory-edit',
+          conversationId: selected,
+          operationId: crypto.randomUUID(),
+          expectedId: memoryEdit.id,
+          text: memoryEdit.text
+        })
+    },
     rename,
     setRename,
     issue,
     notice,
     busy,
+    preparingMemory,
+    stopPreparation: () => {
+      const intent = preparationIntent.current
+      if (!intent) return
+      intent.cancelled = true
+      if (intent.attemptId && scope)
+        void window.collie
+          .conversation({ ...scope, action: 'cancel', attemptId: intent.attemptId })
+          .catch(() => {})
+    },
     loading,
     pending,
     readOnly,
@@ -855,6 +1246,57 @@ export function useConversationController(): ConversationControllerState {
     change,
     send,
     retryAsNew,
+    discussSource: async (sourceId, title) => {
+      if (
+        !scope ||
+        !project ||
+        readOnly ||
+        locked.current ||
+        pendingRef.current ||
+        composing.current ||
+        memoryEdit ||
+        rename
+      )
+        return
+      const captured = scope,
+        chatId = crypto.randomUUID(),
+        s = current.current
+      if (
+        !(await s.navigate({
+          kind: 'workspace',
+          scope: captured,
+          view: 'write',
+          documentId: project.documentId
+        })) ||
+        !belongs(captured)
+      )
+        return
+      await request({
+        ...captured,
+        action: 'change',
+        version: 2,
+        originDocumentId: originOf(s.project!),
+        operationId: crypto.randomUUID(),
+        conversationId: chatId,
+        expectedRevision: null,
+        title: 'New chat',
+        state: 'active'
+      })
+      if (!belongs(captured) || state.current.selected !== chatId || pendingRef.current) return
+      draftProtection.change(chatId, {
+        text: `Discuss this saved source: ${title.slice(0, 200)} (source ${sourceId}). What does the available project research support, and what still needs investigation?`,
+        contextPolicy: 'project'
+      })
+      s.writingView.revealPanel('ai')
+      await request({
+        ...captured,
+        action: 'context-change',
+        conversationId: chatId,
+        operationId: crypto.randomUUID(),
+        expectedRevision: null,
+        change: { mode: 'pin', target: { kind: 'source', id: sourceId } }
+      })
+    },
     show,
     request,
     refresh,
@@ -868,7 +1310,7 @@ export function useConversationController(): ConversationControllerState {
           : undefined,
     clear: () => {
       if (selected && !pending && !busy) {
-        setDrafts((previous) => ({ ...previous, [selected]: emptyDraft() }))
+        draftProtection.clear(selected)
         setIssue('')
         setNotice('Unsent draft cleared. Saved history was kept.')
       }

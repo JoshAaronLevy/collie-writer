@@ -9,7 +9,11 @@ export function commandCapability(command: ProjectCommand): Capability {
     case 'proofreading':
       return ['append', 'decide'].includes(command.input.action) ? 'edit' : 'read'
     case 'conversation':
-      return ['change', 'append'].includes(command.input.action) ? 'edit' : 'read'
+      return ['change', 'memory-edit', 'context-change', 'reference-save', 'append'].includes(
+        command.input.action
+      )
+        ? 'edit'
+        : 'read'
     case 'create':
       return 'create'
     case 'recipeChange':

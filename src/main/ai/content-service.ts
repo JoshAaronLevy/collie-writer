@@ -540,7 +540,11 @@ export class AiContentService {
         review.reviewDigest !== requestDigest(input.review) ||
         review.captureDigest !== input.digest ||
         (review.template !== templateFor(action) &&
-          !(action === 'conversation' && review.template === 'conversation-v2')) ||
+          !(
+            action === 'conversation' &&
+            (review.template === 'conversation-v2' ||
+              review.template === 'conversation-research-v1')
+          )) ||
         review.reviewStamp !== (await this.ai.reviewStamp(action)))
     )
       throw new ProjectError('STALE_REVISION')
@@ -632,6 +636,9 @@ export class AiContentService {
     const changes = [
       'submit',
       'change',
+      'memory-edit',
+      'context-change',
+      'reference-save',
       'decide',
       'reconcile',
       'cancel',
@@ -640,7 +647,18 @@ export class AiContentService {
     ].includes(input.action)
     // Read, protection and reconciliation stay available at the barrier. New
     // intents, captures and decisions wait until native settlement is released.
-    if (this.ai.isSettling() && ['submit', 'change', 'decide', 'review'].includes(input.action))
+    if (
+      this.ai.isSettling() &&
+      [
+        'submit',
+        'change',
+        'memory-edit',
+        'context-change',
+        'reference-save',
+        'decide',
+        'review'
+      ].includes(input.action)
+    )
       throw new ProjectError('ACCESS_BUSY')
     if (
       input.action === 'submit' &&
@@ -700,7 +718,11 @@ export class AiContentService {
         if (
           result.type !== 'review' ||
           (result.capture.template !== templateFor(action) &&
-            !(action === 'conversation' && result.capture.template === 'conversation-v2'))
+            !(
+              action === 'conversation' &&
+              (result.capture.template === 'conversation-v2' ||
+                result.capture.template === 'conversation-research-v1')
+            ))
         )
           throw new ProjectError('UNAVAILABLE')
         if (!this.ai.requestFits(result.capture, action, result.capture.template))

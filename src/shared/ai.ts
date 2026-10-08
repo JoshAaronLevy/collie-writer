@@ -1,3 +1,4 @@
+import { isWebResearch, type WebResearch } from './conversation-research'
 import { isId } from '../domain/editor/schema'
 import {
   capabilitiesMatchStatus,
@@ -211,6 +212,8 @@ export type AiStartInput = {
 }
 export type AiOperationInput = { scope: OpenInput; operationId: string }
 export type AiOperation = {
+  /** Present only for the v6 research contract, including null before completion. */
+  research?: WebResearch | null
   operationId: string
   scope: OpenInput
   connectionId: string
@@ -366,7 +369,8 @@ export function isAiOperation(v: unknown): v is AiOperation {
       'sequence',
       'reason',
       'startedAt',
-      'finishedAt'
+      'finishedAt',
+      ...('research' in v ? ['research'] : [])
     ]) &&
     isId(v.operationId) &&
     isOpenInput(v.scope) &&
@@ -379,6 +383,9 @@ export function isAiOperation(v: unknown): v is AiOperation {
       String(v.state)
     ) &&
     aiText(v.text, AI_LIMITS.output) &&
+    (!('research' in v) ||
+      (v.action === 'conversation' &&
+        (v.state === 'completed' ? isWebResearch(v.research, v.text) : v.research === null))) &&
     Number.isSafeInteger(v.sequence) &&
     Number(v.sequence) >= 0 &&
     (v.reason === null || isAiReason(v.reason)) &&

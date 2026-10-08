@@ -1,3 +1,4 @@
+import type { DirectResearchExecution } from './direct-research'
 import { createHash } from 'node:crypto'
 import { isId } from '../../domain/editor/schema'
 import { AI_LIMITS, type AiPrepareInput } from '../../shared/ai'
@@ -17,7 +18,8 @@ export type DirectConversationExecution = Omit<
   template: 'conversation-v2'
   instructions: typeof CONVERSATION_INSTRUCTIONS_V2
 }
-export type DirectTextExecution = DirectExecution | DirectConversationExecution
+export type DirectTextExecution =
+  DirectExecution | DirectConversationExecution | DirectResearchExecution
 export function conversationInput(
   input: Pick<AiPrepareInput, 'prompt' | 'context'>
 ): { role: 'user' | 'assistant'; content: string }[] | null {

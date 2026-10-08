@@ -70,12 +70,12 @@ const clean = (value: unknown, max = 2000): string =>
   typeof value === 'string' ? replaceControlCharacters(value).trim().slice(0, max) : ''
 const numericText = (value: unknown): string =>
   typeof value === 'number' && Number.isFinite(value) ? String(value) : clean(value)
-const doi = (value: string): string =>
+export const normalizeSourceDoi = (value: string): string =>
   clean(value)
     .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '')
     .replace(/^doi:\s*/i, '')
     .toLowerCase()
-const url = (value: string): string => {
+export const normalizeSourceUrl = (value: string): string => {
   const text = clean(value)
   if (!text) return ''
   try {
@@ -104,8 +104,8 @@ export function normalizeMetadata(m: SourceMetadata): SourceMetadata {
     volume: clean(m.volume, 100),
     issue: clean(m.issue, 100),
     page: clean(m.page, 100),
-    DOI: doi(m.DOI),
-    URL: url(m.URL),
+    DOI: normalizeSourceDoi(m.DOI),
+    URL: normalizeSourceUrl(m.URL),
     ISBN: clean(m.ISBN, 100).replace(/[\s-]/g, '').toUpperCase(),
     ISSN: clean(m.ISSN, 100).toUpperCase()
   }
@@ -453,7 +453,7 @@ function parseRows(value: string, format: BibliographyFormat): SourceImportRow[]
     }
   })
 }
-function candidateRows(
+export function candidateRows(
   db: Database.Database,
   projectId: string,
   metadata: SourceMetadata,
@@ -642,6 +642,41 @@ function linkDocuments(
     db.prepare('INSERT INTO source_links VALUES (?,?,?)').run(projectId, sourceId, id)
   }
 }
+export function createSourceRow(
+  db: Database.Database,
+  projectId: string,
+  id: string,
+  metadataInput: SourceMetadata,
+  verified: boolean,
+  provenance: string,
+  now: string,
+  revision = randomUUID()
+): void {
+  const metadata = normalizeMetadata(metadataInput)
+  if (
+    (
+      db.prepare('SELECT count(*) count FROM sources WHERE project_id=?').get(projectId) as {
+        count: number
+      }
+    ).count >= 100000
+  )
+    throw new ProjectError('LIMIT_EXCEEDED')
+  if (getOptional(db, projectId, id)) throw new ProjectError('OPERATION_CONFLICT')
+  db.prepare('INSERT INTO sources VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(
+    projectId,
+    id,
+    revision,
+    JSON.stringify(metadata),
+    'active',
+    null,
+    verified ? 1 : 0,
+    provenance,
+    null,
+    '[]',
+    now,
+    now
+  )
+}
 export function changeSource(context: SourceContext, input: SourceChangeInput): SourcesView {
   const { db, projectId } = context,
     c = input.change,
@@ -658,30 +693,7 @@ export function changeSource(context: SourceContext, input: SourceChangeInput): 
       return row
     }
     if (c.type === 'create') {
-      const metadata = normalizeMetadata(c.metadata)
-      if (
-        (
-          db.prepare('SELECT count(*) count FROM sources WHERE project_id=?').get(projectId) as {
-            count: number
-          }
-        ).count >= 100000
-      )
-        throw new ProjectError('LIMIT_EXCEEDED')
-      if (getOptional(db, projectId, c.id)) throw new ProjectError('OPERATION_CONFLICT')
-      db.prepare('INSERT INTO sources VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(
-        projectId,
-        c.id,
-        revision,
-        JSON.stringify(metadata),
-        'active',
-        null,
-        c.verified ? 1 : 0,
-        'manual',
-        null,
-        '[]',
-        now,
-        now
-      )
+      createSourceRow(db, projectId, c.id, c.metadata, c.verified, 'manual', now, revision)
       linkDocuments(db, projectId, c.id, c.documentIds)
     } else {
       const row = get(c.id)

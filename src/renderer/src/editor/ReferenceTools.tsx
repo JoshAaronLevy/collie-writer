@@ -23,6 +23,8 @@ import {
 } from './adapter'
 
 export type ReferenceContext = {
+  citationRequest?: { sourceId: string; selection: CapturedSelection } | null
+  handledCitation?: () => void
   focusAnchor?: string | null
   focusRequest?: number
   projectId: string
@@ -252,6 +254,37 @@ function CitationControls({
       setDraft(null)
     }
   }
+  const acceptCitation = useEffectEvent(() => {
+    const request = context.citationRequest
+    if (!request) return
+    context.handledCitation?.()
+    if (
+      disabled ||
+      draft ||
+      document.visibilityState !== 'visible' ||
+      editor.view.dom.closest('[hidden], [inert]') ||
+      request.selection.editor !== editor ||
+      !restoreSelection(request.selection, editor) ||
+      inCell(editor)
+    ) {
+      issue(
+        'Select an editable manuscript position, then choose Cite again. Existing citation details are kept.'
+      )
+      return
+    }
+    if (!context.sources.some((s) => s.id === request.sourceId && s.state === 'active')) {
+      issue('This source is unavailable. Open Research and choose an active source.')
+      return
+    }
+    savedSelection.current = request.selection
+    setFormIssue('')
+    setDraft({ id: null, items: [{ sourceId: request.sourceId }] })
+  })
+  useEffect(() => {
+    // Wait until retained workspace visibility and the closing source dialog settle.
+    const frame = requestAnimationFrame(() => acceptCitation())
+    return () => cancelAnimationFrame(frame)
+  }, [context.citationRequest])
   const [, render] = useState(0)
   useEffect(() => {
     const update = (): void => render((n) => n + 1)
@@ -487,7 +520,7 @@ function FootnoteBody({
       {editorValue ? (
         <CitationControls
           editor={editorValue}
-          context={context}
+          context={{ ...context, citationRequest: null }}
           disabled={disabled}
           issue={issue}
         />

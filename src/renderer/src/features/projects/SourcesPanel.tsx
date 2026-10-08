@@ -1,3 +1,5 @@
+import { SourceChatHistory } from '../ai/conversations/SourceChatHistory'
+import { useConversations } from '../ai/conversations/conversationState'
 import { isEditableKind } from '../../../../shared/outline'
 import PresentationBoundary from '../../components/PresentationBoundary'
 import { useEffectEvent } from 'react'
@@ -72,7 +74,8 @@ export default function SourcesPanel({
   onCommitted: () => Promise<void>
   onInspect: (sourceId: string) => void
 }): React.JSX.Element {
-  const session = useWorkspaceSession()
+  const session = useWorkspaceSession(),
+    conversations = useConversations()
   const [page, setPage] = useState<'details' | 'usage' | 'files'>('details'),
     [creating, setCreating] = useState(false),
     [query, setQuery] = useState(''),
@@ -770,6 +773,18 @@ export default function SourcesPanel({
               </>
             }
           >
+            {current && current.state === 'active' ? (
+              <AppButton
+                variant="subtle"
+                size="compact-sm"
+                disabled={
+                  locked || dirty || readOnly || conversations.busy || !!conversations.pending
+                }
+                onClick={() => void conversations.discussSource(current.id, current.metadata.title)}
+              >
+                Discuss in chat
+              </AppButton>
+            ) : null}
             {current || creating ? (
               <>
                 <h2>{current?.metadata.title || 'New source'}</h2>
@@ -805,6 +820,7 @@ export default function SourcesPanel({
                 {current ? (
                   <div hidden={page !== 'usage'} inert={page !== 'usage'}>
                     <SourceUsage sourceId={current.id} />
+                    <SourceChatHistory key={current.id} sourceId={current.id} />
                   </div>
                 ) : null}
                 <form

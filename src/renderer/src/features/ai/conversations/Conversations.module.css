@@ -3,6 +3,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow-y: auto;
   min-height: 0;
   min-width: 0;
   gap: var(--collie-space-2);
@@ -67,7 +68,10 @@
   gap: 0.25rem;
 }
 .chat-composer {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-height: 8rem;
+  max-height: min(60%, 26rem);
+  overflow-y: auto;
   display: grid;
   gap: var(--collie-space-2);
   padding-block-start: var(--collie-space-2);
@@ -91,6 +95,7 @@
   font-size: 0.8125rem;
 }
 .context-popover {
+  overflow-wrap: anywhere;
   max-width: calc(100vw - 2rem);
   max-height: 60dvh;
   overflow: auto;
@@ -187,6 +192,35 @@
   font-size: 0.75rem;
   padding-inline: var(--collie-space-2);
 }
+.conversation-panel .recent-preview {
+  color: var(--collie-text-secondary);
+  font-size: 0.8125rem;
+  margin: 0;
+  padding-inline: var(--collie-space-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.chat-find,
+.chat-tools {
+  flex: 0 1 auto;
+  max-height: 45%;
+  overflow: auto;
+  font-size: 0.8125rem;
+}
+.draft-recovery {
+  font-size: 0.8125rem;
+}
+.draft-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.draft-recovery textarea {
+  width: 100%;
+  min-height: 6rem;
+}
 .conversation-list-item {
   justify-content: start;
   height: auto;
@@ -247,4 +281,46 @@
 }
 .conversation-panel [hidden] {
   display: none;
+}
+
+.context-popover input {
+  width: 100%;
+}
+.context-popover textarea {
+  width: 100%;
+  min-height: 10rem;
+}
+.memory-originals {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+  max-height: 20rem;
+  overflow: auto;
+}
+
+.research-choice[aria-pressed='true'] {
+  background: var(--mantine-color-default-hover);
+  box-shadow: inset 0 -2px 0 currentColor;
+}
+.research-references {
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.research-references ul {
+  padding-inline-start: 1.25rem;
+}
+.research-references li {
+  margin-block: 0.5rem;
+}
+.research-match {
+  display: block;
+  font-size: 0.8125rem;
+}
+
+.context-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.25rem;
 }

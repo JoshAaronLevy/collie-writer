@@ -53,7 +53,13 @@ export function ChatGptConnectionDetails(): React.JSX.Element {
               <dt>Web research</dt>
               <dd>
                 {status.capabilities.webResearch.contract === 'documented'
-                  ? 'Not enabled in Collie yet. This connection has a documented web-search path, but support for your account and model has not been confirmed. A model listing or completed text answer does not confirm browsing access.'
+                  ? status.capabilities.webResearch.eligibility.state === 'observed-refusal'
+                    ? 'The last web-search request was refused for this account and model. You can choose another model or send with Search the web off.'
+                    : status.capabilities.webResearch.eligibility.state === 'observed-success'
+                      ? 'Web search succeeded for this account and model in this session. Access can change; each request is checked by ChatGPT.'
+                      : status.capabilities.webResearch.state === 'available'
+                        ? 'Ready for an explicit Search the web request. ChatGPT will check access for your account and model when you send.'
+                        : 'Finish connecting ChatGPT and choosing a model to request web search.'
                   : 'Unavailable with this connection. A web-research route has not been established for this build.'}
               </dd>
             </div>

@@ -88,6 +88,10 @@ export async function promoteIncoming(
                 'proofreading_decisions'
               ]
             : []),
+          ...(inspectVersion(db) >= 18 ? ['conversation_memory'] : []),
+          ...(inspectVersion(db) >= 19 ? ['conversation_context'] : []),
+          ...(inspectVersion(db) >= 20 ? ['conversation_research'] : []),
+          ...(inspectVersion(db) >= 21 ? ['conversation_sources'] : []),
           ...(inspectVersion(db) >= 11
             ? ['conversations', 'ai_captures', 'conversation_attempts', 'conversation_messages']
             : []),

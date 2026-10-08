@@ -1,10 +1,10 @@
 # AI conversations implementation plan
 
-October 8, 2026 — revised after Josh's chat-panel feedback and supplied screenshots. **AC02 acceptance remains incomplete.** After the first live-message refusal and follow-up corrections, Josh confirmed Save/close work and observed a streamed answer on `gpt-5.6-terra`. That answer was incorrectly marked failed at completion (`collie_empty_response`). The completion correction retains validated streamed text when the explicit completed event does not repeat the answer; successful finalization and follow-up context still require user retesting. AC01's provider implementation and earlier code-check results remain recorded. AC03–AC08 remain not started.
+October 8, 2026 — revised after Josh's chat-panel feedback and supplied screenshots. **AC08 is implementation complete — awaiting user testing**, following Josh's explicit request to proceed. **AC02 acceptance remains incomplete.** After the first live-message refusal and follow-up corrections, Josh confirmed Save/close work and observed a streamed answer on `gpt-5.6-terra`. That answer was incorrectly marked failed at completion (`collie_empty_response`). The completion correction retains validated streamed text when the explicit completed event does not repeat the answer; successful finalization and follow-up context still require user retesting. AC01's provider implementation and earlier code-check results remain recorded. All eight implementation stages are complete; integrated feature acceptance and delivery gates remain pending. Use the [combined AC08 walkthrough](docs/manual-testing/ai-conversations-AC08.md) and [acceptance ledger](docs/validation/ai-conversations-AC08.md).
 
 The product requirement is straightforward: **AI → New chat → type → Send → streaming answer → keep chatting.** Users should understand what to do immediately. The app should bring relevant knowledge of the current book/report, research and previous project discussions into that conversation automatically. Research discovered in chat must still be saveable to the project's Research library and usable as real citations.
 
-The same-session follow-up also reported failed Save and a permanently blocked close. The correction replaces an iterator-incompatible schema read in conversation portability validation and adds an explicit native recovery-close choice after workspace failure, without claiming window-only drafts were saved. Josh subsequently confirmed Save and close are working. Broader migration/reopen and recovery edge cases remain unconfirmed; see the AC02 guide. No project content is rewritten and no later stage is started.
+The same-session follow-up also reported failed Save and a permanently blocked close. The correction replaces an iterator-incompatible schema read in conversation portability validation and adds an explicit native recovery-close choice after workspace failure, without claiming window-only drafts were saved. Josh subsequently confirmed Save and close are working. Broader migration/reopen and recovery edge cases remain unconfirmed; see the AC02 guide. That correction did not rewrite project content or start a later stage; AC03 is separately authorized below.
 
 ## Approved context decisions
 
@@ -107,7 +107,7 @@ The AC01 baseline was SQL/minimum reader 16, conversation 2, capture/message 1 a
 
 Keep direct v4 instructions/framing/digests and all old readers exact. New automatic project-context, effort and source-aware requests need explicit versions. Each stage that changes persisted data also updates validation, migrations, IPC, worker/main handling, budgets, Save/Open/Backup/Restore/Duplicate/rekey, export and retention comparisons. Preserve historical request bytes and outcomes; copying a project never transfers execution authority. Submitted context, messages, summaries, sources and citations are portable. Credentials/bindings and bounded unsent-draft recovery stay device-local. No second job queue or general agent framework.
 
-## Source findings that shape implementation
+## Baseline source findings before implementation
 
 - `ConversationPanel.tsx` and `conversationState.ts` already own list/chat switching, local New chat, streaming outcomes, session drafts and explicit review. Replace their presentation and normal submission flow; preserve retained ownership and actual recovery.
 - Worker `projects/conversations.ts` and `worker/ai/capture.ts` currently capture manually selected history and one writing target. Automatic history and project context require actual capture changes; hiding controls alone does not implement chat memory.
@@ -159,6 +159,8 @@ Retain direct own-account sign-in, precise errors/renewal, main-owned text/resea
 
 ### AC03 — Make returning to conversations reliable
 
+**Status:** implementation complete — awaiting user testing. See the [implementation record](docs/validation/ai-conversations-AC03.md), [device-local draft/history contract](docs/formats/conversation-drafts-v1.md) and [manual guide](docs/manual-testing/ai-conversations-AC03.md). Drafts and context choices are encrypted on this device, with exact workspace/chat ownership and normal-close protection. Recent previews, contextual Find, draft recovery and anchored older-message loading are implemented. The mounted transcript is bounded to 20 exchanges; export and context remain independent. No portable schema change or new inference behavior is included. Runtime/native/visual acceptance is pending.
+
 **Outcome:** previous chats and unsent drafts are easy to find and resume.
 
 1. Retain existing grouped list/title search/rename/archive/restore/export behavior. Retain AC02’s local first-message titles without overwriting custom titles; add useful recent previews and bounded Find in this chat. Do not create another navigation system.
@@ -171,6 +173,8 @@ Retain direct own-account sign-in, precise errors/renewal, main-owned text/resea
 **Done when / user walkthrough:** leave different drafts in two chats, switch, close/reopen normally and resume each; find an older exchange, copy/export, archive/restore and navigate at keyboard/zoomed/narrow sizes. No request resends and no draft is silently dropped.
 
 ### AC04 — Keep long conversations and project overviews useful
+
+**Status:** implementation complete — awaiting user testing. See the [record](docs/validation/ai-conversations-AC04.md), [memory contract](docs/formats/conversation-memory-v1.md) and [manual guide](docs/manual-testing/ai-conversations-AC04.md). Explicit Send can prepare at most one earlier-chat and one structural-overview summary using the existing protected own-account flow. Current/older checkpoints, exact originals, retained edits, stale coverage, Stop and bounded refusal are implemented. SQL/minimum reader is 18 and new captures are v3; frozen direct v5 framing remains. Project overview memory covers the existing bounded structure/description/synopses only; AC05 still owns broad manuscript/research/prior-chat retrieval. No live acceptance is implied by proceeding to this stage.
 
 **Outcome:** a context limit has a clear continuation path with original material retained.
 
@@ -185,6 +189,8 @@ Retain direct own-account sign-in, precise errors/renewal, main-owned text/resea
 **Done when / user walkthrough:** use naturally long history, observe the chosen summary policy, inspect/edit memory and recover an original detail; change underlying writing and see stale coverage handled; reopen without new AI work. Record acceptance pending if suitable history is unavailable; no bulk fixtures or quota-filling exercises.
 
 ### AC05 — Bring the whole project into the conversation
+
+**Status:** implementation complete — awaiting user testing. See the [record](docs/validation/ai-conversations-AC05.md), [context contract](docs/formats/conversation-knowledge-v1.md) and [manual guide](docs/manual-testing/ai-conversations-AC05.md). Bounded authoritative selection now includes other manuscript text, saved research/inspection excerpts and active prior chats; explicit snapshot pins can include archived discussion. Optional project-material controls, known-source matching and Discuss in chat are implemented. SQL/minimum reader 19 and capture 4 preserve old readers and direct v5 framing. Recall is bounded lexical selection, not exhaustive recall; live quality and native acceptance remain pending.
 
 **Outcome:** the assistant understands the book/report beyond the open chapter and recognizes research and previous project discussions.
 
@@ -201,6 +207,8 @@ Retain direct own-account sign-in, precise errors/renewal, main-owned text/resea
 
 ### AC06 — Search the web and retain usable references
 
+**Status:** implementation complete — awaiting user testing. See the [record](docs/validation/ai-conversations-AC06.md), [research contract](docs/formats/conversation-research-v1.md) and [manual guide](docs/manual-testing/ai-conversations-AC06.md). Explicit search uses capture 5, direct execution/binding 6 and bounded public references through the existing protection/handoff owner. SQL/minimum reader 20 adds portable per-attempt research results without rewriting older contracts. Citations and existing-source matching, extra-page disclosure and an explicit text-only retry are implemented. Actual permitted web search and native persistence remain unobserved; Add to Research/citation remains AC07.
+
 **Outcome:** an explicit researched answer streams with traceable, reusable sources.
 
 1. Add the compact Search the web composer toggle on a supported route. Bind it to the submitted context/model/effort. Briefly disclose that shared context can inform provider search queries. No hidden search probe, crawler, shell or general tool executor.
@@ -215,6 +223,8 @@ Retain direct own-account sign-in, precise errors/renewal, main-owned text/resea
 
 ### AC07 — Add research and cite it in writing
 
+**Status:** implementation complete — awaiting user testing. See the [implementation record](docs/validation/ai-conversations-AC07.md), [reference-save contract](docs/formats/conversation-sources-v1.md) and [manual guide](docs/manual-testing/ai-conversations-AC07.md). SQL/minimum reader 21 adds atomic reference receipts and portable provenance. Compact retained review, existing-source reuse and explicit citation insertion use the ordinary Research/editor owners. Runtime acceptance remains pending.
+
 **Outcome:** chat references become ordinary project research and real manuscript citations.
 
 1. Show Add to Research for unsaved references; known matches show Open source/Cite. Support a Save reference action on selected ordinary response text for books and other supported non-URL bibliographic types. Prose-extracted metadata is an unverified suggestion.
@@ -228,6 +238,8 @@ Retain direct own-account sign-in, precise errors/renewal, main-owned text/resea
 **Done when / user walkthrough:** save a web reference and a reviewed book reference, reuse an existing match, cite at the intended writing location and export. Reopen/archive the chat and confirm research/citation persist; a changed insertion target must not misplace a citation.
 
 ### AC08 — Finish the integrated experience
+
+**Status:** implementation complete — awaiting user testing. See the [implementation/acceptance record](docs/validation/ai-conversations-AC08.md) and [integrated manual guide](docs/manual-testing/ai-conversations-AC08.md). Final integration addresses contextual recovery, off-page Stop, exact source-origin navigation, formatted reference selection and compact-height overflow. Existing persistence/provider owners and schema 21 remain unchanged. No live acceptance is inferred.
 
 **Outcome:** the whole chat → research → writing journey meets the simple product promise.
 
@@ -252,4 +264,4 @@ The integrated user walkthrough must establish:
 5. **Reliable ownership:** on disposable projects, Save/reopen, Backup/Restore and independent copy retain data without credentials or execution rights. Naturally encountered failures/Stop/local-protection cases preserve text and exact outcomes.
 6. **Everyday usability:** keyboard/IME, narrow/zoomed panes and screen readers remain usable; scrolling does not fight the reader; typing continues during streaming. Judge response relevance, existing-source awareness and uncertainty honestly.
 
-This plan records the approved decisions and AC02 implementation. It does not claim user acceptance or completion of AC03–AC08. Automatic summaries, broad project/research/prior-chat recall, web search and research-to-citation remain later-stage work.
+This plan records the approved decisions and completion of AC01–AC08 implementation. It does not claim user acceptance or release readiness. Bounded project/research/prior-chat recall, explicit web research and research-to-citation are implemented; successful text completion, permitted live research, relevance, native persistence, cancellation and the integrated writing journey require user observation. Any blocked mandatory capability leaves the feature incomplete for delivery. The AC08 acceptance ledger keeps those gates explicit.

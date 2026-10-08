@@ -1,10 +1,44 @@
 import {
+  isReferenceOrigin,
+  isReferenceSave,
+  isReferenceCandidate,
+  isReferenceReceipt,
+  type ReferenceOrigin,
+  type ReferenceSave,
+  type ReferenceCandidate,
+  type ReferenceReceipt
+} from './conversation-sources'
+import { isSourceMetadata, type SourceMetadata } from './sources'
+import { isWebResearch, researchUrl, type WebResearch } from './conversation-research'
+import {
+  isProjectKnowledge,
+  isKnowledgeSettings,
+  isKnowledgeTarget,
+  isKnowledgeChange,
+  isSourceMatch,
+  knowledgeText,
+  type ProjectKnowledge,
+  type KnowledgeSettings,
+  type KnowledgeTarget,
+  type KnowledgeChange,
+  type SourceMatch
+} from './conversation-knowledge'
+import {
+  isMemoryCoverage,
+  isMemoryCheckpoint,
+  MEMORY_LIMITS,
+  type MemoryPurpose,
+  type MemoryCoverage,
+  type MemoryCheckpoint
+} from './conversation-memory'
+import {
   AUTOMATIC_HISTORY_LIMIT,
   isContextPolicy,
   readContextHistory,
   type ConversationContextPolicy
 } from './conversation-context'
 import type { CaptureSource, AiTextCaptureFields, AiAttemptFields } from './ai-content'
+import type { ConversationDraftAPI } from './conversation-drafts'
 import { isAiHandoffReceipt, type AiHandoffReceipt } from './ai-handoff'
 export type { CaptureSource, AttemptState } from './ai-content'
 import { isId } from '../domain/editor/schema'
@@ -18,6 +52,8 @@ export const CONVERSATION_LIMITS = {
   title: 160,
   list: 20,
   turns: 5,
+  mountedTurns: 20,
+  findMatches: 20,
   history: 12,
   ranges: 128,
   exportBytes: 64 * 1024 * 1024
@@ -33,7 +69,22 @@ export type AiCaptureV2 = Omit<AiCaptureV1, 'version' | 'template'> & {
   template: 'conversation-v2'
   contextPolicy: ConversationContextPolicy
 }
-export type AiCapture = AiCaptureV1 | AiCaptureV2
+export type AiCaptureV3 = Omit<AiCaptureV2, 'version'> & {
+  version: 3
+  purpose: MemoryPurpose
+  coverage: MemoryCoverage | null
+  memoryIds: string[]
+}
+export type AiCaptureV4 = Omit<AiCaptureV3, 'version'> & {
+  version: 4
+  knowledge: ProjectKnowledge | null
+}
+export type AiCaptureV5 = Omit<AiCaptureV4, 'version' | 'template' | 'purpose'> & {
+  version: 5
+  template: 'conversation-research-v1'
+  purpose: 'chat'
+}
+export type AiCapture = AiCaptureV1 | AiCaptureV2 | AiCaptureV3 | AiCaptureV4 | AiCaptureV5
 export type Conversation = {
   version: 1 | 2
   /** v1 has no claimed origin; v2 always carries a nullable stable ID. */
@@ -56,6 +107,17 @@ export type ConversationMessage = {
   text: string
   createdAt: string
 }
+export type ConversationSummary = Conversation & {
+  preview: string
+  previewRole: 'user' | 'assistant' | null
+}
+export type ConversationMatch = {
+  attemptId: string
+  messageId: string
+  ordinal: number
+  role: 'user' | 'assistant'
+  preview: string
+}
 export type ConversationAttempt = Omit<AiAttemptFields, 'version' | 'provider'> & {
   version: 1 | 2
   provider: 'openai-codex' | 'openai-chatgpt-plan' | null
@@ -65,6 +127,7 @@ export type ConversationAttempt = Omit<AiAttemptFields, 'version' | 'provider'> 
   assistantMessageId: string | null
 }
 export type ConversationTurn = {
+  research?: WebResearch | null
   attempt: ConversationAttempt
   capture: AiCapture
   user: ConversationMessage
@@ -73,7 +136,8 @@ export type ConversationTurn = {
 export type ConversationReview = OpenInput & {
   action: 'review'
   /** Omitted version retains the original manual-context contract. */
-  version?: 2
+  version?: 2 | 3 | 4 | 5
+  purpose?: MemoryPurpose
   contextPolicy?: ConversationContextPolicy
   conversationId: string
   expectedRevision: string
@@ -104,8 +168,38 @@ export type ConversationSubmit = OpenInput & {
   connectionId: string | null
   model: string | null
 }
-export type ConversationGroup = { items: Conversation[]; total: number }
+export type ConversationGroup = { items: ConversationSummary[]; total: number }
 export type ConversationRequest =
+  | (OpenInput & { action: 'reference-history'; sourceId: string; offset: number })
+  | (OpenInput & { action: 'reference-preview'; origin: ReferenceOrigin; metadata: SourceMetadata })
+  | (OpenInput & { action: 'reference-save'; save: ReferenceSave })
+  | (OpenInput & { action: 'context-read'; conversationId: string })
+  | (OpenInput & {
+      action: 'context-candidates'
+      kind: KnowledgeTarget['kind']
+      query: string
+      offset: number
+    })
+  | (OpenInput & {
+      action: 'context-change'
+      conversationId: string
+      operationId: string
+      expectedRevision: string | null
+      change: KnowledgeChange
+    })
+  | (OpenInput & { action: 'source-matches'; attemptId: string })
+  | (OpenInput & { action: 'web-matches'; attemptId: string })
+  | (OpenInput & { action: 'memory-plan'; review: ConversationReview })
+  | (OpenInput & { action: 'memory-list'; conversationId: string; before: number | null })
+  | (OpenInput & {
+      action: 'memory-edit'
+      conversationId: string
+      operationId: string
+      expectedId: string
+      text: string
+    })
+  | (OpenInput & { action: 'summaries'; ids: string[] })
+  | (OpenInput & { action: 'find'; conversationId: string; query: string; after: number | null })
   | (OpenInput & {
       action: 'grouped-list'
       state: 'active' | 'archived'
@@ -139,10 +233,10 @@ type ConversationBindingFields = {
   captureDigest: string
 }
 /** Local operations database only. Legacy bindings deliberately have no version
- * key. v2/v3 are Codex; v4/v5 are direct ChatGPT-plan conversations. The readers
- * keep v3 mechanics-only and v4/v5 conversation-only. No binding confers authority. */
+ * key. v2/v3 are Codex; v4/v5 are text-only and v6 is web research on the direct ChatGPT-plan route. The readers
+ * keep v3 mechanics-only and v4/v5/v6 conversation-only. No binding confers authority. */
 export type ConversationBinding =
-  ConversationBindingFields | (ConversationBindingFields & { version: 2 | 3 | 4 | 5 })
+  ConversationBindingFields | (ConversationBindingFields & { version: 2 | 3 | 4 | 5 | 6 })
 export type ConversationWorkerInput =
   | Exclude<
       ConversationRequest,
@@ -179,13 +273,33 @@ export type ConversationWorkerInput =
           }
       ))
 export type ConversationValue =
+  | { type: 'reference-history'; items: ReferenceReceipt[]; more: boolean }
+  | { type: 'reference-preview'; candidates: ReferenceCandidate[] }
+  | { type: 'reference-saved'; receipt: ReferenceReceipt }
+  | { type: 'context-settings'; settings: KnowledgeSettings; excludedTitles: string[] }
+  | { type: 'context-candidates'; items: KnowledgeTarget[]; titles: string[]; more: boolean }
+  | { type: 'source-matches'; items: SourceMatch[] }
+  | { type: 'web-matches'; items: { url: string; matches: SourceMatch[] }[] }
+  | { type: 'memory-plan'; needed: ('chat-summary' | 'overview-summary')[] }
+  | {
+      type: 'memories'
+      items: { checkpoint: MemoryCheckpoint; current: boolean; stale: boolean }[]
+      nextBefore: number | null
+    }
   | {
       type: 'grouped-list'
       currentDocumentId: string | null
       current: ConversationGroup
       other: ConversationGroup
     }
-  | { type: 'list'; items: Conversation[]; total: number }
+  | { type: 'list'; items: ConversationSummary[]; total: number }
+  | {
+      type: 'matches'
+      conversationId: string
+      query: string
+      items: ConversationMatch[]
+      nextAfter: number | null
+    }
   | {
       type: 'page'
       conversation: Conversation
@@ -211,7 +325,7 @@ export type ConversationEvent = OpenInput & {
   pending: boolean
   issue: string | null
 }
-export type ConversationAPI = {
+export type ConversationAPI = ConversationDraftAPI & {
   conversationPresentation(action: 'copy' | 'open-link', text: string): Promise<boolean>
   conversation(input: ConversationRequest): Promise<ProjectResult<ConversationValue>>
   onConversationChanged(listener: (event: ConversationEvent) => void): () => void
@@ -303,6 +417,50 @@ function isAiCaptureV1(v: unknown): v is AiCaptureV1 {
   )
 }
 export function isAiCapture(v: unknown): v is AiCapture {
+  if (record(v) && v.version === 5)
+    return (
+      v.template === 'conversation-research-v1' &&
+      v.purpose === 'chat' &&
+      isAiCapture({ ...v, version: 4, template: 'conversation-v2' })
+    )
+  if (record(v) && v.version === 4) {
+    const { knowledge, ...base } = v
+    const stripped = {
+      ...base,
+      version: 3,
+      context: Array.isArray(v.context)
+        ? v.context.filter((c) => !record(c) || c.label !== 'Project knowledge')
+        : v.context
+    }
+    return (
+      isAiCaptureV3(stripped) &&
+      Array.isArray(v.context) &&
+      v.context.filter((c) => record(c) && c.label === 'Project knowledge').length ===
+        (knowledge === null ? 0 : 1) &&
+      (v.purpose !== 'chat' || v.contextPolicy !== 'project'
+        ? knowledge === null
+        : isProjectKnowledge(knowledge) &&
+          Array.isArray(v.context) &&
+          v.context.length <= 6 &&
+          v.context.filter(
+            (c) =>
+              record(c) &&
+              exact(c, ['kind', 'id', 'revision', 'label', 'text']) &&
+              c.label === 'Project knowledge' &&
+              c.kind === 'note' &&
+              c.id === v.id &&
+              c.revision === v.head &&
+              c.text === knowledgeText(knowledge)
+          ).length === 1) &&
+      Array.isArray(v.context) &&
+      v.context.reduce(
+        (n, c) =>
+          n + (record(c) && typeof c.text === 'string' ? c.text.length : AI_LIMITS.context + 1),
+        0
+      ) <= AI_LIMITS.context
+    )
+  }
+  if (record(v) && v.version === 3) return isAiCaptureV3(v)
   if (isAiCaptureV1(v)) return true
   if (
     !record(v) ||
@@ -367,6 +525,85 @@ export function isAiCapture(v: unknown): v is AiCapture {
     writing.length === (v.source.kind === 'none' ? 0 : 1) &&
     (v.source.kind === 'none' ||
       (writing[0].id === v.source.documentId && writing[0].revision === v.source.revisionId))
+  )
+}
+function isAiCaptureV3(v: Record<string, unknown>): v is AiCaptureV3 {
+  if (
+    !exact(v, [
+      'version',
+      'id',
+      'conversationId',
+      'template',
+      'createdAt',
+      'head',
+      'prompt',
+      'source',
+      'historyIds',
+      'context',
+      'digest',
+      'contextPolicy',
+      'purpose',
+      'coverage',
+      'memoryIds'
+    ]) ||
+    v.template !== 'conversation-v2' ||
+    !['chat', 'chat-summary', 'overview-summary'].includes(String(v.purpose)) ||
+    !isContextPolicy(v.contextPolicy) ||
+    ![v.id, v.conversationId, v.head].every(isId) ||
+    !date(v.createdAt) ||
+    !text(v.prompt, AI_LIMITS.prompt) ||
+    !v.prompt.trim() ||
+    !isCaptureSource(v.source) ||
+    v.source.kind === 'passage' ||
+    !isCaptureDigest(v.digest) ||
+    !Array.isArray(v.historyIds) ||
+    v.historyIds.length > AUTOMATIC_HISTORY_LIMIT ||
+    !v.historyIds.every(isId) ||
+    !Array.isArray(v.memoryIds) ||
+    v.memoryIds.length > 2 ||
+    !v.memoryIds.every(isId) ||
+    new Set(v.memoryIds).size !== v.memoryIds.length ||
+    !Array.isArray(v.context) ||
+    v.context.length > 5 ||
+    !v.context.every(
+      (c) =>
+        record(c) &&
+        exact(c, ['kind', 'id', 'revision', 'label', 'text']) &&
+        ['section', 'note', 'history'].includes(String(c.kind)) &&
+        isId(c.id) &&
+        isId(c.revision) &&
+        text(c.label, 200) &&
+        text(c.text, AI_LIMITS.context)
+    ) ||
+    v.context.reduce((n, c) => n + c.text.length, 0) > AI_LIMITS.context
+  )
+    return false
+  const history = readContextHistory(v.context),
+    writing = v.context.filter((c) => c.kind === 'section')
+  if (
+    !history ||
+    history.length !== v.historyIds.length ||
+    v.context.some((c) => c.kind === 'history' && c.id !== v.conversationId) ||
+    history.some((m, i) => m.id !== (v.historyIds as string[])[i]) ||
+    writing.length !== (v.source.kind === 'none' ? 0 : 1) ||
+    (v.source.kind !== 'none' &&
+      (writing[0].id !== v.source.documentId || writing[0].revision !== v.source.revisionId))
+  )
+    return false
+  if (v.purpose !== 'chat')
+    return (
+      isMemoryCoverage(v.coverage) &&
+      v.coverage.kind === (v.purpose === 'chat-summary' ? 'chat' : 'overview') &&
+      v.source.kind === 'none' &&
+      !history.length &&
+      (v.purpose === 'overview-summary'
+        ? v.contextPolicy === 'project' && !v.memoryIds.length
+        : v.contextPolicy !== 'message')
+    )
+  return (
+    v.coverage === null &&
+    (v.contextPolicy !== 'message' || (!v.context.length && !v.memoryIds.length)) &&
+    (v.contextPolicy === 'project' || v.source.kind === 'none')
   )
 }
 export function isConversation(v: unknown): v is Conversation {
@@ -465,9 +702,23 @@ export function isConversationAttempt(v: unknown): v is ConversationAttempt {
 export function isConversationTurn(v: unknown): v is ConversationTurn {
   return (
     record(v) &&
-    exact(v, ['attempt', 'capture', 'user', 'assistant']) &&
+    exact(v, [
+      'attempt',
+      'capture',
+      'user',
+      'assistant',
+      ...('research' in v ? ['research'] : [])
+    ]) &&
     isConversationAttempt(v.attempt) &&
     isAiCapture(v.capture) &&
+    (v.capture.version === 5
+      ? 'research' in v &&
+        (v.attempt.state === 'completed'
+          ? record(v.assistant) &&
+            typeof v.assistant.text === 'string' &&
+            isWebResearch(v.research, v.assistant.text)
+          : v.research === null)
+      : !('research' in v)) &&
     isConversationMessage(v.user) &&
     (v.assistant === null || isConversationMessage(v.assistant)) &&
     v.attempt.captureId === v.capture.id &&
@@ -490,6 +741,78 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
   if (!record(v) || !scope(v)) return false
   const fields = ['projectId', 'workspaceId', 'action']
   switch (v.action) {
+    case 'context-read':
+      return exact(v, [...fields, 'conversationId']) && isId(v.conversationId)
+    case 'context-candidates':
+      return (
+        exact(v, [...fields, 'kind', 'query', 'offset']) &&
+        isKnowledgeTarget({ kind: v.kind, id: v.projectId }) &&
+        text(v.query, 160) &&
+        integer(v.offset, 10000)
+      )
+    case 'context-change':
+      return (
+        exact(v, [...fields, 'conversationId', 'operationId', 'expectedRevision', 'change']) &&
+        [v.conversationId, v.operationId].every(isId) &&
+        (v.expectedRevision === null || isId(v.expectedRevision)) &&
+        isKnowledgeChange(v.change)
+      )
+    case 'reference-history':
+      return (
+        exact(v, [...fields, 'sourceId', 'offset']) && isId(v.sourceId) && integer(v.offset, 100000)
+      )
+    case 'reference-preview':
+      return (
+        exact(v, [...fields, 'origin', 'metadata']) &&
+        isReferenceOrigin(v.origin) &&
+        isSourceMetadata(v.metadata)
+      )
+    case 'reference-save':
+      return exact(v, [...fields, 'save']) && isReferenceSave(v.save)
+    case 'web-matches':
+    case 'source-matches':
+      return exact(v, [...fields, 'attemptId']) && isId(v.attemptId)
+    case 'memory-plan':
+      return (
+        exact(v, [...fields, 'review']) &&
+        record(v.review) &&
+        v.review.action === 'review' &&
+        (v.review.version === 3 || v.review.version === 4 || v.review.version === 5) &&
+        v.review.purpose === 'chat' &&
+        isConversationRequest(v.review) &&
+        v.review.projectId === v.projectId &&
+        v.review.workspaceId === v.workspaceId
+      )
+    case 'memory-list':
+      return (
+        exact(v, [...fields, 'conversationId', 'before']) &&
+        isId(v.conversationId) &&
+        (v.before === null || integer(v.before))
+      )
+    case 'memory-edit':
+      return (
+        exact(v, [...fields, 'conversationId', 'operationId', 'expectedId', 'text']) &&
+        [v.conversationId, v.operationId, v.expectedId].every(isId) &&
+        text(v.text, MEMORY_LIMITS.text) &&
+        !!v.text.trim()
+      )
+
+    case 'summaries':
+      return (
+        exact(v, [...fields, 'ids']) &&
+        Array.isArray(v.ids) &&
+        v.ids.length <= 20 &&
+        v.ids.every(isId) &&
+        new Set(v.ids).size === v.ids.length
+      )
+    case 'find':
+      return (
+        exact(v, [...fields, 'conversationId', 'query', 'after']) &&
+        isId(v.conversationId) &&
+        text(v.query, 160) &&
+        !!v.query.trim() &&
+        (v.after === null || integer(v.after))
+      )
     case 'grouped-list':
       return (
         exact(v, [
@@ -554,16 +877,20 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
           'prompt',
           'source',
           'historyIds',
-          ...('version' in v ? ['version', 'contextPolicy'] : [])
+          ...('version' in v ? ['version', 'contextPolicy'] : []),
+          ...(v.version === 3 || v.version === 4 || v.version === 5 ? ['purpose'] : [])
         ]) &&
         [v.conversationId, v.expectedRevision, v.expectedHead, v.captureId].every(isId) &&
+        (v.version !== 5 || v.purpose === 'chat') &&
         date(v.createdAt) &&
         text(v.prompt, AI_LIMITS.prompt) &&
         !!v.prompt.trim() &&
         isCaptureSource(v.source) &&
         (v.version === undefined
           ? ids(v.historyIds)
-          : v.version === 2 &&
+          : (v.version === 2 ||
+              ((v.version === 3 || v.version === 4 || v.version === 5) &&
+                ['chat', 'chat-summary', 'overview-summary'].includes(String(v.purpose)))) &&
             isContextPolicy(v.contextPolicy) &&
             Array.isArray(v.historyIds) &&
             v.historyIds.length === 0 &&
@@ -608,7 +935,11 @@ export function isContentBinding(v: unknown): v is ConversationBinding {
   return (
     record(v) &&
     (exact(v, ['attemptId', 'operationId', 'connectionId', 'model', 'digest', 'captureDigest']) ||
-      ((v.version === 2 || v.version === 3 || v.version === 4 || v.version === 5) &&
+      ((v.version === 2 ||
+        v.version === 3 ||
+        v.version === 4 ||
+        v.version === 5 ||
+        v.version === 6) &&
         exact(v, [
           'version',
           'attemptId',
@@ -628,15 +959,33 @@ export function isConversationBinding(v: unknown): v is ConversationBinding {
   return isContentBinding(v) && bindingVersion(v) !== 3
 }
 export function isProofreadingBinding(v: unknown): v is ConversationBinding {
-  return isContentBinding(v) && bindingVersion(v) !== 4 && bindingVersion(v) !== 5
+  return (
+    isContentBinding(v) &&
+    bindingVersion(v) !== 4 &&
+    bindingVersion(v) !== 5 &&
+    bindingVersion(v) !== 6
+  )
 }
-export function bindingVersion(binding: ConversationBinding): 1 | 2 | 3 | 4 | 5 {
+export function bindingVersion(binding: ConversationBinding): 1 | 2 | 3 | 4 | 5 | 6 {
   return 'version' in binding ? binding.version : 1
 }
 export function isConversationWorkerInput(v: unknown): v is ConversationWorkerInput {
   if (!record(v) || !scope(v)) return false
   const fields = ['projectId', 'workspaceId', 'action']
   switch (v.action) {
+    case 'context-read':
+    case 'context-change':
+    case 'context-candidates':
+    case 'reference-history':
+    case 'reference-preview':
+    case 'reference-save':
+    case 'web-matches':
+    case 'source-matches':
+    case 'memory-plan':
+    case 'memory-list':
+    case 'memory-edit':
+    case 'find':
+    case 'summaries':
     case 'grouped-list':
     case 'list':
     case 'read':
@@ -690,16 +1039,126 @@ export function isConversationWorkerInput(v: unknown): v is ConversationWorkerIn
       return false
   }
 }
+function isConversationSummary(v: unknown): v is ConversationSummary {
+  if (!record(v)) return false
+  const { preview, previewRole, ...conversation } = v
+  return (
+    isConversation(conversation) &&
+    text(preview, 180) &&
+    (previewRole === null || previewRole === 'user' || previewRole === 'assistant')
+  )
+}
 export function isConversationValue(v: unknown): v is ConversationValue {
   if (!record(v)) return false
   switch (v.type) {
+    case 'context-settings':
+      return (
+        exact(v, ['type', 'settings', 'excludedTitles']) &&
+        isKnowledgeSettings(v.settings) &&
+        Array.isArray(v.excludedTitles) &&
+        v.excludedTitles.length === v.settings.excluded.length &&
+        v.excludedTitles.every((t) => text(t, 200))
+      )
+    case 'context-candidates':
+      return (
+        exact(v, ['type', 'items', 'titles', 'more']) &&
+        Array.isArray(v.items) &&
+        v.items.length <= 20 &&
+        v.items.every(isKnowledgeTarget) &&
+        Array.isArray(v.titles) &&
+        v.titles.length === v.items.length &&
+        v.titles.every((t) => text(t, 200)) &&
+        typeof v.more === 'boolean'
+      )
+    case 'reference-history':
+      return (
+        exact(v, ['type', 'items', 'more']) &&
+        Array.isArray(v.items) &&
+        v.items.length <= 20 &&
+        v.items.every(isReferenceReceipt) &&
+        typeof v.more === 'boolean'
+      )
+    case 'reference-preview':
+      return (
+        exact(v, ['type', 'candidates']) &&
+        Array.isArray(v.candidates) &&
+        v.candidates.length <= 12 &&
+        v.candidates.every(isReferenceCandidate)
+      )
+    case 'reference-saved':
+      return exact(v, ['type', 'receipt']) && isReferenceReceipt(v.receipt)
+    case 'web-matches':
+      return (
+        exact(v, ['type', 'items']) &&
+        Array.isArray(v.items) &&
+        v.items.length <= 96 &&
+        v.items.every(
+          (item) =>
+            record(item) &&
+            exact(item, ['url', 'matches']) &&
+            researchUrl(item.url) &&
+            Array.isArray(item.matches) &&
+            item.matches.length <= 20 &&
+            item.matches.every(isSourceMatch)
+        )
+      )
+    case 'source-matches':
+      return (
+        exact(v, ['type', 'items']) &&
+        Array.isArray(v.items) &&
+        v.items.length <= 20 &&
+        v.items.every(isSourceMatch)
+      )
+    case 'memory-plan':
+      return (
+        exact(v, ['type', 'needed']) &&
+        Array.isArray(v.needed) &&
+        v.needed.length <= 2 &&
+        v.needed.every((k) => k === 'chat-summary' || k === 'overview-summary') &&
+        new Set(v.needed).size === v.needed.length
+      )
+    case 'memories':
+      return (
+        exact(v, ['type', 'items', 'nextBefore']) &&
+        Array.isArray(v.items) &&
+        v.items.length <= 10 &&
+        v.items.every(
+          (m) =>
+            record(m) &&
+            exact(m, ['checkpoint', 'current', 'stale']) &&
+            isMemoryCheckpoint(m.checkpoint) &&
+            typeof m.current === 'boolean' &&
+            typeof m.stale === 'boolean'
+        ) &&
+        (v.nextBefore === null || integer(v.nextBefore))
+      )
+
+    case 'matches':
+      return (
+        exact(v, ['type', 'conversationId', 'query', 'items', 'nextAfter']) &&
+        isId(v.conversationId) &&
+        text(v.query, 160) &&
+        Array.isArray(v.items) &&
+        v.items.length <= CONVERSATION_LIMITS.findMatches &&
+        v.items.every(
+          (m) =>
+            record(m) &&
+            exact(m, ['attemptId', 'messageId', 'ordinal', 'role', 'preview']) &&
+            isId(m.attemptId) &&
+            isId(m.messageId) &&
+            integer(m.ordinal) &&
+            (m.role === 'user' || m.role === 'assistant') &&
+            text(m.preview, 220)
+        ) &&
+        (v.nextAfter === null || integer(v.nextAfter))
+      )
     case 'grouped-list': {
       const group = (g: unknown): g is ConversationGroup =>
         record(g) &&
         exact(g, ['items', 'total']) &&
         Array.isArray(g.items) &&
         g.items.length <= CONVERSATION_LIMITS.list &&
-        g.items.every(isConversation) &&
+        g.items.every(isConversationSummary) &&
         integer(g.total) &&
         g.total >= g.items.length
       return (
@@ -726,7 +1185,7 @@ export function isConversationValue(v: unknown): v is ConversationValue {
         exact(v, ['type', 'items', 'total']) &&
         Array.isArray(v.items) &&
         v.items.length <= 20 &&
-        v.items.every(isConversation) &&
+        v.items.every(isConversationSummary) &&
         integer(v.total)
       )
     case 'page':

@@ -21,6 +21,10 @@ import {
   projectDetailsTable,
   projectDetailsTableV15,
   conversationTables,
+  memoryTable,
+  knowledgeTable,
+  researchTable,
+  conversationSourcesTable,
   proofreadingTables,
   inspectVersion,
   validateProjectSchema
@@ -260,6 +264,58 @@ const migrations: readonly Migration[] = [
     apply: (db) => {
       // Reader floor for v2 automatic captures. Original rows and digests are untouched.
       db.prepare('UPDATE format SET schema_version=17,minimum_reader=17').run()
+    }
+  },
+  {
+    from: 17,
+    to: 18,
+    validateSource: (db) => {
+      validateProjectSchema(db, 17)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableConversations(db, row.id)
+    },
+    apply: (db) => {
+      db.exec(memoryTable)
+      db.prepare('UPDATE format SET schema_version=18,minimum_reader=18').run()
+    }
+  },
+  {
+    from: 18,
+    to: 19,
+    validateSource: (db) => {
+      validateProjectSchema(db, 18)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableConversations(db, row.id)
+    },
+    apply: (db) => {
+      db.exec(knowledgeTable)
+      db.prepare('UPDATE format SET schema_version=19,minimum_reader=19').run()
+    }
+  },
+  {
+    from: 19,
+    to: 20,
+    validateSource: (db) => {
+      validateProjectSchema(db, 19)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableConversations(db, row.id)
+    },
+    apply: (db) => {
+      db.exec(researchTable)
+      db.prepare('UPDATE format SET schema_version=20,minimum_reader=20').run()
+    }
+  },
+  {
+    from: 20,
+    to: 21,
+    validateSource: (db) => {
+      validateProjectSchema(db, 20)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableConversations(db, row.id)
+    },
+    apply: (db) => {
+      db.exec(conversationSourcesTable)
+      db.prepare('UPDATE format SET schema_version=21,minimum_reader=21').run()
     }
   }
 ]

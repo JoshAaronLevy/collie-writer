@@ -2,6 +2,7 @@ import { ProofreadingService } from './proofreading/service'
 import { registerProofreadingIpc } from './proofreading/ipc'
 import { ConversationService } from './conversations/service'
 import { registerConversationIpc } from './conversations/ipc'
+import { ConversationDrafts } from './conversations/drafts'
 import { ProjectError } from '../domain/projects/errors'
 import { app, BrowserWindow, dialog, protocol, session } from 'electron'
 import { join } from 'node:path'
@@ -85,6 +86,7 @@ const access = new AccessService(
 )
 const ai = new AiService(() => location.path(), access)
 const conversations = new ConversationService(storage, ai)
+const conversationDrafts = new ConversationDrafts(() => location.path(), conversations)
 const proofreading = new ProofreadingService(storage, ai)
 conversations.setOtherPending(() => proofreading.hasPendingWork())
 proofreading.setOtherPending(() => conversations.hasPendingWork())
@@ -102,7 +104,8 @@ access.setExternalWorkGuard(
     ai.isSettling() ||
     ai.hasPendingWork() ||
     conversations.hasPendingWork() ||
-    proofreading.hasPendingWork()
+    proofreading.hasPendingWork() ||
+    conversationDrafts.hasPendingWork()
 )
 const directAccess = new DirectAccessService(() => window?.webContents, access, devOrigin)
 const support = new SupportService(
@@ -118,7 +121,8 @@ storage.setAccessPolicy(
       (ai.isSettling() ||
         ai.hasPendingWork() ||
         conversations.hasPendingWork() ||
-        proofreading.hasPendingWork())
+        proofreading.hasPendingWork() ||
+        conversationDrafts.hasPendingWork())
     )
       throw new ProjectError('ACCESS_BUSY')
     access.authorize(command)
@@ -130,7 +134,8 @@ storage.setAccessPolicy(
       (ai.isSettling() ||
         ai.hasPendingWork() ||
         conversations.hasPendingWork() ||
-        proofreading.hasPendingWork())
+        proofreading.hasPendingWork() ||
+        conversationDrafts.hasPendingWork())
     )
       throw new ProjectError('ACCESS_BUSY')
     if (
@@ -148,7 +153,11 @@ const lifecycle = new ProjectLifecycle(
   () => unprotected,
   devOrigin,
   ai,
-  () => conversations.hasPendingWork() || proofreading.hasPendingWork()
+  () =>
+    conversations.hasPendingWork() ||
+    proofreading.hasPendingWork() ||
+    conversationDrafts.hasPendingWork(),
+  () => conversationDrafts.settle()
 )
 const prepareUpdateRestart = async (): Promise<boolean> => {
   if (shutdownStarted || shutdownFinished) return false
@@ -255,7 +264,13 @@ app
     )
     access.register()
     registerProofreadingIpc(() => window?.webContents, proofreading, devOrigin)
-    registerConversationIpc(() => window?.webContents, conversations, devOrigin, testMode)
+    registerConversationIpc(
+      () => window?.webContents,
+      conversations,
+      conversationDrafts,
+      devOrigin,
+      testMode
+    )
     registerAiIpc(() => window?.webContents, ai, devOrigin)
     directAccess.register()
     support.register()

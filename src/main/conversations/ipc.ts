@@ -15,13 +15,41 @@ import { exact, record, projectFailure, type ProjectResult } from '../../shared/
 import { isTrustedSender } from '../ipc'
 import { externalHttpUrl, trustedDocument } from '../security'
 import type { ConversationService } from './service'
+import type { ConversationDrafts } from './drafts'
+import {
+  CONVERSATION_DRAFTS,
+  isDraftRequest,
+  type DraftView
+} from '../../shared/conversation-drafts'
 
 export function registerConversationIpc(
   owner: () => WebContents | undefined,
   service: ConversationService,
+  drafts: ConversationDrafts,
   devOrigin?: string,
   testMode = false
 ): void {
+  ipcMain.handle(
+    CONVERSATION_DRAFTS,
+    async (event, payload: unknown): Promise<ProjectResult<DraftView>> => {
+      if (
+        !isTrustedSender(event, owner(), devOrigin) ||
+        !record(payload) ||
+        !exact(payload, ['requestId', 'input']) ||
+        !isId(payload.requestId) ||
+        !isDraftRequest(payload.input)
+      )
+        return projectFailure('', 'VALIDATION')
+      try {
+        const value = await drafts.command(payload.input)
+        if (!isTrustedSender(event, owner(), devOrigin))
+          return projectFailure(payload.requestId, 'DENIED')
+        return { ok: true, requestId: payload.requestId, value }
+      } catch (error) {
+        return projectFailure(payload.requestId, projectError(error))
+      }
+    }
+  )
   ipcMain.handle(CONVERSATION_PRESENTATION, async (event, payload: unknown): Promise<boolean> => {
     if (
       !isTrustedSender(event, owner(), devOrigin) ||

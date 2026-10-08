@@ -1,4 +1,5 @@
 import { ipcRenderer } from 'electron'
+import { CONVERSATION_DRAFTS, isDraftView, type DraftView } from '../shared/conversation-drafts'
 import {
   CONVERSATION_CHANNEL,
   CONVERSATION_PRESENTATION,
@@ -10,6 +11,16 @@ import {
 } from '../shared/conversations'
 import { isProjectResult, projectFailure } from '../shared/projects'
 export const conversationApi: ConversationAPI = {
+  conversationDrafts: async (input) => {
+    const requestId = crypto.randomUUID()
+    try {
+      const result: unknown = await ipcRenderer.invoke(CONVERSATION_DRAFTS, { requestId, input })
+      if (isProjectResult<DraftView>(result, requestId, isDraftView)) return result
+    } catch {
+      /* Retain the draft until its exact protected snapshot is confirmed. */
+    }
+    return projectFailure(requestId, 'UNAVAILABLE')
+  },
   conversationPresentation: async (action, text) => {
     try {
       return (await ipcRenderer.invoke(CONVERSATION_PRESENTATION, { action, text })) === true
