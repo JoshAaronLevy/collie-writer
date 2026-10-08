@@ -1,7 +1,7 @@
 import { AppButton } from '../../components/ui/Controls'
 import { StatusBanner } from '../../components/ui/Feedback'
 import { useAiConnections } from './connectionState'
-import { connectionReason } from './connection-copy'
+import { connectionHealthDescription, connectionReason } from './connection-copy'
 import { connectionPresentation } from './connectionPresentation'
 import styles from './AiConnections.module.css'
 
@@ -17,15 +17,30 @@ export function AiConnectionNotice(): React.JSX.Element | null {
   const localIssue = connections.status?.local?.issue
   const directIssue = connections.status?.direct?.issue
   const cleanup = connections.status?.local?.cleanupCount ?? 0
+  const health = connections.status?.connectionHealth
+  const preparationAttention =
+    health &&
+    [
+      'resume-required',
+      'reconnect-required',
+      'permission-required',
+      'models-required',
+      'model-required'
+    ].includes(health.reason)
+  const healthIssue =
+    (health?.state === 'attention' || health?.state === 'error') &&
+    (!preparationAttention || (connections.startupPrepared && !connections.busy))
+  const unavailable = connections.statusUnavailable && (!!connections.status || !!connections.issue)
+  const needsAttention =
+    connections.issue || localIssue || directIssue || unavailable || healthIssue
+  // Background preparation/renewal is silent. Explicit account work keeps its controls.
+  const explicitProgress =
+    !!connections.pending || connections.waiting || connections.status?.state === 'disconnecting'
   if (connections.dialogOpen) return null
-  if (!connections.busy && !connections.issue && !localIssue && !directIssue && !cleanup)
-    return null
+  if (!explicitProgress && !needsAttention && !cleanup) return null
   return (
     <div className={styles['ai-connection-notice']}>
-      <StatusBanner
-        title="ChatGPT"
-        tone={connections.issue || localIssue || directIssue ? 'warning' : 'info'}
-      >
+      <StatusBanner title="ChatGPT" tone={needsAttention ? 'warning' : 'info'}>
         <p>
           {connections.issue
             ? connectionReason[connections.issue]
@@ -33,9 +48,13 @@ export function AiConnectionNotice(): React.JSX.Element | null {
               ? connectionReason[localIssue]
               : directIssue
                 ? connectionReason[directIssue.reason]
-                : connections.busy
-                  ? view.description
-                  : 'Inactive Codex sessions are waiting for local sign-out.'}
+                : connections.statusUnavailable
+                  ? connectionHealthDescription['status-unavailable']
+                  : healthIssue
+                    ? connectionHealthDescription[health.reason]
+                    : explicitProgress
+                      ? view.description
+                      : 'Inactive Codex sessions are waiting for local sign-out.'}
         </p>
         <div className={styles['ai-account-actions']}>
           <AppButton

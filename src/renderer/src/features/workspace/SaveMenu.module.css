@@ -6,10 +6,25 @@
   border-radius: var(--collie-radius-control);
 }
 .save-menu .save-button {
-  inline-size: 9rem;
+  position: relative;
   border: 0;
   border-start-end-radius: 0;
   border-end-end-radius: 0;
+}
+.save-state {
+  position: absolute;
+  inset-block-end: 0.125rem;
+  inset-inline-end: 0.125rem;
+  display: flex;
+  padding: 1px;
+  border-radius: 2px;
+  color: var(--collie-text);
+  background: var(--collie-surface);
+  pointer-events: none;
+}
+.save-menu .save-state svg {
+  inline-size: 0.875rem;
+  block-size: 0.875rem;
 }
 .save-menu .save-options {
   border: 0;

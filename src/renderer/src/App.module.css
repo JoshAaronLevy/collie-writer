@@ -108,7 +108,7 @@
   }
 }
 .app-shell[data-writing='true'] .workspace-content {
-  max-width: 112rem;
+  max-width: none;
   padding-inline: clamp(0.75rem, 2vw, 2rem);
 }
 .app-shell[data-writing='true'] .citation-attribution {

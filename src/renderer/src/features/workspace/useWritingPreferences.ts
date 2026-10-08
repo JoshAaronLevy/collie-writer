@@ -4,6 +4,8 @@ type WritingPreferencesState = {
   issue: string
   revealPanel: (panel: SecondaryPanel) => void
   revealRevision: number
+  outlineVisible: boolean
+  setOutlineVisible: (visible: boolean) => void
 }
 import { useRef, useState } from 'react'
 import { exact, record } from '../../../../shared/projects'
@@ -53,6 +55,8 @@ export function useWritingPreferences(): WritingPreferencesState {
   const preferencesRef = useRef(preferences)
   const [issue, setIssue] = useState('')
   const [revealRevision, setRevealRevision] = useState(0)
+  // Session-only presentation; keep the exact persisted v1 preference shape unchanged.
+  const [outlineVisible, setOutlineVisible] = useState(true)
   function update(patch: Partial<Omit<WritingPreferences, 'version'>>): void {
     const next = { ...preferencesRef.current, ...patch }
     preferencesRef.current = next
@@ -68,5 +72,13 @@ export function useWritingPreferences(): WritingPreferencesState {
     update({ panel, focus: false })
     setRevealRevision((value) => value + 1)
   }
-  return { preferences, update, issue, revealPanel, revealRevision }
+  return {
+    preferences,
+    update,
+    issue,
+    revealPanel,
+    revealRevision,
+    outlineVisible,
+    setOutlineVisible
+  }
 }

@@ -4,6 +4,8 @@ import { ConversationProvider } from './features/ai/conversations/ConversationPr
 import { ConversationNotice } from './features/ai/conversations/ConversationPanel'
 import { useEffect, useRef, useState } from 'react'
 import { BookOpen, FolderOpen, Settings } from 'lucide-react'
+import { IconMenu2, IconSettings } from '@tabler/icons-react'
+import { IconButton } from './components/ui/IconButton'
 import type { AppInfo } from '../../shared/commands'
 import type { StorageStatus } from '../../shared/storage'
 import SaveMenu from './features/workspace/SaveMenu'
@@ -139,23 +141,24 @@ function AppShell({
           >
             Projects
           </AppButton>
-          {project ? (
+          {project && !(destination.kind === 'workspace' && destination.view === 'write') ? (
             <AppButton variant="subtle" disabled={navigating} onClick={returnToWork}>
               Return to work
             </AppButton>
           ) : null}
           <AiProviderIndicator global />
-          <AppButton
+          <IconButton
+            label="Settings"
             variant="subtle"
-            leftSection={<Settings size={18} aria-hidden="true" />}
             onClick={() => {
               void navigate({ kind: 'settings', page: 'appearance' })
             }}
           >
-            Settings
-          </AppButton>
+            <IconSettings aria-hidden="true" />
+          </IconButton>
           <ActionMenu
             label="App menu"
+            icon={<IconMenu2 aria-hidden="true" />}
             actions={[
               {
                 id: 'tutorial',

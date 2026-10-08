@@ -13,7 +13,7 @@ type WorkspaceControllerState = {
   drafts: DraftRegistry
   destination: AppDestination
   focusRevision: number
-  focusRequest: React.RefObject<(() => void) | null>
+  focusRequest: React.RefObject<DestinationPresentation | null>
   navigating: boolean
   blocker: DraftBlocker | null
   navigate: (next: AppDestination, remember?: boolean) => Promise<boolean>
@@ -218,7 +218,13 @@ import {
   dispatchProtectedCorrection
 } from '../../editor/adapter'
 import { canEditProject, sameProject, type AccessView } from '../../../../shared/access'
-import { writingDestination, type AppDestination, type ResearchTarget } from '../../app/navigation'
+import {
+  pageDestination,
+  writingDestination,
+  type AppDestination,
+  type DestinationPresentation,
+  type ResearchTarget
+} from '../../app/navigation'
 import { DraftRegistry, type DraftBlocker, type DraftHandle, type FlushMode } from './drafts'
 export function scopeOf(project: OpenInput): OpenInput {
   return { projectId: project.projectId, workspaceId: project.workspaceId }
@@ -253,7 +259,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
   const [navigating, setNavigating] = useState(false)
   const navigationTask = useRef<Promise<boolean> | null>(null)
   const [blocker, setBlocker] = useState<DraftBlocker | null>(null)
-  const focusRequest = useRef<(() => void) | null>(null)
+  const focusRequest = useRef<DestinationPresentation | null>(null)
   const origin = useRef<AppDestination | null>(null)
   const [backTrail, setBackTrail] = useState<AppDestination[]>([])
   const [referenceAnchor, setReferenceAnchor] = useState<{
@@ -684,7 +690,8 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
           ? currentProject.revisionId
           : null
       },
-      !!anchor
+      !!anchor,
+      () => focusRequest.current?.mode === 'resume'
     )
     if (anchor) {
       anchorToFocus.current = null
@@ -695,7 +702,6 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
           editor.commands.setTextSelection(
             Math.min(target.position + 1, editor.state.doc.content.size)
           )
-        editor.view.dispatch(editor.state.tr.scrollIntoView())
       } else setError('The exact passage is no longer present in this writing item.')
     }
   }
@@ -892,7 +898,11 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
   async function navigateSection(documentId: string, anchorId?: string): Promise<void> {
     const p = current.current
     if (p)
-      await navigate({ kind: 'workspace', scope: scopeOf(p), view: 'write', documentId, anchorId })
+      await navigate(
+        { kind: 'workspace', scope: scopeOf(p), view: 'write', documentId, anchorId },
+        true,
+        'resume'
+      )
   }
   function navigateSearch(hit: SearchHit): void {
     const p = current.current
@@ -1854,12 +1864,27 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
   }
   const available = storage.state === 'ready' && location?.state === 'ready'
 
-  function showDestination(next: AppDestination, focus?: () => void): void {
+  function showDestination(
+    next: AppDestination,
+    focus?: () => void,
+    mode: DestinationPresentation['mode'] = focus
+      ? 'target'
+      : next.kind === 'workspace' && next.view === 'write'
+        ? 'resume'
+        : 'top'
+  ): void {
     if (destinationRef.current.kind === 'workspace' && next.kind !== 'workspace')
       origin.current = destinationRef.current
     destinationRef.current = next
     setDestination(next)
-    focusRequest.current = focus ?? null
+    positionBinding.current?.cancelScroll()
+    if (mode === 'target') positionBinding.current?.cancelRestore()
+    else setReferenceAnchor(null)
+    focusRequest.current = {
+      mode,
+      focus:
+        focus ?? (mode === 'resume' ? () => positionBinding.current?.resumeScroll() : undefined)
+    }
     setFocusRevision((value) => value + 1)
   }
   function returnToDraft(): void {
@@ -1965,11 +1990,15 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
         : 'previous view'
   async function goBack(): Promise<boolean> {
     if (!backDestination) return false
-    if (!(await navigate(backDestination, false))) return false
+    if (!(await navigate(pageDestination(backDestination), false))) return false
     setBackTrail((trail) => trail.slice(0, -1))
     return true
   }
-  function navigate(next: AppDestination, remember = true): Promise<boolean> {
+  function navigate(
+    next: AppDestination,
+    remember = true,
+    presentation: 'top' | 'resume' = 'top'
+  ): Promise<boolean> {
     if (
       navigationTask.current ||
       closingRef.current ||
@@ -1977,6 +2006,14 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       proofreadingApplication.current
     )
       return Promise.resolve(false)
+    if (
+      presentation === 'top' &&
+      !(next.kind === 'workspace' && next.view === 'write' && next.anchorId) &&
+      !(next.kind === 'workspace' && next.view === 'export' && next.exportResultId) &&
+      JSON.stringify(pageDestination(destinationRef.current)) ===
+        JSON.stringify(pageDestination(next))
+    )
+      return Promise.resolve(true)
     const task = (async (): Promise<boolean> => {
       if (outlinePending.current) {
         setError('Reconcile the pending outline/history operation before navigating.')
@@ -2063,6 +2100,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
             setError('The exact passage is no longer present. Your current section is retained.')
             return false
           }
+          positionBinding.current?.cancelRestore()
           if (anchor.footnote) editor.commands.setNodeSelection(anchor.position)
           else
             editor.commands.setTextSelection(
@@ -2081,12 +2119,17 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       setError('')
       showDestination(
         next,
-        next.kind === 'workspace' && next.view === 'write'
+        next.kind === 'workspace' && next.view === 'write' && next.anchorId
           ? () => {
-              editorRef.current?.commands.focus(undefined, { scrollIntoView: !!next.anchorId })
-              if (!next.anchorId) positionBinding.current?.resumeScroll()
+              const editor = editorRef.current
+              if (!editor || editor.isDestroyed) return
+              editor.view.focus()
+              editor.view.dispatch(editor.state.tr.scrollIntoView())
             }
-          : undefined
+          : undefined,
+        next.kind === 'workspace' && next.view === 'write' && next.anchorId
+          ? 'target'
+          : presentation
       )
       return true
     })()
@@ -2118,7 +2161,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       origin.current?.kind === 'workspace' && sameScope(origin.current.scope, current.current)
         ? origin.current
         : workspace('write')
-    if (target) void navigate(target)
+    if (target) void navigate(pageDestination(target))
   }
   const manuscriptHandle = useRef<DraftHandle | null>(null)
   if (project)

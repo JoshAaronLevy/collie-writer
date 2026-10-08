@@ -1,5 +1,10 @@
-import { IconDeviceFloppy, IconChevronDown } from '@tabler/icons-react'
-import { AppButton } from '../../components/ui/Controls'
+import {
+  IconDeviceFloppy,
+  IconChevronDown,
+  IconHourglass,
+  IconAlertTriangle
+} from '@tabler/icons-react'
+import { IconButton } from '../../components/ui/IconButton'
 import { ActionMenu } from '../../components/ui/ActionMenu'
 import { sameScope } from '../../../../shared/project-files'
 import { useWorkspaceSession } from './workspaceContext'
@@ -36,17 +41,28 @@ export default function SaveMenu(): React.JSX.Element {
   const unconfirmed = saveState === 'unconfirmed'
   return (
     <div className={styles['save-menu']} role="group" aria-label="Save project">
-      <AppButton
+      <IconButton
         className={styles['save-button']}
         variant="default"
-        leftSection={<IconDeviceFloppy size={18} aria-hidden="true" />}
         pending={saving}
         disabled={disabled}
-        aria-label={unconfirmed ? 'Retry pending Save' : saving ? 'Saving project' : 'Save'}
+        label={unconfirmed ? 'Retry pending Save' : saving ? 'Saving project' : 'Save'}
+        description={
+          saving
+            ? 'Saving project. Open Save options for progress and available cancellation.'
+            : unconfirmed
+              ? 'Retry pending Save. Check the same request before saving newer edits.'
+              : 'Save the project to its selected file, or choose a file on first Save.'
+        }
         onClick={() => run(() => save(false))}
       >
-        {saving ? 'Saving…' : unconfirmed ? 'Retry Save' : 'Save'}
-      </AppButton>
+        <IconDeviceFloppy aria-hidden="true" />
+        {saving || unconfirmed ? (
+          <span className={styles['save-state']} aria-hidden="true">
+            {saving ? <IconHourglass /> : <IconAlertTriangle />}
+          </span>
+        ) : null}
+      </IconButton>
       <ActionMenu
         label="Save options"
         icon={<IconChevronDown aria-hidden="true" />}
@@ -72,7 +88,10 @@ export default function SaveMenu(): React.JSX.Element {
           },
           {
             id: 'details',
-            label: 'File details and project actions',
+            label:
+              fileActive || saving
+                ? 'View file progress and actions'
+                : 'File details and project actions',
             disabled: !project || closing || navigating,
             onSelect: () => {
               const next = workspace('details')

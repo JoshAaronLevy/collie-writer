@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { AppDialog } from '../../components/ui/AppDialog'
-import { AppButton, ChoiceField } from '../../components/ui/Controls'
+import { AppButton } from '../../components/ui/Controls'
 import PresentationBoundary from '../../components/PresentationBoundary'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useAiConnections } from './connectionState'
@@ -291,17 +291,6 @@ function DialogContents(): React.JSX.Element {
       {status?.remoteRevocation === 'confirmed' ? (
         <p role="status">Disconnected locally and authorization revoked.</p>
       ) : null}
-      <div className={styles['chatgpt-prompt-preference']}>
-        <ChoiceField
-          label="Don't show this automatically again"
-          description="You can always open ChatGPT from the header. Uncheck to allow a prompt on a future launch."
-          checked={connections.suppressAutomatic}
-          onChange={(event) => connections.setSuppressAutomatic(event.currentTarget.checked)}
-        />
-        {connections.promptPreferenceIssue ? (
-          <p role="alert">{connections.promptPreferenceIssue}</p>
-        ) : null}
-      </div>
       {view.action !== 'done' || disconnectAccount ? (
         <div className={styles['chatgpt-dialog-footer']}>
           <AppButton variant="default" onClick={connections.closeDialog}>

@@ -20,9 +20,14 @@ export function WorkspaceStatus(): React.JSX.Element {
     saveState,
     files,
     dirty,
+    available,
+    busy,
     acting,
     working,
     closing,
+    navigating,
+    retry,
+    committing,
     storage,
     location,
     drafts,
@@ -148,6 +153,22 @@ export function WorkspaceStatus(): React.JSX.Element {
       {error ? (
         <StatusBanner tone="error" title="Your attention is needed">
           {error}
+        </StatusBanner>
+      ) : null}
+      {project && retry && !committing ? (
+        <StatusBanner tone="error" title="Local protection needs retry">
+          <p>Your current writing is retained. Retry keeps the same local operation.</p>
+          <AppButton
+            disabled={!available || busy || acting || closing || navigating}
+            onClick={() =>
+              run(async () => {
+                await flush()
+                await refresh()
+              })
+            }
+          >
+            Retry local protection
+          </AppButton>
         </StatusBanner>
       ) : null}
       {files.job?.space ||

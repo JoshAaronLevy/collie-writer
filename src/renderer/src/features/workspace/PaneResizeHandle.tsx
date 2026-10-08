@@ -1,7 +1,8 @@
-import { useRef } from 'react'
+import { useRef, type Ref } from 'react'
 import styles from './WritingWorkspace.module.css'
 
 export function PaneResizeHandle({
+  ref,
   label,
   value,
   min,
@@ -9,6 +10,7 @@ export function PaneResizeHandle({
   direction = 1,
   change
 }: {
+  ref?: Ref<HTMLDivElement>
   label: string
   value: number
   min: number
@@ -20,6 +22,7 @@ export function PaneResizeHandle({
   const apply = (next: number): void => change(Math.max(min, Math.min(max, Math.round(next))))
   return (
     <div
+      ref={ref}
       className={styles['workspace-pane-resizer']}
       role="separator"
       tabIndex={0}

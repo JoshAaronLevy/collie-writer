@@ -188,7 +188,13 @@ function visible(editor: Editor): boolean {
     !editor.view.dom.closest('[hidden], [inert]')
   )
 }
-export type PositionBinding = { capture: () => void; dispose: () => void; resumeScroll: () => void }
+export type PositionBinding = {
+  capture: () => void
+  dispose: () => void
+  resumeScroll: () => void
+  cancelScroll: () => void
+  cancelRestore: () => void
+}
 
 /** Separate from exact-target dialog bookmarks: a stale hint may safely fall back. */
 export function bindWritingPosition(
@@ -197,7 +203,8 @@ export function bindWritingPosition(
   scope: OpenInput,
   documentId: string,
   revision: () => string | null,
-  explicitAnchor: boolean
+  explicitAnchor: boolean,
+  shouldRestoreScroll: () => boolean
 ): PositionBinding {
   const hint = owner.get(scope, documentId)
   let pending = !explicitAnchor,
@@ -277,6 +284,7 @@ export function bindWritingPosition(
     visible(editor) &&
     !editor.view.composing &&
     !document.hidden &&
+    document.hasFocus() &&
     !document.querySelector('[role="dialog"], [role="alertdialog"]')
   const restore = (): void => {
     if (!pending || disposed || !safe()) return
@@ -300,7 +308,7 @@ export function bindWritingPosition(
         )
     }
     editor.view.dispatch(editor.state.tr.setSelection(selection))
-    restoreScroll(hint)
+    if (shouldRestoreScroll()) restoreScroll(hint)
     pending = false
     observer.disconnect()
     capture()
@@ -314,13 +322,16 @@ export function bindWritingPosition(
       })
     })
   }
+  const cancelScroll = (): void => {
+    if (scrollFrame) cancelAnimationFrame(scrollFrame)
+    scrollFrame = 0
+  }
   const interrupt = (): void => {
     pending = false
     observer.disconnect()
     if (frame) cancelAnimationFrame(frame)
     frame = 0
-    if (scrollFrame) cancelAnimationFrame(scrollFrame)
-    scrollFrame = 0
+    cancelScroll()
   }
   const onScroll = (): void => {
     if (visible(editor)) capture()
@@ -340,14 +351,23 @@ export function bindWritingPosition(
   document.addEventListener('keydown', interrupt, true)
   document.addEventListener('wheel', interrupt, true)
   document.addEventListener('visibilitychange', schedule)
+  window.addEventListener('focus', schedule)
   schedule()
   return {
     capture,
+    cancelScroll,
+    cancelRestore: interrupt,
     resumeScroll: () => {
+      // Initial selection restoration owns its own scroll after visible layout.
+      if (pending) {
+        schedule()
+        return
+      }
+      cancelScroll()
       const value = lastScroll
       scrollFrame = requestAnimationFrame(() => {
         scrollFrame = 0
-        if (!disposed && safe()) restoreScroll(value)
+        if (!disposed && safe() && shouldRestoreScroll()) restoreScroll(value)
       })
     },
     dispose: () => {
@@ -361,6 +381,7 @@ export function bindWritingPosition(
       document.removeEventListener('keydown', interrupt, true)
       document.removeEventListener('wheel', interrupt, true)
       document.removeEventListener('visibilitychange', schedule)
+      window.removeEventListener('focus', schedule)
     }
   }
 }

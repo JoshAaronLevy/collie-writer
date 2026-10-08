@@ -1,5 +1,17 @@
 import type { OpenInput } from '../../../shared/projects'
 
+/** Transient presentation intent, separate from a saved destination or writing hint. */
+export type DestinationPresentation = {
+  mode: 'top' | 'resume' | 'target'
+  focus?: () => void
+}
+
+export function pageDestination(destination: AppDestination): AppDestination {
+  return destination.kind === 'workspace' && destination.view === 'write'
+    ? { ...destination, anchorId: undefined }
+    : destination
+}
+
 export type ResearchTarget =
   | { kind: 'sources'; sourceId?: string; page?: 'details' | 'usage' | 'files' }
   | { kind: 'notes'; noteId?: string; annotationId?: string }

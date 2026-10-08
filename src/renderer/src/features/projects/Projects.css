@@ -13,7 +13,7 @@
     max-width: 100%;
     border: 1px solid var(--collie-control-border);
     padding: var(--collie-space-2) var(--collie-space-4);
-    background: var(--collie-surface);
+    background: transparent;
     color: var(--collie-text);
     border-radius: var(--collie-radius-control);
     cursor: pointer;

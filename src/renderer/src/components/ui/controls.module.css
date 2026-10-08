@@ -14,7 +14,7 @@
 .action-button[data-variant='default'],
 .action-button[data-variant='subtle'] {
   color: var(--collie-text);
-  background: var(--collie-surface);
+  background: transparent;
   border-color: var(--collie-control-border);
 }
 .action-button[data-variant='subtle'] {
@@ -27,6 +27,15 @@
 .action-button[data-variant='default']:not(:disabled):hover,
 .action-button[data-variant='subtle']:not(:disabled):hover {
   background: var(--collie-selected);
+}
+.action-button:is([data-variant='default'], [data-variant='subtle']):is(
+    [aria-pressed='true'],
+    [aria-current='page'],
+    [aria-current='true'],
+    [aria-expanded='true']
+  ) {
+  background: var(--collie-selected);
+  box-shadow: inset 0 -2px var(--collie-accent);
 }
 .action-button:disabled {
   opacity: 1;
@@ -185,4 +194,15 @@
 .action-menu-item:focus-visible {
   outline: var(--collie-focus-width) solid var(--collie-focus);
   outline-offset: 3px;
+}
+@media (forced-colors: active) {
+  .action-button:is(
+    [aria-pressed='true'],
+    [aria-current='page'],
+    [aria-current='true'],
+    [aria-expanded='true']
+  ) {
+    border-color: Highlight;
+    text-decoration: underline;
+  }
 }

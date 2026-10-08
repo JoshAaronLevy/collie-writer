@@ -33,18 +33,21 @@ export function WorkspaceNavigation(): React.JSX.Element {
         <nav aria-label="Research sections" className={styles['research-navigation']}>
           <AppButton
             variant={destination.target.kind === 'sources' ? 'default' : 'subtle'}
+            aria-current={destination.target.kind === 'sources' ? 'page' : undefined}
             onClick={() => research({ kind: 'sources' })}
           >
             Sources
           </AppButton>
           <AppButton
             variant={destination.target.kind === 'notes' ? 'default' : 'subtle'}
+            aria-current={destination.target.kind === 'notes' ? 'page' : undefined}
             onClick={() => research({ kind: 'notes' })}
           >
             Notes and annotations
           </AppButton>
           <AppButton
             variant={destination.target.kind === 'evidence' ? 'default' : 'subtle'}
+            aria-current={destination.target.kind === 'evidence' ? 'page' : undefined}
             onClick={() => research({ kind: 'evidence' })}
           >
             Questions and claims
@@ -52,6 +55,7 @@ export function WorkspaceNavigation(): React.JSX.Element {
           {inspectionTarget ? (
             <AppButton
               variant={destination.target.kind === 'inspector' ? 'default' : 'subtle'}
+              aria-current={destination.target.kind === 'inspector' ? 'page' : undefined}
               onClick={() => research({ kind: 'inspector', sourceId: inspectionTarget.sourceId })}
             >
               Source inspector
@@ -67,6 +71,9 @@ export function WorkspaceNavigation(): React.JSX.Element {
               key={page}
               variant={
                 destination.kind === 'settings' && destination.page === page ? 'default' : 'subtle'
+              }
+              aria-current={
+                destination.kind === 'settings' && destination.page === page ? 'page' : undefined
               }
               onClick={() => {
                 void navigate({ kind: 'settings', page })
@@ -85,6 +92,7 @@ export function WorkspaceNavigation(): React.JSX.Element {
           ))}
           <AppButton
             variant={destination.kind === 'help' ? 'default' : 'subtle'}
+            aria-current={destination.kind === 'help' ? 'page' : undefined}
             onClick={() => void navigate({ kind: 'help', page: 'about' })}
           >
             About, licenses & support

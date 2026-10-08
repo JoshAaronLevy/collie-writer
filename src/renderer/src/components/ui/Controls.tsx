@@ -27,7 +27,7 @@ export const AppButton = forwardRef<HTMLButtonElement, AppButtonProps>(function 
       ref={ref}
       type={type}
       disabled={disabled || pending}
-      aria-busy={pending || undefined}
+      aria-busy={pending ? true : props['aria-busy']}
     />
   )
 })

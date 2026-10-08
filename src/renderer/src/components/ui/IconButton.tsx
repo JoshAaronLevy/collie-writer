@@ -4,7 +4,7 @@ import { AppButton } from './Controls'
 import { useVisualPreferences } from '../../theme/visualPreferencesContext'
 import styles from './IconButton.module.css'
 
-type Props = Omit<ComponentPropsWithoutRef<typeof AppButton>, 'aria-label' | 'pending'> & {
+type Props = Omit<ComponentPropsWithoutRef<typeof AppButton>, 'aria-label'> & {
   label: string
   description?: string
   tooltipDisabled?: boolean
@@ -17,6 +17,7 @@ export const IconButton = forwardRef<HTMLButtonElement, Props>(function IconButt
     description,
     tooltipDisabled,
     disabled,
+    pending = false,
     className,
     onClick,
     onKeyDown,
@@ -26,7 +27,7 @@ export const IconButton = forwardRef<HTMLButtonElement, Props>(function IconButt
   ref
 ) {
   const { reducedMotion } = useVisualPreferences()
-  const unavailable = disabled
+  const unavailable = disabled || pending
   return (
     <Tooltip
       label={description ?? label}
@@ -44,6 +45,7 @@ export const IconButton = forwardRef<HTMLButtonElement, Props>(function IconButt
         ref={ref}
         className={[styles['icon-button'], className].filter(Boolean).join(' ')}
         aria-label={label}
+        aria-busy={pending || undefined}
         aria-disabled={unavailable || undefined}
         data-disabled={unavailable || undefined}
         onClick={(event) => {

@@ -1,4 +1,10 @@
-import { IconPlus, IconDots, IconChevronRight, IconChevronDown } from '@tabler/icons-react'
+import {
+  IconPlus,
+  IconDots,
+  IconChevronRight,
+  IconChevronDown,
+  IconAdjustmentsHorizontal
+} from '@tabler/icons-react'
 import { IconButton } from '../../components/ui/IconButton'
 import { isEditableKind } from '../../../../shared/outline'
 import PresentationBoundary from '../../components/PresentationBoundary'
@@ -10,7 +16,7 @@ import { AppDialog } from '../../components/ui/AppDialog'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import { scopeOf } from '../workspace/useWorkspaceController'
 import './OutlinePanel.css'
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
 import {
   placementPolicy,
@@ -35,6 +41,7 @@ export default function OutlinePanel({
   change: (value: OutlineChange, done?: (success: boolean) => void) => void
   select: (id: string) => void
 }): React.JSX.Element {
+  const addIssueId = useId()
   const [focusId, setFocusId] = useState(project.documentId),
     [showRemoved, setShowRemoved] = useState(false)
   const [formTarget, setFormTarget] = useState<OutlineDocument | null>(null)
@@ -283,7 +290,7 @@ export default function OutlinePanel({
                 >
                   <span>{d.title}</span>{' '}
                   <small>
-                    {d.kind === 'text' ? 'Section' : d.kind} · {d.status}
+                    {d.kind === 'text' ? 'Section' : d.kind}
                     {effectiveState(d, docs) !== 'active' ? ` · ${effectiveState(d, docs)}` : ''}
                   </small>
                 </AppButton>
@@ -331,6 +338,13 @@ export default function OutlinePanel({
     mode === 'create' ? undefined : focused.id
   )
   const parentOptions = docs.filter((d) => canChooseParent(d.id))
+  const addIssue = readOnly
+    ? 'Add item is unavailable while this project is read-only.'
+    : disabled
+      ? 'Wait for the current project action before adding an item.'
+      : mode !== null
+        ? 'Finish or cancel the open outline form before adding another item.'
+        : null
   return (
     <PresentationBoundary
       label="Manuscript outline"
@@ -338,11 +352,11 @@ export default function OutlinePanel({
         <section className="outline-panel" aria-label="Manuscript outline">
           <h3>Outline</h3>
           <div className="outline-heading-actions">
-            <IconButton
-              label="Add item"
-              description={
-                readOnly ? 'Add item is unavailable while this project is read-only.' : undefined
-              }
+            <AppButton
+              className="outline-add-item"
+              leftSection={<IconPlus size={18} aria-hidden="true" />}
+              aria-describedby={addIssue ? addIssueId : undefined}
+              title={addIssue ?? undefined}
               variant="default"
               disabled={disabled || readOnly || mode !== null}
               onClick={() => {
@@ -350,10 +364,11 @@ export default function OutlinePanel({
                 setParentId('')
               }}
             >
-              <IconPlus aria-hidden="true" />
-            </IconButton>
+              Add item
+            </AppButton>
             <ActionMenu
               label="Outline view"
+              icon={<IconAdjustmentsHorizontal aria-hidden="true" />}
               disabled={mode !== null}
               actions={[
                 {
@@ -377,6 +392,11 @@ export default function OutlinePanel({
               ]}
             />
           </div>
+          {addIssue ? (
+            <p id={addIssueId} className="outline-help" hidden={!readOnly}>
+              {addIssue}
+            </p>
+          ) : null}
           {branch(null)}
           <AppDialog
             opened={mode !== null}

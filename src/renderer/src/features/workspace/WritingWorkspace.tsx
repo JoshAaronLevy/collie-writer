@@ -1,17 +1,23 @@
 import { ReviewOptionsDialog, type ReviewOptionsTarget } from './ReviewOptionsDialog'
 import { captureSelection } from '../../editor/selection'
 import { isEditableKind, effectiveState } from '../../../../shared/outline'
-import { IconSearch, IconMaximize, IconMinimize, IconX } from '@tabler/icons-react'
+import {
+  IconBook,
+  IconSearch,
+  IconMaximize,
+  IconMinimize,
+  IconX,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand
+} from '@tabler/icons-react'
 import { IconButton } from '../../components/ui/IconButton'
 import { useEffectEvent } from 'react'
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { TextInput, Textarea } from '@mantine/core'
 import { AppButton, SelectField } from '../../components/ui/Controls'
-import { ActionMenu } from '../../components/ui/ActionMenu'
 import RichDraft from '../../editor/RichDraft'
 import { editorIsComposing } from '../../editor/adapter'
 import SaveMenu from './SaveMenu'
-import ProjectFileActions from '../projects/ProjectFileActions'
 import OutlinePanel from '../outline/OutlinePanel'
 import { useWorkspaceSession } from './workspaceContext'
 import { PaneResizeHandle } from './PaneResizeHandle'
@@ -19,7 +25,6 @@ import { WritingSidePanel } from './WritingSidePanel'
 import { readableWriting } from './readableWriting'
 import type { SecondaryPanel } from './useWritingPreferences'
 import { AiProviderIndicator } from '../ai-connections/AiProviderIndicator'
-import { sameScope } from '../../../../shared/project-files'
 import styles from './WritingWorkspace.module.css'
 
 export default function WritingWorkspace(): React.JSX.Element {
@@ -38,7 +43,7 @@ export default function WritingWorkspace(): React.JSX.Element {
     acting,
     closing,
     committing,
-    retry,
+    fileActive,
     outlineRetry,
     sectionReadOnly,
     accessReadOnly,
@@ -61,17 +66,16 @@ export default function WritingWorkspace(): React.JSX.Element {
     performOutline,
     navigateSection,
     saveSectionMeta,
-    files,
-    fileActive,
-    available,
     workspace,
     navigate,
     captureAnnotation,
-    flush,
-    refresh,
     conflict
   } = session
-  const { preferences, update, issue } = writingView
+  const { preferences, update, issue, outlineVisible, setOutlineVisible } = writingView
+  const outlineId = useId()
+  const outlineToggle = useRef<HTMLButtonElement>(null)
+  const outlineResizer = useRef<HTMLDivElement>(null)
+  const returnOutlineFocus = useRef(false)
   const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 78rem)').matches)
   const [mobilePane, setMobilePane] = useState<'editor' | 'outline' | 'panel'>('editor')
   const [metadataOpen, setMetadataOpen] = useState(false)
@@ -91,8 +95,14 @@ export default function WritingWorkspace(): React.JSX.Element {
   useEffect(() => {
     const media = window.matchMedia('(max-width: 78rem)')
     const change = (): void => {
+      const active = document.activeElement
+      // A narrow outline can be open while the desktop choice remains collapsed.
+      returnOutlineFocus.current =
+        !media.matches &&
+        !outlineVisible &&
+        !!active &&
+        !!(outlinePane.current?.contains(active) || outlineResizer.current?.contains(active))
       if (media.matches) {
-        const active = document.activeElement
         setMobilePane(
           active && outlinePane.current?.contains(active)
             ? 'outline'
@@ -105,7 +115,25 @@ export default function WritingWorkspace(): React.JSX.Element {
     }
     media.addEventListener('change', change)
     return () => media.removeEventListener('change', change)
-  }, [])
+  }, [outlineVisible])
+  useLayoutEffect(() => {
+    if (!returnOutlineFocus.current) return
+    returnOutlineFocus.current = false
+    const active = document.activeElement
+    if (
+      !narrow &&
+      visible &&
+      !session.closing &&
+      !session.navigating &&
+      !document.hidden &&
+      document.hasFocus() &&
+      !session.composition.current &&
+      !(editorRef.current && editorIsComposing(editorRef.current)) &&
+      !document.querySelector('[role="dialog"], [role="alertdialog"]') &&
+      (active === document.body || !active || outlinePane.current?.contains(active))
+    )
+      outlineToggle.current?.focus({ preventScroll: true })
+  }, [narrow, visible, session.closing, session.navigating, session.composition, editorRef])
   const paneKey = `${visible}:${project?.documentId ?? ''}`
   const [lastPaneKey, setLastPaneKey] = useState(paneKey)
   if (lastPaneKey !== paneKey) {
@@ -136,14 +164,15 @@ export default function WritingWorkspace(): React.JSX.Element {
     if (
       !visible ||
       !narrow ||
+      document.hidden ||
+      !document.hasFocus() ||
+      document.querySelector('[role="dialog"], [role="alertdialog"]') ||
       session.composition.current ||
       (editorRef.current && editorIsComposing(editorRef.current))
     )
       return
-    if (mobilePane === 'editor') {
-      editorRef.current?.commands.focus()
-      return
-    }
+    // Startup, navigation and viewport changes never focus the manuscript.
+    if (mobilePane === 'editor') return
     const pane = mobilePane === 'outline' ? outlinePane.current : sidePane.current
     pane?.focus({ preventScroll: true })
   }, [mobilePane, narrow, visible, editorRef, session.composition])
@@ -151,6 +180,15 @@ export default function WritingWorkspace(): React.JSX.Element {
   const blocked = busy || acting || closing || session.navigating
   const readOnly = sectionReadOnly || accessReadOnly || accessTransition
   function changeView(action: () => void): void {
+    if (
+      !visible ||
+      session.closing ||
+      session.navigating ||
+      document.hidden ||
+      !document.hasFocus() ||
+      document.querySelector('[role="dialog"], [role="alertdialog"]')
+    )
+      return
     if (
       session.composition.current ||
       (editorRef.current && editorIsComposing(editorRef.current))
@@ -171,29 +209,7 @@ export default function WritingWorkspace(): React.JSX.Element {
     const next = workspace(view)
     if (next) void navigate(next)
   }
-  const status = !available
-    ? 'Local protection unavailable'
-    : retry
-      ? 'Local protection needs retry'
-      : committing
-        ? 'Protecting changes…'
-        : dirty
-          ? 'Changes need local protection'
-          : 'Protected on this device'
-  const fileStatus = !sameScope(project, files.scope)
-    ? 'Checking file status…'
-    : fileActive
-      ? 'File operation in progress…'
-      : {
-          unsaved: 'Not yet saved to a project file',
-          checking: 'Checking selected file…',
-          saved: dirty ? 'Changes waiting for Save' : 'Project file saved on this device',
-          pending: 'Unsaved changes · use Save to update the project file',
-          'external-change': 'Selected file differs · Save writes your local work',
-          unavailable: 'Selected file unavailable',
-          interrupted: 'File operation interrupted'
-        }[files.state]
-  const outlineHidden = preferences.focus || (narrow && mobilePane !== 'outline')
+  const outlineHidden = preferences.focus || (narrow ? mobilePane !== 'outline' : !outlineVisible)
   const panelHidden =
     preferences.focus || preferences.panel === 'closed' || (narrow && mobilePane !== 'panel')
   const editorHidden = narrow && !preferences.focus && mobilePane !== 'editor'
@@ -202,6 +218,8 @@ export default function WritingWorkspace(): React.JSX.Element {
       className={styles['writing-workspace']}
       data-focus={preferences.focus}
       data-panel={preferences.panel}
+      data-outline-hidden={outlineHidden}
+      data-panel-hidden={panelHidden}
       data-narrow={narrow}
       style={
         {
@@ -212,41 +230,20 @@ export default function WritingWorkspace(): React.JSX.Element {
     >
       <header className={styles['writing-header']}>
         <div className={styles['writing-project-heading']}>
-          <p className={styles['writing-eyebrow']}>Manuscript</p>
           <h1>{project.title}</h1>
           {project.subtitle ? (
             <p className={styles['writing-project-subtitle']}>{project.subtitle}</p>
           ) : null}
-          <details className={styles['writing-save-state']}>
-            <summary>Save and local protection</summary>
-            <p role="status">
-              {status} · {fileStatus}
-            </p>
-            <p>
-              Local protection restores your writing after closing, including unsaved changes. Save
-              updates the project file; your cloud provider manages any upload separately.
-            </p>
-            {session.notice ? <p>{session.notice}</p> : null}
-            <AppButton
-              variant="subtle"
-              disabled={!available || blocked || !dirty}
-              onClick={() =>
-                run(async () => {
-                  await flush()
-                  await refresh()
-                })
-              }
-            >
-              {retry ? 'Retry local protection' : 'Protect pending drafts'}
-            </AppButton>
-            <ProjectFileActions />
-          </details>
         </div>
         <div className={styles['writing-header-actions']}>
           <SaveMenu />
-          <AppButton variant="subtle" onClick={() => session.research({ kind: 'sources' })}>
-            Research
-          </AppButton>
+          <IconButton
+            label="Research"
+            variant="subtle"
+            onClick={() => session.research({ kind: 'sources' })}
+          >
+            <IconBook aria-hidden="true" />
+          </IconButton>
           <IconButton
             label="Search manuscript and research"
             variant="subtle"
@@ -257,30 +254,6 @@ export default function WritingWorkspace(): React.JSX.Element {
           <AppButton variant="subtle" onClick={() => go('export')}>
             Export
           </AppButton>
-          <ActionMenu
-            label="Project"
-            actions={[
-              { id: 'details', label: 'Project and file actions', onSelect: () => go('details') },
-              { id: 'history', label: 'Manuscript history', onSelect: () => go('history') },
-              {
-                id: 'library',
-                label: 'All projects',
-                onSelect: () => {
-                  void navigate({ kind: 'library' })
-                }
-              },
-              {
-                id: 'protect',
-                label: retry ? 'Retry local protection' : 'Protect pending drafts',
-                disabled: !available || blocked || !dirty,
-                onSelect: () =>
-                  run(async () => {
-                    await flush()
-                    await refresh()
-                  })
-              }
-            ]}
-          />
           <IconButton
             label={preferences.focus ? 'Exit focus mode' : 'Focus mode'}
             variant={preferences.focus ? 'filled' : 'subtle'}
@@ -302,71 +275,100 @@ export default function WritingWorkspace(): React.JSX.Element {
         </div>
       </header>
       {issue ? <p role="status">{issue}</p> : null}
-      {!preferences.focus ? (
-        <div className={styles['writing-view-actions']}>
-          {narrow ? (
-            <>
-              <AppButton
-                variant={mobilePane === 'editor' ? 'default' : 'subtle'}
-                aria-pressed={mobilePane === 'editor'}
-                onClick={() => changeView(() => setMobilePane('editor'))}
-              >
-                Manuscript
-              </AppButton>
-              <AppButton
-                variant={mobilePane === 'outline' ? 'default' : 'subtle'}
-                aria-pressed={mobilePane === 'outline'}
-                onClick={() => changeView(() => setMobilePane('outline'))}
-              >
-                Outline
-              </AppButton>
-            </>
-          ) : null}
-          <div
-            className={styles['writing-panel-options']}
-            role="group"
-            aria-label="Writing companion"
-          >
-            {(['notes', 'source'] as const).map((mode) => (
-              <AppButton
-                variant={preferences.panel === mode ? 'default' : 'subtle'}
-                aria-pressed={preferences.panel === mode}
-                key={mode}
-                onClick={() =>
-                  panel(
-                    preferences.panel === mode && (!narrow || mobilePane === 'panel')
-                      ? 'closed'
-                      : mode
-                  )
-                }
-              >
-                {mode === 'notes' ? 'Notes' : 'Sources'}
-              </AppButton>
-            ))}
-            <AiProviderIndicator
-              active={preferences.panel === 'ai'}
-              onOpen={() =>
+      <div className={styles['writing-view-actions']} hidden={narrow && preferences.focus}>
+        <IconButton
+          ref={outlineToggle}
+          hidden={narrow}
+          label={outlineHidden ? 'Show outline' : 'Hide outline'}
+          variant="subtle"
+          aria-expanded={!outlineHidden}
+          aria-controls={outlineId}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() =>
+            changeView(() => {
+              const active = document.activeElement
+              if (
+                !outlineHidden &&
+                active &&
+                (outlinePane.current?.contains(active) || outlineResizer.current?.contains(active))
+              )
+                outlineToggle.current?.focus({ preventScroll: true })
+              setOutlineVisible(outlineHidden)
+              if (preferences.focus) update({ focus: false })
+            })
+          }
+        >
+          {outlineHidden ? (
+            <IconLayoutSidebarLeftExpand aria-hidden="true" />
+          ) : (
+            <IconLayoutSidebarLeftCollapse aria-hidden="true" />
+          )}
+        </IconButton>
+        {narrow && !preferences.focus ? (
+          <>
+            <AppButton
+              variant={mobilePane === 'editor' ? 'default' : 'subtle'}
+              aria-pressed={mobilePane === 'editor'}
+              onClick={() => changeView(() => setMobilePane('editor'))}
+            >
+              Manuscript
+            </AppButton>
+            <AppButton
+              variant={mobilePane === 'outline' ? 'default' : 'subtle'}
+              aria-pressed={mobilePane === 'outline'}
+              aria-expanded={mobilePane === 'outline'}
+              aria-controls={outlineId}
+              onClick={() => changeView(() => setMobilePane('outline'))}
+            >
+              Outline
+            </AppButton>
+          </>
+        ) : null}
+        <div
+          className={styles['writing-panel-options']}
+          hidden={preferences.focus}
+          inert={preferences.focus}
+          role="group"
+          aria-label="Writing companion"
+        >
+          {(['notes', 'source'] as const).map((mode) => (
+            <AppButton
+              variant={preferences.panel === mode ? 'default' : 'subtle'}
+              aria-pressed={preferences.panel === mode}
+              key={mode}
+              onClick={() =>
                 panel(
-                  preferences.panel === 'ai' && (!narrow || mobilePane === 'panel')
+                  preferences.panel === mode && (!narrow || mobilePane === 'panel')
                     ? 'closed'
-                    : 'ai'
+                    : mode
                 )
               }
-            />
-            {preferences.panel !== 'closed' ? (
-              <IconButton
-                label="Close writing companion"
-                variant="subtle"
-                onClick={() => panel('closed')}
-              >
-                <IconX aria-hidden="true" />
-              </IconButton>
-            ) : null}
-          </div>
+            >
+              {mode === 'notes' ? 'Notes' : 'Sources'}
+            </AppButton>
+          ))}
+          <AiProviderIndicator
+            active={preferences.panel === 'ai'}
+            onOpen={() =>
+              panel(
+                preferences.panel === 'ai' && (!narrow || mobilePane === 'panel') ? 'closed' : 'ai'
+              )
+            }
+          />
+          {preferences.panel !== 'closed' ? (
+            <IconButton
+              label="Close writing companion"
+              variant="subtle"
+              onClick={() => panel('closed')}
+            >
+              <IconX aria-hidden="true" />
+            </IconButton>
+          ) : null}
         </div>
-      ) : null}
+      </div>
       <div className={styles['writing-layout']}>
         <aside
+          id={outlineId}
           ref={outlinePane}
           tabIndex={-1}
           className={styles['writing-outline-pane']}
@@ -404,6 +406,7 @@ export default function WritingWorkspace(): React.JSX.Element {
         </aside>
         {!outlineHidden && !narrow ? (
           <PaneResizeHandle
+            ref={outlineResizer}
             label="Outline width"
             min={200}
             max={360}

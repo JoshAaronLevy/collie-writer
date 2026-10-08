@@ -7,12 +7,6 @@
   border-radius: var(--collie-radius-surface);
   background: var(--collie-surface);
 }
-.chatgpt-prompt-preference {
-  display: grid;
-  gap: var(--collie-space-2);
-  padding-block-start: var(--collie-space-4);
-  border-top: 1px solid var(--collie-border);
-}
 .ai-connection-panel p,
 .ai-connection-panel h2,
 .ai-connection-panel h3 {

@@ -8,9 +8,12 @@
 }
 .outline-panel .outline-heading-actions {
   display: flex;
-  flex-wrap: wrap;
   gap: 0.5rem;
   margin-block: 0.75rem;
+}
+.outline-panel .outline-add-item {
+  flex: 1 1 0;
+  min-width: 0;
 }
 .outline-panel .outline-tree {
   list-style: none;
@@ -33,7 +36,7 @@
   flex: 1;
   min-width: 0;
   height: auto;
-  padding: 0.5rem 0.25rem;
+  padding: 0.5rem 0.75rem;
   text-align: left;
   white-space: normal;
 }
@@ -87,7 +90,7 @@
 }
 @media (forced-colors: active) {
   .outline-panel .outline-row-title[aria-pressed='true'] {
-    border: 2px solid Highlight;
+    border-color: Highlight;
   }
 }
 

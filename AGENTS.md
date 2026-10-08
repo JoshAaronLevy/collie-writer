@@ -1,5 +1,35 @@
 # Working in Collie Writer
 
+## R2-03 outline and writing-space checkpoint — October 7, 2026
+
+R2-03 is **implementation complete — awaiting user testing**; see the [Round 2 plan](uat-round-2-implementation-plan.md), [stage/final coverage record](docs/validation/uat-round-2-R2-03.md) and [manual guide](docs/manual-testing/uat-round-2-R2-03.md). Format, lint and node/web typechecks passed cleanly with the pinned toolchain. All three Round 2 stages are implemented; no new runtime acceptance is recorded.
+
+The retained writing-view owner holds session-only outline visibility, initially expanded. Keep the exact saved `collie.writing-view.v1` shape unchanged. Desktop Show/Hide outline retains the mounted outline, its draft/form/branch/filter state and editor identity while removing hidden columns/resizers. Four pane combinations fill the available width. Normal focus-mode exit restores independent choices; explicitly showing the outline during desktop focus mode exits the override. Narrow windows keep their existing pane switch. Preserve modal/composition/background/new-focus guards and focus return to the surviving toggle when a focused outline is hidden.
+
+Write's outer width ceiling and the manuscript's 56rem cap are removed; keep non-writing caps, normal padding and content containment. Outline Add item fills the command row beside a compact view menu. Rows have consistent inset and show kind/removed state without editorial-status suffixes; stored status and Details controls remain. No document operation, Save/retry owner, portable format or main/preload/worker behavior changed. R2-01 navigation and R2-02 recovery routes remain.
+
+Actual layout, native focus, retained undo/forms, narrow/zoom/IME and accessibility observations remain pending; release remains NO-GO. Stop for Josh's manual results before further work.
+
+## R2-02 compact commands checkpoint — October 7, 2026
+
+R2-02 is **implementation complete — awaiting user testing**; see the [Round 2 plan](uat-round-2-implementation-plan.md), [record](docs/validation/uat-round-2-R2-02.md) and [manual guide](docs/manual-testing/uat-round-2-R2-02.md). Format, lint and node/web typechecks passed cleanly with the pinned toolchain. No new runtime acceptance is recorded.
+
+Write hides Return to work, the Manuscript eyebrow, Save and local protection disclosure and Project dropdown. Settings/App menu/Research use named gear/hamburger/book icons. Save has two standard icon targets, static busy/retry badges and accurate accessible names/busy state. Keep the exact Save callback, pending request and disabled guards; its chevron remains usable for the existing file-details progress/Cancel route. Real file attention remains in `WorkspaceStatus`, and retained failed manuscript commits expose Retry local protection through the existing flush owner. Only an empty session-status wrapper loses its layout space.
+
+Default/subtle toolbar/navigation buttons and legacy project buttons are transparent at rest; primary actions remain filled. Preserve explicit current/pressed/expanded states, opaque menu/dialog/tooltip surfaces, ref/event forwarding and focusable unavailable icon commands. `IconButton` owns pending activation guards; `AppButton` preserves its caller's busy semantics. No retained editor, controller, main/preload/worker or persisted format changed. R2-01 navigation behavior remains.
+
+Native Save/Cancel, rendering, narrow/zoom/contrast and keyboard/screen-reader observations remain pending; release remains NO-GO. Stop for Josh's results before R2-03 outline/width work.
+
+## R2-01 quiet startup and navigation checkpoint — October 7, 2026
+
+R2-01 is **implementation complete — awaiting user testing**; see the [Round 2 plan](uat-round-2-implementation-plan.md), [record](docs/validation/uat-round-2-R2-01.md) and [manual guide](docs/manual-testing/uat-round-2-R2-01.md). Format, lint and node/web typechecks passed cleanly with the pinned toolchain. No new runtime acceptance is recorded.
+
+ChatGPT startup silently prepares and acknowledges through main's existing launch owner; no startup outcome opens a dialog. Manual Manage ChatGPT and explicit sign-in progress/Cancel remain. Actual issues remain actionable; routine preparation and intentional signed-out state do not create a banner. The obsolete automatic-prompt checkbox and active preference wiring are removed; leave the existing `collie.chatgpt-prompt.v1` record untouched. A close/suspend refusal waits for a newer ordinary status sequence before preparation can retry.
+
+Ordinary page navigation, Return to work and generic Back open at the page top while retaining the manuscript item/caret. Project reopening/startup and outline item changes resume saved selection/scroll without focusing text. Explicit passage and pending-draft targets retain deliberate presentation. Keep transient top/resume/target intent, cancellation of stale callbacks/reference targets, dialog/IME/visibility/new-input guards, and retained editor/draft/provider ownership. Do not restore generic destination `scrollIntoView` or automatic narrow-layout manuscript focus.
+
+Main/preload/worker, Save/close/access ownership and all persisted formats remain unchanged from UAT05. Account timing, actual scroll/focus, native and accessibility acceptance remain pending; release remains NO-GO. Stop for Josh's results before R2-02 or R2-03.
+
 ## UAT05 conversations and review-options checkpoint — October 6, 2026
 
 UAT05 is **implementation complete — awaiting user testing**; see the [UAT plan](uat-implementation-plan.md), [origin/hint contract](docs/formats/conversation-origin-v2.md), [record](docs/validation/uat-UAT05.md) and [manual guide](docs/manual-testing/uat-UAT05.md). Required format, lint and node/web typechecks passed cleanly using the pinned toolchain. The conversation-only companion has exact local New chat, separate grouped list/transcript, contextual actions and the existing shared Manage ChatGPT dialog. Preserve retained drafts, exact retries, sharing reviews, actual outcomes, Stop/protection and native exports.

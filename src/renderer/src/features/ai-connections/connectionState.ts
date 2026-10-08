@@ -7,6 +7,7 @@ type ConnectionControllerState = {
   waiting: boolean
   canCancel: boolean
   busy: boolean
+  startupPrepared: boolean
   checkStatus: (acknowledge?: boolean) => Promise<void>
   connect: (connectionId: string | null, trigger: HTMLElement | null) => Promise<boolean>
   cancel: () => Promise<boolean>
@@ -25,9 +26,6 @@ type ConnectionControllerState = {
   closeDialog: () => void
   returnDialogFocus: () => void
   showOrigin: () => void
-  suppressAutomatic: boolean
-  promptPreferenceIssue: string | null
-  setSuppressAutomatic: (value: boolean) => void
 }
 import { useLayoutEffect } from 'react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
@@ -37,7 +35,6 @@ import type { AppDestination } from '../../app/navigation'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import { connectionProblemReasons } from './connection-copy'
-import { usePromptPreference } from './promptPreference'
 import { useChatGptStartup } from './useChatGptStartup'
 
 type Action = {
@@ -66,20 +63,6 @@ type Origin = {
 
 export function useConnectionController(): ConnectionControllerState {
   const session = useWorkspaceSession()
-  const preference = usePromptPreference()
-  const { setSuppression } = preference
-  const startupDismissed = useRef(false)
-  const acknowledgeStartup = useCallback(() => {
-    startupDismissed.current = true
-    void window.collie.aiStartup({ action: 'acknowledge' })
-  }, [])
-  const setSuppressAutomatic = useCallback(
-    (value: boolean) => {
-      acknowledgeStartup()
-      setSuppression(value)
-    },
-    [acknowledgeStartup, setSuppression]
-  )
   const [dialogOpen, setDialogOpen] = useState(false)
   const dialog = useRef({
     open: false,
@@ -123,21 +106,17 @@ export function useConnectionController(): ConnectionControllerState {
   }, [])
   const openDialog = useCallback(
     (trigger?: HTMLElement | null) => {
-      if (
-        openConnectionDialog(
-          trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
-        )
+      openConnectionDialog(
+        trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
       )
-        acknowledgeStartup()
     },
-    [openConnectionDialog, acknowledgeStartup]
+    [openConnectionDialog]
   )
   const closeDialog = useCallback(() => {
-    acknowledgeStartup()
     dialog.current.open = false
     setDialogOpen(false)
     // Dismiss presentation only. Keep attempts, unconfirmed replies and drafts.
-  }, [acknowledgeStartup])
+  }, [])
   const returnDialogFocus = useCallback(() => {
     const captured = dialog.current
     if (captured.open) return
@@ -512,13 +491,9 @@ export function useConnectionController(): ConnectionControllerState {
     setReadUnavailable(true)
     setIssue('outcome-unknown')
   }, [])
-  useChatGptStartup({
+  const startupPrepared = useChatGptStartup({
     status,
-    suppressAutomatic: preference.suppressAutomatic,
-    dismissed: startupDismissed,
-    busy,
     apply,
-    openAutomatically: openConnectionDialog,
     onFailure: startupFailure
   })
   useRetainedDraft('ai-connection-action', {
@@ -549,6 +524,7 @@ export function useConnectionController(): ConnectionControllerState {
       waiting,
       canCancel,
       busy,
+      startupPrepared,
       checkStatus,
       connect,
       cancel,
@@ -559,9 +535,6 @@ export function useConnectionController(): ConnectionControllerState {
       openDialog,
       closeDialog,
       returnDialogFocus,
-      suppressAutomatic: preference.suppressAutomatic,
-      promptPreferenceIssue: preference.issue,
-      setSuppressAutomatic,
       showOrigin
     }),
     [
@@ -573,6 +546,7 @@ export function useConnectionController(): ConnectionControllerState {
       waiting,
       canCancel,
       busy,
+      startupPrepared,
       checkStatus,
       connect,
       cancel,
@@ -583,9 +557,6 @@ export function useConnectionController(): ConnectionControllerState {
       openDialog,
       closeDialog,
       returnDialogFocus,
-      preference.suppressAutomatic,
-      preference.issue,
-      setSuppressAutomatic,
       showOrigin
     ]
   )
