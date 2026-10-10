@@ -30,7 +30,7 @@ export const connectionHealthDescription: Record<AiConnectionHealthReason, strin
   offline: 'ChatGPT could not be reached. Your account has been kept; try again when online.',
   'usage-limited':
     'ChatGPT reported a usage limit. Review your account’s usage before making another request.',
-  'provider-unavailable': 'ChatGPT reported a temporary service problem.',
+  'provider-unavailable': 'ChatGPT reported a temporary service problem. Try again later.',
   'account-unavailable': 'ChatGPT refused access for this account. Review the connection details.',
   'setup-required': 'Your account is saved, but this connection needs further setup.',
   'registration-invalid': 'ChatGPT rejected this app registration. Review the connection details.',

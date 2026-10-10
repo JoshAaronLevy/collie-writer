@@ -1,5 +1,6 @@
 import { useImportFlow } from './useImportFlow'
 import { ImportResults } from './ImportResults'
+import { importAvailability } from './import-availability'
 import type { ReviewCounts } from '../../../../shared/import-review'
 import { Loader, VisuallyHidden } from '@mantine/core'
 import { IconX } from '@tabler/icons-react'
@@ -561,6 +562,7 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
       !current.revision ||
       !current.selected.length ||
       !current.settings.categories.length ||
+      !importAvailability(connections).ready ||
       !status?.activeConnectionId ||
       catalog?.state !== 'loaded' ||
       !catalog.selectedModelId
@@ -685,18 +687,8 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
   const catalog = connections.status?.catalog,
     selectedFiles = state.files.filter((f) => state.selected.includes(f.id)),
     modelId = catalog?.state === 'loaded' ? catalog.selectedModelId : null,
-    modelReady =
-      catalog?.state === 'loaded' && !!modelId && catalog.models.some((m) => m.id === modelId),
-    connected =
-      connections.status?.state === 'signed-in' && !!connections.status.activeConnectionId,
-    ready =
-      connected &&
-      modelReady &&
-      !connections.statusUnavailable &&
-      connections.issue !== 'outcome-unknown' &&
-      !connections.busy &&
-      connections.status?.route.kind === 'local-chatgpt-plan' &&
-      connections.status.execution?.state === 'available',
+    availability = importAvailability(connections),
+    ready = availability.ready,
     formBlocked = blocked || multipart.locked,
     notice = state.issue || multipart.issue,
     processingText =
@@ -1067,30 +1059,38 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
                           )
                       }}
                     />
-                    {!ready ? (
+                    {availability.message ? (
                       <div className={styles.connection}>
                         <p className={styles.helper} role="status">
-                          {connections.busy || catalog?.state === 'loading'
-                            ? 'Setting up ChatGPT…'
-                            : !connected
-                              ? 'Connect ChatGPT to import these files.'
-                              : !modelReady
-                                ? 'Choose an available model to continue.'
-                                : 'ChatGPT needs attention before importing.'}
+                          {availability.message}
                         </p>
-                        <AppButton
-                          variant="subtle"
-                          size="sm"
-                          disabled={
-                            state.busy ||
-                            !!state.pending ||
-                            state.uncertainPicker ||
-                            multipart.locked
-                          }
-                          onClick={() => void close(true)}
-                        >
-                          {connected ? 'Manage ChatGPT' : 'Connect ChatGPT'}
-                        </AppButton>
+                        {availability.action === 'check' ? (
+                          <AppButton
+                            variant="subtle"
+                            size="sm"
+                            pending={connections.checking}
+                            disabled={state.busy || session.closing || !session.available}
+                            onClick={() => void connections.checkStatus(true)}
+                          >
+                            Check status
+                          </AppButton>
+                        ) : availability.action === 'manage' ? (
+                          <AppButton
+                            variant="subtle"
+                            size="sm"
+                            disabled={
+                              state.busy ||
+                              !!state.pending ||
+                              state.uncertainPicker ||
+                              multipart.locked
+                            }
+                            onClick={() => void close(true)}
+                          >
+                            {connections.status?.connectionHealth.action === 'connect'
+                              ? 'Connect ChatGPT'
+                              : 'Manage ChatGPT'}
+                          </AppButton>
+                        ) : null}
                       </div>
                     ) : null}
                     {showFindingsRecovery ? (

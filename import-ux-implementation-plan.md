@@ -8,6 +8,8 @@ This plan replaces the interaction design and review requirements in [import-imp
 
 **The product promise: choose files, choose what to import, optionally add instructions, choose a model, Submit, read a short summary, Accept.** Collie handles preparation and reasonable import decisions. Users inspect or edit the imported content in ordinary Chats, Research and Notes afterward.
 
+**October 10 follow-up:** Josh reported that Submit stayed disabled despite a connected account. The Import gate incorrectly required a legacy runtime field that is null on the direct ChatGPT route. The fix uses current main-owned text availability/account/model identity, surfaces specific blockers, and includes disconnected saved accounts in the existing startup notice. See the [IU05 follow-up record](docs/validation/import-IU05.md#user-follow-up-submit-disabled-with-a-connected-account) and [focused retest](docs/manual-testing/import-IU05.md#connected-account-submit-fix-focused-retest). Implementation and required checks are complete; user retesting is pending.
+
 Josh explicitly prefers a useful, straightforward import that misses some material over a cumbersome process that requires near-perfect coverage. His 90–95% versus 98–100% comparison expresses that priority; it is not a measured success rate or a numerical release requirement. Correctly preserve what is imported, make obvious omissions understandable, and improve extraction later in response to actual examples. Do not make the user resolve every ambiguity first.
 
 ## Product decisions and superseded requirements

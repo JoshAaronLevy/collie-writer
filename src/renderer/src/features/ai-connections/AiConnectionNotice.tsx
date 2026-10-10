@@ -33,8 +33,13 @@ export function AiConnectionNotice(): React.JSX.Element | null {
       'models-required',
       'model-required'
     ].includes(health.reason)
+  const disconnectedSavedAccount =
+    health?.state === 'disconnected' &&
+    connections.startupPrepared &&
+    !connections.busy &&
+    !!connections.status?.connections.length
   const healthIssue =
-    (health?.state === 'attention' || health?.state === 'error') &&
+    (health?.state === 'attention' || health?.state === 'error' || disconnectedSavedAccount) &&
     (!preparationAttention || (connections.startupPrepared && !connections.busy))
   const unavailable = connections.statusUnavailable && (!!connections.status || !!connections.issue)
   const needsAttention =
@@ -56,11 +61,13 @@ export function AiConnectionNotice(): React.JSX.Element | null {
                 ? connectionReason[directIssue.reason]
                 : connections.statusUnavailable
                   ? connectionHealthDescription['status-unavailable']
-                  : healthIssue
-                    ? connectionHealthDescription[health.reason]
-                    : explicitProgress
-                      ? view.description
-                      : 'Inactive Codex sessions are waiting for local sign-out.'}
+                  : disconnectedSavedAccount
+                    ? 'Your saved ChatGPT account is disconnected. Open Manage ChatGPT to reconnect.'
+                    : healthIssue
+                      ? connectionHealthDescription[health.reason]
+                      : explicitProgress
+                        ? view.description
+                        : 'Inactive Codex sessions are waiting for local sign-out.'}
         </p>
         <div className={styles['ai-account-actions']}>
           <AppButton
@@ -79,7 +86,9 @@ export function AiConnectionNotice(): React.JSX.Element | null {
               Cancel sign-in
             </AppButton>
           ) : null}
-          {connections.issue ? (
+          {connections.issue ||
+          connections.statusUnavailable ||
+          health?.action === 'check-status' ? (
             <AppButton
               variant="default"
               pending={connections.checking}

@@ -16,6 +16,8 @@ All requested IU stages are implemented; stop after the final guide for Josh's o
 
 ## Product simplicity — standing instruction
 
+October 10 Import follow-up: direct ChatGPT intentionally has `status.execution: null`; never gate Import on legacy local-runtime readiness. Use main's text/conversation feature availability and exact selected account/model identity, with the existing dispatch checks as authority. Import must show the actual connection/model/work blocker and its remedy. Settled startup connection errors and disconnected saved accounts belong in the existing global notice; background preparation stays silent and never sends inference. See the [IU05 follow-up](docs/validation/import-IU05.md#user-follow-up-submit-disabled-with-a-connected-account); retesting remains pending.
+
 Deliver the shortest understandable path that fully completes the user's task. Keep required engineering and data protection behind the interface; do not expose internal stages, identifiers, prompts, payloads, request grants or recovery machinery as routine user steps.
 
 - Prefer sensible automatic defaults and a small number of meaningful decisions. Add a control or mandatory step only when the user needs it to make a real product choice; implementation complexity alone is not a reason.
