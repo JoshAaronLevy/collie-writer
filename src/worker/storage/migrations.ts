@@ -1,4 +1,6 @@
+import { importPlanTables, importReviewTables, importCommitTables } from './schema'
 import { validatePortableProofreading } from '../projects/proofreading'
+import { validatePortableImports, validateImportArtifactFiles } from '../projects/import-sessions'
 import { validatePortableConversations } from '../projects/conversations'
 import { isProjectTemplate, kindForTemplate } from '../../domain/projects/templates'
 import { readProjectDetails } from '../projects/details'
@@ -25,6 +27,11 @@ import {
   knowledgeTable,
   researchTable,
   conversationSourcesTable,
+  importTables,
+  importGraphTables,
+  externalConversationTables,
+  importedContentTable,
+  importAnalysisTables,
   proofreadingTables,
   inspectVersion,
   validateProjectSchema
@@ -317,6 +324,126 @@ const migrations: readonly Migration[] = [
       db.exec(conversationSourcesTable)
       db.prepare('UPDATE format SET schema_version=21,minimum_reader=21').run()
     }
+  },
+  {
+    from: 21,
+    to: 22,
+    validateSource: (db) => {
+      validateProjectSchema(db, 21)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableConversations(db, row.id)
+    },
+    apply: (db) => {
+      for (const sql of importTables) db.exec(sql)
+      db.prepare('UPDATE format SET schema_version=22,minimum_reader=22').run()
+    }
+  },
+  {
+    from: 22,
+    to: 23,
+    validateSource: (db) => {
+      validateProjectSchema(db, 22)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, row.id)
+    },
+    apply: (db) => {
+      for (const sql of importGraphTables) db.exec(sql)
+      db.prepare('UPDATE format SET schema_version=23,minimum_reader=23').run()
+    }
+  },
+  {
+    from: 23,
+    to: 24,
+    validateSource: (db) => {
+      validateProjectSchema(db, 23)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[]) {
+        validatePortableImports(db, row.id)
+        validatePortableConversations(db, row.id)
+      }
+    },
+    apply: (db) => {
+      for (const sql of externalConversationTables) db.exec(sql)
+      db.prepare('UPDATE format SET schema_version=24,minimum_reader=24').run()
+    }
+  },
+  {
+    from: 24,
+    to: 25,
+    validateSource: (db) => {
+      validateProjectSchema(db, 24)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[]) {
+        validatePortableImports(db, row.id)
+        validatePortableConversations(db, row.id)
+      }
+    },
+    apply: (db) => {
+      db.exec(importedContentTable)
+      db.prepare('UPDATE format SET schema_version=25,minimum_reader=25').run()
+    }
+  },
+  {
+    from: 25,
+    to: 26,
+    validateSource: (db) => {
+      validateProjectSchema(db, 25)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, r.id)
+    },
+    apply: (db) => {
+      for (const sql of importAnalysisTables) db.exec(sql)
+      db.prepare('UPDATE format SET schema_version=26,minimum_reader=26').run()
+    }
+  },
+  {
+    from: 26,
+    to: 27,
+    validateSource: (db) => {
+      validateProjectSchema(db, 26)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, r.id)
+    },
+    apply: (db) => {
+      for (const sql of importPlanTables) db.exec(sql)
+      db.prepare('UPDATE format SET schema_version=27,minimum_reader=27').run()
+    }
+  },
+  {
+    from: 27,
+    to: 28,
+    validateSource: (db) => {
+      validateProjectSchema(db, 27)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, r.id)
+    },
+    apply: (db) => {
+      for (const sql of importReviewTables) db.exec(sql)
+      db.prepare('UPDATE format SET schema_version=28,minimum_reader=28').run()
+    }
+  },
+  {
+    from: 28,
+    to: 29,
+    validateSource: (db) => {
+      validateProjectSchema(db, 28)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, r.id)
+    },
+    apply: (db) => {
+      for (const sql of importCommitTables) db.exec(sql)
+      db.prepare('UPDATE format SET schema_version=29,minimum_reader=29').run()
+    }
+  },
+  {
+    from: 29,
+    to: 30,
+    validateSource: (db) => {
+      validateProjectSchema(db, 29)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableConversations(db, r.id)
+    },
+    apply: (db) => {
+      db.prepare('UPDATE format SET schema_version=30,minimum_reader=30').run()
+    }
   }
 ]
 
@@ -397,6 +524,11 @@ export async function openProjectDatabase(
           readProjectDetails(candidate, row.id)
           validatePortableConversations(candidate, row.id)
           validatePortableProofreading(candidate, row.id)
+          await validateImportArtifactFiles(
+            root,
+            workspace,
+            validatePortableImports(candidate, row.id)
+          )
         }
         candidate.pragma('wal_checkpoint(TRUNCATE)')
       } finally {

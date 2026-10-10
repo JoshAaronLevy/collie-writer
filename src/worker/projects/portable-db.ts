@@ -1,4 +1,12 @@
+import { validateImportCommitOperation } from './import-commit'
+import { IMPORT_GRAPH_MEDIA, type ImportArtifactRef } from './import-graphs'
 import { hasControlCharacters } from '../../shared/control-characters'
+import {
+  IMPORT_ORIGINAL_MEDIA,
+  IMPORT_ARTIFACT_MEDIA,
+  validatePortableImports,
+  validateImportOperation
+} from './import-sessions'
 import { isEditableKind } from '../../shared/outline'
 import { validatePortableProofreading } from './proofreading'
 import { validatePortableConversations } from './conversations'
@@ -22,6 +30,7 @@ export type PortableGraph = {
   headCommitId: string
   schemaVersion: number
   blobs: BlobRef[]
+  importArtifacts: ImportArtifactRef[]
 }
 const invalid = (): never => {
   throw new SnapshotError('INVALID_ARCHIVE')
@@ -71,11 +80,35 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
       !text(asset.original_name, 255) ||
       /[\\/:]/.test(String(asset.original_name)) ||
       ['.', '..'].includes(String(asset.original_name)) ||
-      !['application/pdf', 'image/png', 'image/jpeg', 'text/plain'].includes(
-        String(asset.media_type)
-      )
+      ![
+        'application/pdf',
+        'image/png',
+        'image/jpeg',
+        'text/plain',
+        ...(version >= 22 ? [IMPORT_ORIGINAL_MEDIA, IMPORT_ARTIFACT_MEDIA] : []),
+        ...(version >= 23 ? [IMPORT_GRAPH_MEDIA] : [])
+      ].includes(String(asset.media_type))
     )
       return invalid()
+    if (
+      version >= 22 &&
+      [IMPORT_ORIGINAL_MEDIA, IMPORT_ARTIFACT_MEDIA, IMPORT_GRAPH_MEDIA].includes(
+        String(asset.media_type)
+      )
+    ) {
+      const table =
+        asset.media_type === IMPORT_ORIGINAL_MEDIA
+          ? 'import_files'
+          : asset.media_type === IMPORT_GRAPH_MEDIA
+            ? 'import_graph_pages'
+            : 'import_artifacts'
+      if (
+        !db
+          .prepare(`SELECT 1 FROM ${table} WHERE project_id=? AND asset_id=?`)
+          .get(projectId, asset.id)
+      )
+        return invalid()
+    }
     const prior = blobs.get(asset.sha256)
     if (prior && prior.bytes !== asset.byte_size) return invalid()
     assetIds.add(asset.id)
@@ -252,6 +285,14 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
     } catch {
       return invalid()
     }
+  let importArtifacts: ImportArtifactRef[] = []
+  if (version >= 22) {
+    try {
+      importArtifacts = validatePortableImports(db, projectId)
+    } catch {
+      return invalid()
+    }
+  }
   let commits = 0
   for (const raw of db.prepare('SELECT * FROM commits').iterate()) {
     const commit = raw as Record<string, unknown>
@@ -288,6 +329,22 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
     )
       return invalid()
     const result: unknown = JSON.parse(op.result)
+    if (version >= 29 && record(result) && result.kind === 'import-commit') {
+      if (
+        !validateImportCommitOperation(db, projectId, op.operation_id, op.digest, result) ||
+        !parent.get(projectId, result.headCommitId)
+      )
+        return invalid()
+      continue
+    }
+    if (version >= 22 && record(result) && result.kind === 'import-session') {
+      if (
+        !validateImportOperation(db, projectId, op.operation_id, op.digest, result) ||
+        !parent.get(projectId, result.headCommitId)
+      )
+        return invalid()
+      continue
+    }
     if (
       !record(result) ||
       !exact(result, ['projectId', 'documentId', 'revisionId', 'headCommitId']) ||
@@ -304,6 +361,7 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
     projectId,
     headCommitId,
     schemaVersion: version,
+    importArtifacts,
     blobs: [...blobs.values()].sort((a, b) => a.sha256.localeCompare(b.sha256))
   }
 }

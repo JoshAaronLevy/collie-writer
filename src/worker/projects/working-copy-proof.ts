@@ -239,6 +239,16 @@ export async function proveWorkingCopy(
       'This project needs its original database or migration recovery; keep it locally.'
     )
     head = graph.headCommitId
+    for (const table of [
+      'import_batches',
+      'import_batch_revisions',
+      'import_files',
+      'import_artifacts'
+    ])
+      requireCopy(
+        !db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get(),
+        'This project contains retained import work or originals. Keep its original working copy; import-bearing working copies cannot be removed yet.'
+      )
     requireCopy(
       head === destination.headCommitId,
       'Local changes are newer than the selected file. Open this project and Save, then switch away and review again.'

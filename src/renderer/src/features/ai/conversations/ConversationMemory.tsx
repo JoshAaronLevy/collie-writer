@@ -149,7 +149,7 @@ export function ConversationMemory(): React.JSX.Element {
               <p>
                 {new Date(m.createdAt).toLocaleString()}.{' '}
                 {m.coverage.kind === 'chat'
-                  ? `${m.coverage.messages.length / 2} exchanges added${m.coverage.previousId ? ' to prior memory' : ''}.`
+                  ? `${m.coverage.messages.filter((r) => !r.imported).length / 2} native exchanges and ${m.coverage.messages.filter((r) => r.imported).length} imported messages added${m.coverage.previousId ? ' to prior memory' : ''}.`
                   : `${m.coverage.documents.length} outline items covered; View originals shows the exact material summarized.`}
               </p>
               <div className={styles['conversation-actions']}>

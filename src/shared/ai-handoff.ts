@@ -3,12 +3,12 @@ import { exact, isOpenInput, record, type OpenInput } from './projects'
 
 /** Device-local proof of a committed portable outcome. Never a renderer grant. */
 export type AiHandoffReceipt = {
-  version: 1
+  version: 1 | 2 | 3 | 4
   scope: OpenInput
-  purpose: 'conversation' | 'proofread'
+  purpose: 'conversation' | 'proofread' | 'import'
   attemptId: string
   operationId: string
-  operationVersion: 1 | 2 | 3 | 4 | 5 | 6
+  operationVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
   payloadDigest: string
   captureDigest: string
   resultDigest: string
@@ -40,16 +40,25 @@ export function isAiHandoffReceipt(v: unknown): v is AiHandoffReceipt {
       'portableHead',
       'portableDigest'
     ]) &&
-    v.version === 1 &&
+    ((v.version === 1 &&
+      ['conversation', 'proofread'].includes(String(v.purpose)) &&
+      v.operationVersion !== 7 &&
+      v.operationVersion !== 8 &&
+      v.operationVersion !== 9) ||
+      (v.version === 2 && v.purpose === 'import' && v.operationVersion === 7) ||
+      (v.version === 3 && v.purpose === 'import' && v.operationVersion === 8) ||
+      (v.version === 4 && v.purpose === 'conversation' && v.operationVersion === 9)) &&
     isOpenInput(v.scope) &&
-    ['conversation', 'proofread'].includes(String(v.purpose)) &&
     [v.attemptId, v.operationId, v.portableRevision, v.portableHead].every(isId) &&
     (v.operationVersion === 1 ||
       v.operationVersion === 2 ||
       v.operationVersion === 3 ||
       v.operationVersion === 4 ||
       v.operationVersion === 5 ||
-      v.operationVersion === 6) &&
+      v.operationVersion === 6 ||
+      v.operationVersion === 7 ||
+      v.operationVersion === 8 ||
+      v.operationVersion === 9) &&
     (v.purpose !== 'conversation' || v.operationVersion !== 3) &&
     (v.purpose !== 'proofread' ||
       (v.operationVersion !== 4 && v.operationVersion !== 5 && v.operationVersion !== 6)) &&

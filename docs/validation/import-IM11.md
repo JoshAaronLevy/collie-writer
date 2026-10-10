@@ -1,0 +1,15 @@
+# IM11 implementation record
+
+October 9, 2026. Explicitly requested after IM10. **Implementation complete — awaiting user testing.** Stage progression does not establish earlier runtime acceptance.
+
+Implemented ordinary imported-history reading/Find and later-native transcript access; genuine explicit follow-up Send through existing draft/provider owners; exact imported-message references separate from native history; bounded chat memory/knowledge/pins/exclusions; Research/Notes origin disclosure and exact accepted-message navigation; source merge/removal-aware links; explicit ordinary citation reuse; transcript export loss disclosure and preserved full graph through `.collie` Save/copy.
+
+SQL/minimum reader 30 preserves schema-29 DDL and performs a retained-copy floor migration. Capture 6, text/research review 6/7, direct operation/binding 9, framing 6 and local handoff 4 retain separate text/research output contracts. Memory/knowledge 2 preserves exact imported references and older native contracts. New versions participate in protection, settlement, portable reference/text-part/ancestry validation and the existing full-row rekey/retention paths. No new account or provider route is introduced. Import analysis and atomic acceptance are unchanged.
+
+Source inspection covered context eligibility/budgets, native-pair preservation, nonoverlapping memory coverage, old-format admission, real attempt creation, web-result settlement, durable binding/handoff readers, reference provenance, read-only IPC, draft/editor owners, bounded rendering, stale read guards, React component lifetimes and source/note navigation. This is source inspection, not passed runtime testing.
+
+Required checks: `npm run format`, then `npm run lint`, then `npm run typecheck` passed cleanly on the final code using pinned Node 24.21.0/npm 11.19.0. Both node and web TypeScript targets passed; final lint reported no errors or warnings. Initial unused-variable/type integration errors were corrected without suppressions, rule changes or broad ignores. The final pass includes schema-29 DDL preservation, versioned imported/native context and memory, canonical origin navigation, research-result settlement and local recovery contracts. Documentation status was then updated to record these outcomes.
+
+No tests/test code, fixtures/generators, mocks, harnesses, verification scripts, dependency audits, builds, app launches, provider calls, browser automation, screenshots, benchmarks or runtime verification were added/run. Native migration/Save/copy/reopen, actual live response completion/relevance, citation appearance, naturally encountered recovery and accessibility remain pending. The source corpus was not imported by the assistant. Existing installed/commercial/provider and broader release gates remain unresolved; release NO-GO.
+
+Use the [manual guide](../manual-testing/import-IM11.md) and [contract](../formats/imported-conversation-context-v1.md). Stop before IM12, which requires another request.

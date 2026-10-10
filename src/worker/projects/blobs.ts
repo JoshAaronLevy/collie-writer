@@ -12,13 +12,22 @@ export async function stageBlob(
   workspace: string,
   source: string,
   signal?: AbortSignal,
-  progress?: Progress
+  progress?: Progress,
+  maximum = LIMITS.blob
 ): Promise<BlobRef> {
   await contained(root, workspace, true)
   const folder = join(workspace, 'blobs')
   await contained(root, folder, true)
   const info = await lstat(source)
-  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > LIMITS.blob)
+  if (
+    !Number.isSafeInteger(maximum) ||
+    maximum < 0 ||
+    maximum > LIMITS.blob ||
+    !info.isFile() ||
+    info.isSymbolicLink() ||
+    info.nlink !== 1 ||
+    info.size > maximum
+  )
     throw new SnapshotError('LIMIT_EXCEEDED')
   await requireSpace(folder, info.size)
   const temporary = join(folder, `.incoming-${randomUUID()}`)
@@ -35,7 +44,7 @@ export async function stageBlob(
     const ref = await transfer(
       createReadStream(source, { fd: sourceHandle.fd, autoClose: false }),
       temporary,
-      LIMITS.blob,
+      maximum,
       signal,
       progress
     )

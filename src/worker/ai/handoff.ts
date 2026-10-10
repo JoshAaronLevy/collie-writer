@@ -1,3 +1,4 @@
+import { isImportBinding } from '../../shared/import-analysis'
 import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 import { AI_LIMITS, type AiOperation } from '../../shared/ai'
@@ -15,7 +16,11 @@ import { inWriteTransaction } from '../storage/driver'
 type Purpose = AiHandoffReceipt['purpose']
 type Context = OpenInput & { db: Database.Database; operations: Database.Database }
 const kind = (purpose: Purpose): string =>
-  purpose === 'conversation' ? 'conversation-binding' : 'proofreading-binding'
+  purpose === 'import'
+    ? 'import-binding'
+    : purpose === 'conversation'
+      ? 'conversation-binding'
+      : 'proofreading-binding'
 function parse<T>(raw: unknown, valid: (v: unknown) => v is T): T {
   if (typeof raw !== 'string' || raw.length > 16000) throw new ProjectError('CORRUPT_PROJECT')
   let value: unknown
@@ -44,7 +49,11 @@ export function activeBindings(
   return rows.map((row) => {
     const b = parse(
       row.result,
-      purpose === 'conversation' ? isConversationBinding : isProofreadingBinding
+      purpose === 'import'
+        ? isImportBinding
+        : purpose === 'conversation'
+          ? isConversationBinding
+          : isProofreadingBinding
     )
     if (b.attemptId !== row.id || b.operationId !== row.operation_id)
       throw new ProjectError('CORRUPT_PROJECT')
@@ -71,7 +80,11 @@ export function localBinding(
     throw new ProjectError('CORRUPT_PROJECT')
   const binding = parse(
     row.result,
-    purpose === 'conversation' ? isConversationBinding : isProofreadingBinding
+    purpose === 'import'
+      ? isImportBinding
+      : purpose === 'conversation'
+        ? isConversationBinding
+        : isProofreadingBinding
   )
   if (binding.attemptId !== attemptId || binding.operationId !== row.operation_id)
     throw new ProjectError('CORRUPT_PROJECT')
@@ -82,7 +95,14 @@ export function localBinding(
   let receipt: AiHandoffReceipt | null = null
   if (saved) {
     if (
-      saved.kind !== 'ai-handoff-v1' ||
+      saved.kind !==
+        (purpose === 'import'
+          ? bindingVersion(binding) === 8
+            ? 'ai-handoff-v3'
+            : 'ai-handoff-v2'
+          : bindingVersion(binding) === 9
+            ? 'ai-handoff-v4'
+            : 'ai-handoff-v1') ||
       saved.state !== 'committed' ||
       saved.operation_id !== binding.operationId
     )
@@ -130,7 +150,14 @@ export function protectHandoff(
   )
     throw new ProjectError('DENIED')
   const receipt: AiHandoffReceipt = {
-    version: 1,
+    version:
+      purpose === 'import'
+        ? bindingVersion(binding) === 8
+          ? 3
+          : 2
+        : bindingVersion(binding) === 9
+          ? 4
+          : 1,
     scope: { projectId: context.projectId, workspaceId: context.workspaceId },
     purpose,
     attemptId: binding.attemptId,
@@ -166,7 +193,13 @@ export function protectHandoff(
       .run(
         receipt.operationId,
         receipt.operationId,
-        'ai-handoff-v1',
+        purpose === 'import'
+          ? bindingVersion(binding) === 8
+            ? 'ai-handoff-v3'
+            : 'ai-handoff-v2'
+          : bindingVersion(binding) === 9
+            ? 'ai-handoff-v4'
+            : 'ai-handoff-v1',
         'committed',
         new Date().toISOString(),
         JSON.stringify(receipt)

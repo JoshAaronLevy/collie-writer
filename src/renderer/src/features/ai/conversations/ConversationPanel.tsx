@@ -1,3 +1,5 @@
+import { ImportTranscriptPreview } from '../../imports/ImportTranscriptPreview'
+import { isResearchCapture } from '../../../../../shared/conversations'
 import { sameScope } from '../../../../../shared/project-files'
 import { ResearchAnswer } from './ResearchAnswer'
 import { ConversationKnowledge, ConversationReferences } from './ConversationKnowledge'
@@ -71,7 +73,7 @@ function SentContext({ capture }: { capture: AiCapture }): React.JSX.Element {
       <p className={styles['conversation-caption']}>
         Captured {new Date(capture.createdAt).toLocaleString()}. This snapshot stays unchanged.
       </p>
-      {capture.version === 5 ? (
+      {isResearchCapture(capture) ? (
         <p>Web search was requested. Shared context could inform search queries.</p>
       ) : null}
       {!capture.context.length ? <p>No writing or earlier messages included.</p> : null}
@@ -98,7 +100,10 @@ function SentContext({ capture }: { capture: AiCapture }): React.JSX.Element {
   )
 }
 function MessageTurn({ turn }: { turn: ConversationTurn }): React.JSX.Element {
-  if ((turn.capture.version !== 3 && turn.capture.version !== 4) || turn.capture.purpose === 'chat')
+  if (
+    (turn.capture.version !== 3 && turn.capture.version !== 4 && turn.capture.version !== 6) ||
+    turn.capture.purpose === 'chat'
+  )
     return <MessageTurnContent turn={turn} />
   return (
     <details
@@ -156,7 +161,7 @@ function MessageTurnContent({ turn }: { turn: ConversationTurn }): React.JSX.Ele
                 : 'Response failed'}
         </p>
       ) : null}
-      {turn.capture.version === 5 && !active && a.state !== 'completed' ? (
+      {isResearchCapture(turn.capture) && !active && a.state !== 'completed' ? (
         <AppButton
           variant="subtle"
           size="compact-sm"
@@ -224,7 +229,9 @@ function MessageTurnContent({ turn }: { turn: ConversationTurn }): React.JSX.Ele
                 active ||
                 c.readOnly ||
                 !!c.draft.text ||
-                ((turn.capture.version === 3 || turn.capture.version === 4) &&
+                ((turn.capture.version === 3 ||
+                  turn.capture.version === 4 ||
+                  turn.capture.version === 6) &&
                   turn.capture.purpose !== 'chat') ||
                 c.page?.conversation.state !== 'active',
               onSelect: () => c.retryAsNew(turn)
@@ -385,7 +392,8 @@ export function ConversationPanel(): React.JSX.Element {
   const [away, setAway] = useState(false),
     [renaming, setRenaming] = useState(false),
     [findOpen, setFindOpen] = useState(false),
-    [draftsOpen, setDraftsOpen] = useState(false)
+    [draftsOpen, setDraftsOpen] = useState(false),
+    [importedOpen, setImportedOpen] = useState(false)
   const [disclosed, setDisclosed] = useState(() => {
     try {
       return localStorage.getItem('collie.chat-project-sharing.v1') === 'acknowledged'
@@ -401,6 +409,7 @@ export function ConversationPanel(): React.JSX.Element {
     setAway(false)
     setFindOpen(false)
     setDraftsOpen(false)
+    setImportedOpen(false)
   }
   useLayoutEffect(() => {
     if (!c.listOpen || !returnFocus.current) return
@@ -595,7 +604,7 @@ export function ConversationPanel(): React.JSX.Element {
                         label: 'Find in this chat',
                         onSelect: () => {
                           setDraftsOpen(false)
-                          setFindOpen((open) => !open)
+                          c.page?.external ? setImportedOpen(true) : setFindOpen((open) => !open)
                         }
                       },
                       {
@@ -874,10 +883,41 @@ export function ConversationPanel(): React.JSX.Element {
                     Load earlier messages
                   </AppButton>
                 ) : null}
+                {c.page?.external && c.scope ? (
+                  <section aria-label="Imported history">
+                    <p className={styles['conversation-caption']}>
+                      Imported history · {c.page.external.messages} original messages
+                      {c.page.external.excluded ? ' · excluded from recall' : ''}. New Collie
+                      replies appear below.
+                    </p>
+                    <AppButton variant="subtle" onClick={() => setImportedOpen((v) => !v)}>
+                      {importedOpen ? 'Hide original history' : 'Read / Find original history'}
+                    </AppButton>
+                    {importedOpen ? (
+                      <ImportTranscriptPreview
+                        key={`${key}:${c.page.conversation.revisionId}`}
+                        scope={c.scope}
+                        batchId=""
+                        graphId=""
+                        recordId=""
+                        files={[]}
+                        accepted={{
+                          conversationId: c.selected!,
+                          revisionId: c.page.conversation.revisionId
+                        }}
+                        disabled={blocked}
+                        onClose={() => setImportedOpen(false)}
+                        onSource={(id) =>
+                          void session.research({ kind: 'sources', sourceId: id, page: 'details' })
+                        }
+                      />
+                    ) : null}
+                  </section>
+                ) : null}
                 {c.page?.turns.map((turn) => (
                   <MessageTurn key={turn.attempt.id} turn={turn} />
                 ))}
-                {c.page && !c.page.turns.length ? (
+                {c.page && !c.page.external && !c.page.turns.length ? (
                   <p className={styles['conversation-empty']}>What would you like to work on?</p>
                 ) : null}
               </div>

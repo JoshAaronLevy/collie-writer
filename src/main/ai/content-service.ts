@@ -1,3 +1,12 @@
+import {
+  isAnalysisWorkerInput,
+  isAnalysisValue,
+  type AnalysisWorkerInput,
+  type AnalysisValue,
+  type AnalysisSubmit,
+  type AnalysisBundle,
+  type AnalysisRequest
+} from '../../shared/import-analysis'
 import { randomUUID } from 'node:crypto'
 import type { AiContentWork, AiOperation, AiPrepareInput, AiReason } from '../../shared/ai'
 import {
@@ -29,11 +38,12 @@ import type { AiService, ContentAuthorization } from '../ai/service'
 import { aiReason } from '../ai/errors'
 import { contentOperation, templateFor } from './local-operation'
 
-type ContentWorkerInput = ConversationWorkerInput | ProofreadWorkerInput
-type ContentValue = ConversationValue | ProofreadValue
-type ContentSubmit = ConversationSubmit | ProofreadSubmit
-type ContentTurn = ConversationTurn | ProofreadBundle
-type ContentRequest = Exclude<ConversationRequest, { action: 'export' }> | ProofreadRequest
+type ContentWorkerInput = ConversationWorkerInput | ProofreadWorkerInput | AnalysisWorkerInput
+type ContentValue = ConversationValue | ProofreadValue | AnalysisValue
+type ContentSubmit = ConversationSubmit | ProofreadSubmit | AnalysisSubmit
+type ContentTurn = ConversationTurn | ProofreadBundle | AnalysisBundle
+type ContentRequest =
+  Exclude<ConversationRequest, { action: 'export' }> | ProofreadRequest | AnalysisRequest
 type Bound = { scope: OpenInput; binding: ConversationBinding }
 const same = (a: OpenInput, b: OpenInput): boolean =>
   a.projectId === b.projectId && a.workspaceId === b.workspaceId
@@ -54,14 +64,14 @@ export class AiContentService {
   private commands = 0
   private commandScopes = new Map<string, number>()
   private listeners = new Set<(event: ConversationEvent) => void>()
-  private otherPending: () => boolean = () => false
+  protected otherPending: () => boolean = () => false
   setOtherPending(read: () => boolean): void {
     this.otherPending = read
   }
   constructor(
     private readonly storage: StorageWorker,
     private readonly ai: AiService,
-    private readonly kind: 'conversation' | 'proofreading'
+    private readonly kind: 'conversation' | 'proofreading' | 'import'
   ) {
     ai.subscribe((event) => {
       if (event.kind === 'connection') {
@@ -159,7 +169,7 @@ export class AiContentService {
     await this.drain()
     return !this.hasPendingWork()
   }
-  private publish(scope: OpenInput, attemptId: string | null, issue: string | null = null): void {
+  protected publish(scope: OpenInput, attemptId: string | null, issue: string | null = null): void {
     const failed = [...this.failures].find(([, input]) => same(input, scope)),
       running = [...this.live.values()].find((owner) => same(owner.scope, scope))
     const unprotected = [...this.bound.values()].find(
@@ -192,14 +202,17 @@ export class AiContentService {
   }
   async worker(input: ContentWorkerInput): Promise<ContentValue> {
     const command =
-      this.kind === 'conversation' && isConversationWorkerInput(input)
-        ? { kind: 'conversation' as const, input }
-        : this.kind === 'proofreading' && isProofreadWorkerInput(input)
-          ? { kind: 'proofreading' as const, input }
-          : null
+      this.kind === 'import' && isAnalysisWorkerInput(input)
+        ? { kind: 'importAnalysis' as const, input }
+        : this.kind === 'conversation' && isConversationWorkerInput(input)
+          ? { kind: 'conversation' as const, input }
+          : this.kind === 'proofreading' && isProofreadWorkerInput(input)
+            ? { kind: 'proofreading' as const, input }
+            : null
     if (!command) throw new ProjectError('VALIDATION')
     const result = await this.storage.request(randomUUID(), command)
     if (!result.ok) throw new ProjectError(result.error.code)
+    if (this.kind === 'import' && isAnalysisValue(result.value)) return result.value
     if (this.kind === 'conversation' && isConversationValue(result.value)) return result.value
     if (this.kind === 'proofreading' && isProofreadValue(result.value)) return result.value
     throw new ProjectError('UNAVAILABLE')
@@ -267,7 +280,12 @@ export class AiContentService {
       operation.digest !== owner.binding.digest ||
       operation.connectionId !== owner.binding.connectionId ||
       operation.model !== owner.binding.model ||
-      operation.action !== (this.kind === 'conversation' ? 'conversation' : 'proofread')
+      operation.action !==
+        (this.kind === 'import'
+          ? 'import'
+          : this.kind === 'conversation'
+            ? 'conversation'
+            : 'proofread')
     )
       return
     if ((this.seen.get(operation.operationId) ?? -1) >= operation.sequence) return
@@ -358,7 +376,12 @@ export class AiContentService {
       operationId: b.operationId,
       connectionId: b.connectionId,
       model: b.model,
-      action: this.kind === 'conversation' ? 'conversation' : 'proofread',
+      action:
+        this.kind === 'import'
+          ? 'import'
+          : this.kind === 'conversation'
+            ? 'conversation'
+            : 'proofread',
       prompt: t.capture.prompt,
       context: t.capture.context
     }
@@ -520,7 +543,7 @@ export class AiContentService {
     }
     await this.drain()
   }
-  private async submit(input: ContentSubmit): Promise<ContentValue> {
+  protected async submit(input: ContentSubmit, dispatchGuard?: () => void): Promise<ContentValue> {
     const scope = { projectId: input.projectId, workspaceId: input.workspaceId }
     // Checking an existing receipt needs no new edit or inference authority.
     try {
@@ -531,7 +554,12 @@ export class AiContentService {
     } catch (error) {
       if (!(error instanceof ProjectError) || error.code !== 'NOT_FOUND') throw error
     }
-    const action = this.kind === 'conversation' ? 'conversation' : 'proofread',
+    const action =
+        this.kind === 'import'
+          ? 'import'
+          : this.kind === 'conversation'
+            ? 'conversation'
+            : 'proofread',
       review = this.reviews.get(input.review.captureId)
     if (
       input.send &&
@@ -540,14 +568,18 @@ export class AiContentService {
         review.reviewDigest !== requestDigest(input.review) ||
         review.captureDigest !== input.digest ||
         (review.template !== templateFor(action) &&
+          !(action === 'import' && review.template === 'project-import-analysis-v2') &&
           !(
             action === 'conversation' &&
             (review.template === 'conversation-v2' ||
-              review.template === 'conversation-research-v1')
+              review.template === 'conversation-research-v1' ||
+              review.template === 'conversation-imported-v1' ||
+              review.template === 'conversation-imported-research-v1')
           )) ||
         review.reviewStamp !== (await this.ai.reviewStamp(action)))
     )
       throw new ProjectError('STALE_REVISION')
+    dispatchGuard?.()
     const stored = await this.worker({
       ...scope,
       action: 'append',
@@ -584,7 +616,12 @@ export class AiContentService {
           operationId,
           connectionId: input.connectionId!,
           model: input.model!,
-          action: this.kind === 'conversation' ? 'conversation' : 'proofread',
+          action:
+            this.kind === 'import'
+              ? 'import'
+              : this.kind === 'conversation'
+                ? 'conversation'
+                : 'proofread',
           prompt: stored.turn.capture.prompt,
           context: stored.turn.capture.context
         }
@@ -594,6 +631,7 @@ export class AiContentService {
         review.captureDigest !== stored.turn.capture.digest
       )
         throw new ProjectError('STALE_REVISION')
+      dispatchGuard?.()
       const prepared = await this.ai.prepare(preparedInput, review)
       const fields = {
         attemptId: input.attemptId,
@@ -607,12 +645,15 @@ export class AiContentService {
       binding = version === 1 ? fields : { version, ...fields }
       await this.protect({ ...scope, action: 'bind', binding }, input.attemptId)
       this.bound.set(operationId, { scope, binding })
-      const operation = await this.ai.start({
-        scope,
-        operationId,
-        authorizationId: prepared.authorizationId,
-        digest: prepared.digest
-      })
+      const operation = await this.ai.start(
+        {
+          scope,
+          operationId,
+          authorizationId: prepared.authorizationId,
+          digest: prepared.digest
+        },
+        dispatchGuard
+      )
       this.enqueue({ scope, binding }, operation)
     } catch (error) {
       // No output is invented for refusals. Once dispatch authority exists, an interrupted outcome is uncertain.
@@ -712,16 +753,24 @@ export class AiContentService {
       if (input.action === 'review') {
         // Capture the route before the worker await: account/model changes while
         // reviewing must not silently authorize the newly selected session.
-        const action = this.kind === 'conversation' ? 'conversation' : 'proofread',
+        const action =
+            this.kind === 'import'
+              ? 'import'
+              : this.kind === 'conversation'
+                ? 'conversation'
+                : 'proofread',
           reviewStamp = await this.ai.reviewStamp(action)
         const result = await this.worker(input)
         if (
           result.type !== 'review' ||
           (result.capture.template !== templateFor(action) &&
+            !(action === 'import' && result.capture.template === 'project-import-analysis-v2') &&
             !(
               action === 'conversation' &&
               (result.capture.template === 'conversation-v2' ||
-                result.capture.template === 'conversation-research-v1')
+                result.capture.template === 'conversation-research-v1' ||
+                result.capture.template === 'conversation-imported-v1' ||
+                result.capture.template === 'conversation-imported-research-v1')
             ))
         )
           throw new ProjectError('UNAVAILABLE')
@@ -805,7 +854,11 @@ export class AiContentService {
         }
         return { type: 'done' }
       }
-      if (!isConversationWorkerInput(input) && !isProofreadWorkerInput(input))
+      if (
+        !isConversationWorkerInput(input) &&
+        !isProofreadWorkerInput(input) &&
+        !isAnalysisWorkerInput(input)
+      )
         throw new ProjectError('VALIDATION')
       return await this.worker(input)
     } finally {

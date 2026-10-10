@@ -4,10 +4,25 @@ export type Capability = 'read' | 'edit' | 'recipes' | 'batch' | 'create'
 /** Exhaustive classification: new commands must make an explicit policy decision. */
 export function commandCapability(command: ProjectCommand): Capability {
   switch (command.kind) {
+    case 'importSession':
+      return ['mutate', 'stage-file'].includes(command.input.action) ? 'edit' : 'read'
     // Internal settlement/handoff/retirement protect existing outcomes even
     // after edit access changes; they confer no new inference or editing grant.
+    case 'importAnalysis':
     case 'proofreading':
-      return ['append', 'decide'].includes(command.input.action) ? 'edit' : 'read'
+      return [
+        'append',
+        'decide',
+        'plan-prepare',
+        'review-open',
+        'review-save',
+        'review-chat',
+        'review-partial',
+        'confirmation-prepare',
+        'import-commit'
+      ].includes(command.input.action)
+        ? 'edit'
+        : 'read'
     case 'conversation':
       return ['change', 'memory-edit', 'context-change', 'reference-save', 'append'].includes(
         command.input.action

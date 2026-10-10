@@ -1,3 +1,7 @@
+import { ImportAnalysisService } from './imports/analysis-service'
+import { registerImportAnalysisIpc } from './imports/analysis-ipc'
+import { ImportService } from './imports/service'
+import { registerImportIpc } from './imports/ipc'
 import { ProofreadingService } from './proofreading/service'
 import { registerProofreadingIpc } from './proofreading/ipc'
 import { ConversationService } from './conversations/service'
@@ -85,18 +89,34 @@ const access = new AccessService(
   devOrigin
 )
 const ai = new AiService(() => location.path(), access)
+const imports = new ImportService(storage)
 const conversations = new ConversationService(storage, ai)
 const conversationDrafts = new ConversationDrafts(() => location.path(), conversations)
 const proofreading = new ProofreadingService(storage, ai)
-conversations.setOtherPending(() => proofreading.hasPendingWork())
-proofreading.setOtherPending(() => conversations.hasPendingWork())
-ai.setContentPending(() => conversations.hasPendingWork() || proofreading.hasPendingWork())
+const importAnalysis = new ImportAnalysisService(storage, ai)
+imports.setExternalBusy(() => importAnalysis.hasPendingWork())
+importAnalysis.setOtherPending(
+  () => conversations.hasPendingWork() || proofreading.hasPendingWork() || imports.hasPendingWork()
+)
+conversations.setOtherPending(
+  () => proofreading.hasPendingWork() || importAnalysis.hasPendingWork()
+)
+proofreading.setOtherPending(
+  () => conversations.hasPendingWork() || importAnalysis.hasPendingWork()
+)
+ai.setContentPending(
+  () =>
+    conversations.hasPendingWork() ||
+    proofreading.hasPendingWork() ||
+    importAnalysis.hasPendingWork()
+)
 ai.setContentLifecycle(
-  () => [...conversations.workItems(), ...proofreading.workItems()],
+  () => [...conversations.workItems(), ...proofreading.workItems(), ...importAnalysis.workItems()],
   async () => {
     const conversationSettled = await conversations.settleForClose()
     const proofreadingSettled = await proofreading.settleForClose()
-    return conversationSettled && proofreadingSettled
+    const importSettled = await importAnalysis.settleForClose()
+    return conversationSettled && proofreadingSettled && importSettled
   }
 )
 access.setExternalWorkGuard(
@@ -105,7 +125,9 @@ access.setExternalWorkGuard(
     ai.hasPendingWork() ||
     conversations.hasPendingWork() ||
     proofreading.hasPendingWork() ||
-    conversationDrafts.hasPendingWork()
+    importAnalysis.hasPendingWork() ||
+    conversationDrafts.hasPendingWork() ||
+    imports.hasPendingWork()
 )
 const directAccess = new DirectAccessService(() => window?.webContents, access, devOrigin)
 const support = new SupportService(
@@ -122,12 +144,17 @@ storage.setAccessPolicy(
         ai.hasPendingWork() ||
         conversations.hasPendingWork() ||
         proofreading.hasPendingWork() ||
-        conversationDrafts.hasPendingWork())
+        importAnalysis.hasPendingWork() ||
+        conversationDrafts.hasPendingWork() ||
+        (imports.hasPendingWork() &&
+          !(command.kind === 'open' && imports.canReacquire(command.input))))
     )
       throw new ProjectError('ACCESS_BUSY')
     access.authorize(command)
   },
   (command) => {
+    if (imports.hasPendingWork() && ['save', 'backup', 'move'].includes(command.kind))
+      throw new ProjectError('ACCESS_BUSY')
     if (
       (['open', 'restore', 'recover', 'duplicate', 'locate', 'inspect'].includes(command.kind) ||
         (command.kind === 'answer' && command.choice !== 'cancel')) &&
@@ -135,7 +162,9 @@ storage.setAccessPolicy(
         ai.hasPendingWork() ||
         conversations.hasPendingWork() ||
         proofreading.hasPendingWork() ||
-        conversationDrafts.hasPendingWork())
+        importAnalysis.hasPendingWork() ||
+        conversationDrafts.hasPendingWork() ||
+        imports.hasPendingWork())
     )
       throw new ProjectError('ACCESS_BUSY')
     if (
@@ -156,8 +185,12 @@ const lifecycle = new ProjectLifecycle(
   () =>
     conversations.hasPendingWork() ||
     proofreading.hasPendingWork() ||
-    conversationDrafts.hasPendingWork(),
-  () => conversationDrafts.settle()
+    importAnalysis.hasPendingWork() ||
+    conversationDrafts.hasPendingWork() ||
+    imports.hasPendingWork(),
+  () => conversationDrafts.settle(),
+  () => imports.hasPendingWork(),
+  (paused) => imports.setClosing(paused)
 )
 const prepareUpdateRestart = async (): Promise<boolean> => {
   if (shutdownStarted || shutdownFinished) return false
@@ -194,7 +227,11 @@ function openWindow(): void {
   ai.resumeSession()
   window = createWindow(devOrigin)
   const opened = window
+  opened.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => {
+    if (isMainFrame) importAnalysis.pause('Analysis paused because the project window reloaded.')
+  })
   opened.webContents.on('render-process-gone', () => {
+    importAnalysis.pause('Analysis paused because the project window was interrupted.')
     lifecycle.rendererLost(opened.webContents)
     ai.suspend()
   })
@@ -225,6 +262,7 @@ function openWindow(): void {
       })
   })
   window.on('closed', () => {
+    importAnalysis.pause('Analysis paused because the window closed.')
     ai.suspend()
     window = undefined
     files.revoke()
@@ -263,6 +301,13 @@ app
       devOrigin
     )
     access.register()
+    registerImportIpc(
+      () => window?.webContents,
+      imports,
+      (scope) => access.authorizeAi(scope, true),
+      devOrigin
+    )
+    registerImportAnalysisIpc(() => window?.webContents, importAnalysis, devOrigin)
     registerProofreadingIpc(() => window?.webContents, proofreading, devOrigin)
     registerConversationIpc(
       () => window?.webContents,

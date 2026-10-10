@@ -1,3 +1,18 @@
+import { isImportedLinks, type ImportedLinks } from './imported-links'
+import {
+  isImportedMessage,
+  importedContextText,
+  IMPORTED_CONTEXT_LABEL,
+  type ImportedContextMessage
+} from './imported-context'
+import {
+  isTranscriptInput,
+  isTranscriptValue,
+  isTranscriptSummary,
+  type TranscriptInput,
+  type TranscriptValue,
+  type TranscriptSummary
+} from './conversation-transcript'
 import {
   isReferenceOrigin,
   isReferenceSave,
@@ -84,7 +99,15 @@ export type AiCaptureV5 = Omit<AiCaptureV4, 'version' | 'template' | 'purpose'> 
   template: 'conversation-research-v1'
   purpose: 'chat'
 }
-export type AiCapture = AiCaptureV1 | AiCaptureV2 | AiCaptureV3 | AiCaptureV4 | AiCaptureV5
+export type AiCaptureV6 = Omit<AiCaptureV4, 'version' | 'template'> & {
+  version: 6
+  template: 'conversation-imported-v1' | 'conversation-imported-research-v1'
+  imported: ImportedContextMessage[]
+}
+export const isResearchCapture = (c: AiCapture): boolean =>
+  c.version === 5 || (c.version === 6 && c.template === 'conversation-imported-research-v1')
+export type AiCapture =
+  AiCaptureV6 | AiCaptureV1 | AiCaptureV2 | AiCaptureV3 | AiCaptureV4 | AiCaptureV5
 export type Conversation = {
   version: 1 | 2
   /** v1 has no claimed origin; v2 always carries a nullable stable ID. */
@@ -108,6 +131,7 @@ export type ConversationMessage = {
   createdAt: string
 }
 export type ConversationSummary = Conversation & {
+  external?: TranscriptSummary
   preview: string
   previewRole: 'user' | 'assistant' | null
 }
@@ -136,7 +160,7 @@ export type ConversationTurn = {
 export type ConversationReview = OpenInput & {
   action: 'review'
   /** Omitted version retains the original manual-context contract. */
-  version?: 2 | 3 | 4 | 5
+  version?: 2 | 3 | 4 | 5 | 6 | 7
   purpose?: MemoryPurpose
   contextPolicy?: ConversationContextPolicy
   conversationId: string
@@ -170,6 +194,8 @@ export type ConversationSubmit = OpenInput & {
 }
 export type ConversationGroup = { items: ConversationSummary[]; total: number }
 export type ConversationRequest =
+  | TranscriptInput
+  | (OpenInput & { action: 'imported-links'; messageId: string; offset: number })
   | (OpenInput & { action: 'reference-history'; sourceId: string; offset: number })
   | (OpenInput & { action: 'reference-preview'; origin: ReferenceOrigin; metadata: SourceMetadata })
   | (OpenInput & { action: 'reference-save'; save: ReferenceSave })
@@ -236,7 +262,8 @@ type ConversationBindingFields = {
  * key. v2/v3 are Codex; v4/v5 are text-only and v6 is web research on the direct ChatGPT-plan route. The readers
  * keep v3 mechanics-only and v4/v5/v6 conversation-only. No binding confers authority. */
 export type ConversationBinding =
-  ConversationBindingFields | (ConversationBindingFields & { version: 2 | 3 | 4 | 5 | 6 })
+  | ConversationBindingFields
+  | (ConversationBindingFields & { version: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 })
 export type ConversationWorkerInput =
   | Exclude<
       ConversationRequest,
@@ -273,6 +300,8 @@ export type ConversationWorkerInput =
           }
       ))
 export type ConversationValue =
+  | TranscriptValue
+  | ImportedLinks
   | { type: 'reference-history'; items: ReferenceReceipt[]; more: boolean }
   | { type: 'reference-preview'; candidates: ReferenceCandidate[] }
   | { type: 'reference-saved'; receipt: ReferenceReceipt }
@@ -302,6 +331,7 @@ export type ConversationValue =
     }
   | {
       type: 'page'
+      external?: TranscriptSummary | null
       conversation: Conversation
       turns: ConversationTurn[]
       olderThan: number | null
@@ -416,7 +446,56 @@ function isAiCaptureV1(v: unknown): v is AiCaptureV1 {
     v.context.reduce((n, c) => n + c.text.length, 0) <= AI_LIMITS.context
   )
 }
-export function isAiCapture(v: unknown): v is AiCapture {
+export function isAiCapture(v: unknown, importedContract = false): v is AiCapture {
+  if (record(v) && v.version === 6) {
+    const { imported, ...base } = v
+    if (
+      !Array.isArray(imported) ||
+      imported.length > 512 ||
+      !imported.every(isImportedMessage) ||
+      new Set(imported.map((m) => m.id)).size !== imported.length ||
+      !Array.isArray(v.context) ||
+      v.context.length > 7 ||
+      imported.some(
+        (m, i) =>
+          m.conversationId !== v.conversationId || (i > 0 && m.sequence <= imported[i - 1].sequence)
+      ) ||
+      !['conversation-imported-v1', 'conversation-imported-research-v1'].includes(
+        String(v.template)
+      ) ||
+      (v.template === 'conversation-imported-research-v1' && v.purpose !== 'chat')
+    )
+      return false
+    const chunks = v.context.filter((c) => record(c) && c.label === IMPORTED_CONTEXT_LABEL)
+    if (
+      chunks.length !== (imported.length ? 1 : 0) ||
+      chunks.some(
+        (c) =>
+          !record(c) ||
+          c.kind !== 'note' ||
+          c.id !== v.id ||
+          c.revision !== v.head ||
+          c.text !== importedContextText(imported)
+      )
+    )
+      return false
+    if (v.contextPolicy === 'message' && imported.length) return false
+    return (
+      isAiCapture(
+        {
+          ...base,
+          version: 4,
+          template: 'conversation-v2',
+          context: v.context.filter((c) => !record(c) || c.label !== IMPORTED_CONTEXT_LABEL)
+        },
+        true
+      ) &&
+      v.context.reduce(
+        (n, c) => n + (record(c) && typeof c.text === 'string' ? c.text.length : 100000),
+        0
+      ) <= AI_LIMITS.context
+    )
+  }
   if (record(v) && v.version === 5)
     return (
       v.template === 'conversation-research-v1' &&
@@ -433,13 +512,14 @@ export function isAiCapture(v: unknown): v is AiCapture {
         : v.context
     }
     return (
-      isAiCaptureV3(stripped) &&
+      isAiCaptureV3(stripped, importedContract) &&
       Array.isArray(v.context) &&
       v.context.filter((c) => record(c) && c.label === 'Project knowledge').length ===
         (knowledge === null ? 0 : 1) &&
       (v.purpose !== 'chat' || v.contextPolicy !== 'project'
         ? knowledge === null
         : isProjectKnowledge(knowledge) &&
+          (importedContract || knowledge.version === 1) &&
           Array.isArray(v.context) &&
           v.context.length <= 6 &&
           v.context.filter(
@@ -527,7 +607,7 @@ export function isAiCapture(v: unknown): v is AiCapture {
       (writing[0].id === v.source.documentId && writing[0].revision === v.source.revisionId))
   )
 }
-function isAiCaptureV3(v: Record<string, unknown>): v is AiCaptureV3 {
+function isAiCaptureV3(v: Record<string, unknown>, importedContract = false): v is AiCaptureV3 {
   if (
     !exact(v, [
       'version',
@@ -593,6 +673,7 @@ function isAiCaptureV3(v: Record<string, unknown>): v is AiCaptureV3 {
   if (v.purpose !== 'chat')
     return (
       isMemoryCoverage(v.coverage) &&
+      (importedContract || v.coverage.kind !== 'chat' || v.coverage.version === undefined) &&
       v.coverage.kind === (v.purpose === 'chat-summary' ? 'chat' : 'overview') &&
       v.source.kind === 'none' &&
       !history.length &&
@@ -711,7 +792,7 @@ export function isConversationTurn(v: unknown): v is ConversationTurn {
     ]) &&
     isConversationAttempt(v.attempt) &&
     isAiCapture(v.capture) &&
-    (v.capture.version === 5
+    (isResearchCapture(v.capture)
       ? 'research' in v &&
         (v.attempt.state === 'completed'
           ? record(v.assistant) &&
@@ -741,6 +822,17 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
   if (!record(v) || !scope(v)) return false
   const fields = ['projectId', 'workspaceId', 'action']
   switch (v.action) {
+    case 'imported-links':
+      return (
+        exact(v, [...fields, 'messageId', 'offset']) &&
+        isId(v.messageId) &&
+        integer(v.offset) &&
+        Number(v.offset) <= 100000
+      )
+    case 'transcript-read':
+    case 'transcript-text':
+    case 'transcript-find':
+      return record(v.source) && v.source.kind === 'accepted' && isTranscriptInput(v)
     case 'context-read':
       return exact(v, [...fields, 'conversationId']) && isId(v.conversationId)
     case 'context-candidates':
@@ -777,7 +869,11 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
         exact(v, [...fields, 'review']) &&
         record(v.review) &&
         v.review.action === 'review' &&
-        (v.review.version === 3 || v.review.version === 4 || v.review.version === 5) &&
+        (v.review.version === 3 ||
+          v.review.version === 4 ||
+          v.review.version === 5 ||
+          v.review.version === 6 ||
+          v.review.version === 7) &&
         v.review.purpose === 'chat' &&
         isConversationRequest(v.review) &&
         v.review.projectId === v.projectId &&
@@ -878,10 +974,16 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
           'source',
           'historyIds',
           ...('version' in v ? ['version', 'contextPolicy'] : []),
-          ...(v.version === 3 || v.version === 4 || v.version === 5 ? ['purpose'] : [])
+          ...(v.version === 3 ||
+          v.version === 4 ||
+          v.version === 5 ||
+          v.version === 6 ||
+          v.version === 7
+            ? ['purpose']
+            : [])
         ]) &&
         [v.conversationId, v.expectedRevision, v.expectedHead, v.captureId].every(isId) &&
-        (v.version !== 5 || v.purpose === 'chat') &&
+        (![5, 7].includes(Number(v.version)) || v.purpose === 'chat') &&
         date(v.createdAt) &&
         text(v.prompt, AI_LIMITS.prompt) &&
         !!v.prompt.trim() &&
@@ -889,7 +991,11 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
         (v.version === undefined
           ? ids(v.historyIds)
           : (v.version === 2 ||
-              ((v.version === 3 || v.version === 4 || v.version === 5) &&
+              ((v.version === 3 ||
+                v.version === 4 ||
+                v.version === 5 ||
+                v.version === 6 ||
+                v.version === 7) &&
                 ['chat', 'chat-summary', 'overview-summary'].includes(String(v.purpose)))) &&
             isContextPolicy(v.contextPolicy) &&
             Array.isArray(v.historyIds) &&
@@ -939,7 +1045,10 @@ export function isContentBinding(v: unknown): v is ConversationBinding {
         v.version === 3 ||
         v.version === 4 ||
         v.version === 5 ||
-        v.version === 6) &&
+        v.version === 6 ||
+        v.version === 7 ||
+        v.version === 8 ||
+        v.version === 9) &&
         exact(v, [
           'version',
           'attemptId',
@@ -956,23 +1065,35 @@ export function isContentBinding(v: unknown): v is ConversationBinding {
   )
 }
 export function isConversationBinding(v: unknown): v is ConversationBinding {
-  return isContentBinding(v) && bindingVersion(v) !== 3
+  return (
+    isContentBinding(v) &&
+    bindingVersion(v) !== 3 &&
+    bindingVersion(v) !== 7 &&
+    bindingVersion(v) !== 8
+  )
 }
 export function isProofreadingBinding(v: unknown): v is ConversationBinding {
   return (
     isContentBinding(v) &&
     bindingVersion(v) !== 4 &&
     bindingVersion(v) !== 5 &&
-    bindingVersion(v) !== 6
+    bindingVersion(v) !== 6 &&
+    bindingVersion(v) !== 7 &&
+    bindingVersion(v) !== 8 &&
+    bindingVersion(v) !== 9
   )
 }
-export function bindingVersion(binding: ConversationBinding): 1 | 2 | 3 | 4 | 5 | 6 {
+export function bindingVersion(binding: ConversationBinding): 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 {
   return 'version' in binding ? binding.version : 1
 }
 export function isConversationWorkerInput(v: unknown): v is ConversationWorkerInput {
   if (!record(v) || !scope(v)) return false
   const fields = ['projectId', 'workspaceId', 'action']
   switch (v.action) {
+    case 'imported-links':
+    case 'transcript-read':
+    case 'transcript-text':
+    case 'transcript-find':
     case 'context-read':
     case 'context-change':
     case 'context-candidates':
@@ -1041,14 +1162,16 @@ export function isConversationWorkerInput(v: unknown): v is ConversationWorkerIn
 }
 function isConversationSummary(v: unknown): v is ConversationSummary {
   if (!record(v)) return false
-  const { preview, previewRole, ...conversation } = v
+  const { preview, previewRole, external, ...conversation } = v
   return (
     isConversation(conversation) &&
+    (external === undefined || isTranscriptSummary(external)) &&
     text(preview, 180) &&
     (previewRole === null || previewRole === 'user' || previewRole === 'assistant')
   )
 }
 export function isConversationValue(v: unknown): v is ConversationValue {
+  if (isTranscriptValue(v)) return true
   if (!record(v)) return false
   switch (v.type) {
     case 'context-settings':
@@ -1070,6 +1193,8 @@ export function isConversationValue(v: unknown): v is ConversationValue {
         v.titles.every((t) => text(t, 200)) &&
         typeof v.more === 'boolean'
       )
+    case 'imported-links':
+      return isImportedLinks(v)
     case 'reference-history':
       return (
         exact(v, ['type', 'items', 'more']) &&
@@ -1190,7 +1315,15 @@ export function isConversationValue(v: unknown): v is ConversationValue {
       )
     case 'page':
       return (
-        exact(v, ['type', 'conversation', 'turns', 'olderThan', 'totalMessages']) &&
+        exact(v, [
+          'type',
+          'conversation',
+          'turns',
+          'olderThan',
+          'totalMessages',
+          ...(v.external !== undefined ? ['external'] : [])
+        ]) &&
+        (v.external === undefined || v.external === null || isTranscriptSummary(v.external)) &&
         isConversation(v.conversation) &&
         Array.isArray(v.turns) &&
         v.turns.length <= 5 &&

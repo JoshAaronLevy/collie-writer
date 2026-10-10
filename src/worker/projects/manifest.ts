@@ -34,9 +34,65 @@ export type SnapshotManifest = {
   format: 'collie'
   formatVersion: 1
   minimumReader:
-    1 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21
+    | 1
+    | 3
+    | 4
+    | 5
+    | 6
+    | 7
+    | 8
+    | 9
+    | 10
+    | 11
+    | 12
+    | 13
+    | 14
+    | 15
+    | 16
+    | 17
+    | 18
+    | 19
+    | 20
+    | 21
+    | 22
+    | 23
+    | 24
+    | 25
+    | 26
+    | 27
+    | 28
+    | 29
+    | 30
   schemaVersion:
-    2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21
+    | 2
+    | 3
+    | 4
+    | 5
+    | 6
+    | 7
+    | 8
+    | 9
+    | 10
+    | 11
+    | 12
+    | 13
+    | 14
+    | 15
+    | 16
+    | 17
+    | 18
+    | 19
+    | 20
+    | 21
+    | 22
+    | 23
+    | 24
+    | 25
+    | 26
+    | 27
+    | 28
+    | 29
+    | 30
   editorVersion: 1
   projectId: string
   snapshotId: string
@@ -95,8 +151,8 @@ export function readManifest(value: unknown): SnapshotManifest {
     if (value[key] !== supported) return invalid()
   }
   if (
-    (typeof value.schemaVersion === 'number' && value.schemaVersion > 21) ||
-    (typeof value.minimumReader === 'number' && value.minimumReader > 21)
+    (typeof value.schemaVersion === 'number' && value.schemaVersion > 30) ||
+    (typeof value.minimumReader === 'number' && value.minimumReader > 30)
   )
     throw new SnapshotError('FORMAT_TOO_NEW')
   if (!(
@@ -119,7 +175,16 @@ export function readManifest(value: unknown): SnapshotManifest {
     (value.schemaVersion === 18 && value.minimumReader === 18) ||
     (value.schemaVersion === 19 && value.minimumReader === 19) ||
     (value.schemaVersion === 20 && value.minimumReader === 20) ||
-    (value.schemaVersion === 21 && value.minimumReader === 21)
+    (value.schemaVersion === 21 && value.minimumReader === 21) ||
+    (value.schemaVersion === 22 && value.minimumReader === 22) ||
+    (value.schemaVersion === 23 && value.minimumReader === 23) ||
+    (value.schemaVersion === 24 && value.minimumReader === 24) ||
+    (value.schemaVersion === 25 && value.minimumReader === 25) ||
+    (value.schemaVersion === 26 && value.minimumReader === 26) ||
+    (value.schemaVersion === 27 && value.minimumReader === 27) ||
+    (value.schemaVersion === 28 && value.minimumReader === 28) ||
+    (value.schemaVersion === 29 && value.minimumReader === 29) ||
+    (value.schemaVersion === 30 && value.minimumReader === 30)
   ))
     return invalid()
   if (

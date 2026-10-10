@@ -1,0 +1,39 @@
+# Imported conversation continuation — IM11
+
+October 9, 2026. Implementation complete — awaiting user testing. This implements the continuation contract in [project import §13](project-import-v1.md#13-conversation-continuation-and-context). It does not grant execution authority to imported messages.
+
+## Versions and compatibility
+
+SQL and minimum reader **30** retain schema 29's exact DDL. The retained-copy 29→30 migration changes the format floor only, after existing conversation validation. No original, accepted prefix, old capture, memory, request, receipt or operation is rewritten. Older readers refuse the new floor. Archive format and all import intake/graph/proposal/review/commit formats remain unchanged.
+
+New conversation review requests use **6** for text/preparation and **7** for explicitly requested web research. Both produce capture **6**. Templates are `conversation-imported-v1` and `conversation-imported-research-v1`. Capture 6 extends capture 4 with an `imported` array; research is chat-only. New memory checkpoints and knowledge settings/selection envelopes are **2**. Chat memory coverage explicitly adds `version: 2`. Legacy capture 1–5, memory/knowledge 1 and alternating native `history` 1 remain readable with their original fields and digests.
+
+Direct execution/binding **9**, framing **6**, uses an independent digest and instructions. The new frame retains native completed exchanges as actual roles and places imported material inside the labeled project-reference data in the current request. An exported role never becomes an instruction role. Text and research retain distinct output contracts; the research variant uses the existing frozen web policy. The result parser, protection, Stop, exact binding, durable settlement and uncertain recovery owners remain. Device-local handoff **4** (`ai-handoff-v4`) admits only conversation operation 9. Import operations 7/8 and handoffs 2/3 are unchanged. No account, transport or API-key fallback is added.
+
+## Exact imported context
+
+An imported reference is `{version:1, conversationId, id, revision, graphId, recordId, sequence, role, originalRole, start, end}`. A captured message adds `text`. IDs identify the accepted message, its immutable revision and chosen canonical original graph record. V1 selects **complete messages**: start is zero; end is the original concatenated text length. Partial slices remain a transcript-reading feature and are not silently passed as complete context. Imported references are distinct from native ordinals and attempts.
+
+The worker reads only protected managed originals with the existing bounded/hash-checked original reader. It admits visible, eligible user/assistant records, preserving repeated roles. Internal, unknown, tool/system/developer and excluded messages confer no authority and do not enter recall. Each complete text is validated against the chosen original's ordered text-part hashes; portable validation checks the message/graph/variant/sequence and import-commit ancestry against the capture head. No imported attempt, fabricated assistant partner or fake timestamp is created.
+
+Current-chat admission considers the latest **512** original descriptors, chooses at most **32** complete messages newest first within **24,000 text units**, then restores original sequence. Messages over **36,000** units or over the remaining allocation are omitted, not truncated. Automatic cross-chat selection considers **16** recent active imported chats, up to **40** descriptors per chat, with at most **16** complete messages / **8,000** units per chat. Explicit pins add bounded candidates; the request-local map has at most **25** chats / **260,000** text units. Existing knowledge/capture/frame budgets further restrict what is actually sent. Selection is not exhaustive reading, semantic search across the full corpus or guaranteed relevance. The captured imported block and UI disclose omission; the full transcript and originals remain available.
+
+Message only does not load imported originals into context. This chat only omits project pins/recall. Project context applies saved exclusions before original reads. Originally do-not-recall chats remain excluded, including from automatic recall after native continuation. Archived chats are excluded automatically; deliberate pinning follows the existing archived-chat policy. No override of original do-not-recall intent is introduced. Current/native source and project context ownership remain unchanged.
+
+## Memory and project knowledge
+
+Only explicit Send invokes the existing bounded preparation owner, at most one chat-summary and one overview-summary. The ordered preparation input is selected imported messages followed by real completed native exchanges. It preserves at least two recent native pairs when present, never splits native pairs, and does not pair imported roles. The imported subset is finite and immutable; older omitted messages are not claimed as summarized.
+
+Coverage 2 uses native `{id,revision,ordinal}` references and imported references attached to their own message identity/sequence. Producing captures retain original text. Prefix chains reject duplicate references, maintain nonoverlap with verbatim suffixes and preserve original coverage on memory edits. Summary originals, previous checkpoints and exact native producing attempts remain inspectable. Preparation failure or an over-limit request keeps the draft and old memory; no automatic resend or hidden additional summary loop is introduced.
+
+Knowledge 2 can include one selected original message with its exact imported reference on a chat item. Imported and native candidate relevance are considered without treating discussion as source evidence. Pins retain exact text/references until explicitly refreshed. Existing source normalization, inspected excerpt rules, archive/exclusion filters and current-writing protection remain. Last sent coverage and per-attempt context expose actual selected material.
+
+## Reading, provenance and exports
+
+Ordinary conversation pages expose optional external summary metadata alongside unchanged native turn pages. Read / Find original history opens the existing bounded unified transcript reader, covering the immutable imported prefix and real native suffix. Cursors and targets retain conversation/revision/segment/message/revision identity. Original text slices, dates, role values, variant metadata and finite Find continuation remain available. Native live responses, Stop, drafts, response recovery and existing native paging stay under their original owners.
+
+The read-only `imported-links` conversation command takes a message ID and offset and returns its exact accepted transcript target and up to 20 canonical source destinations. Merged sources follow canonical aliases; removed sources stay labeled removed. Original receipts are not rewritten. Research and imported Notes expose paged original evidence, annotations, authorship, labels and losses. A source with an accepted original-message link opens that exact message; retained-only locators stay explicitly unlinked. Imported notes do not acquire inferred source or manuscript relationships.
+
+Cite remains the ordinary accepted-source action with captured editor selection and explicit Apply citation. No import or origin-navigation operation inserts a citation or certifies a quotation.
+
+Plain transcript exports distinguish original history and later Collie activity, retain identity/variant evidence and disclose that they cannot carry managed originals, the full relationship graph or live links. Existing bibliography loss reports disclose omitted imported provenance. `.collie` Save/copy keeps the full supported graph, captures, checkpoints, context settings and later native activity through existing full-row copy, rekeying and retention consumers. Portable state and reopening never carry dispatch authority.

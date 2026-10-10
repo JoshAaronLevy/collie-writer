@@ -1,4 +1,19 @@
 import {
+  isDirectImportedConversationExecution,
+  operationDigestV9,
+  type DirectImportedConversationExecution
+} from './direct-imported-conversation'
+import {
+  isDirectMultiImportExecution,
+  operationDigestV8,
+  type DirectMultiImportExecution
+} from './direct-import-multipart'
+import {
+  isDirectImportExecution,
+  operationDigestV7,
+  type DirectImportExecution
+} from './direct-import'
+import {
   isDirectResearchExecution,
   operationDigestV6,
   type DirectResearchExecution
@@ -39,7 +54,14 @@ export const LOCAL_DISPATCH_V2 = {
   developerInstructions: 'Use no tools, files, web browsing, delegation or prior context.'
 } as const
 export type ContentTemplate =
-  'conversation-v1' | 'conversation-v2' | 'conversation-research-v1' | 'mechanics-v1'
+  | 'project-import-analysis-v1'
+  | 'project-import-analysis-v2'
+  | 'conversation-v1'
+  | 'conversation-v2'
+  | 'conversation-research-v1'
+  | 'conversation-imported-v1'
+  | 'conversation-imported-research-v1'
+  | 'mechanics-v1'
 export type LocalSessionIdentity = {
   profileId: string
   accountFingerprint: string
@@ -53,7 +75,15 @@ export type LocalExecutionV2 = LocalSessionIdentity & {
   policyRevision: 1
   runtimeVersion: '0.160.0'
   framingVersion: 1
-  template: Exclude<ContentTemplate, 'conversation-v2' | 'conversation-research-v1'>
+  template: Exclude<
+    ContentTemplate,
+    | 'conversation-v2'
+    | 'conversation-research-v1'
+    | 'conversation-imported-v1'
+    | 'conversation-imported-research-v1'
+    | 'project-import-analysis-v1'
+    | 'project-import-analysis-v2'
+  >
   outputContract: 'conversation-text-v1' | 'mechanics-final-json-v1'
   captureDigest: string
   framedText: string
@@ -74,7 +104,13 @@ export type LocalExecutionV3 = Omit<LocalExecutionV2, 'template' | 'outputContra
 }
 export type LocalExecution = LocalExecutionV2 | LocalExecutionV3
 export type DispatchExecution =
-  LocalExecution | DirectExecution | DirectConversationExecution | DirectResearchExecution
+  | LocalExecution
+  | DirectExecution
+  | DirectConversationExecution
+  | DirectResearchExecution
+  | DirectImportExecution
+  | DirectMultiImportExecution
+  | DirectImportedConversationExecution
 export type RetainedOperationV3 = {
   version: 3
   input: AiPrepareInput
@@ -97,13 +133,28 @@ export type RetainedOperationV6 = Omit<RetainedOperationV4, 'version' | 'executi
   version: 6
   execution: DirectResearchExecution
 }
+export type RetainedOperationV7 = Omit<RetainedOperationV4, 'version' | 'execution'> & {
+  version: 7
+  execution: DirectImportExecution
+}
+export type RetainedOperationV8 = Omit<RetainedOperationV7, 'version' | 'execution'> & {
+  version: 8
+  execution: DirectMultiImportExecution
+}
+export type RetainedOperationV9 = Omit<RetainedOperationV4, 'version' | 'execution'> & {
+  version: 9
+  execution: DirectImportedConversationExecution
+}
 export type RetainedOperation =
+  | RetainedOperationV9
   | RetainedOperationV1
   | RetainedOperationV2
   | RetainedOperationV3
   | RetainedOperationV4
   | RetainedOperationV5
   | RetainedOperationV6
+  | RetainedOperationV7
+  | RetainedOperationV8
 const hash = (text: string): string => createHash('sha256').update(text).digest('hex')
 export const identityHash = (value: unknown): string => hash(JSON.stringify(value))
 const digest = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v)
@@ -111,7 +162,15 @@ export const workspaceIdentity = (v: unknown): v is string =>
   aiText(v, 200) && v.length > 0 && !(hasControlCharacters(v, false, 0x7f) || /\s/u.test(v))
 export function templateFor(
   action: AiPrepareInput['action']
-): Exclude<ContentTemplate, 'conversation-v2' | 'conversation-research-v1'> {
+): Exclude<
+  ContentTemplate,
+  | 'conversation-v2'
+  | 'conversation-research-v1'
+  | 'conversation-imported-v1'
+  | 'conversation-imported-research-v1'
+  | 'project-import-analysis-v2'
+> {
+  if (action === 'import') return 'project-import-analysis-v1'
   return action === 'conversation' ? 'conversation-v1' : 'mechanics-v1'
 }
 function frame(input: Pick<AiPrepareInput, 'prompt' | 'context'>): string {
@@ -150,7 +209,15 @@ export function isSchemaExecution(e: LocalExecution): e is LocalExecutionV3 {
 export function localExecution(
   input: AiPrepareInput,
   session: LocalSessionIdentity,
-  template: Exclude<ContentTemplate, 'conversation-v2' | 'conversation-research-v1'>,
+  template: Exclude<
+    ContentTemplate,
+    | 'conversation-v2'
+    | 'conversation-research-v1'
+    | 'conversation-imported-v1'
+    | 'conversation-imported-research-v1'
+    | 'project-import-analysis-v1'
+    | 'project-import-analysis-v2'
+  >,
   captureDigest: string
 ): LocalExecution {
   if (template !== templateFor(input.action) || !digest(captureDigest))
@@ -280,8 +347,15 @@ function isExecutionV3(v: unknown, input: AiPrepareInput): v is LocalExecutionV3
 }
 export function isRetainedOperation(v: unknown): v is RetainedOperation {
   if (!record(v) || !isAiPrepare(v.input) || !isAiOperation(v.view)) return false
+  if ((v.input.action === 'import') !== (v.version === 7 || v.version === 8)) return false
   const researchResult = 'research' in v.view
-  if ((v.version === 6) !== researchResult) return false
+  if (
+    (v.version === 6 ||
+      (v.version === 9 &&
+        record(v.execution) &&
+        v.execution.template === 'conversation-imported-research-v1')) !== researchResult
+  )
+    return false
   const input = v.input,
     view = v.view
   if (
@@ -306,12 +380,22 @@ export function isRetainedOperation(v: unknown): v is RetainedOperation {
       (v.version === 4 &&
         isDirectExecution(v.execution, input) &&
         operationDigestV4(input, v.execution) === view.digest) ||
+      (v.version === 9 &&
+        isDirectImportedConversationExecution(v.execution, input) &&
+        operationDigestV9(input, v.execution) === view.digest) ||
       (v.version === 5 &&
         isDirectConversationExecution(v.execution, input) &&
         operationDigestV5(input, v.execution) === view.digest) ||
       (v.version === 6 &&
         isDirectResearchExecution(v.execution, input) &&
-        operationDigestV6(input, v.execution) === view.digest)) &&
+        operationDigestV6(input, v.execution) === view.digest) ||
+      (v.version === 7 &&
+        isDirectImportExecution(v.execution, input) &&
+        operationDigestV7(input, v.execution) === view.digest) ||
+      (v.version === 8 &&
+        isDirectMultiImportExecution(v.execution, input) &&
+        operationDigestV8(input, v.execution) === view.digest)) &&
+    (v.version !== 8 || view.text.length <= 32000) &&
     record(v.output) &&
     exact(v.output, ['commentary', 'finalText']) &&
     aiText(v.output.commentary, AI_LIMITS.output) &&
@@ -319,7 +403,12 @@ export function isRetainedOperation(v: unknown): v is RetainedOperation {
     (v.output.finalText === null ||
       (view.state === 'completed' && view.text.includes(v.output.finalText))) &&
     v.output.commentary.length + (v.output.finalText?.length ?? 0) <= AI_LIMITS.output &&
-    ((v.version !== 4 && v.version !== 5 && v.version !== 6) ||
+    ((v.version !== 4 &&
+      v.version !== 5 &&
+      v.version !== 6 &&
+      v.version !== 7 &&
+      v.version !== 8 &&
+      v.version !== 9) ||
       (v.output.commentary === '' &&
         (view.state === 'completed'
           ? v.output.finalText === view.text && view.text.trim().length > 0

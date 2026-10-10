@@ -1,4 +1,6 @@
+import type { ImportAnalysisAPI } from './import-analysis'
 import type { ProofreadingAPI } from './proofreading'
+import type { ProjectImportAPI } from './project-import'
 import type { ConversationAPI } from './conversations'
 import type { StorageStatus } from './storage'
 import type { ProjectResult } from './projects'
@@ -35,6 +37,7 @@ export type Result<T> =
       error: { code: AppErrorCode; message: string; retryable: boolean }
     }
 export type CollieAPI = ProjectAPI &
+  ProjectImportAPI &
   StorageInventoryAPI &
   FileAPI &
   LifecycleAPI &
@@ -43,6 +46,7 @@ export type CollieAPI = ProjectAPI &
   DirectAPI &
   AiAPI &
   ConversationAPI &
+  ImportAnalysisAPI &
   ProofreadingAPI & {
     helpAction: (action: HelpAction) => Promise<ProjectResult<boolean>>
     recoverWindow: (action: WindowRecoveryAction) => Promise<ProjectResult<boolean>>

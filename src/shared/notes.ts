@@ -9,7 +9,7 @@ export type Note = {
   title: string
   body: DocumentPayload
   state: NoteState
-  origin: 'human'
+  origin: 'human' | 'imported-v1'
   createdAt: string
   updatedAt: string
   documentIds: string[]
@@ -186,7 +186,7 @@ export function isNotesView(v: unknown): v is NotesView {
         line(n.title, 500) &&
         noteBody(n.body) &&
         ['active', 'archived', 'trashed'].includes(String(n.state)) &&
-        n.origin === 'human' &&
+        ['human', 'imported-v1'].includes(String(n.origin)) &&
         typeof n.createdAt === 'string' &&
         typeof n.updatedAt === 'string' &&
         Array.isArray(n.documentIds) &&

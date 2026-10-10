@@ -1,4 +1,12 @@
+import { importAnalysisCommand, interruptUnboundImportAnalysis } from './import-analysis'
+import type { AnalysisWorkerInput, AnalysisValue } from '../../shared/import-analysis'
 import { templateItemKind } from '../../domain/projects/templates'
+import {
+  importSessionCommand,
+  validatePortableImports,
+  validateImportArtifactFiles
+} from './import-sessions'
+import type { ImportWorkerInput, ImportValue } from '../../shared/project-import'
 import { isEditableKind } from '../../shared/outline'
 import { retiredWorkspace } from './working-copy-records'
 import { boundedJson, namedStamp, parentStamp } from './retention-files'
@@ -253,6 +261,41 @@ async function selectedImage(path: string): Promise<Buffer> {
 
 export class ProjectRepository {
   private readonly exports: ExportJobs
+  importSession(input: ImportWorkerInput): Promise<ImportValue> {
+    return this.serial(async () => {
+      this.fileContext(input)
+      const mutating = input.action === 'mutate' || input.action === 'stage-file'
+      if (mutating && this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
+      const owned = this.active!
+      const value = await importSessionCommand({ ...owned, root: this.root }, input)
+      if (mutating) await this.discovery(owned)
+      return value
+    })
+  }
+  importAnalysis(input: AnalysisWorkerInput): Promise<AnalysisValue> {
+    return this.serial(async () => {
+      this.fileContext(input)
+      const mutating = [
+        'append',
+        'bind',
+        'settle',
+        'handoff',
+        'retire',
+        'plan-prepare',
+        'review-open',
+        'review-save',
+        'review-chat',
+        'review-partial',
+        'confirmation-prepare',
+        'import-commit'
+      ].includes(input.action)
+      if (mutating && this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
+      const owned = this.active!,
+        value = await importAnalysisCommand({ ...owned, root: this.root }, input)
+      if (mutating) await this.discovery(owned)
+      return value
+    })
+  }
   proofreading(input: ProofreadWorkerInput): Promise<ProofreadValue> {
     return this.serial(async () => {
       this.fileContext(input)
@@ -282,7 +325,7 @@ export class ProjectRepository {
       ].includes(input.action)
       if (mutating && this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
       const owned = this.active!,
-        value = await conversationCommand(owned, input)
+        value = await conversationCommand({ ...owned, root: this.root }, input)
       if (mutating) await this.discovery(owned)
       return value
     })
@@ -1243,7 +1286,13 @@ export class ProjectRepository {
       validatePortableProofreading(db, input.projectId)
       interruptUnboundProofreading(db, operations, input.projectId)
       validatePortableConversations(db, input.projectId)
+      await validateImportArtifactFiles(
+        this.root,
+        workspace,
+        validatePortableImports(db, input.projectId)
+      )
       interruptUnboundConversations(db, operations, input.projectId)
+      interruptUnboundImportAnalysis(db, operations, input.projectId)
       this.read(owned)
       this.catalog
         .prepare('INSERT OR IGNORE INTO destinations VALUES (?,NULL,NULL,NULL)')

@@ -1,3 +1,8 @@
+import { importedConversationFits, importedInstructions } from './direct-imported-conversation'
+import { multipartFits } from './direct-import-multipart'
+import { MULTIPART_INSTRUCTIONS } from '../../shared/import-multipart'
+import { importFrame, importFits } from './direct-import'
+import { IMPORT_ANALYSIS_INSTRUCTIONS } from '../../shared/import-analysis'
 import { RESEARCH_INSTRUCTIONS, RESEARCH_POLICY, researchFits } from './direct-research'
 import {
   conversationFits,
@@ -616,7 +621,14 @@ export class DirectPlanSession {
   execution(
     input: AiPrepareInput,
     captureDigest: string,
-    template: 'conversation-v1' | 'conversation-v2' | 'conversation-research-v1' = 'conversation-v1'
+    template:
+      | 'conversation-v1'
+      | 'conversation-v2'
+      | 'conversation-imported-v1'
+      | 'conversation-imported-research-v1'
+      | 'conversation-research-v1'
+      | 'project-import-analysis-v1'
+      | 'project-import-analysis-v2' = 'conversation-v1'
   ): DirectTextExecution {
     this.requireIdle()
     const a = this.requireAccount(input.connectionId),
@@ -624,16 +636,52 @@ export class DirectPlanSession {
     const contractIssue = this.healthIssues.requestContractIssue(a.id)
     if (contractIssue) throw new DirectError(contractIssue)
     if (
-      input.action !== 'conversation' ||
-      !(template === 'conversation-research-v1'
-        ? researchFits(input)
-        : template === 'conversation-v2'
-          ? conversationFits(input)
-          : directFits(input))
+      input.action !==
+        (template.startsWith('project-import-analysis-') ? 'import' : 'conversation') ||
+      !(template === 'project-import-analysis-v2'
+        ? multipartFits(input, input.model)
+        : template === 'project-import-analysis-v1'
+          ? importFits(input, input.model)
+          : template === 'conversation-research-v1'
+            ? researchFits(input)
+            : template === 'conversation-imported-v1' ||
+                template === 'conversation-imported-research-v1'
+              ? importedConversationFits(input, template === 'conversation-imported-research-v1')
+              : template === 'conversation-v2'
+                ? conversationFits(input)
+                : directFits(input))
     )
       throw new AiError('invalid-request')
     if (catalog.state !== 'loaded' || catalog.selectedModelId !== input.model)
       throw new AiError('model-unavailable')
+    if (template === 'project-import-analysis-v2')
+      return {
+        route: 'local-chatgpt-plan',
+        policyRevision: 1,
+        framingVersion: 5,
+        template,
+        outputContract: 'responses-text-v1',
+        accountFingerprint: directAccountIdentity(a.clientId, a.subject!),
+        sessionGeneration: this.epoch,
+        catalogRevision: catalog.revision,
+        captureDigest,
+        framedText: importFrame(input),
+        instructions: MULTIPART_INSTRUCTIONS
+      }
+    if (template === 'project-import-analysis-v1')
+      return {
+        route: 'local-chatgpt-plan',
+        policyRevision: 1,
+        framingVersion: 4,
+        template,
+        outputContract: 'responses-text-v1',
+        accountFingerprint: directAccountIdentity(a.clientId, a.subject!),
+        sessionGeneration: this.epoch,
+        catalogRevision: catalog.revision,
+        captureDigest,
+        framedText: importFrame(input),
+        instructions: IMPORT_ANALYSIS_INSTRUCTIONS
+      }
     if (template === 'conversation-research-v1')
       return {
         route: 'local-chatgpt-plan',
@@ -649,6 +697,26 @@ export class DirectPlanSession {
         framedText: conversationFrame(input),
         instructions: RESEARCH_INSTRUCTIONS
       }
+    if (
+      template === 'conversation-imported-v1' ||
+      template === 'conversation-imported-research-v1'
+    ) {
+      const web = template === 'conversation-imported-research-v1'
+      return {
+        route: 'local-chatgpt-plan',
+        policyRevision: 1,
+        framingVersion: 6,
+        template,
+        outputContract: web ? 'responses-research-v1' : 'responses-text-v1',
+        accountFingerprint: directAccountIdentity(a.clientId, a.subject!),
+        sessionGeneration: this.epoch,
+        catalogRevision: catalog.revision,
+        captureDigest,
+        framedText: conversationFrame(input),
+        instructions: importedInstructions(web),
+        researchPolicy: web ? RESEARCH_POLICY : null
+      }
+    }
     if (template === 'conversation-v2')
       return {
         route: 'local-chatgpt-plan',
@@ -712,7 +780,11 @@ export class DirectPlanSession {
               text = value.text
               update(value)
               if (value.state === 'completed') {
-                if (execution.template === 'conversation-research-v1' && value.research?.searched)
+                if (
+                  (execution.template === 'conversation-research-v1' ||
+                    execution.template === 'conversation-imported-research-v1') &&
+                  value.research?.searched
+                )
                   this.researchObservation = {
                     connectionId: input.connectionId,
                     model: input.model,
@@ -735,7 +807,8 @@ export class DirectPlanSession {
           const issue = directFailure(this.detail.stage ?? 'inference-http', error)
           const searchRefusal =
             execution?.route === 'local-chatgpt-plan' &&
-            execution.template === 'conversation-research-v1' &&
+            (execution.template === 'conversation-research-v1' ||
+              execution.template === 'conversation-imported-research-v1') &&
             (issue.reason === 'model-unavailable' ||
               issue.code === 'subscription_sharing_unsupported_capability' ||
               (issue.httpStatus === 403 &&

@@ -1,3 +1,4 @@
+import { ImportButton } from '../imports/ImportButton'
 import { ReviewOptionsDialog, type ReviewOptionsTarget } from './ReviewOptionsDialog'
 import { captureSelection } from '../../editor/selection'
 import { isEditableKind, effectiveState } from '../../../../shared/outline'
@@ -237,6 +238,7 @@ export default function WritingWorkspace(): React.JSX.Element {
         </div>
         <div className={styles['writing-header-actions']}>
           <SaveMenu />
+          <ImportButton />
           <IconButton
             label="Research"
             variant="subtle"

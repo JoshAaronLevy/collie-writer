@@ -1,4 +1,17 @@
 import {
+  loadImportedContext,
+  validateImportedReference,
+  type ImportedContext
+} from './imported-context'
+import { isResearchCapture } from '../../shared/conversations'
+import { transcriptCommand, appendExternalTranscript } from './conversation-transcript'
+import {
+  externalOrigin,
+  externalMessage,
+  externalSummary,
+  validateExternalConversations
+} from './external-conversations'
+import {
   linkedReferenceMatches,
   sourceReferenceHistory,
   checkReference,
@@ -74,6 +87,8 @@ import { requireSpace } from './streams'
 import { readDocument } from '../../domain/editor/schema'
 
 type Context = {
+  root: string
+  workspace: string
   db: Database.Database
   operations: Database.Database
   projectId: string
@@ -134,9 +149,13 @@ function summary(db: Database.Database, p: string, id: string): ConversationSumm
       `SELECT role,substr(text,1,180) AS text FROM conversation_messages WHERE project_id=? AND conversation_id=? AND text<>'' AND ${visibleMessage} ORDER BY ordinal DESC LIMIT 1`
     )
     .get(p, id) as { role: 'user' | 'assistant'; text: string } | undefined
+  const external = externalSummary(db, p, id)
   return {
     ...c,
-    preview: recent?.text.replace(/\s+/gu, ' ').slice(0, 180) ?? '',
+    ...(external ? { external } : {}),
+    preview:
+      recent?.text.replace(/\s+/gu, ' ').slice(0, 180) ??
+      (external ? `Imported history · ${external.messages} messages` : ''),
     previewRole: recent?.role ?? null
   }
 }
@@ -166,17 +185,16 @@ function turn(db: Database.Database, p: string, id: string): ConversationTurn {
       .prepare('SELECT substr(body,1,1000001) AS body FROM ai_captures WHERE project_id=? AND id=?')
       .get(p, a.captureId) as { body: string } | undefined
   const capture = parse(row?.body, isAiCapture)
-  const research =
-    capture.version === 5
-      ? (db
-          .prepare(
-            'SELECT substr(body,1,64001) AS body FROM conversation_research WHERE project_id=? AND attempt_id=?'
-          )
-          .get(p, a.id) as { body: string } | undefined)
-      : undefined
+  const research = isResearchCapture(capture)
+    ? (db
+        .prepare(
+          'SELECT substr(body,1,64001) AS body FROM conversation_research WHERE project_id=? AND attempt_id=?'
+        )
+        .get(p, a.id) as { body: string } | undefined)
+    : undefined
   const assistant = a.assistantMessageId ? message(db, p, a.assistantMessageId) : null
   const value = {
-    ...(capture.version === 5
+    ...(isResearchCapture(capture)
       ? {
           research: research
             ? parse(
@@ -250,19 +268,22 @@ function review(
   db: Database.Database,
   p: string,
   input: ConversationReview,
-  plan: true
+  plan: true,
+  imported?: ImportedContext
 ): Extract<ConversationValue, { type: 'memory-plan' }>
 function review(
   db: Database.Database,
   p: string,
   input: ConversationReview,
-  plan?: false
+  plan?: false,
+  imported?: ImportedContext
 ): Extract<ConversationValue, { type: 'review' }>
 function review(
   db: Database.Database,
   p: string,
   input: ConversationReview,
-  plan = false
+  plan = false,
+  imported?: ImportedContext
 ): Extract<ConversationValue, { type: 'review' | 'memory-plan' }> {
   if (input.version === 5) {
     if (schemaVersion(db) < 20 || input.purpose !== 'chat') throw new ProjectError('VALIDATION')
@@ -280,11 +301,18 @@ function review(
     return { ...result, capture }
   }
   const c = conversation(db, p, input.conversationId)
+  if (externalOrigin(db, p, c.id) && input.version !== 6 && input.version !== 7)
+    throw new ProjectError('UNAVAILABLE')
+  if ((input.version === 6 || input.version === 7) && schemaVersion(db) < 30)
+    throw new ProjectError('VALIDATION')
   if (c.state !== 'active') throw new ProjectError('DENIED')
   if (c.revisionId !== input.expectedRevision || head(db, p).head !== input.expectedHead)
     throw new ProjectError('STALE_REVISION')
   const context: AiCapture['context'] = []
-  const settings = input.version === 4 ? readKnowledgeSettings(db, p, input.conversationId) : null
+  const settings =
+    input.version === 4 || input.version === 6 || input.version === 7
+      ? readKnowledgeSettings(db, p, input.conversationId)
+      : null
   const excludedCurrent =
     input.source.kind !== 'none' &&
     [...(settings?.excluded ?? []), ...(settings?.pins ?? [])].some(
@@ -333,24 +361,35 @@ function review(
       id: doc.id,
       revision: doc.revision_id,
       label: doc.title.slice(0, 200),
-      text: input.version === 4 ? passage(text, input.prompt, 8000).text : text
+      text:
+        input.version === 4 || input.version === 6 || input.version === 7
+          ? passage(text, input.prompt, 8000).text
+          : text
     })
-    if (input.version === 4 && text.length > 8000) {
+    if ((input.version === 4 || input.version === 6 || input.version === 7) && text.length > 8000) {
       const excerpt = passage(text, input.prompt, 8000)
       context[0].label = `${doc.title.slice(0, 120)} · passage ${excerpt.start}–${excerpt.start + excerpt.text.length} of ${excerpt.total}`
     }
   }
-  if (input.version === 3 || input.version === 4) {
-    if (schemaVersion(db) < (input.version === 4 ? 19 : 18)) corrupt()
+  if (input.version === 3 || input.version === 4 || input.version === 6 || input.version === 7) {
+    if (
+      schemaVersion(db) <
+      (input.version === 4 || input.version === 6 || input.version === 7 ? 19 : 18)
+    )
+      corrupt()
     const knowledge =
-      input.version === 4 && input.purpose === 'chat' && input.contextPolicy === 'project'
+      (input.version === 4 || input.version === 6 || input.version === 7) &&
+      input.purpose === 'chat' &&
+      input.contextPolicy === 'project'
         ? buildKnowledge(
             db,
             p,
             c.id,
             input.prompt,
             input.source.kind === 'none' ? null : input.source.documentId,
-            settings!
+            settings!,
+            16000,
+            imported
           )
         : null
     if (knowledge)
@@ -361,7 +400,9 @@ function review(
         label: 'Project knowledge',
         text: knowledgeText(knowledge)
       })
-    return plan ? memoryPlan(db, p, input, context) : memoryReview(db, p, input, context, knowledge)
+    return plan
+      ? memoryPlan(db, p, input, context, imported)
+      : memoryReview(db, p, input, context, knowledge, imported)
   }
   if (plan) throw new ProjectError('VALIDATION')
   if (input.version === 2) {
@@ -510,7 +551,90 @@ export async function conversationCommand(
   input: ConversationWorkerInput
 ): Promise<ConversationValue> {
   const { db, operations, projectId: p } = context
+  let imported: ImportedContext | undefined
+  const reviewed =
+    input.action === 'append'
+      ? input.submission.review
+      : input.action === 'memory-plan'
+        ? input.review
+        : input.action === 'review'
+          ? input
+          : null
+  const chat = reviewed?.conversationId ?? ('conversationId' in input ? input.conversationId : null)
+  if (
+    !(
+      input.action === 'append' &&
+      db
+        .prepare('SELECT 1 FROM conversation_attempts WHERE project_id=? AND id=?')
+        .get(p, input.submission.attemptId)
+    ) &&
+    schemaVersion(db) >= 30 &&
+    chat &&
+    ((reviewed && (reviewed.version === 6 || reviewed.version === 7)) ||
+      input.action === 'context-change' ||
+      input.action === 'memory-list' ||
+      input.action === 'memory-edit')
+  ) {
+    const settings = readKnowledgeSettings(db, p, chat)
+    const extra = [
+      ...settings.pins.filter((t) => t.kind === 'chat').map((t) => t.id),
+      ...(input.action === 'context-change' && input.change.target.kind === 'chat'
+        ? [input.change.target.id]
+        : [])
+    ]
+    imported =
+      reviewed?.contextPolicy === 'message'
+        ? new Map()
+        : await loadImportedContext(
+            context,
+            chat,
+            reviewed && reviewed.contextPolicy !== 'project' ? [] : extra,
+            reviewed?.contextPolicy === 'project',
+            settings.excluded
+              .filter(
+                (t) =>
+                  t.kind === 'chat' &&
+                  !(
+                    input.action === 'context-change' &&
+                    ['pin', 'refresh'].includes(input.change.mode) &&
+                    input.change.target.id === t.id
+                  )
+              )
+              .map((t) => t.id)
+          )
+  }
   switch (input.action) {
+    case 'imported-links': {
+      const m = externalMessage(db, p, input.messageId),
+        c = conversation(db, p, m.conversationId)
+      const rows = db
+        .prepare(
+          "SELECT DISTINCT s.id,json_extract(s.metadata,'$.title') AS title,s.state FROM imported_content_origins o JOIN sources original ON original.project_id=o.project_id AND original.id=o.source_id JOIN sources s ON s.project_id=original.project_id AND s.id=CASE WHEN original.state='merged' THEN coalesce((SELECT a.source_id FROM source_aliases a WHERE a.project_id=original.project_id AND a.alias=original.id),original.replacement_id) ELSE original.id END WHERE o.project_id=? AND o.message_id=? AND s.state<>'merged' ORDER BY s.id LIMIT 21 OFFSET ?"
+        )
+        .all(p, m.id, input.offset) as { id: string; title: string; state: 'active' | 'trashed' }[]
+      return {
+        type: 'imported-links',
+        conversationId: c.id,
+        revisionId: c.revisionId,
+        target: {
+          segment: 'imported',
+          sequence: m.sequence,
+          messageId: m.id,
+          messageRevision: m.revisionId
+        },
+        sources: rows.slice(0, 20).map((r) => ({ ...r, title: r.title.slice(0, 500) })),
+        more: rows.length > 20
+      }
+    }
+    case 'transcript-read':
+    case 'transcript-text':
+    case 'transcript-find':
+      if (input.source.kind !== 'accepted') throw new ProjectError('DENIED')
+      return transcriptCommand(context, input, {
+        conversation: (id) => conversation(db, p, id),
+        message: (id) => message(db, p, id),
+        turn: (id) => turn(db, p, id)
+      })
     case 'context-read':
       conversation(db, p, input.conversationId)
       return knowledgeSettingsValue(db, p, input.conversationId)
@@ -582,17 +706,18 @@ export async function conversationCommand(
             input.conversationId,
             input.operationId,
             input.expectedRevision,
-            input.change
+            input.change,
+            imported
           )
         )
           advance(db, p, input.conversationId)
         return knowledgeSettingsValue(db, p, input.conversationId)
       })
     case 'memory-plan':
-      return review(db, p, input.review, true)
+      return review(db, p, input.review, true, imported)
     case 'memory-list':
       conversation(db, p, input.conversationId)
-      return listMemory(db, p, input.conversationId, input.before)
+      return listMemory(db, p, input.conversationId, input.before, imported)
     case 'memory-edit':
       return inWriteTransaction(db, () => {
         conversation(db, p, input.conversationId)
@@ -600,7 +725,7 @@ export async function conversationCommand(
           editMemory(db, p, input.conversationId, input.operationId, input.expectedId, input.text)
         )
           advance(db, p, input.conversationId)
-        return listMemory(db, p, input.conversationId, null)
+        return listMemory(db, p, input.conversationId, null, imported)
       })
 
     case 'summaries': {
@@ -727,6 +852,7 @@ export async function conversationCommand(
       const page = rows.slice(0, CONVERSATION_LIMITS.turns).reverse()
       return {
         type: 'page',
+        external: externalSummary(db, p, c.id) ?? null,
         conversation: c,
         turns: page.map((r) => turn(db, p, r.attempt_id)),
         olderThan: rows.length > CONVERSATION_LIMITS.turns ? page[0].ordinal : null,
@@ -740,7 +866,7 @@ export async function conversationCommand(
       }
     }
     case 'review':
-      return review(db, p, input)
+      return review(db, p, input, false, imported)
     case 'get':
       return { type: 'turn', turn: turn(db, p, input.attemptId), fresh: false, ...head(db, p) }
     case 'bindings':
@@ -882,7 +1008,7 @@ export async function conversationCommand(
           ).n
         )
           throw new ProjectError('ACCESS_BUSY')
-        const { capture } = review(db, p, s.review)
+        const { capture } = review(db, p, s.review, false, imported)
         if (capture.digest !== s.digest) throw new ProjectError('STALE_REVISION')
         const now = new Date().toISOString(),
           ordinal = (
@@ -922,7 +1048,8 @@ export async function conversationCommand(
         }
         if (
           capture.version >= 2 &&
-          ((capture.version !== 3 && capture.version !== 4) || capture.purpose === 'chat') &&
+          ((capture.version !== 3 && capture.version !== 4 && capture.version !== 6) ||
+            capture.purpose === 'chat') &&
           !db
             .prepare(
               `SELECT 1 FROM conversation_messages WHERE project_id=? AND conversation_id=? AND role='user' AND ${visibleMessage} LIMIT 1`
@@ -959,7 +1086,7 @@ export async function conversationCommand(
             capture,
             user,
             assistant: null,
-            ...(capture.version === 5 ? { research: null } : {})
+            ...(isResearchCapture(capture) ? { research: null } : {})
           },
           fresh: true,
           ...advance(db, p, a.conversationId)
@@ -971,11 +1098,13 @@ export async function conversationCommand(
           localBinding(context, 'conversation', input.binding.attemptId).binding ?? undefined
       if (
         value.capture.digest !== input.binding.captureDigest ||
-        (value.capture.version === 5
-          ? bindingVersion(input.binding) !== 6
-          : value.capture.version >= 2
-            ? bindingVersion(input.binding) !== 5
-            : bindingVersion(input.binding) >= 5) ||
+        (value.capture.version === 6
+          ? bindingVersion(input.binding) !== 9
+          : isResearchCapture(value.capture)
+            ? bindingVersion(input.binding) !== 6
+            : value.capture.version >= 2
+              ? bindingVersion(input.binding) !== 5
+              : bindingVersion(input.binding) >= 5) ||
         (value.attempt.state !== 'not-sent' && !existing)
       )
         throw new ProjectError('OPERATION_CONFLICT')
@@ -1029,7 +1158,7 @@ export async function conversationCommand(
             op.connectionId !== existing.connectionId ||
             op.model !== existing.model ||
             op.action !== 'conversation' ||
-            (bindingVersion(existing) === 6) !== 'research' in op
+            isResearchCapture(turn(db, p, a.id).capture) !== 'research' in op
           )
             throw new ProjectError('DENIED')
           if (op.sequence + 1 <= a.sequence)
@@ -1112,13 +1241,17 @@ export async function conversationCommand(
           chunks.push(text)
         }
       let bytes = Buffer.byteLength(chunks[0])
+      await appendExternalTranscript(context, c.id, append)
       for (const row of db
         .prepare(
           "SELECT attempt_id FROM conversation_messages WHERE project_id=? AND conversation_id=? AND role='user' ORDER BY ordinal"
         )
         .iterate(p, c.id) as Iterable<{ attempt_id: string }>) {
         const t = turn(db, p, row.attempt_id)
-        if ((t.capture.version === 3 || t.capture.version === 4) && t.capture.purpose !== 'chat')
+        if (
+          (t.capture.version === 3 || t.capture.version === 4 || t.capture.version === 6) &&
+          t.capture.purpose !== 'chat'
+        )
           append('\nContext preparation (not a user chat message)\n')
         append(`\nUser · ${new Date(t.user.createdAt).toUTCString()}\n${t.user.text}\n`)
         append(
@@ -1128,7 +1261,7 @@ export async function conversationCommand(
           append(
             `\nAssistant · ${new Date(t.assistant.createdAt).toUTCString()}\n${t.assistant.text}\n`
           )
-        if (t.capture.version === 5) append('\nWeb search requested\n')
+        if (isResearchCapture(t.capture)) append('\nWeb search requested\n')
         if (t.research)
           append(
             `\nWeb research references (canonical text offsets)\n${JSON.stringify(t.research, null, 2)}\n`
@@ -1218,6 +1351,7 @@ export function interruptUnboundConversations(
   })
 }
 export function validatePortableConversations(db: Database.Database, p: string): void {
+  validateExternalConversations(db, p)
   if (schemaVersion(db) >= 21) validateReferenceReceipts(db, p, (id) => turn(db, p, id))
   for (const table of [
     'conversations',
@@ -1256,7 +1390,8 @@ export function validatePortableConversations(db: Database.Database, p: string):
       (capture.version === 2 && schemaVersion(db) < 17) ||
       (capture.version === 3 && schemaVersion(db) < 18) ||
       (capture.version === 4 && schemaVersion(db) < 19) ||
-      (capture.version === 5 && schemaVersion(db) < 20)
+      (capture.version === 5 && schemaVersion(db) < 20) ||
+      (capture.version === 6 && schemaVersion(db) < 30)
     )
       corrupt()
   }
@@ -1282,6 +1417,11 @@ export function validatePortableConversations(db: Database.Database, p: string):
         .get(p, t.capture.source.documentId)
     )
       corrupt()
+    if (t.capture.version === 6)
+      for (const ref of t.capture.imported) {
+        if (ref.conversationId !== t.capture.conversationId) corrupt()
+        validateImportedReference(db, p, ref, ref.text, t.capture.head)
+      }
     for (const id of t.capture.historyIds) {
       const m = message(db, p, id)
       if (m.conversationId !== t.attempt.conversationId || m.ordinal >= t.user.ordinal) corrupt()
@@ -1327,9 +1467,14 @@ export function validatePortableConversations(db: Database.Database, p: string):
       )
         corrupt()
     }
-    if (t.capture.version === 3 || t.capture.version === 4 || t.capture.version === 5)
+    if (
+      t.capture.version === 3 ||
+      t.capture.version === 4 ||
+      t.capture.version === 5 ||
+      t.capture.version === 6
+    )
       validateMemoryCapture(db, p, t)
-    if (t.capture.version === 4 || t.capture.version === 5)
+    if (t.capture.version === 4 || t.capture.version === 5 || t.capture.version === 6)
       validateKnowledgeCapture(db, p, t.capture)
     if (t.research) researchCount++
     messageCount += t.assistant ? 2 : 1

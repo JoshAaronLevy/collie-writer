@@ -1,3 +1,4 @@
+import { ImportedOrigins } from '../imports/ImportedOrigins'
 import { SourceChatHistory } from '../ai/conversations/SourceChatHistory'
 import { useConversations } from '../ai/conversations/conversationState'
 import { isEditableKind } from '../../../../shared/outline'
@@ -821,6 +822,11 @@ export default function SourcesPanel({
                   <div hidden={page !== 'usage'} inert={page !== 'usage'}>
                     <SourceUsage sourceId={current.id} />
                     <SourceChatHistory key={current.id} sourceId={current.id} />
+                    <ImportedOrigins
+                      key={`import:${project.projectId}:${project.workspaceId}:${current.id}`}
+                      kind="source"
+                      id={current.id}
+                    />
                   </div>
                 ) : null}
                 <form

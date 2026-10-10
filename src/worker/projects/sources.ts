@@ -143,7 +143,7 @@ const cslKeys = new Set([
   'ISBN',
   'ISSN'
 ])
-function fromCsl(value: unknown): {
+export function fromCsl(value: unknown): {
   metadata: SourceMetadata
   externalId: string
   unknownFields: string[]
@@ -408,7 +408,10 @@ async function selectedFile(path: string, maximum: number): Promise<Buffer> {
     await file.close()
   }
 }
-function parseRows(value: string, format: BibliographyFormat): SourceImportRow[] {
+export function parseBibliographyRows(
+  value: string,
+  format: BibliographyFormat
+): SourceImportRow[] {
   let raws: unknown[]
   if (format === 'csl-json') {
     const parsed: unknown = JSON.parse(value)
@@ -650,7 +653,7 @@ export function createSourceRow(
   verified: boolean,
   provenance: string,
   now: string,
-  revision = randomUUID()
+  revision: string = randomUUID()
 ): void {
   const metadata = normalizeMetadata(metadataInput)
   if (
@@ -684,7 +687,7 @@ export function changeSource(context: SourceContext, input: SourceChangeInput): 
   inWriteTransaction(db, () => {
     if (priorOperation(db, projectId, input.operationId, digest)) return
     const now = new Date().toISOString(),
-      revision = randomUUID()
+      revision: string = randomUUID()
     const get = (id: string): Row => {
       const row = db
         .prepare('SELECT * FROM sources WHERE project_id=? AND id=?')
@@ -829,7 +832,7 @@ export async function previewImport(
   let rows: SourceImportRow[]
   try {
     const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-    rows = parseRows(text, format)
+    rows = parseBibliographyRows(text, format)
   } catch (error) {
     if (error instanceof ProjectError) throw error
     throw new ProjectError('VALIDATION')
@@ -1188,7 +1191,7 @@ export async function exportSources(
     .filter((r): r is Row => !!r && r.state === 'active')
   if (records.length !== chosen.length) throw new ProjectError('VALIDATION')
   const losses = [
-    'Project-only provenance, verification status, section links, attachments, raw imports and revision history are omitted from bibliography exports.',
+    'Project-only provenance (including imported occurrence decisions, grades and message origins), verification status, section links, attachments, raw imports and revision history are omitted from bibliography exports.',
     ...records.flatMap((r) =>
       (JSON.parse(r.unknown_fields) as string[]).map(
         (f) => `${r.id}: ${f} retained in source, omitted from ${input.format} export`

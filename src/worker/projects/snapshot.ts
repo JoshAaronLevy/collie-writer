@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3'
+import { validateImportArtifactFiles } from './import-sessions'
 import { dirname, join } from 'node:path'
 import { rename, lstat, mkdir } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -58,6 +59,7 @@ export async function captureDatabase(
     if (copy.pragma('journal_mode=DELETE', { simple: true }) !== 'delete')
       throw new SnapshotError('UNAVAILABLE')
     graph = readPortableGraph(copy)
+    await validateImportArtifactFiles(source.root, source.workspace, graph.importArtifacts)
     if (
       graph.projectId !== source.projectId ||
       !includesHeads(copy, graph.projectId, graph.headCommitId, minimumHeads)

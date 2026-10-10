@@ -1,3 +1,4 @@
+import { isResearchCapture } from '../../../../../shared/conversations'
 import { useReferenceSave } from './useReferenceSave'
 import { MEMORY_PROMPT } from '../../../../../shared/conversation-memory'
 import { effectiveState, isEditableKind } from '../../../../../shared/outline'
@@ -28,6 +29,7 @@ type ConversationControllerState = {
   selected: string | null
   page: {
     type: 'page'
+    external?: import('../../../../../shared/conversation-transcript').TranscriptSummary | null
     conversation: Conversation
     turns: ConversationTurn[]
     olderThan: number | null
@@ -580,7 +582,7 @@ export function useConversationController(): ConversationControllerState {
   }, [listPageKey])
   useEffect(() => {
     if (scope) void list(scope)
-  }, [scope, list, query, view, offset, currentOffset, currentDocumentId])
+  }, [scope, list, query, view, offset, currentOffset, currentDocumentId, project?.headCommitId])
   const readKey = `${scope?.projectId ?? ''}:${scope?.workspaceId ?? ''}:${selected ?? ''}:${before ?? ''}:${readRevision}`
   const [lastReadKey, setLastReadKey] = useState(readKey)
   if (lastReadKey !== readKey) {
@@ -860,7 +862,7 @@ export function useConversationController(): ConversationControllerState {
       let input: ConversationReview = {
         ...scope,
         action: 'review',
-        version: submittedSearch ? 5 : 4,
+        version: submittedSearch ? 7 : 6,
         purpose: 'chat',
         contextPolicy: submitted.contextPolicy,
         conversationId: id,
@@ -906,7 +908,7 @@ export function useConversationController(): ConversationControllerState {
         setPreparingMemory(true)
         const summary: ConversationReview = {
           ...input,
-          version: 4,
+          version: 6,
           purpose,
           source: { kind: 'none' },
           prompt: MEMORY_PROMPT,
@@ -1093,12 +1095,13 @@ export function useConversationController(): ConversationControllerState {
       readOnly ||
       busy ||
       pending ||
-      ((t.capture.version === 3 || t.capture.version === 4) && t.capture.purpose !== 'chat')
+      ((t.capture.version === 3 || t.capture.version === 4 || t.capture.version === 6) &&
+        t.capture.purpose !== 'chat')
     )
       return
     // Context and old account authority are never silently carried into another attempt.
     update({ text: t.capture.prompt })
-    setSearchChoice({ id: selected, enabled: !textOnly && t.capture.version === 5 })
+    setSearchChoice({ id: selected, enabled: !textOnly && isResearchCapture(t.capture) })
     setNotice(
       textOnly
         ? 'Prompt copied with web search off. Press Send to ask without searching.'

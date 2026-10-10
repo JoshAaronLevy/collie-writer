@@ -1,3 +1,6 @@
+import type { DirectImportedConversationExecution } from './direct-imported-conversation'
+import type { DirectMultiImportExecution } from './direct-import-multipart'
+import type { DirectImportExecution } from './direct-import'
 import type { DirectResearchExecution } from './direct-research'
 import { createHash } from 'node:crypto'
 import { isId } from '../../domain/editor/schema'
@@ -19,7 +22,12 @@ export type DirectConversationExecution = Omit<
   instructions: typeof CONVERSATION_INSTRUCTIONS_V2
 }
 export type DirectTextExecution =
-  DirectExecution | DirectConversationExecution | DirectResearchExecution
+  | DirectImportedConversationExecution
+  | DirectExecution
+  | DirectConversationExecution
+  | DirectResearchExecution
+  | DirectImportExecution
+  | DirectMultiImportExecution
 export function conversationInput(
   input: Pick<AiPrepareInput, 'prompt' | 'context'>
 ): { role: 'user' | 'assistant'; content: string }[] | null {

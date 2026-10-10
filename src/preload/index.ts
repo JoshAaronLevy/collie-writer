@@ -1,3 +1,4 @@
+import { importAnalysisApi } from './import-analysis'
 import { isWorkingCopyReply, type WorkingCopyReply } from '../shared/working-copy'
 import { isRetentionView, type RetentionView } from '../shared/retained-versions'
 import { isSearchCacheView, type SearchCacheView } from '../shared/search-cache'
@@ -9,6 +10,7 @@ import {
 } from '../shared/storage-inventory'
 import { proofreadingApi } from './proofreading'
 import { conversationApi } from './conversations'
+import { projectImportApi } from './project-import'
 import { isCitationsView, type CitationsView } from '../shared/citations'
 import type { HistoryView } from '../shared/outline'
 import {
@@ -134,7 +136,9 @@ const api: CollieAPI = {
       : Promise.resolve(projectFailure('', 'VALIDATION')),
   ...aiApi,
   ...conversationApi,
+  ...projectImportApi,
   ...proofreadingApi,
+  ...importAnalysisApi,
   helpAction: (input) => projectCall<boolean>(HELP_ACTION, (value) => value === true, input),
   recoverWindow: (input) =>
     projectCall<boolean>(WINDOW_RECOVERY, (value) => typeof value === 'boolean', input),

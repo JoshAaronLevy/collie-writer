@@ -1,3 +1,5 @@
+import { validateImportedReference, type ImportedContext } from './imported-context'
+import { externalOrigin } from './external-conversations'
 import { isId } from '../../domain/editor/schema'
 import { record, exact } from '../../shared/projects'
 import { isEditableKind } from '../../shared/outline'
@@ -127,7 +129,11 @@ export function readKnowledgeSettings(
   if (rows.length > 1) fail('CORRUPT_PROJECT')
   if (!rows.length) return empty()
   const value: unknown = JSON.parse(rows[0].body)
-  return isKnowledgeSettings(value) ? value : fail('CORRUPT_PROJECT')
+  return isKnowledgeSettings(value) &&
+    (value.version === 1 ||
+      (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v >= 30)
+    ? value
+    : fail('CORRUPT_PROJECT')
 }
 export function knowledgeCandidates(
   db: Database.Database,
@@ -169,7 +175,8 @@ export function resolveKnowledge(
   p: string,
   target: KnowledgeTarget,
   query = '',
-  explicit = false
+  explicit = false,
+  imported?: ImportedContext
 ): KnowledgeItem {
   if (target.kind === 'document') {
     const read = db.prepare(
@@ -287,7 +294,11 @@ export function resolveKnowledge(
       'SELECT revision_id AS revision,title,state FROM conversations WHERE project_id=? AND id=?'
     )
     .get(p, target.id) as { revision: string; title: string; state: string } | undefined
+  const origin = externalOrigin(db, p, target.id)
+  if (origin?.excluded) fail('NOT_FOUND')
+  if (origin && !imported) fail('NOT_FOUND')
   if (!c || (!explicit && c.state !== 'active')) fail('NOT_FOUND')
+  const importedMessages = imported?.get(target.id) ?? []
   const rows = db
     .prepare(
       `SELECT u.text AS question,a.text AS answer FROM conversation_attempts t JOIN ai_captures cap ON cap.project_id=t.project_id AND cap.id=t.capture_id JOIN conversation_messages u ON u.project_id=t.project_id AND u.id=json_extract(t.body,'$.userMessageId') JOIN conversation_messages a ON a.project_id=t.project_id AND a.id=json_extract(t.body,'$.assistantMessageId') WHERE t.project_id=? AND t.conversation_id=? AND json_extract(t.body,'$.state')='completed' AND json_extract(t.body,'$.provider') IS NOT NULL AND coalesce(json_extract(cap.body,'$.purpose'),'chat')='chat' ORDER BY u.ordinal DESC LIMIT 40`
@@ -298,6 +309,16 @@ export function resolveKnowledge(
     .map((r, index) => ({ ...r, index, score: rank(r.question + ' ' + r.answer, terms) }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
   const picked = sorted[0]
+  if (
+    importedMessages.length &&
+    (!picked || Math.max(...importedMessages.map((m) => rank(m.text, terms))) > picked.score)
+  ) {
+    const picked = [...importedMessages].sort(
+      (a, b) => rank(b.text, words(query)) - rank(a.text, words(query)) || b.sequence - a.sequence
+    )[0]
+    const text = `Imported prior discussion, not verified evidence. One bounded original message; other messages may be omitted.\n${picked.originalRole}: ${picked.text}`
+    return { ...item(target, c!.revision, c!.title, text, '', 20000), imported: [picked] }
+  }
   if (!picked) fail('NOT_FOUND')
   return item(
     target,
@@ -313,7 +334,8 @@ export function changeKnowledge(
   chat: string,
   id: string,
   expected: string | null,
-  change: KnowledgeChange
+  change: KnowledgeChange,
+  imported?: ImportedContext
 ): boolean {
   const request = JSON.stringify({ expected, change }),
     prior = db
@@ -338,9 +360,15 @@ export function changeKnowledge(
   if (change.target.kind === 'chat' && change.target.id === chat) fail('STALE_REVISION')
   validateKnowledgeTarget(db, p, change.target)
   const key = knowledgeKey(change.target),
-    next = { ...current, revision: id, pins: [...current.pins], excluded: [...current.excluded] }
+    next: KnowledgeSettings = {
+      ...current,
+      version: imported ? 2 : current.version,
+      revision: id,
+      pins: [...current.pins],
+      excluded: [...current.excluded]
+    }
   if (change.mode === 'pin' || change.mode === 'refresh') {
-    const snapshot = resolveKnowledge(db, p, change.target, '', true)
+    const snapshot = resolveKnowledge(db, p, change.target, '', true, imported)
     snapshot.pinned = true
     next.pins = [...next.pins.filter((i) => knowledgeKey(i) !== key), snapshot]
     next.excluded = next.excluded.filter((i) => knowledgeKey(i) !== key)
@@ -410,10 +438,11 @@ export function buildKnowledge(
   query: string,
   currentId: string | null,
   settings: KnowledgeSettings,
-  budget = 16000
+  budget = 16000,
+  imported?: ImportedContext
 ): ProjectKnowledge {
   const result: ProjectKnowledge = {
-      version: 1,
+      version: imported ? 2 : 1,
       settingsRevision: settings.revision,
       coverage: '',
       items: []
@@ -440,7 +469,7 @@ export function buildKnowledge(
   }
   for (const pin of settings.pins) {
     try {
-      const live = resolveKnowledge(db, p, pin, '', true)
+      const live = resolveKnowledge(db, p, pin, '', true, imported)
       if (pin.versionId && live.versionId !== pin.versionId) {
         skipped++
         continue
@@ -460,7 +489,7 @@ export function buildKnowledge(
     for (const kind of ['source', 'document', 'note', 'excerpt', 'chat'] as const) {
       if (kind === 'chat' && id === chat) continue
       try {
-        add(resolveKnowledge(db, p, { kind, id }, query))
+        add(resolveKnowledge(db, p, { kind, id }, query, false, imported))
         break
       } catch (error) {
         if (!(error instanceof ProjectError && error.code === 'NOT_FOUND')) throw error
@@ -524,7 +553,7 @@ export function buildKnowledge(
     for (const row of ranked) {
       if (kind === 'chat' && row.id === chat) continue
       try {
-        add(resolveKnowledge(db, p, { kind, id: row.id }, query))
+        add(resolveKnowledge(db, p, { kind, id: row.id }, query, false, imported))
       } catch (error) {
         if (!(error instanceof ProjectError && error.code === 'NOT_FOUND')) throw error
       }
@@ -548,7 +577,15 @@ export function buildKnowledge(
     'chat',
     `SELECT c.id,c.title||' '||coalesce((SELECT group_concat(substr(m.text,1,2000),' ') FROM conversation_messages m JOIN conversation_attempts a ON a.project_id=m.project_id AND a.id=m.attempt_id JOIN ai_captures cap ON cap.project_id=a.project_id AND cap.id=a.capture_id WHERE m.project_id=c.project_id AND m.conversation_id=c.id AND json_extract(a.body,'$.state')='completed' AND json_extract(a.body,'$.provider') IS NOT NULL AND coalesce(json_extract(cap.body,'$.purpose'),'chat')='chat' AND m.ordinal>=(SELECT coalesce(max(ordinal),0)-20 FROM conversation_messages WHERE project_id=c.project_id AND conversation_id=c.id)),'') AS text FROM conversations c WHERE c.project_id=? AND c.state='active' ORDER BY c.updated_at DESC,c.id LIMIT 201`
   )
-  result.coverage = `${full && docs.length <= 200 ? 'All eligible other manuscript bodies fit the allocated selection.' : 'Selected manuscript passages; not the whole manuscript.'} Current writing is supplied separately. Research and chat recall use bounded authoritative reads (up to 200 candidates per category, 40 recent exchanges per selected chat), not exhaustive search. ${skipped ? 'Some material was omitted by size, state, exclusions or read bounds. ' : ''}Pins retain their selected revision; removed or superseded material is excluded. Archived chats appear only when explicitly pinned. Metadata, notes and prior discussion are not verified quotations.`
+  for (const [id, messages] of imported ?? []) {
+    if (id === chat || !messages.some((m) => rank(m.text, terms) > 0)) continue
+    try {
+      add(resolveKnowledge(db, p, { kind: 'chat', id }, query, false, imported))
+    } catch (error) {
+      if (!(error instanceof ProjectError && error.code === 'NOT_FOUND')) throw error
+    }
+  }
+  result.coverage = `${full && docs.length <= 200 ? 'All eligible other manuscript bodies fit the allocated selection.' : 'Selected manuscript passages; not the whole manuscript.'} Current writing is supplied separately. Research and chat recall use bounded authoritative reads (up to 200 candidates per category, 40 recent exchanges per selected chat), not exhaustive search. ${skipped ? 'Some material was omitted by size, state, exclusions or read bounds. ' : ''}Pins retain their selected revision; removed or superseded material is excluded. Archived chats appear only when explicitly pinned. Imported recall considers at most 16 recent eligible chats and 40 bounded messages per chat; oversized and omitted originals remain in the transcript. Do-not-recall imports are excluded. Metadata, notes and prior discussion are not verified quotations.`
   return result
 }
 export function validateKnowledgeSettings(db: Database.Database, p: string): void {
@@ -574,6 +611,8 @@ export function validateKnowledgeSettings(db: Database.Database, p: string): voi
       request: unknown = JSON.parse(row.request)
     if (
       !isKnowledgeSettings(value) ||
+      (value.version === 2 &&
+        (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 30) ||
       value.revision !== row.id ||
       !record(request) ||
       !exact(request, ['expected', 'change']) ||
@@ -637,6 +676,16 @@ function canonicalSource(db: Database.Database, p: string, id: string): string {
 }
 function validateKnowledgeItem(db: Database.Database, p: string, v: KnowledgeItem): void {
   validateKnowledgeTarget(db, p, v)
+  if (v.imported) {
+    for (const m of v.imported) validateImportedReference(db, p, m, m.text)
+    if (
+      v.imported.length !== 1 ||
+      v.start !== 0 ||
+      v.text !==
+        `Imported prior discussion, not verified evidence. One bounded original message; other messages may be omitted.\n${v.imported[0].originalRole}: ${v.imported[0].text}`
+    )
+      fail('CORRUPT_PROJECT')
+  }
   if (
     v.sourceId &&
     !db.prepare('SELECT 1 FROM sources WHERE project_id=? AND id=?').get(p, v.sourceId)
@@ -766,6 +815,7 @@ export function validateKnowledgeCapture(
   capture:
     | import('../../shared/conversations').AiCaptureV4
     | import('../../shared/conversations').AiCaptureV5
+    | import('../../shared/conversations').AiCaptureV6
 ): void {
   const knowledge = capture.knowledge
   if (!knowledge) return
@@ -780,6 +830,8 @@ export function validateKnowledgeCapture(
     fail('CORRUPT_PROJECT')
   for (const v of knowledge.items) {
     validateKnowledgeItem(db, p, v)
+    for (const ref of v.imported ?? [])
+      validateImportedReference(db, p, ref, ref.text, capture.head)
     if (v.kind === 'chat' && v.id === capture.conversationId) fail('CORRUPT_PROJECT')
     if (v.pinned) {
       const row = db

@@ -17,6 +17,7 @@ import {
 } from './manifest'
 import { citationProfile, validateCitationFile } from './citation-assets'
 import { inspectPortableDatabase } from './portable-db'
+import { validateImportArtifactFiles } from './import-sessions'
 import { requireSpace, transfer, type Progress } from './streams'
 import { ARCHIVE_BYTES, archivePlan } from './archive-policy'
 
@@ -275,6 +276,7 @@ export async function extractArchive(
       await validateCitationFile(join(staging, 'citation-assets', ref.sha256), ref, signal)
     cancelled(signal)
     const graph = inspectPortableDatabase(join(staging, 'project.sqlite'), nativeBinding)
+    await validateImportArtifactFiles(staging, staging, graph.importArtifacts)
     const manifestBlobs = new Map(manifest.blobs.map((ref) => [ref.sha256, ref]))
     if (
       graph.schemaVersion !== manifest.schemaVersion ||

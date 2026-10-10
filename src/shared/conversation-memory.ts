@@ -1,3 +1,4 @@
+import { isImportedReference, type ImportedMessageReference } from './imported-context'
 import { isId } from '../domain/editor/schema'
 import { aiText } from './ai'
 import { exact, record } from './projects'
@@ -12,12 +13,17 @@ export const MEMORY_LIMITS = {
 export const MEMORY_PROMPT =
   'Prepare a compact working memory, aiming for 2500-4000 characters and never exceeding 6000 characters. Preserve goals, agreed decisions, terminology, unresolved questions, qualifications and source identifiers from the supplied material. Distinguish user decisions from assistant suggestions. Retain explicit uncertainty and coverage limitations. Do not invent facts, quotations or references. Summaries are not evidence or verbatim quotations. Return only the useful memory in Markdown.'
 export type MemoryPurpose = 'chat' | 'chat-summary' | 'overview-summary'
-export type MemoryMessageRef = { id: string; revision: string; ordinal: number }
+export type MemoryMessageRef = {
+  id: string
+  revision: string
+  ordinal: number
+  imported?: ImportedMessageReference
+}
 export type MemoryCoverage =
-  | { kind: 'chat'; previousId: string | null; messages: MemoryMessageRef[] }
+  | { kind: 'chat'; version?: 2; previousId: string | null; messages: MemoryMessageRef[] }
   | { kind: 'overview'; digest: string; documents: { id: string; revision: string }[] }
 export type MemoryCheckpoint = {
-  version: 1
+  version: 1 | 2
   id: string
   conversationId: string
   producingAttemptId: string
@@ -31,16 +37,27 @@ export function isMemoryCoverage(v: unknown): v is MemoryCoverage {
   if (!record(v)) return false
   if (v.kind === 'chat')
     return (
-      exact(v, ['kind', 'previousId', 'messages']) &&
+      exact(v, ['kind', 'previousId', 'messages', ...(v.version === 2 ? ['version'] : [])]) &&
       (v.previousId === null || isId(v.previousId)) &&
       Array.isArray(v.messages) &&
       v.messages.length > 0 &&
       v.messages.length <= 256 &&
-      v.messages.length % 2 === 0 &&
+      (v.version === 2 || v.messages.length % 2 === 0) &&
       v.messages.every(
         (m) =>
           record(m) &&
-          exact(m, ['id', 'revision', 'ordinal']) &&
+          exact(m, [
+            'id',
+            'revision',
+            'ordinal',
+            ...(v.version === 2 && m.imported !== undefined ? ['imported'] : [])
+          ]) &&
+          (m.imported === undefined ||
+            (v.version === 2 &&
+              isImportedReference(m.imported) &&
+              m.imported.id === m.id &&
+              m.imported.revision === m.revision &&
+              m.imported.sequence === m.ordinal)) &&
           isId(m.id) &&
           isId(m.revision) &&
           Number.isSafeInteger(m.ordinal) &&
@@ -74,10 +91,11 @@ export function isMemoryCheckpoint(v: unknown): v is MemoryCheckpoint {
       'state',
       'createdAt'
     ]) &&
-    v.version === 1 &&
+    (v.version === 1 || v.version === 2) &&
     [v.id, v.conversationId, v.producingAttemptId].every(isId) &&
     (v.parentId === null || isId(v.parentId)) &&
     isMemoryCoverage(v.coverage) &&
+    (v.version === 2 || v.coverage.kind !== 'chat' || v.coverage.version === undefined) &&
     aiText(v.text, MEMORY_LIMITS.text) &&
     !!v.text.trim() &&
     (v.state === 'accepted' || v.state === 'edited') &&

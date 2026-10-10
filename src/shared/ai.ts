@@ -120,7 +120,7 @@ export type AiConnection = {
 /** Transient local work references, never content, credentials or runtime IDs. */
 export type AiContentWork = {
   scope: OpenInput
-  feature: 'conversation' | 'proofreading'
+  feature: 'conversation' | 'proofreading' | 'import'
   attemptId: string
   state:
     | 'running'
@@ -194,7 +194,7 @@ export type AiPrepareInput = {
   operationId: string
   connectionId: string
   model: string
-  action: 'conversation' | 'proofread'
+  action: 'conversation' | 'proofread' | 'import'
   prompt: string
   context: AiContext[]
 }
@@ -218,7 +218,7 @@ export type AiOperation = {
   scope: OpenInput
   connectionId: string
   model: string
-  action: 'conversation' | 'proofread'
+  action: 'conversation' | 'proofread' | 'import'
   digest: string
   state: 'starting' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'failed' | 'unknown'
   text: string
@@ -309,7 +309,7 @@ export function isAiPrepare(v: unknown): v is AiPrepareInput {
     isId(v.connectionId) &&
     aiText(v.model, 100) &&
     /^[a-zA-Z0-9._-]+$/.test(v.model) &&
-    ['conversation', 'proofread'].includes(String(v.action)) &&
+    ['conversation', 'proofread', 'import'].includes(String(v.action)) &&
     aiText(v.prompt, AI_LIMITS.prompt) &&
     v.prompt.trim().length > 0 &&
     Array.isArray(v.context) &&
@@ -376,7 +376,7 @@ export function isAiOperation(v: unknown): v is AiOperation {
     isOpenInput(v.scope) &&
     isId(v.connectionId) &&
     aiText(v.model, 100) &&
-    ['conversation', 'proofread'].includes(String(v.action)) &&
+    ['conversation', 'proofread', 'import'].includes(String(v.action)) &&
     typeof v.digest === 'string' &&
     /^[a-f0-9]{64}$/.test(v.digest) &&
     ['starting', 'running', 'cancelling', 'completed', 'cancelled', 'failed', 'unknown'].includes(
@@ -445,7 +445,7 @@ export function isAiStatus(v: unknown): v is AiStatus {
     typeof v.proofreadReviewRevision === 'string' &&
     /^[a-f0-9]{64}$/.test(v.proofreadReviewRevision) &&
     Array.isArray(v.work) &&
-    v.work.length <= AI_LIMITS.jobs * 2 &&
+    v.work.length <= AI_LIMITS.jobs * 3 &&
     v.work.every(isAiContentWork) &&
     new Set(
       v.work.map(
@@ -574,7 +574,7 @@ export function isAiContentWork(v: unknown): v is AiContentWork {
     exact(v, ['scope', 'feature', 'attemptId', 'state']) &&
     isOpenInput(v.scope) &&
     isId(v.attemptId) &&
-    ['conversation', 'proofreading'].includes(String(v.feature)) &&
+    ['conversation', 'proofreading', 'import'].includes(String(v.feature)) &&
     [
       'running',
       'stopping',

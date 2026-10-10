@@ -124,8 +124,13 @@ export function ConversationKnowledge(): React.JSX.Element {
     if (seq === sequence.current) await read()
   }
   const last = c.page
-    ? [...c.page.turns].reverse().find((t) => t.capture.version === 4 && t.capture.knowledge)
-        ?.capture
+    ? [...c.page.turns]
+        .reverse()
+        .find(
+          (t) =>
+            (t.capture.version === 4 || t.capture.version === 5 || t.capture.version === 6) &&
+            t.capture.knowledge
+        )?.capture
     : undefined
   return (
     <details
@@ -251,7 +256,7 @@ export function ConversationKnowledge(): React.JSX.Element {
           More items
         </AppButton>
       ) : null}
-      {last?.version === 4 && last.knowledge ? (
+      {(last?.version === 4 || last?.version === 5 || last?.version === 6) && last.knowledge ? (
         <details>
           <summary>Last sent coverage</summary>
           <p>{last.knowledge.coverage}</p>
@@ -303,7 +308,7 @@ export function ConversationReferences({
     }
   }, [scope, attemptId, revision, head])
   const related =
-    turn.capture.version === 4 || turn.capture.version === 5
+    turn.capture.version === 4 || turn.capture.version === 5 || turn.capture.version === 6
       ? (turn.capture.knowledge?.items.filter(
           (i) => turn.assistant?.text.includes(i.id) && i.kind !== 'source'
         ) ?? [])

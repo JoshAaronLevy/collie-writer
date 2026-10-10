@@ -133,6 +133,12 @@ async function receive(message: unknown): Promise<void> {
       if (command.kind === 'open' || command.kind === 'create') files?.beforeProjectChange()
       let value: ProjectValue
       switch (command.kind) {
+        case 'importAnalysis':
+          value = await repository.importAnalysis(command.input)
+          break
+        case 'importSession':
+          value = await repository.importSession(command.input)
+          break
         case 'proofreading':
           value = await repository.proofreading(command.input)
           break

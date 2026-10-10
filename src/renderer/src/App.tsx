@@ -1,3 +1,4 @@
+import { ImportProvider } from './features/imports/ImportProvider'
 import { ProofreadingProvider } from './features/ai/proofreading/ProofreadingProvider'
 import { ProofreadingNotice } from './features/ai/proofreading/ProofreadingPanel'
 import { ConversationProvider } from './features/ai/conversations/ConversationProvider'
@@ -65,11 +66,13 @@ export default function App(): React.JSX.Element {
   return (
     <WorkspaceSessionProvider storage={storageStatus}>
       <AiConnectionsProvider>
-        <ConversationProvider>
-          <ProofreadingProvider>
-            <AppShell info={info} failed={failed} storageStatus={storageStatus} />
-          </ProofreadingProvider>
-        </ConversationProvider>
+        <ImportProvider>
+          <ConversationProvider>
+            <ProofreadingProvider>
+              <AppShell info={info} failed={failed} storageStatus={storageStatus} />
+            </ProofreadingProvider>
+          </ConversationProvider>
+        </ImportProvider>
       </AiConnectionsProvider>
     </WorkspaceSessionProvider>
   )

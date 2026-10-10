@@ -10,6 +10,7 @@ import { contained, syncDirectory, syncFile, writeJson } from '../storage/files'
 import { inWriteTransaction } from '../storage/driver'
 import { inspectVersion } from '../storage/schema'
 import { readPortableGraph } from './portable-db'
+import { validateImportArtifactFiles } from './import-sessions'
 import type { SnapshotManifest } from './manifest'
 import { writeDestination, type SavedLocation } from './file-state'
 
@@ -92,6 +93,32 @@ export async function promoteIncoming(
           ...(inspectVersion(db) >= 19 ? ['conversation_context'] : []),
           ...(inspectVersion(db) >= 20 ? ['conversation_research'] : []),
           ...(inspectVersion(db) >= 21 ? ['conversation_sources'] : []),
+          ...(inspectVersion(db) >= 24 ? ['external_conversations', 'external_messages'] : []),
+          ...(inspectVersion(db) >= 25 ? ['imported_content_origins'] : []),
+          ...(inspectVersion(db) >= 29 ? ['import_receipts', 'import_accepted_items'] : []),
+          ...(inspectVersion(db) >= 28
+            ? [
+                'import_reviews',
+                'import_review_revisions',
+                'import_review_choices',
+                'import_review_state',
+                'import_confirmation_manifests',
+                'import_confirmation_entries'
+              ]
+            : []),
+          ...(inspectVersion(db) >= 27
+            ? [
+                'import_analysis_plans',
+                'import_analysis_parts',
+                'import_analysis_proposals',
+                'import_analysis_plan_state'
+              ]
+            : []),
+          ...(inspectVersion(db) >= 26 ? ['import_analysis_captures', 'import_analysis_runs'] : []),
+          ...(inspectVersion(db) >= 23 ? ['import_graphs', 'import_graph_pages'] : []),
+          ...(inspectVersion(db) >= 22
+            ? ['import_batches', 'import_batch_revisions', 'import_files', 'import_artifacts']
+            : []),
           ...(inspectVersion(db) >= 11
             ? ['conversations', 'ai_captures', 'conversation_attempts', 'conversation_messages']
             : []),
@@ -117,7 +144,8 @@ export async function promoteIncoming(
             row.operation_id
           )
       })
-      readPortableGraph(db)
+      const graph = readPortableGraph(db)
+      await validateImportArtifactFiles(root, staging, graph.importArtifacts)
     } finally {
       db.close()
     }

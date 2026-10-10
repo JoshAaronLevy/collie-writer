@@ -19,7 +19,7 @@ type NoteRow = {
   title: string
   body: string
   state: Note['state']
-  origin: 'human'
+  origin: Note['origin']
   created_at: string
   updated_at: string
 }
@@ -469,6 +469,9 @@ export function validatePortableNotes(db: Database.Database, projectId: string):
   ])
     if (db.prepare(`SELECT 1 FROM ${table} WHERE project_id<>? LIMIT 1`).get(projectId))
       throw new ProjectError('CORRUPT_PROJECT')
+  const schema = (
+    db.prepare('SELECT schema_version AS v FROM format WHERE singleton=1').get() as { v: number }
+  ).v
   const view = readNotes(db, projectId)
   if (view.notes.length + view.labels.length + view.annotations.length > 100000)
     throw new ProjectError('CORRUPT_PROJECT')
@@ -478,7 +481,7 @@ export function validatePortableNotes(db: Database.Database, projectId: string):
       !isId(n.revisionId) ||
       !noteBody(n.body) ||
       !['active', 'archived', 'trashed'].includes(n.state) ||
-      n.origin !== 'human' ||
+      (n.origin !== 'human' && !(schema >= 25 && n.origin === 'imported-v1')) ||
       n.title.length > 500 ||
       !Number.isFinite(Date.parse(n.createdAt)) ||
       !Number.isFinite(Date.parse(n.updatedAt))

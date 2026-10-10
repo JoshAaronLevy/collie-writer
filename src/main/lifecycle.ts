@@ -23,7 +23,9 @@ export class ProjectLifecycle {
     private readonly devOrigin?: string,
     private readonly ai?: AiService,
     private readonly conversationPending: () => boolean = () => false,
-    private readonly settleDrafts: () => Promise<void> = async () => {}
+    private readonly settleDrafts: () => Promise<void> = async () => {},
+    private readonly importPending: () => boolean = () => false,
+    private readonly pauseImports: (paused: boolean) => void = () => {}
   ) {}
   register(): void {
     ipcMain.handle(
@@ -89,6 +91,7 @@ export class ProjectLifecycle {
     if (this.restarting !== owner) return
     this.restarting = undefined
     this.ai?.resume()
+    this.pauseImports(false)
     this.files.action('close-cancelled')
   }
   rendererLoadFailed(owner: WebContents): void {
@@ -127,6 +130,7 @@ export class ProjectLifecycle {
         }
         if (!allowed) {
           this.ai?.resume()
+          this.pauseImports(false)
           this.files.action('close-cancelled')
         }
         return allowed
@@ -134,6 +138,7 @@ export class ProjectLifecycle {
       .catch((error: unknown) => {
         this.restarting = undefined
         this.ai?.resume()
+        this.pauseImports(false)
         this.files.action('close-cancelled')
         throw error
       })
@@ -154,6 +159,7 @@ export class ProjectLifecycle {
     // Establish the barrier before a native dialog can yield to other IPC.
     // Keeping the window open must not implicitly stop an active request.
     this.ai?.beginClose()
+    this.pauseImports(true)
     const lostGeneration = owner ? this.lostOwners.get(owner) : undefined
     if (lostGeneration !== undefined) {
       const options = {
@@ -205,6 +211,20 @@ export class ProjectLifecycle {
       stopProvider = true
     }
     await this.settleDrafts()
+    if (this.importPending()) {
+      const options = {
+        type: 'warning' as const,
+        title: 'Protecting import work',
+        message: 'Closing has been paused while an import change is unresolved.',
+        detail:
+          'Return to the import and reconcile its saved result or retry local protection. Retained files and writing remain available.',
+        buttons: ['Keep window open'],
+        noLink: true
+      }
+      if (window && !window.isDestroyed()) await dialog.showMessageBox(window, options)
+      else await dialog.showMessageBox(options)
+      return false
+    }
     if ((this.ai && !(await this.ai.prepareClose(stopProvider))) || this.conversationPending()) {
       const options = {
         type: 'warning' as const,

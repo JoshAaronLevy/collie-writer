@@ -140,7 +140,7 @@ export async function planModels(access: string, signal: AbortSignal): Promise<A
     close()
   }
 }
-function completedText(value: unknown, streamed: string): string {
+function completedText(value: unknown, streamed: string, limit: number): string {
   if (
     !record(value) ||
     value.status !== 'completed' ||
@@ -160,10 +160,10 @@ function completedText(value: unknown, streamed: string): string {
       if (!record(part)) throw protocolFailure('inference-stream', 'collie_invalid_text_part')
       const content =
         part.type === 'output_text' ? part.text : part.type === 'refusal' ? part.refusal : null
-      if (!aiText(content, AI_LIMITS.output))
+      if (!aiText(content, limit))
         throw protocolFailure('inference-stream', 'collie_invalid_text_part')
       text += content
-      if (text.length > AI_LIMITS.output)
+      if (text.length > limit)
         throw new DirectError(directIssue('inference-stream', 'output-limit'))
     }
   }
@@ -184,7 +184,12 @@ export async function planResponse(
   update: (value: CodexTextUpdate) => void,
   onStreaming: () => void
 ): Promise<void> {
-  const research = execution.template === 'conversation-research-v1' ? new ResearchResponse() : null
+  const limit = execution.template === 'project-import-analysis-v2' ? 32000 : AI_LIMITS.output
+  const research =
+    execution.template === 'conversation-research-v1' ||
+    execution.template === 'conversation-imported-research-v1'
+      ? new ResearchResponse()
+      : null
   const body = JSON.stringify({
     model,
     instructions: execution.instructions,
@@ -192,7 +197,10 @@ export async function planResponse(
       execution.template !== 'conversation-v1'
         ? JSON.parse(execution.framedText)
         : [{ role: 'user', content: execution.framedText }],
-    ...(execution.template === 'conversation-research-v1' ? execution.researchPolicy : {}),
+    ...(execution.template === 'conversation-research-v1' ||
+    execution.template === 'conversation-imported-research-v1'
+      ? execution.researchPolicy
+      : {}),
     store: false,
     stream: true
   })
@@ -241,16 +249,13 @@ export async function planResponse(
         throw protocolFailure('inference-stream', 'collie_invalid_stream_event')
       research?.receive(value)
       if (value.type === 'response.output_text.delta' || value.type === 'response.refusal.delta') {
-        if (
-          !aiText(value.delta, AI_LIMITS.output) ||
-          text.length + value.delta.length > AI_LIMITS.output
-        )
+        if (!aiText(value.delta, limit) || text.length + value.delta.length > limit)
           throw new DirectError(directIssue('inference-stream', 'output-limit'))
         text += value.delta
         update({ text, commentary: '', finalText: null, state: 'running', reason: null })
       } else if (value.type === 'response.completed') {
         const researched = research?.complete(value.response, text)
-        const final = researched?.text ?? completedText(value.response, text)
+        const final = researched?.text ?? completedText(value.response, text, limit)
         if (text && text !== final)
           throw protocolFailure('inference-stream', 'collie_response_text_mismatch')
         text = final

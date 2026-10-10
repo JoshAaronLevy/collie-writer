@@ -1,9 +1,11 @@
+import { isImportedMessage, type ImportedContextMessage } from './imported-context'
 import { isId } from '../domain/editor/schema'
 import { exact, record } from './projects'
 export const KNOWLEDGE_KINDS = ['document', 'source', 'note', 'excerpt', 'chat'] as const
 export type KnowledgeKind = (typeof KNOWLEDGE_KINDS)[number]
 export type KnowledgeTarget = { kind: KnowledgeKind; id: string }
 export type KnowledgeItem = KnowledgeTarget & {
+  imported?: ImportedContextMessage[]
   revision: string
   title: string
   text: string
@@ -14,13 +16,13 @@ export type KnowledgeItem = KnowledgeTarget & {
   pinned: boolean
 }
 export type KnowledgeSettings = {
-  version: 1
+  version: 1 | 2
   revision: string | null
   pins: KnowledgeItem[]
   excluded: KnowledgeTarget[]
 }
 export type ProjectKnowledge = {
-  version: 1
+  version: 1 | 2
   settingsRevision: string | null
   coverage: string
   items: KnowledgeItem[]
@@ -59,7 +61,8 @@ export function isKnowledgeItem(v: unknown): v is KnowledgeItem {
       'total',
       'sourceId',
       'versionId',
-      'pinned'
+      'pinned',
+      ...(v.imported !== undefined ? ['imported'] : [])
     ]) &&
     isKnowledgeTarget({ kind: v.kind, id: v.id }) &&
     isId(v.revision) &&
@@ -71,18 +74,25 @@ export function isKnowledgeItem(v: unknown): v is KnowledgeItem {
     Number(v.total) >= Number(v.start) + v.text.length &&
     (v.sourceId === null || isId(v.sourceId)) &&
     (v.versionId === null || isId(v.versionId)) &&
-    typeof v.pinned === 'boolean'
+    typeof v.pinned === 'boolean' &&
+    (v.imported === undefined ||
+      (v.kind === 'chat' &&
+        Array.isArray(v.imported) &&
+        v.imported.length <= 40 &&
+        v.imported.every(isImportedMessage) &&
+        v.imported.every((m) => m.conversationId === v.id)))
   )
 }
 export function isKnowledgeSettings(v: unknown): v is KnowledgeSettings {
   return (
     record(v) &&
     exact(v, ['version', 'revision', 'pins', 'excluded']) &&
-    v.version === 1 &&
+    (v.version === 1 || v.version === 2) &&
     (v.revision === null || isId(v.revision)) &&
     Array.isArray(v.pins) &&
     v.pins.length <= 8 &&
     v.pins.every(isKnowledgeItem) &&
+    (v.version === 2 || v.pins.every((p) => p.imported === undefined)) &&
     v.pins.every((p) => p.pinned) &&
     JSON.stringify(v.pins).length <= 16000 &&
     Array.isArray(v.excluded) &&
@@ -99,12 +109,13 @@ export function isProjectKnowledge(v: unknown): v is ProjectKnowledge {
   return (
     record(v) &&
     exact(v, ['version', 'settingsRevision', 'coverage', 'items']) &&
-    v.version === 1 &&
+    (v.version === 1 || v.version === 2) &&
     (v.settingsRevision === null || isId(v.settingsRevision)) &&
     text(v.coverage, 2000) &&
     Array.isArray(v.items) &&
     v.items.length <= 24 &&
     v.items.every(isKnowledgeItem) &&
+    (v.version === 2 || v.items.every((p) => p.imported === undefined)) &&
     new Set(v.items.map(knowledgeKey)).size === v.items.length &&
     JSON.stringify(v).length <= 24000
   )

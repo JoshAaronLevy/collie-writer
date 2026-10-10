@@ -1,3 +1,6 @@
+import { importedConversationFits, operationDigestV9 } from './direct-imported-conversation'
+import { multipartFits, operationDigestV8 } from './direct-import-multipart'
+import { importFits, operationDigestV7 } from './direct-import'
 import { operationDigestV6, researchFits } from './direct-research'
 import { conversationFits, operationDigestV5 } from './direct-conversation'
 import type { WorkspaceAiEvidence } from '../../shared/working-copy'
@@ -326,18 +329,32 @@ export class AiService {
     }
     return this.currentReviewStamp(action)
   }
+  contentReviewCurrent(stamp: string): boolean {
+    return !this.isSettling() && stamp === this.currentReviewStamp('import')
+  }
   requestFits(
     input: Pick<AiPrepareInput, 'prompt' | 'context'>,
     action: AiPrepareInput['action'],
     template?: ContentTemplate
   ): boolean {
+    if (action === 'import')
+      return (
+        selectAiRoute().kind === 'local-chatgpt-plan' &&
+        ((template === 'project-import-analysis-v1' && importFits(input)) ||
+          (template === 'project-import-analysis-v2' && multipartFits(input)))
+      )
     return selectAiRoute().kind === 'local-chatgpt-plan' && action === 'conversation'
-      ? template === 'conversation-research-v1'
-        ? researchFits(input)
-        : template === 'conversation-v2'
-          ? conversationFits(input)
-          : directFits(input)
-      : template === 'conversation-v2' || template === 'conversation-research-v1'
+      ? template === 'conversation-imported-v1' || template === 'conversation-imported-research-v1'
+        ? importedConversationFits(input, template === 'conversation-imported-research-v1')
+        : template === 'conversation-research-v1'
+          ? researchFits(input)
+          : template === 'conversation-v2'
+            ? conversationFits(input)
+            : directFits(input)
+      : template === 'conversation-v2' ||
+          template === 'conversation-research-v1' ||
+          template === 'conversation-imported-v1' ||
+          template === 'conversation-imported-research-v1'
         ? false
         : localRequestFits(input, action)
   }
@@ -1174,7 +1191,7 @@ export class AiService {
       if (
         route.kind !== 'local-chatgpt-plan' ||
         route.policyRevision !== execution.policyRevision ||
-        input.action !== 'conversation'
+        !['conversation', 'import'].includes(input.action)
       )
         throw new AiError('context-changed')
       if (!secureAiStorage()) throw new AiError('secure-storage-unavailable')
@@ -1197,6 +1214,7 @@ export class AiService {
         this.runtimeState === 'development-installed'
       // The content owner has already reserved this exact intent. Its own write
       // and running slot must not be mistaken for competing work.
+      if (input.action === 'import') throw new AiError('context-changed')
       const feature = this.localFeatures(this.local.snapshot(available, false, false), true)[
         input.action
       ]
@@ -1276,16 +1294,24 @@ export class AiService {
         !(
           input.action === 'conversation' &&
           (content.template === 'conversation-v2' ||
-            content.template === 'conversation-research-v1')
+            content.template === 'conversation-research-v1' ||
+            content.template === 'conversation-imported-v1' ||
+            content.template === 'conversation-imported-research-v1')
         )) ||
         content.reviewStamp !== this.currentReviewStamp(input.action))
     )
       throw new AiError('context-changed')
     const route = selectAiRoute()
+    if (input.action === 'import' && route.kind !== 'local-chatgpt-plan')
+      throw new AiError('invalid-request')
     let execution: DispatchExecution | null = null,
       session: AiDispatchSession
     if (route.kind === 'local-chatgpt-plan') {
-      if (!content || content.template === 'mechanics-v1' || input.action !== 'conversation')
+      if (
+        !content ||
+        content.template === 'mechanics-v1' ||
+        !['conversation', 'import'].includes(input.action)
+      )
         throw new AiError('invalid-request')
       await this.direct.renew(input.connectionId)
       execution = this.direct.execution(input, content.captureDigest, content.template)
@@ -1294,7 +1320,11 @@ export class AiService {
       if (
         !content ||
         content.template === 'conversation-v2' ||
-        content.template === 'conversation-research-v1'
+        content.template === 'conversation-research-v1' ||
+        content.template === 'conversation-imported-v1' ||
+        content.template === 'conversation-imported-research-v1' ||
+        content.template === 'project-import-analysis-v1' ||
+        content.template === 'project-import-analysis-v2'
       )
         throw new AiError('invalid-request')
       execution = localExecution(
@@ -1325,11 +1355,17 @@ export class AiService {
       operationId: input.operationId,
       digest: execution
         ? execution.route === 'local-chatgpt-plan'
-          ? execution.template === 'conversation-research-v1'
-            ? operationDigestV6(input, execution)
-            : execution.template === 'conversation-v2'
-              ? operationDigestV5(input, execution)
-              : operationDigestV4(input, execution)
+          ? execution.framingVersion === 6
+            ? operationDigestV9(input, execution)
+            : execution.template === 'project-import-analysis-v2'
+              ? operationDigestV8(input, execution)
+              : execution.template === 'project-import-analysis-v1'
+                ? operationDigestV7(input, execution)
+                : execution.template === 'conversation-research-v1'
+                  ? operationDigestV6(input, execution)
+                  : execution.template === 'conversation-v2'
+                    ? operationDigestV5(input, execution)
+                    : operationDigestV4(input, execution)
           : isSchemaExecution(execution)
             ? operationDigestV3(input, execution)
             : operationDigestV2(input, execution)
@@ -1345,22 +1381,29 @@ export class AiService {
     })
     return { ...receipt }
   }
-  preparedVersion(authorizationId: string): 1 | 2 | 3 | 4 | 5 | 6 {
+  preparedVersion(authorizationId: string): 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 {
     const prepared = this.prepared.get(authorizationId)
     if (!prepared) throw new AiError('context-changed')
     return prepared.execution
       ? prepared.execution.route === 'local-chatgpt-plan'
-        ? prepared.execution.template === 'conversation-research-v1'
-          ? 6
-          : prepared.execution.template === 'conversation-v2'
-            ? 5
-            : 4
+        ? prepared.execution.template === 'conversation-imported-v1' ||
+          prepared.execution.template === 'conversation-imported-research-v1'
+          ? 9
+          : prepared.execution.template === 'project-import-analysis-v2'
+            ? 8
+            : prepared.execution.template === 'project-import-analysis-v1'
+              ? 7
+              : prepared.execution.template === 'conversation-research-v1'
+                ? 6
+                : prepared.execution.template === 'conversation-v2'
+                  ? 5
+                  : 4
         : isSchemaExecution(prepared.execution)
           ? 3
           : 2
       : 1
   }
-  async start(input: AiStartInput): Promise<AiOperation> {
+  async start(input: AiStartInput, dispatchGuard?: () => void): Promise<AiOperation> {
     if (this.initialization) await this.initialization
     else await this.ensure()
     const prior =
@@ -1405,29 +1448,56 @@ export class AiService {
     const execution = prepared.execution
     const item: RetainedOperation = execution
       ? execution.route === 'local-chatgpt-plan'
-        ? execution.template === 'conversation-research-v1'
+        ? execution.framingVersion === 6
           ? {
-              version: 6,
+              version: 9,
               input: prepared.input,
               execution,
-              view: { ...view, research: null },
+              view:
+                execution.outputContract === 'responses-research-v1'
+                  ? { ...view, research: null }
+                  : view,
               output: { commentary: '', finalText: null }
             }
-          : execution.template === 'conversation-v2'
+          : execution.template === 'project-import-analysis-v2'
             ? {
-                version: 5,
+                version: 8,
                 input: prepared.input,
                 execution,
                 view,
                 output: { commentary: '', finalText: null }
               }
-            : {
-                version: 4,
-                input: prepared.input,
-                execution,
-                view,
-                output: { commentary: '', finalText: null }
-              }
+            : execution.template === 'project-import-analysis-v1'
+              ? {
+                  version: 7,
+                  input: prepared.input,
+                  execution,
+                  view,
+                  output: { commentary: '', finalText: null }
+                }
+              : execution.template === 'conversation-research-v1'
+                ? {
+                    version: 6,
+                    input: prepared.input,
+                    execution,
+                    view: { ...view, research: null },
+                    output: { commentary: '', finalText: null }
+                  }
+                : execution.template === 'conversation-v2'
+                  ? {
+                      version: 5,
+                      input: prepared.input,
+                      execution,
+                      view,
+                      output: { commentary: '', finalText: null }
+                    }
+                  : {
+                      version: 4,
+                      input: prepared.input,
+                      execution,
+                      view,
+                      output: { commentary: '', finalText: null }
+                    }
         : isSchemaExecution(execution)
           ? {
               version: 3,
@@ -1473,7 +1543,7 @@ export class AiService {
     this.activeOperationId = input.operationId
     this.dispatch = prepared.session
     this.emit({ kind: 'operation', operation: item.view })
-    this.running = this.run(item, prepared.session).finally(() => {
+    this.running = this.run(item, prepared.session, dispatchGuard).finally(() => {
       this.running = null
       this.dispatch = null
       this.activeOperationId = null
@@ -1516,13 +1586,18 @@ export class AiService {
         this.retentionWriting = false
       })
   }
-  private async run(item: RetainedOperation, session: AiDispatchSession): Promise<void> {
+  private async run(
+    item: RetainedOperation,
+    session: AiDispatchSession,
+    dispatchGuard?: () => void
+  ): Promise<void> {
     const update = (value: CodexTextUpdate): void => {
       if (!active(item.view)) return
       item.view = {
         ...item.view,
         text: value.text,
-        ...(item.version === 6
+        ...(item.version === 6 ||
+        (item.version === 9 && item.execution.outputContract === 'responses-research-v1')
           ? { research: value.state === 'completed' ? (value.research ?? null) : null }
           : {}),
         state:
@@ -1554,6 +1629,7 @@ export class AiService {
             this.journalFailure
           )
             throw new AiError('cancelled')
+          dispatchGuard?.()
           this.authorize(item.input, session, execution)
         },
         update
@@ -1653,14 +1729,14 @@ export class AiService {
   }
   protectedContentOperation(
     operationId: string,
-    version: 1 | 2 | 3 | 4 | 5 | 6
+    version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
   ): AiOperation | null {
     const item = this.protectedRecords.get(operationId)
     return item?.version === version ? contentOperation(item) : null
   }
   protectedContentState(
     operationId: string,
-    version: 1 | 2 | 3 | 4 | 5 | 6
+    version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
   ): AiOperation['state'] | null {
     const item = this.protectedRecords.get(operationId)
     return item?.version === version ? contentState(item) : null

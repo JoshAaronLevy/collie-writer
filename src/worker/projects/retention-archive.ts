@@ -9,6 +9,7 @@ import { archiveInventory } from './archive'
 import { citationProfile } from './citation-assets'
 import { entriesFor, readManifest, type SnapshotManifest } from './manifest'
 import { readPortableGraph } from './portable-db'
+import { validateImportArtifactBytes } from './import-sessions'
 import { portableContentDigest } from './retention-database'
 import { transfer } from './streams'
 import { namedStamp, parentStamp, sameStamp, stamp, type RetentionStamp } from './retention-files'
@@ -120,6 +121,12 @@ export async function inspectRetentionArchive(
         graph.blobs.some((b) => blobs.get(b.sha256) !== b.bytes)
       )
         throw new ProjectError('INVALID_ARCHIVE')
+      await validateImportArtifactBytes(graph.importArtifacts, async (ref) => {
+        const entry = entries.get(`blobs/${ref.sha256}`)
+        if (!entry || entry.uncompressedSize !== ref.bytes)
+          throw new ProjectError('INVALID_ARCHIVE')
+        return (await read(entry, true)).bytes
+      })
       if (includeContent) contentDigest = portableContentDigest(db)
     } finally {
       db.close()

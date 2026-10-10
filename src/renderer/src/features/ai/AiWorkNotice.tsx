@@ -1,3 +1,4 @@
+import { useProjectImport } from '../imports/importContext'
 import { useRef, useState } from 'react'
 import type { AiContentWork } from '../../../../shared/ai'
 import { sameScope } from '../../../../shared/project-files'
@@ -29,13 +30,15 @@ export function AiWorkNotice(): React.JSX.Element | null {
   const session = useWorkspaceSession(),
     connections = useAiConnections(),
     conversations = useConversations(),
-    proofreading = useProofreading()
+    proofreading = useProofreading(),
+    imports = useProjectImport()
   const [pending, setPending] = useState<Pending | null>(null),
     [busy, setBusy] = useState(false),
     [issue, setIssue] = useState('')
   const [acknowledge, setAcknowledge] = useState<AiContentWork | null>(null)
   const held = useRef<Pending | null>(null),
     locked = useRef(false),
+    importAfterExit = useRef<string | null>(null),
     region = useRef<HTMLDivElement>(null)
   const work = connections.status?.work ?? []
   const capacity = connections.status?.capacity
@@ -82,7 +85,9 @@ export function AiWorkNotice(): React.JSX.Element | null {
       const result =
         input.work.feature === 'conversation'
           ? await window.collie.conversation(request)
-          : await window.collie.proofreading(request)
+          : input.work.feature === 'import'
+            ? await window.collie.importAnalysis(request)
+            : await window.collie.proofreading(request)
       if (!result.ok) {
         if (!['UNAVAILABLE', 'DISK_FULL', 'PROJECT_LOCKED'].includes(result.error.code)) {
           held.current = null
@@ -136,7 +141,13 @@ export function AiWorkNotice(): React.JSX.Element | null {
           {work.map((item) => (
             <li key={key(item)}>
               <p>
-                <strong>{item.feature === 'conversation' ? 'Conversation' : 'Proofreading'}</strong>{' '}
+                <strong>
+                  {item.feature === 'conversation'
+                    ? 'Conversation'
+                    : item.feature === 'import'
+                      ? 'Import analysis'
+                      : 'Proofreading'}
+                </strong>{' '}
                 ·{' '}
                 {session.list.projects.find((project) => sameScope(project, item.scope))?.title ??
                   'Another local project'}{' '}
@@ -149,7 +160,9 @@ export function AiWorkNotice(): React.JSX.Element | null {
                   onClick={() =>
                     item.feature === 'conversation'
                       ? conversations.show(item.attemptId)
-                      : proofreading.show(item.attemptId)
+                      : item.feature === 'import'
+                        ? imports.showAnalysis(item.attemptId)
+                        : proofreading.show(item.attemptId)
                   }
                 >
                   View request
@@ -247,6 +260,11 @@ export function AiWorkNotice(): React.JSX.Element | null {
         opened={acknowledge !== null}
         onClose={() => setAcknowledge(null)}
         title="Dismiss saved result?"
+        onExited={() => {
+          const id = importAfterExit.current
+          importAfterExit.current = null
+          if (id) requestAnimationFrame(() => imports.showAnalysis(id))
+        }}
       >
         <div className={styles['ai-retention-confirmation']}>
           <p>
@@ -265,6 +283,7 @@ export function AiWorkNotice(): React.JSX.Element | null {
                 setAcknowledge(null)
                 if (item && sameScope(session.project, item.scope)) {
                   if (item.feature === 'conversation') conversations.show(item.attemptId)
+                  else if (item.feature === 'import') importAfterExit.current = item.attemptId
                   else proofreading.show(item.attemptId)
                 }
               }}

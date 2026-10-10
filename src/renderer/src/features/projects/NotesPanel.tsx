@@ -1,3 +1,4 @@
+import { ImportedOrigins } from '../imports/ImportedOrigins'
 import { isEditableKind } from '../../../../shared/outline'
 import PresentationBoundary from '../../components/PresentationBoundary'
 import { useEffectEvent } from 'react'
@@ -635,11 +636,21 @@ export default function NotesPanel({
           {note ? (
             <>
               <p className="research-state">
-                {note.state} · Human-authored note
+                {note.state} ·{' '}
+                {note.origin === 'imported-v1' ? 'Imported note' : 'Human-authored note'}
                 {baseRevisionValue !== note.revisionId
                   ? ' · Stored revision changed; the current editor is retained.'
                   : ''}
               </p>
+              {note.origin === 'imported-v1' ? (
+                <p>
+                  Imported note · original authorship is retained separately, not assumed to be
+                  human.
+                </p>
+              ) : null}
+              {note.origin === 'imported-v1' ? (
+                <ImportedOrigins key={note.id} kind="note" id={note.id} />
+              ) : null}
               <TextInput
                 label="Note title"
                 value={title}

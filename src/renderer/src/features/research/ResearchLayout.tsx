@@ -1,3 +1,4 @@
+import { ImportButton } from '../imports/ImportButton'
 import type { ReactNode } from 'react'
 import { AppButton } from '../../components/ui/Controls'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
@@ -21,6 +22,7 @@ export function ResearchHeader({
         {children ? <p>{children}</p> : null}
       </div>
       <div className="research-actions">
+        <ImportButton />
         {session.backDestination ? (
           <AppButton
             variant="default"

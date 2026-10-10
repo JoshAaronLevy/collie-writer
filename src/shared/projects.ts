@@ -1,4 +1,16 @@
 import {
+  isAnalysisWorkerInput,
+  isAnalysisValue,
+  type AnalysisWorkerInput,
+  type AnalysisValue
+} from './import-analysis'
+import {
+  isImportWorkerInput,
+  isImportValue,
+  type ImportWorkerInput,
+  type ImportValue
+} from './project-import'
+import {
   isWorkingCopyCommand,
   isWorkingCopyReply,
   type WorkingCopyInput,
@@ -393,6 +405,8 @@ export type ImageAsset = {
 }
 export type ImageData = { mediaType: ImageAsset['mediaType']; base64: string }
 export type ProjectCommand =
+  | { kind: 'importAnalysis'; input: AnalysisWorkerInput }
+  | { kind: 'importSession'; input: ImportWorkerInput }
   | { kind: 'proofreading'; input: ProofreadWorkerInput }
   | { kind: 'conversation'; input: ConversationWorkerInput }
   | { kind: 'details'; input: ProjectDetailsInput }
@@ -440,6 +454,8 @@ export type ProjectCommand =
   | { kind: 'importImage'; input: WorkerImageImport }
   | { kind: 'readImage'; input: ImageReadInput }
 export type ProjectValue =
+  | ImportValue
+  | AnalysisValue
   | WorkingCopyReply
   | ProofreadValue
   | ConversationValue
@@ -684,6 +700,8 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (!record(v)) return false
   if (['list', 'data', 'cleanup'].includes(String(v.kind))) return exact(v, ['kind'])
   if (!exact(v, ['kind', 'input'])) return false
+  if (v.kind === 'importAnalysis') return isAnalysisWorkerInput(v.input)
+  if (v.kind === 'importSession') return isImportWorkerInput(v.input)
   if (v.kind === 'proofreading') return isProofreadWorkerInput(v.input)
   if (v.kind === 'conversation') return isConversationWorkerInput(v.input)
   if (v.kind === 'exportPreview') return isExportOptions(v.input)
@@ -822,6 +840,8 @@ function summary(v: unknown): v is ProjectSummary & Record<string, unknown> {
   )
 }
 export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is ProjectValue {
+  if (kind === 'importAnalysis') return isAnalysisValue(v)
+  if (kind === 'importSession') return isImportValue(v)
   if (kind === 'proofreading') return isProofreadValue(v)
   if (kind === 'conversation') return isConversationValue(v)
   if (kind === 'exportPreview') return isExportPreview(v)

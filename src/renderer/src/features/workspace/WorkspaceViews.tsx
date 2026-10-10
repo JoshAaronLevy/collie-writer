@@ -1,3 +1,4 @@
+import { ImportButton } from '../imports/ImportButton'
 import ConnectionSettings from '../settings/ConnectionSettings'
 import UpdateSettings from '../settings/UpdateSettings'
 import { AppButton } from '../../components/ui/Controls'
@@ -325,6 +326,7 @@ export default function WorkspaceViews(): React.JSX.Element {
             {project ? (
               <>
                 <h1>Project actions</h1>
+                <ImportButton />
                 <p>
                   Manage details, the selected project file, separate copies, and local organization
                   for “{project.title}”.

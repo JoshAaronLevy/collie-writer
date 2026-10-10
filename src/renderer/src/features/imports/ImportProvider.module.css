@@ -1,0 +1,99 @@
+.intake {
+  display: grid;
+  gap: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.intake p {
+  margin: 0;
+}
+.intake fieldset {
+  display: grid;
+  gap: 0.6rem;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.intake legend {
+  margin-bottom: 0.6rem;
+  font-weight: 600;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+  max-height: 18rem;
+  overflow: auto;
+}
+.files li {
+  display: grid;
+  gap: 0.25rem;
+}
+.files span {
+  font-size: 0.85rem;
+  padding-inline-start: 1.8rem;
+}
+
+.preview {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.preview h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+.records {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+.records dd {
+  margin-inline-start: 1rem;
+  white-space: pre-wrap;
+}
+.original {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0.5rem;
+  font: inherit;
+}
+.reviewForm {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-default);
+  min-width: 0;
+}
+
+/* Keep long filenames, translations and review actions inside a narrow dialog. */
+.intake > *,
+.preview > *,
+.records li,
+.files li {
+  min-width: 0;
+  max-width: 100%;
+}
+.intake :global(.mantine-Button-root),
+.preview :global(.mantine-Button-root) {
+  max-width: 100%;
+  height: auto;
+  min-height: var(--button-height);
+  padding-block: 0.45rem;
+}
+.intake :global(.mantine-Button-label),
+.preview :global(.mantine-Button-label) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
