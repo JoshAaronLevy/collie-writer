@@ -63,6 +63,8 @@ export type SnapshotManifest = {
     | 28
     | 29
     | 30
+    | 31
+    | 32
   schemaVersion:
     | 2
     | 3
@@ -93,6 +95,8 @@ export type SnapshotManifest = {
     | 28
     | 29
     | 30
+    | 31
+    | 32
   editorVersion: 1
   projectId: string
   snapshotId: string
@@ -151,8 +155,8 @@ export function readManifest(value: unknown): SnapshotManifest {
     if (value[key] !== supported) return invalid()
   }
   if (
-    (typeof value.schemaVersion === 'number' && value.schemaVersion > 30) ||
-    (typeof value.minimumReader === 'number' && value.minimumReader > 30)
+    (typeof value.schemaVersion === 'number' && value.schemaVersion > 32) ||
+    (typeof value.minimumReader === 'number' && value.minimumReader > 32)
   )
     throw new SnapshotError('FORMAT_TOO_NEW')
   if (!(
@@ -184,7 +188,9 @@ export function readManifest(value: unknown): SnapshotManifest {
     (value.schemaVersion === 27 && value.minimumReader === 27) ||
     (value.schemaVersion === 28 && value.minimumReader === 28) ||
     (value.schemaVersion === 29 && value.minimumReader === 29) ||
-    (value.schemaVersion === 30 && value.minimumReader === 30)
+    (value.schemaVersion === 30 && value.minimumReader === 30) ||
+    (value.schemaVersion === 31 && value.minimumReader === 31) ||
+    (value.schemaVersion === 32 && value.minimumReader === 32)
   ))
     return invalid()
   if (

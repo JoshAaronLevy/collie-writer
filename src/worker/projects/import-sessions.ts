@@ -3,11 +3,9 @@ import { validatePortableImportCommits } from './import-commit'
 import { validatePortableImportAnalysis } from './import-analysis'
 import { importContentCommand } from './import-content'
 import { validateImportedContent } from './imported-provenance'
-import { transcriptCommand } from './conversation-transcript'
 import {
   prepareImportGraph,
   installImportGraph,
-  readImportGraph,
   validatePortableImportGraphs,
   GraphArtifactValidator,
   readImportBlob,
@@ -293,18 +291,7 @@ export async function importSessionCommand(
   ctx: Context,
   input: ImportWorkerInput
 ): Promise<ImportValue> {
-  if (input.action === 'content-preview' || input.action === 'content-origins')
-    return importContentCommand(ctx, input)
-  if (
-    input.action === 'transcript-read' ||
-    input.action === 'transcript-text' ||
-    input.action === 'transcript-find'
-  ) {
-    if (input.source.kind !== 'staged') throw new ProjectError('DENIED')
-    return transcriptCommand(ctx, input, null)
-  }
-  if (input.action === 'graph-read' || input.action === 'graph-text')
-    return readImportGraph(ctx, input)
+  if (input.action === 'content-origins') return importContentCommand(ctx, input)
   if (input.action !== 'mutate' && input.action !== 'stage-file') return readValue(ctx, input)
   const mutation = input.mutation,
     existing = lookup(ctx.db, ctx.projectId, mutation)

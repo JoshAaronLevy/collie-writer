@@ -139,6 +139,8 @@ export async function importCommitCommand(
         .get(p, input.command.operationId)
     )
       throw new ProjectError('OPERATION_CONFLICT')
+  if (m.version === 2 && !entries.some((e) => e.action !== 'exclude'))
+    throw new ProjectError('VALIDATION')
   const prepared = await prepareImportReview(ctx, readImportReview(db, p, m.reviewId))
   if (
     !manifestCurrent(ctx, m, prepared, entries) ||

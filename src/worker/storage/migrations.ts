@@ -444,6 +444,30 @@ const migrations: readonly Migration[] = [
     apply: (db) => {
       db.prepare('UPDATE format SET schema_version=30,minimum_reader=30').run()
     }
+  },
+  {
+    from: 30,
+    to: 31,
+    validateSource: (db) => {
+      validateProjectSchema(db, 30)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, r.id)
+    },
+    apply: (db) => {
+      db.prepare('UPDATE format SET schema_version=31,minimum_reader=31').run()
+    }
+  },
+  {
+    from: 31,
+    to: 32,
+    validateSource: (db) => {
+      validateProjectSchema(db, 31)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, r.id)
+    },
+    apply: (db) => {
+      db.prepare('UPDATE format SET schema_version=32,minimum_reader=32').run()
+    }
   }
 ]
 

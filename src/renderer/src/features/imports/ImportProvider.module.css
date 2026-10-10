@@ -1,6 +1,8 @@
 .intake {
-  display: grid;
-  gap: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
   overflow-wrap: anywhere;
 }
 .intake p {
@@ -28,26 +30,31 @@
   padding: 0;
   display: grid;
   gap: 0.75rem;
-  max-height: 18rem;
-  overflow: auto;
 }
 .files li {
-  display: grid;
-  gap: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--mantine-color-default-border);
 }
-.files span {
-  font-size: 0.85rem;
-  padding-inline-start: 1.8rem;
+.files li > div:first-child {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 0.15rem;
+}
+.files li > :last-child {
+  flex-shrink: 0;
+}
+.files small {
+  color: var(--mantine-color-dimmed);
 }
 
 .preview {
   display: grid;
   gap: 0.75rem;
   min-width: 0;
-}
-.preview h2 {
-  font-size: 1.1rem;
-  margin: 0;
 }
 .records {
   list-style: none;
@@ -67,16 +74,7 @@
   padding: 0.5rem;
   font: inherit;
 }
-.reviewForm {
-  display: grid;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  border: 1px solid var(--mantine-color-default-border);
-  border-radius: var(--mantine-radius-default);
-  min-width: 0;
-}
-
-/* Keep long filenames, translations and review actions inside a narrow dialog. */
+/* Keep long filenames, translations and actions inside a narrow dialog. */
 .intake > *,
 .preview > *,
 .records li,
@@ -96,4 +94,186 @@
   white-space: normal;
   overflow-wrap: anywhere;
   text-align: start;
+}
+
+.dialogContent {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - var(--modal-y-offset) * 2);
+  overflow: hidden;
+}
+.dialogHeader {
+  flex-shrink: 0;
+}
+.dialogTitle {
+  font-size: var(--mantine-font-size-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.dialogBody {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
+}
+.presentation {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.body {
+  display: grid;
+  gap: 1rem;
+  padding: 0.25rem 1rem 1rem;
+  overflow: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.body:focus-visible,
+.presentation:focus-visible,
+.processing:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -3px;
+}
+.subtitle {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-sm);
+}
+.helper {
+  font-size: var(--mantine-font-size-sm);
+  color: var(--mantine-color-dimmed);
+  line-height: 1.5;
+}
+.fileHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.3rem;
+}
+.empty {
+  padding-block: 0.9rem;
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-sm);
+}
+.categories,
+.recovery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+}
+.connection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.processing {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  min-height: min(8rem, 30dvh);
+}
+.footer {
+  flex-shrink: 0;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+.footerActions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.footerActions > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.fileIssues {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  font-size: var(--mantine-font-size-sm);
+}
+.issue {
+  color: var(--mantine-color-error);
+}
+
+.resultGroup {
+  display: grid;
+  gap: 0.75rem;
+}
+.resultGroup h2,
+.resultTotal {
+  margin: 0;
+  font-size: var(--mantine-font-size-lg);
+  font-weight: 600;
+}
+.conversations {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+.conversations li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 1rem;
+}
+.conversations li > span:first-child {
+  min-width: 0;
+  flex: 1 1 14rem;
+}
+.messageCount,
+.reused {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 400;
+}
+.futureAction {
+  display: grid;
+  gap: 0.2rem;
+  text-align: center;
+}
+.futureAction small {
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+}
+.success {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 210;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: min(28rem, calc(100vw - 2rem));
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-body);
+  box-shadow: var(--mantine-shadow-sm);
+  overflow-wrap: anywhere;
+}
+.success p {
+  margin: 0;
+}
+@media (max-width: 26rem) {
+  .footerActions > * {
+    flex: 1 1 6rem;
+  }
+  .futureAction > button {
+    width: 100%;
+  }
 }

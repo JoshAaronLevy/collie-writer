@@ -5,7 +5,7 @@ import { importPlanCommand, readPart, consolidatePart, validatePortablePlans } f
 import { isReviewRequest } from '../../shared/import-review'
 import { importReviewCommand, validatePortableReviews } from './import-review'
 import { multiCapture, multiPacketDigest, validateMultiProposal } from './import-partition'
-import { isMultiWorker, type MultiReview } from '../../shared/import-multipart'
+import { isMultiWorker } from '../../shared/import-multipart'
 import type Database from 'better-sqlite3'
 import { ANALYSIS_RESERVE, analysisReservedBytes } from './import-analysis-budget'
 import { IMPORT_LIMITS } from '../../shared/project-import'
@@ -30,12 +30,7 @@ import { requestDigest } from '../storage/digest'
 import { inWriteTransaction } from '../storage/driver'
 import { captureDigest } from '../ai/capture'
 import { activeBindings, localBinding, protectHandoff, retireBinding } from '../ai/handoff'
-import {
-  prepareAnalysis,
-  packetDigest,
-  validateProposal,
-  type AnalysisContext
-} from './import-analysis-capture'
+import { packetDigest, validateProposal, type AnalysisContext } from './import-analysis-capture'
 const corrupt = (): never => {
   throw new ProjectError('CORRUPT_PROJECT')
 }
@@ -135,13 +130,8 @@ function capacity(db: Database.Database, p: string, batchId: string, version = 1
     throw new ProjectError('LIMIT_EXCEEDED')
 }
 async function prepare(ctx: AnalysisContext, review: AnalysisReview): Promise<AnalysisCapture> {
-  return 'version' in review
-    ? multiCapture(
-        ctx,
-        review as MultiReview,
-        readPart(ctx.db, ctx.projectId, review.planId, review.partId)
-      )
-    : prepareAnalysis(ctx, review)
+  if (!('version' in review)) throw new ProjectError('DENIED')
+  return multiCapture(ctx, review, readPart(ctx.db, ctx.projectId, review.planId, review.partId))
 }
 export async function importAnalysisCommand(
   ctx: AnalysisContext,

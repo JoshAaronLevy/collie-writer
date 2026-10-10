@@ -1,5 +1,11 @@
 # IM12 integrated implementation and acceptance record
 
+## User feedback — October 10, 2026
+
+Josh reported that the import UI was frustratingly complex and that he could not understand how to complete it. Seven supplied screenshots show the dense intake, technical analysis/part controls, consent steps and raw payload presentation. **The original integrated UX is not accepted.** The screenshots do not establish the analysis failure's cause or a successful atomic import. The [Import UX revision plan](../../import-ux-implementation-plan.md) replaces the interaction requirements with compact setup/model selection, one Submit, automatic preparation, a short summary and one Accept. IU01–IU05 are implementation complete — awaiting user testing. Use the [final revised guide](../manual-testing/import-IU05.md) and [acceptance record](import-IU05.md) for the complete simple flow, recovery, polish and cleanup. The earlier code-check outcomes below remain historical evidence, not acceptance of either UX.
+
+## Original implementation record — October 9, 2026
+
 October 9, 2026. **Implementation complete — awaiting user testing.** Josh explicitly requested IM12 after IM11. All planned stages now have implementation records; progression is not runtime acceptance. The [integrated guide](../manual-testing/import-IM12.md) is the final user-owned walkthrough. Release remains **NO-GO**.
 
 ## This stage

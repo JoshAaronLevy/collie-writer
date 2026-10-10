@@ -4,19 +4,6 @@ import {
   type ImportContentRequest,
   type ImportContentValue
 } from './import-content'
-import {
-  isTranscriptInput,
-  isTranscriptValue,
-  type TranscriptInput,
-  type TranscriptValue
-} from './conversation-transcript'
-import {
-  isGraphReadRequest,
-  isGraphValue,
-  type GraphReadRequest,
-  type GraphTextRequest,
-  type GraphValue
-} from './import-graph'
 import { isId } from '../domain/editor/schema'
 import { hasControlCharacters } from './control-characters'
 import {
@@ -129,15 +116,12 @@ export type ImportBatchSummary = {
 }
 export type ImportRequest =
   | ImportContentRequest
-  | TranscriptInput
   | (OpenInput &
       (
         | { action: 'list'; offset: number }
         | { action: 'read'; batchId: string; revisionId: string | null; offset: number }
         | { action: 'mutate'; mutation: Exclude<ImportMutation, { action: 'add-file' }> }
         | { action: 'lookup'; mutation: ImportMutation }
-        | GraphReadRequest
-        | GraphTextRequest
       ))
 /** Only main's native-selection owner may supply this worker-only path. */
 export type ImportWorkerInput =
@@ -156,8 +140,6 @@ export type ImportPickResult = {
 }
 export type ImportValue =
   | ImportContentValue
-  | TranscriptValue
-  | GraphValue
   | { type: 'picked'; cancelled: boolean; results: ImportPickResult[] }
   | { type: 'recovery'; pending: ImportMutation | null; busy: boolean; issue: ProjectCode | null }
   | { type: 'batches'; batches: ImportBatchSummary[]; total: number; nextOffset: number | null }
@@ -300,9 +282,6 @@ export function isImportRequest(v: unknown): v is ImportRequest {
   if (isImportContentRequest(v)) return true
   if (!record(v) || !isOpenInput({ projectId: v.projectId, workspaceId: v.workspaceId }))
     return false
-  if (['transcript-read', 'transcript-text', 'transcript-find'].includes(String(v.action)))
-    return record(v.source) && v.source.kind === 'staged' && isTranscriptInput(v)
-  if (v.action === 'graph-read' || v.action === 'graph-text') return isGraphReadRequest(v)
   const keys = ['projectId', 'workspaceId', 'action']
   if (v.action === 'list')
     return exact(v, [...keys, 'offset']) && integer(v.offset, IMPORT_LIMITS.batches)
@@ -402,9 +381,7 @@ export function isImportArtifact(v: unknown): v is ImportArtifact {
 }
 export function isImportValue(v: unknown): v is ImportValue {
   if (isImportContentValue(v)) return true
-  if (isTranscriptValue(v)) return true
   if (!record(v)) return false
-  if (v.type === 'graph' || v.type === 'graph-text') return isGraphValue(v)
   if (v.type === 'picked')
     return (
       exact(v, ['type', 'cancelled', 'results']) &&

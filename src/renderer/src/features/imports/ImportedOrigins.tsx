@@ -130,10 +130,6 @@ export function ImportedOrigins({
         <ImportTranscriptPreview
           key={`${target.conversationId}:${target.target.messageId}:${target.revisionId}`}
           scope={{ projectId: p.projectId, workspaceId: p.workspaceId }}
-          batchId=""
-          graphId=""
-          recordId=""
-          files={[]}
           accepted={{ conversationId: target.conversationId, revisionId: target.revisionId }}
           initialTarget={target.target}
           disabled={busy || session.navigating || session.accessTransition}

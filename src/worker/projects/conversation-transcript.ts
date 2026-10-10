@@ -22,7 +22,7 @@ import {
 import { ProjectError } from '../../domain/projects/errors'
 import { requestDigest } from '../storage/digest'
 import { externalOrigin, externalMessage } from './external-conversations'
-import { readGraph, readImportBlob, parseGraphPage } from './import-graphs'
+import { readImportBlob } from './import-graphs'
 import { parseInputJson, valueAt } from './import-readers/json'
 import { textBoundary, textDigest } from './import-readers/graph'
 
@@ -123,81 +123,8 @@ function externalEntry(
 async function load(
   ctx: Context,
   source: TranscriptSource,
-  native: NativeTranscriptReaders | null
+  native: NativeTranscriptReaders
 ): Promise<Loaded> {
-  if (source.kind === 'staged') {
-    const { manifest, pages } = readGraph(ctx.db, ctx.projectId, source.graphId)
-    if (manifest.batchId !== source.batchId) throw new ProjectError('DENIED')
-    const records: GraphRecord[] = []
-    for (const p of pages)
-      if (p.kinds.conversation || p.kinds.message) {
-        const page = parseGraphPage(await readImportBlob(ctx, p, IMPORT_LIMITS.artifactBytes), p)
-        records.push(
-          ...page.records.filter((r) => r.kind === 'conversation' || r.kind === 'message')
-        )
-      }
-    const origin = records.find((r) => r.id === source.recordId && r.kind === 'conversation')
-    if (!origin) throw new ProjectError('NOT_FOUND')
-    const members = records.filter(
-      (r) => r.kind === 'message' && r.conversationIdentityId === origin.identityId
-    )
-    const groups = new Map<string, GraphRecord[]>()
-    for (const r of members) {
-      const group = groups.get(r.identityId) ?? []
-      group.push(r)
-      groups.set(r.identityId, group)
-    }
-    const chosen = new Map<string, GraphRecord>()
-    for (const r of members)
-      if (
-        r.locator.fileId === origin.locator.fileId &&
-        r.disposition !== 'internal' &&
-        r.path !== 'alternate' &&
-        !chosen.has(r.identityId)
-      )
-        chosen.set(r.identityId, r)
-    const messages = [...chosen.values()].sort((a, b) => a.order - b.order)
-    const keys = messages.map((r, i): TranscriptKey => ({
-      segment: 'imported',
-      sequence: i,
-      messageId: r.id,
-      messageRevision: source.graphId
-    }))
-    const reader = new OriginalTranscriptText(ctx, manifest.batchId)
-    const get = (key: TranscriptKey): GraphRecord => {
-      const r = messages[key.sequence]
-      if (!r || !sameKey(keys[key.sequence], key)) return stale()
-      return r
-    }
-    return {
-      id: origin.id,
-      revision: manifest.id,
-      title: origin.label,
-      keys,
-      omittedInternal: members.filter(
-        (r) => r.locator.fileId === origin.locator.fileId && r.disposition === 'internal'
-      ).length,
-      entry: async (key) => {
-        const r = get(key),
-          variants = groups.get(r.identityId)!.map((v) => v.id)
-        if (variants.length > TRANSCRIPT_LIMITS.variants) throw new ProjectError('LIMIT_EXCEEDED')
-        return externalEntry(
-          key,
-          r,
-          manifest.id,
-          variants,
-          null,
-          r.eligible ? 'visible' : 'excluded',
-          await reader.read(r)
-        )
-      },
-      fullText: async (key) => {
-        const record = get(key)
-        return { text: await reader.read(record), record }
-      }
-    }
-  }
-  if (!native) throw new ProjectError('DENIED')
   const c = native.conversation(source.conversationId)
   if (c.revisionId !== source.revisionId) return stale()
   const origin = externalOrigin(ctx.db, ctx.projectId, c.id),
@@ -312,7 +239,7 @@ async function load(
 export async function transcriptCommand(
   ctx: Context,
   input: TranscriptInput,
-  native: NativeTranscriptReaders | null
+  native: NativeTranscriptReaders
 ): Promise<TranscriptValue> {
   const loaded = await load(ctx, input.source, native)
   const cursor = (key: TranscriptKey): TranscriptCursor => ({

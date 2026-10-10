@@ -2,11 +2,9 @@ import { isId } from '../domain/editor/schema'
 import { exact, record, isOpenInput, type OpenInput } from './projects'
 import { importHash, importTime } from './project-import'
 import { isSourceMetadata, type SourceMetadata } from './sources'
-import { isGraphRecord, type GraphRecord } from './import-graph'
 import { hasControlCharacters } from './control-characters'
 
 export type ReviewKind = 'chat' | 'message' | 'source' | 'note' | 'retained'
-export type ReviewTab = 'chats' | 'sources' | 'notes' | 'issues'
 export type ReviewLabel = { kind: 'tag' | 'category'; name: string }
 export type ReviewChoice = {
   itemId: string
@@ -18,9 +16,9 @@ export type ReviewChoice = {
   labels: ReviewLabel[]
   reuse: { id: string; revisionId: string; metadataDigest: string } | null
   acknowledged: boolean
+  automatic?: { version: 1; sourceItemId: string | null }
 }
-export type ImportReview = {
-  version: 1
+export type ImportReview = ({ version: 1 } | { version: 2; legacyAttemptId: string }) & {
   id: string
   planId: string
   batchId: string
@@ -30,7 +28,7 @@ export type ImportReview = {
   results: Array<{ partId: string; attemptId: string; digest: string }>
 }
 export type ReviewRevision = {
-  version: 1
+  version: 1 | 2 | 3
   id: string
   reviewId: string
   parentId: string | null
@@ -49,14 +47,14 @@ export type ReviewCounts = {
   retained: number
 }
 export type ConfirmationEntry = {
-  version: 1
+  version: 1 | 2
   itemId: string
   kind: ReviewKind
   title: string
   records: number
   recordsDigest: string
   choice: ReviewChoice
-  action: 'create' | 'reuse' | 'exclude'
+  action: 'create' | 'reuse' | 'link' | 'exclude'
   destinationId: string | null
   revisionId: string | null
   originId: string | null
@@ -65,7 +63,7 @@ export type ConfirmationEntry = {
   labels: Array<ReviewLabel & { id: string; revisionId: string | null; action: 'create' | 'reuse' }>
 }
 export type ConfirmationManifest = {
-  version: 1
+  version: 1 | 2
   id: string
   reviewId: string
   revisionId: string
@@ -85,12 +83,31 @@ export type ConfirmationManifest = {
   counts: ReviewCounts
   createdAt: string
 }
+export type AutomaticReviewRequest = OpenInput & {
+  action: 'review-automatic'
+  reviewId: string
+  operationId: string
+  expectedRevision: string | null
+}
+export type ImportSummary = {
+  type: 'import-summary'
+  manifest: ConfirmationManifest
+  current: boolean
+  outcome: 'ready' | 'empty' | 'already-present'
+  omitted: number
+  conversations: Array<{ id: string; title: string; messages: number }>
+  offset: number
+  total: number
+}
 export type ReviewRequest = OpenInput &
   (
+    | AutomaticReviewRequest
+    | { action: 'import-summary'; reviewId: string; manifestId: string; offset: number }
     | {
         action: 'review-reconcile'
         command: OpenInput &
           (
+            | AutomaticReviewRequest
             | {
                 action: 'review-save'
                 reviewId: string
@@ -120,10 +137,17 @@ export type ReviewRequest = OpenInput &
               }
           )
       }
+    | {
+        action: 'review-inherit'
+        reviewId: string
+        operationId: string
+        expectedRevision: null
+        fromReviewId: string
+        fromRevisionId: string
+      }
     | { action: 'review-open'; planId: string; proposalId: string | null }
-    | { action: 'review-page'; reviewId: string; tab: ReviewTab; offset: number }
-    | { action: 'review-item'; reviewId: string; itemId: string; offset: number }
-    | { action: 'review-sources'; query: string; offset: number }
+    | { action: 'review-find'; batchId: string; graphId: string }
+    | { action: 'review-legacy'; planId: string; attemptId: string }
     | {
         action: 'review-save'
         reviewId: string
@@ -151,7 +175,6 @@ export type ReviewRequest = OpenInput &
         operationId: string
         expectedRevision: string
       }
-    | { action: 'confirmation-page'; reviewId: string; manifestId: string; offset: number }
   )
 export type ReviewRow = {
   id: string
@@ -161,7 +184,6 @@ export type ReviewRow = {
   eligible: boolean
   choice: ReviewChoice
   blockers: string[]
-  warnings: string[]
 }
 export type ReviewSource = {
   id: string
@@ -172,55 +194,20 @@ export type ReviewSource = {
   state: 'active' | 'trashed'
 }
 export type ReviewValue =
+  | ImportSummary
   | { type: 'review-unapplied'; reviewId: string; operationId: string }
   | {
-      type: 'review-page'
+      type: 'review-found'
+      reviewId: string | null
+      manifestId: string | null
+      legacyAttemptId: string | null
+    }
+  | {
+      type: 'review-state'
       review: ImportReview
       revisionId: string | null
       manifestId: string | null
       current: boolean
-      counts: ReviewCounts
-      undecided: number
-      blocking: number
-      partial: boolean
-      tab: ReviewTab
-      offset: number
-      total: number
-      rows: ReviewRow[]
-      files: Array<{ id: string; name: string; records: number; identified: number }>
-      globalIssues: string[]
-    }
-  | {
-      type: 'review-item'
-      reviewId: string
-      revisionId: string | null
-      row: ReviewRow
-      total: number
-      offset: number
-      variants: Array<{
-        record: GraphRecord
-        identified: boolean
-        suggestedTitles: string[]
-        metadata: SourceMetadata | null
-        labels: ReviewLabel[]
-        authorship: string
-        decision: string | null
-        grade: string | null
-        originatingRecordId: string | null
-        losses: string[]
-        candidates: ReviewSource[]
-      }>
-      readyMessages: number
-      parents: Array<{ id: string; title: string }>
-    }
-  | { type: 'review-sources'; rows: ReviewSource[]; offset: number; more: boolean }
-  | {
-      type: 'confirmation-page'
-      manifest: ConfirmationManifest
-      current: boolean
-      entries: ConfirmationEntry[]
-      offset: number
-      total: number
     }
 
 const nullableId = (v: unknown): boolean => v === null || isId(v)
@@ -228,11 +215,8 @@ const uint = (v: unknown, max = 100000): v is number =>
   Number.isSafeInteger(v) && Number(v) >= 0 && Number(v) <= max
 const text = (v: unknown, max = 4000): v is string => typeof v === 'string' && v.length <= max
 const plain = (v: unknown, max = 500): v is string => text(v, max) && !hasControlCharacters(v)
-const strings = (v: unknown): v is string[] =>
-  Array.isArray(v) && v.length <= 64 && v.every((x) => text(x))
 const kind = (v: unknown): boolean =>
   ['chat', 'message', 'source', 'note', 'retained'].includes(String(v))
-const tab = (v: unknown): boolean => ['chats', 'sources', 'notes', 'issues'].includes(String(v))
 export const isReviewLabel = (v: unknown): v is ReviewLabel =>
   record(v) &&
   exact(v, ['kind', 'name']) &&
@@ -251,7 +235,8 @@ export function isReviewChoice(v: unknown): v is ReviewChoice {
       'metadata',
       'labels',
       'reuse',
-      'acknowledged'
+      'acknowledged',
+      ...(Object.hasOwn(v, 'automatic') ? ['automatic'] : [])
     ]) &&
     isId(v.itemId) &&
     isId(v.recordId) &&
@@ -268,6 +253,14 @@ export function isReviewChoice(v: unknown): v is ReviewChoice {
         isId(v.reuse.id) &&
         isId(v.reuse.revisionId) &&
         importHash(v.reuse.metadataDigest))) &&
+    (!Object.hasOwn(v, 'automatic') ||
+      (record(v.automatic) &&
+        exact(v.automatic, ['version', 'sourceItemId']) &&
+        v.automatic.version === 1 &&
+        nullableId(v.automatic.sourceItemId) &&
+        v.automatic.sourceItemId !== v.itemId &&
+        v.acknowledged === false &&
+        v.state !== 'undecided')) &&
     typeof v.acknowledged === 'boolean' &&
     JSON.stringify(v).length <= 48000
   )
@@ -283,9 +276,16 @@ export function isImportReview(v: unknown): v is ImportReview {
       'graphId',
       'graphDigest',
       'proposalId',
-      'results'
+      'results',
+      ...(v.version === 2 ? ['legacyAttemptId'] : [])
     ]) &&
-    v.version === 1 &&
+    (v.version === 1 ||
+      (v.version === 2 &&
+        isId(v.legacyAttemptId) &&
+        v.proposalId === null &&
+        Array.isArray(v.results) &&
+        v.results.length === 1 &&
+        v.results[0]?.attemptId === v.legacyAttemptId)) &&
     [v.id, v.planId, v.batchId, v.graphId].every(isId) &&
     importHash(v.graphDigest) &&
     nullableId(v.proposalId) &&
@@ -306,7 +306,7 @@ export function isReviewRevision(v: unknown): v is ReviewRevision {
   return (
     record(v) &&
     exact(v, ['version', 'id', 'reviewId', 'parentId', 'changes', 'digest', 'partial']) &&
-    v.version === 1 &&
+    (v.version === 1 || v.version === 2 || v.version === 3) &&
     isId(v.id) &&
     isId(v.reviewId) &&
     nullableId(v.parentId) &&
@@ -352,7 +352,7 @@ export function isConfirmationManifest(v: unknown): v is ConfirmationManifest {
       'counts',
       'createdAt'
     ]) &&
-    v.version === 1 &&
+    (v.version === 1 || v.version === 2) &&
     [
       v.id,
       v.reviewId,
@@ -400,7 +400,7 @@ export function isConfirmationEntry(v: unknown): v is ConfirmationEntry {
       'bodyDigest',
       'labels'
     ]) &&
-    v.version === 1 &&
+    (v.version === 1 || v.version === 2) &&
     isId(v.itemId) &&
     kind(v.kind) &&
     text(v.title, 2000) &&
@@ -408,7 +408,13 @@ export function isConfirmationEntry(v: unknown): v is ConfirmationEntry {
     importHash(v.recordsDigest) &&
     isReviewChoice(v.choice) &&
     v.itemId === v.choice.itemId &&
-    ['create', 'reuse', 'exclude'].includes(String(v.action)) &&
+    (v.version === 2
+      ? ['create', 'reuse', 'link', 'exclude']
+      : ['create', 'reuse', 'exclude']
+    ).includes(String(v.action)) &&
+    (v.version === 2 || !v.choice.automatic) &&
+    (v.action === 'link') === !!v.choice.automatic?.sourceItemId &&
+    (v.action !== 'link' || (v.kind === 'source' && v.choice.reuse === null)) &&
     [v.destinationId, v.revisionId, v.originId, v.parentDestinationId].every(nullableId) &&
     (v.bodyDigest === null || importHash(v.bodyDigest)) &&
     Array.isArray(v.labels) &&
@@ -433,31 +439,36 @@ export function isReviewRequest(v: unknown): v is ReviewRequest {
       return (
         exact(v, [...k, 'command']) &&
         record(v.command) &&
-        ['review-save', 'review-chat', 'review-partial', 'confirmation-prepare'].includes(
-          String(v.command.action)
-        ) &&
+        [
+          'review-save',
+          'review-chat',
+          'review-partial',
+          'confirmation-prepare',
+          'review-automatic'
+        ].includes(String(v.command.action)) &&
         isReviewRequest(v.command) &&
         v.command.projectId === v.projectId &&
         v.command.workspaceId === v.workspaceId
       )
+    case 'review-inherit':
+      return (
+        exact(v, [
+          ...k,
+          'reviewId',
+          'operationId',
+          'expectedRevision',
+          'fromReviewId',
+          'fromRevisionId'
+        ]) &&
+        [v.reviewId, v.operationId, v.fromReviewId, v.fromRevisionId].every(isId) &&
+        v.expectedRevision === null
+      )
     case 'review-open':
       return exact(v, [...k, 'planId', 'proposalId']) && isId(v.planId) && nullableId(v.proposalId)
-    case 'review-page':
-      return (
-        exact(v, [...k, 'reviewId', 'tab', 'offset']) &&
-        isId(v.reviewId) &&
-        tab(v.tab) &&
-        uint(v.offset)
-      )
-    case 'review-item':
-      return (
-        exact(v, [...k, 'reviewId', 'itemId', 'offset']) &&
-        isId(v.reviewId) &&
-        isId(v.itemId) &&
-        uint(v.offset)
-      )
-    case 'review-sources':
-      return exact(v, [...k, 'query', 'offset']) && plain(v.query, 100) && uint(v.offset)
+    case 'review-find':
+      return exact(v, [...k, 'batchId', 'graphId']) && isId(v.batchId) && isId(v.graphId)
+    case 'review-legacy':
+      return exact(v, [...k, 'planId', 'attemptId']) && isId(v.planId) && isId(v.attemptId)
     case 'review-chat':
     case 'review-save':
       return (
@@ -465,7 +476,8 @@ export function isReviewRequest(v: unknown): v is ReviewRequest {
         isId(v.reviewId) &&
         isId(v.operationId) &&
         nullableId(v.expectedRevision) &&
-        isReviewChoice(v.choice)
+        isReviewChoice(v.choice) &&
+        !v.choice.automatic
       )
     case 'review-partial':
       return (
@@ -476,12 +488,19 @@ export function isReviewRequest(v: unknown): v is ReviewRequest {
         plain(v.reason, 1000) &&
         !!v.reason.trim()
       )
+    case 'review-automatic':
+      return (
+        exact(v, [...k, 'reviewId', 'operationId', 'expectedRevision']) &&
+        isId(v.reviewId) &&
+        isId(v.operationId) &&
+        nullableId(v.expectedRevision)
+      )
     case 'confirmation-prepare':
       return (
         exact(v, [...k, 'reviewId', 'operationId', 'expectedRevision']) &&
         [v.reviewId, v.operationId, v.expectedRevision].every(isId)
       )
-    case 'confirmation-page':
+    case 'import-summary':
       return (
         exact(v, [...k, 'reviewId', 'manifestId', 'offset']) &&
         isId(v.reviewId) &&
@@ -492,154 +511,65 @@ export function isReviewRequest(v: unknown): v is ReviewRequest {
       return false
   }
 }
-const source = (v: unknown): boolean =>
-  record(v) &&
-  exact(v, ['id', 'revisionId', 'metadataDigest', 'title', 'reason', 'state']) &&
-  isId(v.id) &&
-  isId(v.revisionId) &&
-  importHash(v.metadataDigest) &&
-  text(v.title, 2000) &&
-  text(v.reason) &&
-  ['active', 'trashed'].includes(String(v.state))
-const row = (v: unknown): boolean =>
-  record(v) &&
-  exact(v, ['id', 'kind', 'title', 'records', 'eligible', 'choice', 'blockers', 'warnings']) &&
-  isId(v.id) &&
-  kind(v.kind) &&
-  text(v.title, 500) &&
-  uint(v.records, 50000) &&
-  typeof v.eligible === 'boolean' &&
-  isReviewChoice(v.choice) &&
-  strings(v.blockers) &&
-  strings(v.warnings)
 export function isReviewValue(v: unknown): v is ReviewValue {
   if (!record(v) || JSON.stringify(v).length > 900000) return false
+  if (v.type === 'import-summary')
+    return (
+      exact(v, [
+        'type',
+        'manifest',
+        'current',
+        'outcome',
+        'omitted',
+        'conversations',
+        'offset',
+        'total'
+      ]) &&
+      isConfirmationManifest(v.manifest) &&
+      typeof v.current === 'boolean' &&
+      ['ready', 'empty', 'already-present'].includes(String(v.outcome)) &&
+      uint(v.omitted, 50000) &&
+      Array.isArray(v.conversations) &&
+      v.conversations.length <= 50 &&
+      v.conversations.every(
+        (c) =>
+          record(c) &&
+          exact(c, ['id', 'title', 'messages']) &&
+          isId(c.id) &&
+          plain(c.title, 160) &&
+          uint(c.messages, 50000)
+      ) &&
+      uint(v.offset) &&
+      uint(v.total, 50000)
+    )
   if (v.type === 'review-unapplied')
     return exact(v, ['type', 'reviewId', 'operationId']) && isId(v.reviewId) && isId(v.operationId)
-  if (v.type === 'review-page')
+  if (v.type === 'review-found')
     return (
-      exact(v, [
-        'type',
-        'review',
-        'revisionId',
-        'manifestId',
-        'current',
-        'counts',
-        'undecided',
-        'blocking',
-        'partial',
-        'tab',
-        'offset',
-        'total',
-        'rows',
-        'files',
-        'globalIssues'
-      ]) &&
-      isImportReview(v.review) &&
-      nullableId(v.revisionId) &&
-      nullableId(v.manifestId) &&
-      typeof v.current === 'boolean' &&
-      counts(v.counts) &&
-      uint(v.undecided, 50000) &&
-      uint(v.blocking, 50000) &&
-      typeof v.partial === 'boolean' &&
-      tab(v.tab) &&
-      uint(v.offset) &&
-      uint(v.total, 50000) &&
-      Array.isArray(v.rows) &&
-      v.rows.length <= 10 &&
-      v.rows.every(row) &&
-      Array.isArray(v.files) &&
-      v.files.length <= 100 &&
-      v.files.every(
-        (f) =>
-          record(f) &&
-          exact(f, ['id', 'name', 'records', 'identified']) &&
-          isId(f.id) &&
-          text(f.name, 255) &&
-          uint(f.records, 50000) &&
-          uint(f.identified, 50000)
-      ) &&
-      strings(v.globalIssues)
-    )
-  if (v.type === 'review-item')
-    return (
-      exact(v, [
-        'type',
-        'reviewId',
-        'revisionId',
-        'row',
-        'total',
-        'offset',
-        'variants',
-        'parents',
-        'readyMessages'
-      ]) &&
-      isId(v.reviewId) &&
-      nullableId(v.revisionId) &&
-      row(v.row) &&
-      uint(v.total, 50000) &&
-      uint(v.offset) &&
-      Array.isArray(v.variants) &&
-      v.variants.length <= 10 &&
-      v.variants.every(
-        (a) =>
-          record(a) &&
-          exact(a, [
-            'record',
-            'identified',
-            'suggestedTitles',
-            'metadata',
-            'labels',
-            'authorship',
-            'decision',
-            'grade',
-            'originatingRecordId',
-            'losses',
-            'candidates'
-          ]) &&
-          isGraphRecord(a.record) &&
-          typeof a.identified === 'boolean' &&
-          strings(a.suggestedTitles) &&
-          (a.metadata === null || isSourceMetadata(a.metadata)) &&
-          Array.isArray(a.labels) &&
-          a.labels.length <= 100 &&
-          a.labels.every(isReviewLabel) &&
-          text(a.authorship, 100) &&
-          (a.decision === null ||
-            ['kept', 'rejected', 'cited', 'search'].includes(String(a.decision))) &&
-          (a.grade === null || text(a.grade)) &&
-          nullableId(a.originatingRecordId) &&
-          strings(a.losses) &&
-          Array.isArray(a.candidates) &&
-          a.candidates.length <= 12 &&
-          a.candidates.every(source)
-      ) &&
-      uint(v.readyMessages, 50000) &&
-      Array.isArray(v.parents) &&
-      v.parents.length <= 10 &&
-      v.parents.every(
-        (p) => record(p) && exact(p, ['id', 'title']) && isId(p.id) && text(p.title, 500)
-      )
-    )
-  if (v.type === 'review-sources')
-    return (
-      exact(v, ['type', 'rows', 'offset', 'more']) &&
-      Array.isArray(v.rows) &&
-      v.rows.length <= 20 &&
-      v.rows.every(source) &&
-      uint(v.offset) &&
-      typeof v.more === 'boolean'
+      exact(v, ['type', 'reviewId', 'manifestId', 'legacyAttemptId']) &&
+      [v.reviewId, v.manifestId, v.legacyAttemptId].every(nullableId) &&
+      (!v.manifestId || !!v.reviewId)
     )
   return (
-    v.type === 'confirmation-page' &&
-    exact(v, ['type', 'manifest', 'current', 'entries', 'offset', 'total']) &&
-    isConfirmationManifest(v.manifest) &&
-    typeof v.current === 'boolean' &&
-    Array.isArray(v.entries) &&
-    v.entries.length <= 10 &&
-    v.entries.every(isConfirmationEntry) &&
-    uint(v.offset) &&
-    uint(v.total, 50000)
+    v.type === 'review-state' &&
+    exact(v, ['type', 'review', 'revisionId', 'manifestId', 'current']) &&
+    isImportReview(v.review) &&
+    nullableId(v.revisionId) &&
+    nullableId(v.manifestId) &&
+    typeof v.current === 'boolean'
+  )
+}
+
+/** Older authored commands are decoded for portable history and read-only reconciliation only. */
+export function isCurrentReviewRequest(v: unknown): v is ReviewRequest {
+  return (
+    isReviewRequest(v) &&
+    ![
+      'review-save',
+      'review-chat',
+      'review-partial',
+      'confirmation-prepare',
+      'review-inherit'
+    ].includes(v.action)
   )
 }

@@ -283,10 +283,8 @@ export class ProjectRepository {
         'retire',
         'plan-prepare',
         'review-open',
-        'review-save',
-        'review-chat',
-        'review-partial',
-        'confirmation-prepare',
+        'review-automatic',
+        'review-legacy',
         'import-commit'
       ].includes(input.action)
       if (mutating && this.fileBusy) throw new ProjectError('PROJECT_LOCKED')

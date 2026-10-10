@@ -897,10 +897,6 @@ export function ConversationPanel(): React.JSX.Element {
                       <ImportTranscriptPreview
                         key={`${key}:${c.page.conversation.revisionId}`}
                         scope={c.scope}
-                        batchId=""
-                        graphId=""
-                        recordId=""
-                        files={[]}
                         accepted={{
                           conversationId: c.selected!,
                           revisionId: c.page.conversation.revisionId

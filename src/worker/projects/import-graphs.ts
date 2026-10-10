@@ -33,18 +33,15 @@ import {
   type GraphPage,
   type GraphPageDescriptor,
   type GraphRecord,
-  type GraphRelation,
-  type GraphReadRequest,
-  type GraphTextRequest,
-  type GraphValue
+  type GraphRelation
 } from '../../shared/import-graph'
 import { requestDigest } from '../storage/digest'
 import { contained } from '../storage/files'
 import { stageBlob } from './blobs'
 import { requireSpace } from './streams'
 import { LIMITS, type BlobRef } from './manifest'
-import { GraphBuilder, textBoundary, textDigest, type BuiltGraph } from './import-readers/graph'
-import { InputError, parseInputJson, valueAt } from './import-readers/json'
+import { GraphBuilder, type BuiltGraph } from './import-readers/graph'
+import { InputError } from './import-readers/json'
 
 export const IMPORT_GRAPH_MEDIA = 'application/vnd.collie.import-graph+json'
 export type ImportArtifactRef = BlobRef & {
@@ -683,112 +680,4 @@ export class GraphArtifactValidator {
     this.files = []
     this.pages = 0
   }
-}
-export async function readImportGraph(
-  ctx: Context,
-  input: GraphReadRequest | GraphTextRequest
-): Promise<GraphValue> {
-  const { manifest, pages } = readGraph(ctx.db, ctx.projectId, input.graphId)
-  if (manifest.batchId !== input.batchId) throw new ProjectError('DENIED')
-  if (input.action === 'graph-read') {
-    const rows: GraphRecord[] = [],
-      relations: GraphRelation[] = []
-    const count = (p: GraphPageDescriptor): number =>
-      input.recordId
-        ? Number(p.recordIds.includes(input.recordId))
-        : input.view === 'relations'
-          ? p.relations
-          : input.filter === 'all'
-            ? p.records
-            : p.kinds[input.filter]
-    const total = pages.reduce((n, p) => n + count(p), 0)
-    let index = 0,
-      nextOffset: number | null = null
-    const reply = (): GraphValue => ({
-      type: 'graph',
-      graph: manifest,
-      records: rows,
-      relations,
-      total,
-      nextOffset
-    })
-    for (const descriptor of pages) {
-      const amount = count(descriptor)
-      if (!amount) continue
-      if (index + amount <= input.offset) {
-        index += amount
-        continue
-      }
-      const page = parseGraphPage(
-        await readImportBlob(ctx, descriptor, IMPORT_LIMITS.artifactBytes),
-        descriptor
-      )
-      const values = input.recordId
-        ? page.records.filter((r) => r.id === input.recordId)
-        : input.view === 'records'
-          ? page.records.filter((r) => input.filter === 'all' || r.kind === input.filter)
-          : page.relations
-      for (const value of values) {
-        const position = index++
-        if (position < input.offset) continue
-        if (
-          rows.length + relations.length >= IMPORT_LIMITS.page ||
-          JSON.stringify(reply()).length + JSON.stringify(value).length + 100 >
-            GRAPH_LIMITS.pageUnits
-        ) {
-          nextOffset = position
-          return reply()
-        }
-        if (input.view === 'records' || input.recordId) rows.push(value as GraphRecord)
-        else relations.push(value as GraphRelation)
-      }
-    }
-    return reply()
-  }
-  for (const descriptor of pages) {
-    if (!descriptor.recordIds.includes(input.recordId)) continue
-    const page = parseGraphPage(
-        await readImportBlob(ctx, descriptor, IMPORT_LIMITS.artifactBytes),
-        descriptor
-      ),
-      r = page.records.find((r) => r.id === input.recordId)
-    if (!r) continue
-    const ref = r.texts.find((t) => t.id === input.textId)
-    if (!ref || r.disposition === 'internal') throw new ProjectError('DENIED')
-    const row = ctx.db
-      .prepare('SELECT body FROM import_files WHERE project_id=? AND batch_id=? AND id=?')
-      .get(ctx.projectId, input.batchId, ref.locator.fileId)
-    if (!record(row)) return corrupt()
-    const file = JSON.parse(String(row.body)) as ImportFile
-    if (file.sha256 !== ref.locator.sha256) return corrupt()
-    let decoded = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
-      await readImportBlob(ctx, file, IMPORT_LIMITS.fileBytes)
-    )
-    if (decoded.startsWith('\uFEFF')) decoded = decoded.slice(1)
-    const field =
-      file.mediaType === 'application/json'
-        ? valueAt(parseInputJson(decoded).value, ref.locator.pointer)
-        : decoded
-    if (typeof field !== 'string' || ref.end > field.length) return corrupt()
-    const text = field.slice(ref.start, ref.end)
-    if (
-      text.length !== ref.units ||
-      textDigest(text) !== ref.sha256 ||
-      input.offset > text.length ||
-      textBoundary(text, input.offset) !== input.offset
-    )
-      return corrupt()
-    const end = textBoundary(text, Math.min(text.length, input.offset + GRAPH_LIMITS.preview))
-    return {
-      type: 'graph-text',
-      graphId: manifest.id,
-      recordId: r.id,
-      textId: ref.id,
-      text: text.slice(input.offset, end),
-      offset: input.offset,
-      total: text.length,
-      nextOffset: end < text.length ? end : null
-    }
-  }
-  throw new ProjectError('NOT_FOUND')
 }

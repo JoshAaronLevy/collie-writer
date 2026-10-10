@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 
 export const PROJECT_APPLICATION_ID = 1129270359
-export const PROJECT_SCHEMA_VERSION = 30
+export const PROJECT_SCHEMA_VERSION = 32
 // Persisted schema is app-owned; never execute DDL or migrations supplied by a project.
 export const projectTablesV1 = [
   `CREATE TABLE format (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, minimum_reader INTEGER NOT NULL, editor_version INTEGER NOT NULL) STRICT`,
@@ -150,7 +150,11 @@ export const importCommitTables = [
 ] as const
 export const projectTablesV29 = [...projectTablesV28, ...importCommitTables]
 // IM11 changes versioned JSON contracts; schema 30 preserves the schema-29 DDL.
-export const projectTables = [...projectTablesV29]
+// IU01 changes review JSON contracts only; preserve the schema-30 DDL.
+export const projectTablesV30 = [...projectTablesV29]
+export const projectTablesV31 = [...projectTablesV30]
+// IU04 retains v1 analysis as review v2; DDL stays frozen.
+export const projectTables = [...projectTablesV31]
 const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export function createProjectSchema(db: Database.Database): void {
@@ -234,7 +238,11 @@ export function validateProjectSchema(
                                                       ? projectTablesV28
                                                       : expectedVersion === 29
                                                         ? projectTablesV29
-                                                        : projectTables
+                                                        : expectedVersion === 30
+                                                          ? projectTablesV30
+                                                          : expectedVersion === 31
+                                                            ? projectTablesV31
+                                                            : projectTables
     ).map(sqlKey)
   )
   if (

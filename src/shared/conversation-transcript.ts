@@ -56,9 +56,7 @@ export type TranscriptCursor = {
   revisionId: string
   key: TranscriptKey
 }
-export type TranscriptSource =
-  | { kind: 'accepted'; conversationId: string; revisionId: string }
-  | { kind: 'staged'; batchId: string; graphId: string; recordId: string }
+export type TranscriptSource = { kind: 'accepted'; conversationId: string; revisionId: string }
 export type TranscriptRequest = OpenInput & {
   action: 'transcript-read'
   source: TranscriptSource
@@ -264,13 +262,10 @@ export function isTranscriptCursor(v: unknown): v is TranscriptCursor {
 export function isTranscriptSource(v: unknown): v is TranscriptSource {
   return (
     record(v) &&
-    ((v.kind === 'accepted' &&
-      exact(v, ['kind', 'conversationId', 'revisionId']) &&
-      isId(v.conversationId) &&
-      isId(v.revisionId)) ||
-      (v.kind === 'staged' &&
-        exact(v, ['kind', 'batchId', 'graphId', 'recordId']) &&
-        [v.batchId, v.graphId, v.recordId].every(isId)))
+    exact(v, ['kind', 'conversationId', 'revisionId']) &&
+    v.kind === 'accepted' &&
+    isId(v.conversationId) &&
+    isId(v.revisionId)
   )
 }
 export function isTranscriptInput(v: Record<string, unknown>): boolean {

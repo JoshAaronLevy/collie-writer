@@ -1,3 +1,4 @@
+import { isCatalogModelId } from './ai-catalog'
 import { isId } from '../domain/editor/schema'
 import { exact, record, isOpenInput, type OpenInput } from './projects'
 import { importHash, importTime, isImportSettings, type ImportSettings } from './project-import'
@@ -118,44 +119,45 @@ export type PlanReview = {
   model: string
   units: number
   bytes: number
-  mode: 'remaining' | 'reanalyze'
+  mode: 'remaining'
+}
+/** Submit-time connection identity; transient and never a portable inference grant. */
+export type ImportSubmitBinding = {
+  connectionId: string
+  model: string
+  catalogRevision: string
+  reviewRevision: string
 }
 export type MultiRequest = OpenInput &
   (
     | { action: 'plan-find'; batchId: string; graphId: string }
     | { action: 'plan-prepare'; batchId: string; graphId: string; expectedRevision: string }
     | { action: 'plan-read'; planId: string; offset: number }
-    | { action: 'part-read'; planId: string; partId: string }
-    | { action: 'proposal-read'; planId: string; proposalId: string | null; offset: number }
     | {
         action: 'plan-review'
+        submission?: ImportSubmitBinding
         planId: string
         proposalId: string | null
-        mode: 'remaining' | 'reanalyze'
-        partId: string | null
+        mode: 'remaining'
+        partId: null
         limit: number
       }
     | { action: 'plan-start'; reviewId: string; operationId: string; approve: true }
     | { action: 'plan-stop'; planId: string }
   )
 export type MultiWorker =
-  | Extract<
-      MultiRequest,
-      { action: 'plan-find' | 'plan-prepare' | 'plan-read' | 'part-read' | 'proposal-read' }
-    >
+  | Extract<MultiRequest, { action: 'plan-find' | 'plan-prepare' | 'plan-read' }>
   | (OpenInput & {
       action: 'plan-select'
       planId: string
       proposalId: string | null
-      mode: 'remaining' | 'reanalyze'
-      partId: string | null
+      mode: 'remaining'
+      partId: null
       limit: number
     })
-  | (OpenInput & { action: 'plan-consolidate'; attemptId: string })
 export type MultiValue =
   | PlanPage
   | PlanReview
-  | { type: 'part'; packet: MultiPacket }
   | {
       type: 'plan-selection'
       plan: AnalysisPlan
@@ -165,19 +167,7 @@ export type MultiValue =
       bytes: number
     }
   | { type: 'batch-execution'; execution: BatchExecution }
-  | {
-      type: 'proposal-page'
-      proposalId: string | null
-      total: number
-      items: Array<{
-        id: string
-        kind: string
-        label: string
-        members: number
-        variants: string[]
-        conflict: boolean
-      }>
-    }
+
 const uint = (v: unknown, max = 256 * 1024 ** 2): v is number =>
   Number.isSafeInteger(v) && Number(v) >= 0 && Number(v) <= max
 const str = (v: unknown, n: number): v is string => typeof v === 'string' && v.length <= n
@@ -358,6 +348,16 @@ export function isProposalRevision(v: unknown): v is ProposalRevision {
     nullableId(v.parentId)
   )
 }
+export function isImportSubmitBinding(v: unknown): v is ImportSubmitBinding {
+  return (
+    record(v) &&
+    exact(v, ['connectionId', 'model', 'catalogRevision', 'reviewRevision']) &&
+    isId(v.connectionId) &&
+    isCatalogModelId(v.model) &&
+    isId(v.catalogRevision) &&
+    importHash(v.reviewRevision)
+  )
+}
 export function isMultiRequest(v: unknown): v is MultiRequest {
   if (!record(v) || !isOpenInput({ projectId: v.projectId, workspaceId: v.workspaceId }))
     return false
@@ -372,22 +372,23 @@ export function isMultiRequest(v: unknown): v is MultiRequest {
       )
     case 'plan-read':
       return exact(v, [...k, 'planId', 'offset']) && isId(v.planId) && uint(v.offset, 1024)
-    case 'part-read':
-      return exact(v, [...k, 'planId', 'partId']) && [v.planId, v.partId].every(isId)
-    case 'proposal-read':
-      return (
-        exact(v, [...k, 'planId', 'proposalId', 'offset']) &&
-        isId(v.planId) &&
-        nullableId(v.proposalId) &&
-        uint(v.offset, 50000)
-      )
     case 'plan-review':
       return (
-        exact(v, [...k, 'planId', 'proposalId', 'mode', 'partId', 'limit']) &&
+        exact(v, [
+          ...k,
+          'planId',
+          'proposalId',
+          'mode',
+          'partId',
+          'limit',
+          ...(Object.hasOwn(v, 'submission') ? ['submission'] : [])
+        ]) &&
+        (!Object.hasOwn(v, 'submission') ||
+          (isImportSubmitBinding(v.submission) && v.mode === 'remaining' && v.limit === 64)) &&
         isId(v.planId) &&
         nullableId(v.proposalId) &&
-        ['remaining', 'reanalyze'].includes(String(v.mode)) &&
-        (v.mode === 'remaining' ? v.partId === null : isId(v.partId)) &&
+        v.mode === 'remaining' &&
+        v.partId === null &&
         uint(v.limit, 64) &&
         v.limit > 0
       )
@@ -405,19 +406,10 @@ export function isMultiRequest(v: unknown): v is MultiRequest {
 }
 export function isMultiWorker(v: unknown): v is MultiWorker {
   if (!record(v)) return false
-  if (
-    ['plan-find', 'plan-prepare', 'plan-read', 'part-read', 'proposal-read'].includes(
-      String(v.action)
-    )
-  )
+  if (['plan-find', 'plan-prepare', 'plan-read'].includes(String(v.action)))
     return isMultiRequest(v)
   if (v.action === 'plan-select') return isMultiRequest({ ...v, action: 'plan-review' })
-  return (
-    v.action === 'plan-consolidate' &&
-    exact(v, ['action', 'projectId', 'workspaceId', 'attemptId']) &&
-    isOpenInput({ projectId: v.projectId, workspaceId: v.workspaceId }) &&
-    isId(v.attemptId)
-  )
+  return false
 }
 function isExecution(v: unknown): v is BatchExecution {
   return (
@@ -435,8 +427,6 @@ function isExecution(v: unknown): v is BatchExecution {
 export function isMultiValue(v: unknown): v is MultiValue {
   if (!record(v)) return false
   switch (v.type) {
-    case 'part':
-      return exact(v, ['type', 'packet']) && isMultiPacket(v.packet)
     case 'batch-execution':
       return exact(v, ['type', 'execution']) && isExecution(v.execution)
     case 'plan-selection':
@@ -470,7 +460,7 @@ export function isMultiValue(v: unknown): v is MultiValue {
         str(v.model, 100) &&
         uint(v.units) &&
         uint(v.bytes) &&
-        ['remaining', 'reanalyze'].includes(String(v.mode))
+        v.mode === 'remaining'
       )
     case 'plan':
       return (
@@ -530,28 +520,6 @@ export function isMultiValue(v: unknown): v is MultiValue {
             str(r.state, 30) &&
             str(r.validation, 30) &&
             typeof r.selected === 'boolean'
-        ) &&
-        JSON.stringify(v).length <= 100000
-      )
-    case 'proposal-page':
-      return (
-        exact(v, ['type', 'proposalId', 'total', 'items']) &&
-        nullableId(v.proposalId) &&
-        uint(v.total, 50000) &&
-        Array.isArray(v.items) &&
-        v.items.length <= 50 &&
-        v.items.every(
-          (i) =>
-            record(i) &&
-            exact(i, ['id', 'kind', 'label', 'members', 'variants', 'conflict']) &&
-            isId(i.id) &&
-            str(i.kind, 30) &&
-            str(i.label, 256) &&
-            uint(i.members, 50000) &&
-            Array.isArray(i.variants) &&
-            i.variants.length <= 8 &&
-            i.variants.every((x) => str(x, 500)) &&
-            typeof i.conflict === 'boolean'
         ) &&
         JSON.stringify(v).length <= 100000
       )

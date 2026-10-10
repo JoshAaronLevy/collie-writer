@@ -6,6 +6,7 @@ import {
 } from './import-commit'
 import {
   isReviewRequest,
+  isCurrentReviewRequest,
   isReviewValue,
   type ReviewRequest,
   type ReviewValue
@@ -465,7 +466,7 @@ function isAnalysisRunV1(v: unknown): v is AnalysisRunV1 {
   )
 }
 export function isAnalysisRequest(v: unknown): v is AnalysisRequest {
-  if (isCommitRequest(v) || isReviewRequest(v)) return true
+  if (isCommitRequest(v) || isCurrentReviewRequest(v)) return true
   if (isMultiRequest(v)) return true
   if (!record(v) || !isOpenInput({ projectId: v.projectId, workspaceId: v.workspaceId }))
     return false

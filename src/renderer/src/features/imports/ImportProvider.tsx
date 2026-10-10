@@ -1,7 +1,11 @@
-import { useMultipartAnalysis } from './useMultipartAnalysis'
-import { useImportAnalysis } from './useImportAnalysis'
-import { ImportGraphPreview } from './ImportGraphPreview'
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useImportFlow } from './useImportFlow'
+import { ImportResults } from './ImportResults'
+import type { ReviewCounts } from '../../../../shared/import-review'
+import { Loader, VisuallyHidden } from '@mantine/core'
+import { IconX } from '@tabler/icons-react'
+import { IconButton } from '../../components/ui/IconButton'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useVisualPreferences } from '../../theme/visualPreferencesContext'
 import { AppDialog } from '../../components/ui/AppDialog'
 import { AppButton, ChoiceField, SelectField, TextareaField } from '../../components/ui/Controls'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
@@ -29,12 +33,12 @@ type State = {
   scope: OpenInput | null
   title: string
   opened: boolean
+  screen: 'setup' | 'results'
   busy: boolean
   issue: string
   revision: ImportRevision | null
   files: ImportFile[]
   batches: ImportBatchSummary[]
-  nextOffset: number | null
   settings: ImportSettings
   selected: string[]
   pending: ImportMutation | null
@@ -45,12 +49,12 @@ const initial = (): State => ({
   scope: null,
   title: '',
   opened: false,
+  screen: 'setup',
   busy: false,
   issue: '',
   revision: null,
   files: [],
   batches: [],
-  nextOffset: null,
   settings: { categories: [], instructions: '' },
   selected: [],
   pending: null,
@@ -69,25 +73,38 @@ const bytesLabel = (bytes: number): string =>
       ? `${(bytes / 1024).toFixed(1)} KiB`
       : `${(bytes / 1024 ** 2).toFixed(1)} MiB`
 const categoryLabels: Record<ImportCategory, string> = {
-  chats: 'AI chats',
-  sources: 'Sources & research',
+  chats: 'AI conversations',
+  sources: 'Sources',
   notes: 'Notes'
 }
 
 /** One retained owner: presentation may close, but exact choices and mutations stay here. */
 export function ImportProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const session = useWorkspaceSession(),
-    connections = useAiConnections()
+    connections = useAiConnections(),
+    { reducedMotion } = useVisualPreferences()
   const latestSession = useRef(session)
   useLayoutEffect(() => {
     latestSession.current = session
   })
-  const [state, render] = useState<State>(initial)
+  const [state, render] = useState<State>(initial),
+    [success, setSuccess] = useState<{ id: string; text: string } | null>(null)
+  useEffect(() => {
+    if (!success) return
+    const timer = setTimeout(() => setSuccess(null), 8000)
+    return () => clearTimeout(timer)
+  }, [success])
   const owned = useRef(state),
     trigger = useRef<HTMLElement | null>(null),
     origin = useRef(''),
     manage = useRef(false),
-    composing = useRef(false)
+    composing = useRef(false),
+    presentation = useRef<HTMLDivElement | null>(null),
+    focusedControl = useRef<{
+      element: HTMLElement
+      scope: OpenInput | null
+      destination: string
+    } | null>(null)
   const patch = (value: Partial<State>): void => {
     owned.current = { ...owned.current, ...value }
     render(owned.current)
@@ -110,25 +127,30 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
     !writable ||
     state.revision?.phase === 'discarded' ||
     state.batches.some((b) => b.id === state.revision?.batchId && b.phase === 'completed')
-  const analysis = useImportAnalysis({
-    scope: state.scope,
-    revision: state.revision,
-    disabled: blocked || dirty(state),
-    intakeOpen: state.opened,
-    closeIntake: () => patch({ opened: false }),
-    returnFocus: restoreFocus
-  })
-  const completed = state.batches.some(
-    (b) => b.id === state.revision?.batchId && b.phase === 'completed'
-  )
-  const multipart = useMultipartAnalysis({
-    completed,
-    scope: state.scope,
-    revision: state.revision,
-    disabled: blocked || dirty(state),
-    intakeOpen: state.opened,
-    closeIntake: () => patch({ opened: false }),
-    returnFocus: restoreFocus
+  const multipart = useImportFlow({
+    focus: () => patch({ opened: true }),
+    ready: (scope) => {
+      const live = latestSession.current
+      if (
+        owned.current.opened &&
+        sameScope(owned.current.scope, scope) &&
+        sameScope(live.current.current, scope) &&
+        JSON.stringify(live.destination) === origin.current &&
+        !live.closing &&
+        !live.navigating &&
+        !live.composition.current
+      )
+        patch({ screen: 'results' })
+    },
+    committed: (scope, counts) => {
+      if (
+        !sameScope(owned.current.scope, scope) ||
+        !sameScope(latestSession.current.current.current, scope)
+      )
+        return
+      patch({ opened: false, issue: '' })
+      setSuccess({ id: crypto.randomUUID(), text: importNotice(counts) })
+    }
   })
   async function request(input: ImportServiceRequest): Promise<ImportValue> {
     const result = await window.collie.projectImport(input)
@@ -176,14 +198,23 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
       settings: structuredClone(value.revision.settings)
     })
   }
-  async function loadList(offset = 0): Promise<ImportBatchSummary[]> {
-    const value = await request({ ...scope(), action: 'list', offset })
-    if (value.type !== 'batches') throw new Error('Saved import selections could not be read.')
-    patch({
-      batches: offset === 0 ? value.batches : [...owned.current.batches, ...value.batches],
-      nextOffset: value.nextOffset
-    })
-    return value.batches
+  async function loadList(): Promise<ImportBatchSummary[]> {
+    const captured = scope(),
+      batches: ImportBatchSummary[] = []
+    let offset: number | null = 0
+    while (offset !== null) {
+      const value = await request({ ...captured, action: 'list', offset })
+      if (value.type !== 'batches' || (value.nextOffset !== null && value.nextOffset <= offset))
+        throw new Error('Saved imports could not be read.')
+      if (!sameScope(captured, owned.current.scope)) return []
+      batches.push(...value.batches)
+      offset = value.nextOffset
+    }
+    patch({ batches })
+    return batches
+  }
+  function formIntent(): string {
+    return JSON.stringify([owned.current.scope, owned.current.selected, owned.current.settings])
   }
   async function run(work: () => Promise<void>): Promise<boolean> {
     if (owned.current.busy) return false
@@ -283,13 +314,15 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
           })
         patch({
           issue:
-            'This exact change was not saved. Retry local protection, or abandon the failed file / restore saved choices. No request will retry automatically.'
+            pending.action === 'add-file'
+              ? 'This file was not saved. Try saving again or remove the failed file.'
+              : 'This change was not saved. Try saving again or restore saved choices.'
         })
       }
     } else if (owned.current.revision && !dirty(owned.current))
       await loadBatch(owned.current.revision.batchId)
   }
-  function open(element: HTMLElement): void {
+  function open(element: HTMLElement, attemptId?: string): void {
     if (
       !session.project ||
       session.closing ||
@@ -304,23 +337,69 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
       workspaceId: session.project.workspaceId
     }
     if (!owned.current.scope || !sameScope(owned.current.scope, captured)) {
-      if (dirty(owned.current) || owned.current.pending || owned.current.uncertainPicker) return
+      if (
+        dirty(owned.current) ||
+        owned.current.pending ||
+        owned.current.uncertainPicker ||
+        multipart.pendingCommit ||
+        multipart.pendingAutomatic ||
+        multipart.pendingStart ||
+        multipart.busy
+      )
+        return
       owned.current = { ...initial(), scope: captured, title: session.project.title }
     }
+    if (
+      !dirty(owned.current) &&
+      !owned.current.pending &&
+      !owned.current.uncertainPicker &&
+      !multipart.pendingCommit &&
+      !multipart.pendingAutomatic &&
+      !multipart.pendingStart &&
+      !multipart.busy &&
+      ((multipart.phase === 'complete' &&
+        sameScope(multipart.scope, captured) &&
+        (!owned.current.revision ||
+          owned.current.revision.batchId === multipart.summary?.manifest.batchId)) ||
+        owned.current.revision?.phase === 'discarded' ||
+        owned.current.batches.some(
+          (b) => b.id === owned.current.revision?.batchId && b.phase === 'completed'
+        ))
+    )
+      owned.current = { ...initial(), scope: captured, title: session.project.title }
     trigger.current = element
+    setSuccess(null)
     origin.current = JSON.stringify(session.destination)
     manage.current = false
-    patch({ opened: true, title: session.project.title })
+    patch({
+      opened: true,
+      title: session.project.title,
+      ...(multipart.pendingCommit ? { screen: 'results' as const } : {})
+    })
     void run(async () => {
       await recover()
       const batches = await loadList()
+      if (attemptId && !owned.current.pending && !dirty(owned.current)) {
+        const attempt = await window.collie.importAnalysis({
+          ...captured,
+          action: 'attempt',
+          attemptId
+        })
+        if (!attempt.ok) throw new Error(attempt.error.message)
+        if (attempt.value.type === 'turn' && sameScope(captured, owned.current.scope))
+          await loadBatch(attempt.value.turn.capture.packet.batchId)
+      }
       if (!owned.current.revision && !owned.current.pending) {
         const latest = batches.find((b) => b.phase === 'preparing')
         if (latest) await loadBatch(latest.id)
       }
+      const revision = owned.current.revision
+      if (revision && !owned.current.pending && !dirty(owned.current))
+        await multipart.restore(captured, revision, formIntent())
     })
   }
   async function close(toManage = false): Promise<void> {
+    if (!multipart.canDismiss()) return
     if (!(await protect())) {
       patch({
         issue:
@@ -334,7 +413,22 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
   }
   function exited(): void {
     if (owned.current.opened) return
-    if (multipart.afterIntakeExit() || analysis.afterIntakeExit()) return
+    if (
+      multipart.phase === 'complete' &&
+      sameScope(multipart.scope, owned.current.scope) &&
+      (!owned.current.revision ||
+        owned.current.revision.batchId === multipart.summary?.manifest.batchId)
+    )
+      patch({
+        screen: 'setup',
+        revision: null,
+        selected: [],
+        files: [],
+        settings: { categories: [], instructions: '' },
+        results: [],
+        batches: [],
+        issue: ''
+      })
     if (manage.current) {
       manage.current = false
       const captured = trigger.current,
@@ -398,14 +492,13 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
       scope: owned.current.scope ?? { projectId: '', workspaceId: '' },
       kind: 'project-import',
       entityId: owned.current.revision?.batchId ?? owned.current.pending?.batchId ?? null,
-      label: 'Import selection (Keep for later)',
+      label: 'Import form',
       dirty: dirty(owned.current),
       composing: false,
       busy: owned.current.busy,
       pendingOperation:
         owned.current.pending ?? (owned.current.uncertainPicker ? { kind: 'file-intake' } : null),
-      policy: 'retain',
-      explicitSave: true,
+      policy: 'flush',
       target: {
         kind: 'workspace',
         scope: owned.current.scope ?? { projectId: '', workspaceId: '' },
@@ -413,9 +506,11 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
       },
       issue: owned.current.issue
     }),
+    flush: protect,
     focus: () => patch({ opened: true })
   })
   async function addFiles(): Promise<void> {
+    if (!multipart.canEdit()) return
     if (!(await protect())) return
     await run(async () => {
       if (!owned.current.revision)
@@ -441,29 +536,69 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
       patch({
         uncertainPicker: false,
         results: result.results,
-        issue: result.cancelled
-          ? 'File selection cancelled. The existing selection is unchanged.'
-          : ''
+        issue: ''
       })
       await recover()
       await loadBatch(revision.batchId)
+      const selected = new Set(owned.current.selected)
+      for (const file of result.results) if (file.fileId) selected.add(file.fileId)
+      patch({ selected: [...selected] })
       await session.refreshConversationHead(scope())
       await loadList()
     })
   }
-  async function inspectFiles(): Promise<void> {
-    if (!(await protect())) return
-    const revision = owned.current.revision
-    if (!revision || !revision.selectedFileIds.length) return
-    await run(() =>
-      write({
-        version: 2,
-        action: 'prepare-graph',
-        operationId: crypto.randomUUID(),
-        batchId: revision.batchId,
-        expectedRevision: revision.id
-      })
+  async function submit(continueAnalysis = false): Promise<void> {
+    const current = owned.current,
+      status = connections.status,
+      catalog = status?.catalog
+    if (
+      current.busy ||
+      current.pending ||
+      current.uncertainPicker ||
+      blocked ||
+      multipart.locked ||
+      composing.current ||
+      !current.revision ||
+      !current.selected.length ||
+      !current.settings.categories.length ||
+      !status?.activeConnectionId ||
+      catalog?.state !== 'loaded' ||
+      !catalog.selectedModelId
     )
+      return
+    const capturedScope = scope(),
+      binding = {
+        connectionId: status.activeConnectionId,
+        model: catalog.selectedModelId,
+        catalogRevision: catalog.revision,
+        reviewRevision: status.reviewRevision
+      }
+    await multipart.submit({
+      scope: capturedScope,
+      binding,
+      intent: formIntent(),
+      continueAnalysis,
+      prepare: async (fresh) => {
+        if (!(await protect()))
+          throw new Error('Your import choices could not be saved. Try saving again.')
+        const saved = owned.current.revision
+        if (!saved || !sameScope(capturedScope, scope()))
+          throw new Error('Reopen the original project to continue.')
+        if (!saved.graphId || fresh) {
+          const ok = await run(() =>
+            write({
+              version: 2,
+              action: 'prepare-graph',
+              operationId: crypto.randomUUID(),
+              batchId: saved.batchId,
+              expectedRevision: saved.id
+            })
+          )
+          if (!ok) throw new Error(owned.current.issue || 'The selected files could not be read.')
+        }
+        return owned.current.revision!
+      }
+    })
   }
   async function resolve(decision: 'retry' | 'abandon'): Promise<void> {
     await run(async () => {
@@ -501,394 +636,643 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
       }
     })
   }
-  const selectedBytes = state.files
-    .filter((f) => state.selected.includes(f.id))
-    .reduce((n, f) => n + f.bytes, 0)
+  function edit(value: Partial<State>): void {
+    if (
+      !owned.current.busy &&
+      !owned.current.pending &&
+      !owned.current.uncertainPicker &&
+      multipart.canEdit()
+    )
+      patch({ ...value, issue: '' })
+  }
+  async function startNew(): Promise<void> {
+    if (blocked || !multipart.canEdit() || composing.current) return
+    await run(async () => {
+      const revision = owned.current.revision
+      if (revision)
+        await write({
+          version: 1,
+          action: 'discard',
+          operationId: crypto.randomUUID(),
+          batchId: revision.batchId,
+          expectedRevision: revision.id
+        })
+      multipart.reset()
+      patch({
+        revision: null,
+        files: [],
+        selected: [],
+        settings: { categories: [], instructions: '' },
+        screen: 'setup',
+        issue: '',
+        results: []
+      })
+    })
+  }
+  function showAnalysis(attemptId: string): void {
+    const element =
+      document.activeElement instanceof HTMLElement ? document.activeElement : trigger.current
+    if (element) open(element, attemptId)
+  }
+  const sameFindings =
+    multipart.intent === JSON.stringify([state.scope, state.selected, state.settings])
+  const needsFindingsRecovery =
+    !!multipart.pendingStart ||
+    !!multipart.pendingAutomatic ||
+    !!multipart.pendingCommit ||
+    !!(multipart.summary && !multipart.summary.current) ||
+    !!(multipart.summary && multipart.conversations.length !== multipart.summary.total)
+  const catalog = connections.status?.catalog,
+    selectedFiles = state.files.filter((f) => state.selected.includes(f.id)),
+    modelId = catalog?.state === 'loaded' ? catalog.selectedModelId : null,
+    modelReady =
+      catalog?.state === 'loaded' && !!modelId && catalog.models.some((m) => m.id === modelId),
+    connected =
+      connections.status?.state === 'signed-in' && !!connections.status.activeConnectionId,
+    ready =
+      connected &&
+      modelReady &&
+      !connections.statusUnavailable &&
+      connections.issue !== 'outcome-unknown' &&
+      !connections.busy &&
+      connections.status?.route.kind === 'local-chatgpt-plan' &&
+      connections.status.execution?.state === 'available',
+    formBlocked = blocked || multipart.locked,
+    notice = state.issue || multipart.issue,
+    processingText =
+      multipart.phase === 'stopping'
+        ? 'Stopping…'
+        : multipart.phase === 'checking'
+          ? 'Checking import status…'
+          : multipart.phase === 'analyzing'
+            ? 'Analyzing with ChatGPT…'
+            : multipart.phase === 'saving'
+              ? 'Preparing your import…'
+              : 'Preparing files…'
+  const resultStatus =
+    multipart.phase === 'checking'
+      ? 'Checking import status…'
+      : multipart.phase === 'saving'
+        ? 'Refreshing your summary…'
+        : 'Importing…'
+  const savedChoices = !dirty(state) && sameFindings,
+    checkFindings = multipart.phase === 'paused' || needsFindingsRecovery || !!notice,
+    viewFindings =
+      savedChoices &&
+      (multipart.phase !== 'ready' || needsFindingsRecovery || !ready) &&
+      !!(multipart.summary || multipart.page?.completed || multipart.legacyValid),
+    continueFindings =
+      savedChoices &&
+      multipart.phase === 'ready' &&
+      !!multipart.page?.remaining &&
+      !multipart.legacyAttemptId,
+    startNewVisible =
+      savedChoices &&
+      (multipart.phase === 'paused' || multipart.summary?.outcome !== 'ready') &&
+      !!(
+        multipart.legacyAttemptId ||
+        !multipart.page?.remaining ||
+        multipart.summary?.outcome !== 'ready'
+      ),
+    retainedOutcome = !!connections.status?.work.some(
+      (work) =>
+        work.feature === 'import' &&
+        sameScope(work.scope, multipart.scope) &&
+        work.state === 'retained-outcome'
+    ),
+    localProtection = !!connections.status?.work.some(
+      (work) =>
+        work.feature === 'import' &&
+        sameScope(work.scope, multipart.scope) &&
+        ['protection-required', 'handoff-required', 'record-unavailable'].includes(work.state)
+    ),
+    showFindingsRecovery =
+      !state.pending &&
+      !state.uncertainPicker &&
+      (multipart.phase === 'paused' || multipart.phase === 'ready' || needsFindingsRecovery) &&
+      (checkFindings ||
+        viewFindings ||
+        continueFindings ||
+        startNewVisible ||
+        retainedOutcome ||
+        localProtection)
+  const announcement = !state.opened
+    ? ''
+    : state.screen === 'results' && multipart.summary
+      ? multipart.busy
+        ? resultStatus
+        : multipart.summary.outcome === 'already-present'
+          ? 'This content is already in your project. Nothing new to import.'
+          : multipart.summary.outcome === 'empty'
+            ? 'No importable content was found for your selection.'
+            : `Ready to import. ${state.settings.categories
+                .map((category) => {
+                  const count = multipart.summary!.manifest.counts[category]
+                  const noun =
+                    category === 'chats'
+                      ? 'conversation'
+                      : category === 'sources'
+                        ? 'source'
+                        : 'note'
+                  return `${count} ${noun}${count === 1 ? '' : 's'}`
+                })
+                .join(', ')}.`
+      : multipart.busy
+        ? processingText
+        : state.busy
+          ? 'Updating your selection…'
+          : ''
+  // Move focus only when the control in this presentation was removed or disabled.
+  // A newer focus, destination, scope or composition always keeps its ownership.
+  useLayoutEffect(() => {
+    if (!state.opened) return
+    const focus = focusedControl.current
+    if (!focus) return
+    const frame = requestAnimationFrame(() => {
+      const live = latestSession.current,
+        root = presentation.current,
+        active = document.activeElement,
+        dialog = root?.closest('[role="dialog"]'),
+        target = root?.querySelector<HTMLElement>('[data-import-focus]') ?? root
+      const unavailable =
+        !focus.element.isConnected || focus.element.matches(':disabled, [aria-disabled="true"]')
+      if (
+        focusedControl.current !== focus ||
+        !unavailable ||
+        (active !== document.body && active !== focus.element) ||
+        !owned.current.opened ||
+        !focus.scope ||
+        !sameScope(focus.scope, live.current.current) ||
+        !sameScope(focus.scope, owned.current.scope) ||
+        JSON.stringify(live.destination) !== focus.destination ||
+        live.closing ||
+        live.navigating ||
+        live.composition.current ||
+        composing.current ||
+        !document.hasFocus() ||
+        document.visibilityState !== 'visible' ||
+        !dialog ||
+        Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"]')).some(
+          (other) => other !== dialog
+        ) ||
+        !target?.isConnected ||
+        target.closest('[hidden], [inert]')
+      )
+        return
+      if (target.matches(':disabled, [aria-disabled="true"]')) root?.focus({ preventScroll: true })
+      else target.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [state.opened, state.screen, state.busy, state.selected, multipart.busy, multipart.phase])
   return (
-    <ImportContext.Provider
-      value={{
-        open,
-        showAnalysis: analysis.show,
-        // Presentation remains reachable while an exact analysis/commit needs recovery.
-        busy: state.busy
-      }}
-    >
+    <ImportContext.Provider value={{ open, showAnalysis, busy: state.busy }}>
       {children}
-      {analysis.progress}
-      {multipart.progress}
+      {success ? (
+        <div className={styles.success} role="status">
+          <p>{success.text}</p>
+          <IconButton
+            label="Dismiss import notice"
+            variant="subtle"
+            size="sm"
+            onClick={() => setSuccess(null)}
+          >
+            <IconX size={16} aria-hidden="true" />
+          </IconButton>
+        </div>
+      ) : null}
       <AppDialog
-        title="Import into project"
+        title={state.screen === 'results' ? 'Ready to import' : 'Import into project'}
         opened={state.opened}
-        onClose={() => {
-          void close()
+        size="38rem"
+        classNames={{
+          content: styles.dialogContent,
+          header: styles.dialogHeader,
+          title: styles.dialogTitle,
+          body: styles.dialogBody
         }}
-        dismissible={!state.busy}
+        onClose={() => {
+          if (state.screen === 'results') {
+            if (multipart.canDismiss()) patch({ screen: 'setup' })
+          } else if (multipart.busy) void multipart.cancel()
+          else void close()
+        }}
+        dismissible={
+          state.screen === 'results'
+            ? !multipart.busy
+            : (multipart.busy || !state.busy) && multipart.phase !== 'stopping'
+        }
         returnFocus={false}
         onExited={exited}
       >
+        <VisuallyHidden role="status" aria-atomic="true">
+          {announcement}
+        </VisuallyHidden>
         <div
-          className={styles.intake}
-          onCompositionStartCapture={() => {
-            composing.current = true
-            composition.onCompositionStartCapture()
-          }}
-          onCompositionEndCapture={() => {
-            composing.current = false
-            composition.onCompositionEndCapture()
+          ref={presentation}
+          className={styles.presentation}
+          tabIndex={-1}
+          onFocusCapture={(event) => {
+            if (event.target instanceof HTMLElement)
+              focusedControl.current = {
+                element: event.target,
+                scope: owned.current.scope,
+                destination: JSON.stringify(latestSession.current.destination)
+              }
           }}
         >
-          <p>
-            Destination: <strong>{state.title}</strong>
-          </p>
-          <details>
-            <summary>Project details and original retention</summary>
-            <p>
-              Project: {state.scope?.projectId}
-              <br />
-              Working copy: {state.scope?.workspaceId}
-            </p>
-            <p>
-              Removing a file from the selection or discarding a selection keeps its original. Save
-              includes retained originals in the portable .collie file.
-            </p>
-          </details>
-          <p>
-            Entire original files are retained in the project, including private or excluded
-            records. Choose only files you want to keep here.
-          </p>
-          <p>
-            JSON (including CSL-JSON), UTF-8 text / Markdown, BibTeX and RIS. Up to 100 retained
-            files, 25 MiB each and 100 MiB per selection. Add files again to select from another
-            folder.
-          </p>
-          {!writable ? (
-            <p role="status">
-              Open a writable project to change this selection. Retained files can still be
-              reviewed.
-            </p>
-          ) : null}
-          {state.busy ? <p role="status">Reading or protecting local import work…</p> : null}
-          {state.issue ? <p role="alert">{state.issue}</p> : null}
-          {state.uncertainPicker || state.pending ? (
-            <section aria-label="Local import recovery">
-              <AppButton
-                variant="default"
-                pending={state.busy}
-                onClick={() => {
-                  void run(recover)
-                }}
-              >
-                Check saved outcome
-              </AppButton>
-              {state.pending ? (
-                <>
+          {state.screen === 'results' && multipart.summary ? (
+            <ImportResults
+              key={multipart.summary.manifest.id}
+              summary={multipart.summary}
+              conversations={multipart.conversations}
+              categories={state.settings.categories}
+              issue={multipart.issue}
+              busy={multipart.busy || multipart.phase === 'complete'}
+              status={resultStatus}
+              blocked={!writable}
+              needsRecovery={needsFindingsRecovery}
+              onCancel={() => {
+                if (multipart.canDismiss()) patch({ screen: 'setup' })
+              }}
+              onAccept={() => void multipart.accept()}
+              onCheck={() => void multipart.check()}
+            />
+          ) : (
+            <div
+              className={styles.intake}
+              onCompositionStartCapture={() => {
+                composing.current = true
+                composition.onCompositionStartCapture()
+              }}
+              onCompositionEndCapture={() => {
+                composing.current = false
+                composition.onCompositionEndCapture()
+              }}
+            >
+              <div className={styles.body}>
+                <p className={styles.subtitle}>{state.title}</p>
+                {multipart.busy ? (
+                  <div
+                    className={styles.processing}
+                    tabIndex={-1}
+                    data-import-focus
+                    aria-label={processingText}
+                  >
+                    {reducedMotion ? null : <Loader size="sm" aria-hidden="true" />}
+                    <p>{processingText}</p>
+                  </div>
+                ) : (
+                  <>
+                    <section aria-label="Files">
+                      <div className={styles.fileHeading}>
+                        <strong>Files</strong>
+                        <AppButton
+                          data-autofocus
+                          data-import-focus
+                          variant="light"
+                          size="sm"
+                          disabled={formBlocked}
+                          onClick={() => void addFiles()}
+                        >
+                          Add files
+                        </AppButton>
+                      </div>
+                      <p className={styles.helper}>
+                        JSON, text/Markdown, CSL-JSON, BibTeX and RIS.
+                      </p>
+                      <p className={styles.helper}>
+                        Selected originals are kept in this project, including content you
+                        don&apos;t import.
+                      </p>
+                      {selectedFiles.length ? (
+                        <ul className={styles.files} aria-label="Selected files">
+                          {selectedFiles.map((file) => (
+                            <li key={file.id}>
+                              <div>
+                                <span>{file.originalName}</span>
+                                <small>{bytesLabel(file.bytes)}</small>
+                              </div>
+                              <IconButton
+                                label={`Remove ${file.originalName}`}
+                                variant="subtle"
+                                size="sm"
+                                disabled={formBlocked}
+                                onClick={() =>
+                                  edit({
+                                    selected: owned.current.selected.filter((id) => id !== file.id),
+                                    issue: ''
+                                  })
+                                }
+                              >
+                                <IconX size={16} aria-hidden="true" />
+                              </IconButton>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className={styles.empty}>Choose one or more files to import.</p>
+                      )}
+                    </section>
+                    {state.results.some((r) => !['staged', 'duplicate'].includes(r.status)) ? (
+                      <ul className={styles.fileIssues} role="alert">
+                        {state.results
+                          .filter((r) => !['staged', 'duplicate'].includes(r.status))
+                          .map((result, i) => (
+                            <li key={i}>
+                              {result.name}: {pickMessage(result)}
+                            </li>
+                          ))}
+                      </ul>
+                    ) : null}
+                    <fieldset disabled={formBlocked}>
+                      <legend>Import</legend>
+                      <div className={styles.categories}>
+                        {(['chats', 'sources', 'notes'] as const).map((category) => (
+                          <ChoiceField
+                            key={category}
+                            label={categoryLabels[category]}
+                            checked={state.settings.categories.includes(category)}
+                            onChange={(event) => {
+                              const categories = event.currentTarget.checked
+                                ? [...owned.current.settings.categories, category].sort()
+                                : owned.current.settings.categories.filter((c) => c !== category)
+                              edit({
+                                settings: { ...owned.current.settings, categories },
+                                issue: ''
+                              })
+                            }}
+                          />
+                        ))}
+                      </div>
+                      {!state.settings.categories.length && selectedFiles.length ? (
+                        <p className={styles.helper}>Choose at least one type of content.</p>
+                      ) : null}
+                    </fieldset>
+                    <TextareaField
+                      label="Additional instructions (optional)"
+                      placeholder="Anything Collie should focus on or leave out?"
+                      maxLength={IMPORT_LIMITS.instructions}
+                      value={state.settings.instructions}
+                      disabled={formBlocked}
+                      autosize
+                      minRows={2}
+                      maxRows={5}
+                      onChange={(event) =>
+                        edit({
+                          settings: {
+                            ...owned.current.settings,
+                            instructions: event.currentTarget.value
+                          },
+                          issue: ''
+                        })
+                      }
+                    />
+                    <SelectField
+                      label="Model"
+                      value={modelId ?? ''}
+                      disabled={
+                        formBlocked ||
+                        connections.busy ||
+                        connections.statusUnavailable ||
+                        !connections.status?.actions.selectModel
+                      }
+                      data={[
+                        {
+                          value: '',
+                          label:
+                            catalog?.state === 'loading' ? 'Loading models…' : 'Choose a model',
+                          disabled: true
+                        },
+                        ...(catalog?.state === 'loaded'
+                          ? catalog.models.map((m) => ({ value: m.id, label: m.label }))
+                          : [])
+                      ]}
+                      onChange={(event) => {
+                        const connectionId = connections.status?.activeConnectionId
+                        if (
+                          !owned.current.busy &&
+                          !owned.current.pending &&
+                          !owned.current.uncertainPicker &&
+                          multipart.canEdit() &&
+                          connectionId &&
+                          catalog?.state === 'loaded'
+                        )
+                          void connections.selectModel(
+                            {
+                              connectionId,
+                              catalogRevision: catalog.revision,
+                              modelId: event.currentTarget.value
+                            },
+                            event.currentTarget
+                          )
+                      }}
+                    />
+                    {!ready ? (
+                      <div className={styles.connection}>
+                        <p className={styles.helper} role="status">
+                          {connections.busy || catalog?.state === 'loading'
+                            ? 'Setting up ChatGPT…'
+                            : !connected
+                              ? 'Connect ChatGPT to import these files.'
+                              : !modelReady
+                                ? 'Choose an available model to continue.'
+                                : 'ChatGPT needs attention before importing.'}
+                        </p>
+                        <AppButton
+                          variant="subtle"
+                          size="sm"
+                          disabled={
+                            state.busy ||
+                            !!state.pending ||
+                            state.uncertainPicker ||
+                            multipart.locked
+                          }
+                          onClick={() => void close(true)}
+                        >
+                          {connected ? 'Manage ChatGPT' : 'Connect ChatGPT'}
+                        </AppButton>
+                      </div>
+                    ) : null}
+                    {showFindingsRecovery ? (
+                      <div className={styles.recovery}>
+                        {checkFindings ? (
+                          <AppButton
+                            variant="light"
+                            size="sm"
+                            disabled={state.busy || multipart.busy}
+                            onClick={() => void multipart.check()}
+                          >
+                            Check status
+                          </AppButton>
+                        ) : null}
+                        {viewFindings ? (
+                          <AppButton
+                            variant="light"
+                            size="sm"
+                            disabled={state.busy || !multipart.canEdit()}
+                            onClick={() => void multipart.viewResults()}
+                          >
+                            View available results
+                          </AppButton>
+                        ) : null}
+                        {continueFindings ? (
+                          <AppButton
+                            variant="light"
+                            size="sm"
+                            disabled={formBlocked || !ready}
+                            onClick={() => void submit(true)}
+                          >
+                            Continue analysis
+                          </AppButton>
+                        ) : null}
+                        {startNewVisible ? (
+                          <AppButton
+                            variant="subtle"
+                            size="sm"
+                            disabled={blocked || !multipart.canEdit()}
+                            onClick={() => void startNew()}
+                          >
+                            Start new import
+                          </AppButton>
+                        ) : null}
+                        {retainedOutcome ? (
+                          <AppButton
+                            variant="subtle"
+                            size="sm"
+                            disabled={state.busy || multipart.busy}
+                            onClick={() => void multipart.protect(true)}
+                          >
+                            Finish recovery
+                          </AppButton>
+                        ) : null}
+                        {localProtection ? (
+                          <AppButton
+                            variant="subtle"
+                            size="sm"
+                            disabled={state.busy || multipart.busy}
+                            onClick={() => void multipart.protect()}
+                          >
+                            Try saving again
+                          </AppButton>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {state.pending || state.uncertainPicker ? (
+                      <div className={styles.recovery}>
+                        <AppButton
+                          variant="light"
+                          size="sm"
+                          pending={state.busy}
+                          onClick={() => void run(recover)}
+                        >
+                          Check status
+                        </AppButton>
+                        {state.pending ? (
+                          <AppButton
+                            variant="subtle"
+                            size="sm"
+                            disabled={state.busy || !writable}
+                            onClick={() => void resolve('retry')}
+                          >
+                            Try saving again
+                          </AppButton>
+                        ) : null}
+                        {state.pending ? (
+                          <AppButton
+                            variant="subtle"
+                            size="sm"
+                            disabled={state.busy}
+                            onClick={() => void resolve('abandon')}
+                          >
+                            {state.pending.action === 'add-file'
+                              ? 'Remove failed file'
+                              : 'Restore saved choices'}
+                          </AppButton>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <p className={styles.helper}>
+                      Submit sends the selected file content and your instructions to your connected
+                      ChatGPT account. Large selections may use several requests.
+                    </p>
+                  </>
+                )}
+                {state.busy ? <p className={styles.helper}>Updating your selection…</p> : null}
+                {!writable ? (
+                  <p role="status">Open a writable project to continue importing.</p>
+                ) : null}
+                {notice ? (
+                  <p role="alert" className={styles.issue}>
+                    {notice}
+                  </p>
+                ) : null}
+              </div>
+              <footer className={styles.footer}>
+                <div className={styles.footerActions}>
                   <AppButton
                     variant="default"
-                    disabled={state.busy || !writable}
+                    disabled={(!multipart.busy && state.busy) || multipart.phase === 'stopping'}
                     onClick={() => {
-                      void resolve('retry')
+                      if (multipart.busy) void multipart.cancel()
+                      else void close()
                     }}
                   >
-                    Retry local protection
+                    {multipart.phase === 'stopping' ? 'Stopping…' : 'Cancel'}
                   </AppButton>
-                  <AppButton
-                    variant="subtle"
-                    disabled={state.busy}
-                    onClick={() => {
-                      void resolve('abandon')
-                    }}
-                  >
-                    {state.pending.action === 'add-file'
-                      ? 'Abandon failed file'
-                      : 'Restore saved choices'}
-                  </AppButton>
-                </>
-              ) : null}
-            </section>
-          ) : null}
-          {state.batches.length ? (
-            <SelectField
-              label="Saved selections"
-              value={state.revision?.batchId ?? ''}
-              disabled={
-                state.busy ||
-                analysis.busy ||
-                multipart.locked ||
-                dirty(state) ||
-                !!state.pending ||
-                state.uncertainPicker
-              }
-              data={[
-                { value: '', label: 'Choose a saved selection' },
-                ...(state.revision && !state.batches.some((b) => b.id === state.revision!.batchId)
-                  ? [
-                      {
-                        value: state.revision.batchId,
-                        label: `Current selection · ${state.selected.length} selected · ${state.revision.batchId.slice(0, 8)}`
+                  {!multipart.busy ? (
+                    <AppButton
+                      disabled={
+                        formBlocked ||
+                        !ready ||
+                        !selectedFiles.length ||
+                        !state.settings.categories.length
                       }
-                    ]
-                  : []),
-                ...state.batches.map((b) => ({
-                  value: b.id,
-                  label: `${new Date(b.createdAt).toLocaleString()} · ${b.selectedFiles} selected · ${b.phase} · ${b.id.slice(0, 8)}`
-                }))
-              ]}
-              onChange={(event) => {
-                const id = event.currentTarget.value
-                if (id)
-                  void run(async () => {
-                    patch({ results: [] })
-                    await loadBatch(id)
-                  })
-              }}
-            />
-          ) : null}
-          {state.nextOffset !== null ? (
-            <AppButton
-              variant="subtle"
-              disabled={state.busy}
-              onClick={() => {
-                void run(async () => {
-                  await loadList(owned.current.nextOffset!)
-                })
-              }}
-            >
-              More saved selections
-            </AppButton>
-          ) : null}
-          <div className={styles.actions}>
-            <AppButton
-              variant="default"
-              disabled={blocked || analysis.busy || multipart.locked}
-              onClick={() => {
-                void addFiles()
-              }}
-            >
-              {state.files.length ? 'Add files…' : 'Select files…'}
-            </AppButton>
-            {state.revision ? (
-              <AppButton
-                variant="subtle"
-                disabled={
-                  state.busy ||
-                  analysis.busy ||
-                  multipart.locked ||
-                  !!state.pending ||
-                  state.uncertainPicker ||
-                  dirty(state) ||
-                  !writable
-                }
-                onClick={() => {
-                  void run(() =>
-                    write({
-                      version: 1,
-                      action: 'create',
-                      operationId: crypto.randomUUID(),
-                      batchId: crypto.randomUUID(),
-                      settings: { categories: [], instructions: '' }
-                    })
-                  )
-                }}
-              >
-                New selection
-              </AppButton>
-            ) : null}
-          </div>
-          {state.revision ? (
-            <p>
-              {state.selected.length} selected · {bytesLabel(selectedBytes)} · {state.files.length}{' '}
-              originals retained
-              {completed
-                ? ' · Import completed. Open its report below.'
-                : state.revision.phase === 'discarded'
-                  ? ' · This selection is discarded.'
-                  : ''}
-            </p>
-          ) : null}
-          {state.files.length ? (
-            <ul className={styles.files} aria-label="Retained import files">
-              {state.files.map((file) => (
-                <li key={file.id}>
-                  <ChoiceField
-                    label={file.originalName}
-                    checked={state.selected.includes(file.id)}
-                    disabled={blocked || analysis.busy || multipart.locked}
-                    onChange={(event) => {
-                      const selectedFileIds = event.currentTarget.checked
-                        ? [...owned.current.selected, file.id]
-                        : owned.current.selected.filter((id) => id !== file.id)
-                      void run(() =>
-                        write({
-                          version: 1,
-                          action: 'configure',
-                          operationId: crypto.randomUUID(),
-                          batchId: state.revision!.batchId,
-                          expectedRevision: state.revision!.id,
-                          settings: structuredClone(owned.current.settings),
-                          selectedFileIds
-                        })
-                      )
-                    }}
-                  />
-                  <span>
-                    {bytesLabel(file.bytes)} · {file.mediaType} · Protected original
-                    {state.revision?.graphId
-                      ? ' · Local inventory available'
-                      : ' · Not yet inspected'}
-                    {!state.selected.includes(file.id) ? ' · Removed from selection' : ''}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {state.results.length ? (
-            <ul aria-label="Last file selection results">
-              {state.results.map((result, i) => (
-                <li key={i}>
-                  {result.name}: {pickMessage(result)}
-                  {result.bytes !== null ? ` (${bytesLabel(result.bytes)})` : ''}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <fieldset disabled={blocked || analysis.busy || multipart.locked}>
-            <legend>What do these files contain?</legend>
-            {(['chats', 'sources', 'notes'] as const).map((category) => (
-              <ChoiceField
-                key={category}
-                label={categoryLabels[category]}
-                checked={state.settings.categories.includes(category)}
-                onChange={(event) => {
-                  const categories = event.currentTarget.checked
-                    ? [...owned.current.settings.categories, category].sort()
-                    : owned.current.settings.categories.filter((c) => c !== category)
-                  patch({ settings: { ...owned.current.settings, categories } })
-                }}
-              />
-            ))}
-          </fieldset>
-          <TextareaField
-            label="Instructions (optional)"
-            description="Guidance for later analysis; it cannot grant access to other files."
-            maxLength={IMPORT_LIMITS.instructions}
-            value={state.settings.instructions}
-            disabled={blocked || analysis.busy || multipart.locked}
-            autosize
-            minRows={2}
-            maxRows={6}
-            onChange={(event) =>
-              patch({
-                settings: { ...owned.current.settings, instructions: event.currentTarget.value }
-              })
-            }
-          />
-          <div className={styles.actions}>
-            <AppButton
-              variant="default"
-              disabled={state.busy || !!state.pending || state.uncertainPicker}
-              onClick={() => {
-                void close()
-              }}
-            >
-              Keep for later
-            </AppButton>
-            {dirty(state) && !state.pending && state.revision ? (
-              <AppButton
-                variant="subtle"
-                disabled={state.busy}
-                onClick={() =>
-                  patch({
-                    settings: structuredClone(state.revision!.settings),
-                    selected: [...state.revision!.selectedFileIds],
-                    issue: ''
-                  })
-                }
-              >
-                Restore saved choices
-              </AppButton>
-            ) : null}
-            {state.revision?.phase === 'preparing' ? (
-              <AppButton
-                variant="subtle"
-                disabled={blocked || analysis.busy || multipart.locked || dirty(state)}
-                onClick={() => {
-                  void run(() =>
-                    write({
-                      version: 1,
-                      action: 'discard',
-                      operationId: crypto.randomUUID(),
-                      batchId: state.revision!.batchId,
-                      expectedRevision: state.revision!.id
-                    })
-                  )
-                }}
-              >
-                Discard selection (keep originals)
-              </AppButton>
-            ) : null}
-          </div>
-          <AppButton
-            variant="default"
-            disabled={blocked || analysis.busy || multipart.locked || state.selected.length === 0}
-            onClick={() => {
-              void inspectFiles()
-            }}
-          >
-            Inspect selected files locally
-          </AppButton>
-          <p>
-            Inspect structure and original text locally before reviewing what to share with ChatGPT.
-          </p>
-          {state.revision?.graphId && state.scope ? (
-            <ImportGraphPreview
-              key={state.revision.graphId}
-              scope={state.scope}
-              batchId={state.revision.batchId}
-              graphId={state.revision.graphId}
-              files={state.files}
-              disabled={blocked || analysis.busy || multipart.locked || dirty(state)}
-            />
-          ) : null}
-          <details>
-            <summary>ChatGPT and analysis availability</summary>
-            <p>
-              Use your own ChatGPT account for analysis. Review and final import remain separate
-              steps; no analysis result automatically adds content to the project.
-            </p>
-            <AppButton
-              variant="subtle"
-              disabled={state.busy || !!state.pending || state.uncertainPicker}
-              onClick={() => {
-                void close(true)
-              }}
-            >
-              Manage ChatGPT
-            </AppButton>
-            <p>
-              Use your own account and choose a model in the shared connection dialog. Connecting or
-              choosing a model does not analyze these files.
-            </p>
-          </details>
-          {multipart.controls}
-          <details>
-            <summary>Earlier single-request analysis</summary>
-            {analysis.controls}
-          </details>
+                      onClick={() =>
+                        void submit(
+                          !dirty(state) &&
+                            sameFindings &&
+                            !multipart.legacyAttemptId &&
+                            !!multipart.page?.remaining &&
+                            multipart.phase === 'paused'
+                        )
+                      }
+                    >
+                      {!dirty(state) &&
+                      sameFindings &&
+                      !multipart.legacyAttemptId &&
+                      multipart.page?.remaining &&
+                      multipart.phase === 'paused'
+                        ? 'Continue analysis'
+                        : 'Submit'}
+                    </AppButton>
+                  ) : null}
+                </div>
+              </footer>
+            </div>
+          )}
         </div>
       </AppDialog>
     </ImportContext.Provider>
   )
 }
 function pickMessage(result: ImportPickResult): string {
-  if (result.status === 'staged') return 'readable UTF-8 original protected locally'
-  if (result.status === 'duplicate')
-    return 'identical bytes already retained; no second copy added. Reselect its retained entry if removed'
-  if (result.status === 'unsupported')
-    return 'unsupported format; choose JSON, text, Markdown, BibTeX or RIS'
-  if (result.status === 'not-staged')
-    return 'not staged after an earlier interruption; select this file again after recovery'
-  if (result.code === 'VALIDATION')
-    return 'not a supported readable UTF-8 regular file (or its name is unsupported)'
+  if (result.status === 'unsupported') return 'Choose JSON, text, Markdown, BibTeX or RIS.'
+  if (result.status === 'not-staged') return 'Choose this file again after checking import status.'
+  if (result.code === 'VALIDATION') return 'This file could not be read as supported UTF-8 text.'
   const failure = projectFailure('', result.code ?? 'UNAVAILABLE')
-  return failure.ok ? 'The file could not be staged.' : failure.error.message
+  return failure.ok ? 'The file could not be added.' : failure.error.message
+}
+
+function importNotice(counts: ReviewCounts): string {
+  const label = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
+  const added = [
+    counts.chats ? label(counts.chats, 'conversation') : '',
+    counts.newSources ? label(counts.newSources, 'new source') : '',
+    counts.notes ? label(counts.notes, 'note') : ''
+  ].filter(Boolean)
+  const imported = added.length ? `Imported ${added.join(', ')}.` : ''
+  const reused = counts.reusedSources
+    ? `Linked ${label(counts.reusedSources, 'source')} already in Research.`
+    : ''
+  return [imported, reused].filter(Boolean).join(' ')
 }

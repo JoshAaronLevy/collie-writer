@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Modal } from '@mantine/core'
+import { Modal, type ModalProps } from '@mantine/core'
 import { useVisualPreferences } from '../../theme/visualPreferencesContext'
 
 export function AppDialog({
@@ -9,7 +9,9 @@ export function AppDialog({
   children,
   dismissible = true,
   returnFocus = true,
-  onExited
+  onExited,
+  size = 'lg',
+  classNames
 }: {
   opened: boolean
   onClose: () => void
@@ -18,6 +20,8 @@ export function AppDialog({
   dismissible?: boolean
   returnFocus?: boolean
   onExited?: () => void
+  size?: ModalProps['size']
+  classNames?: ModalProps['classNames']
 }): React.JSX.Element {
   const { reducedMotion } = useVisualPreferences()
   return (
@@ -25,7 +29,8 @@ export function AppDialog({
       opened={opened}
       onClose={onClose}
       title={title}
-      size="lg"
+      size={size}
+      classNames={classNames}
       closeButtonProps={{ 'aria-label': `Close ${title.toLowerCase()}` }}
       closeOnEscape={dismissible}
       closeOnClickOutside={dismissible}

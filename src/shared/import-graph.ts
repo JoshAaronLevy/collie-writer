@@ -11,7 +11,6 @@ export const GRAPH_LIMITS = {
   relations: 100_000,
   text: 1_000_000,
   fragment: 16_000,
-  preview: 8_000,
   pageUnits: 100_000,
   pages: 4000
 } as const
@@ -119,42 +118,6 @@ export type GraphPageDescriptor = {
   recordIds: string[]
   kinds: Record<GraphRecord['kind'], number>
 }
-export type GraphReadRequest = {
-  action: 'graph-read'
-  batchId: string
-  graphId: string
-  view: 'records' | 'relations'
-  offset: number
-  filter: 'all' | GraphRecord['kind']
-  recordId: string | null
-}
-export type GraphTextRequest = {
-  action: 'graph-text'
-  batchId: string
-  graphId: string
-  recordId: string
-  textId: string
-  offset: number
-}
-export type GraphValue =
-  | {
-      type: 'graph'
-      graph: ImportGraph
-      records: GraphRecord[]
-      relations: GraphRelation[]
-      total: number
-      nextOffset: number | null
-    }
-  | {
-      type: 'graph-text'
-      graphId: string
-      recordId: string
-      textId: string
-      text: string
-      offset: number
-      total: number
-      nextOffset: number | null
-    }
 const uint = (v: unknown, max: number): v is number =>
   Number.isSafeInteger(v) && Number(v) >= 0 && Number(v) <= max
 const str = (v: unknown, max = 4000): v is string => typeof v === 'string' && v.length <= max
@@ -399,64 +362,5 @@ export function isGraphPageDescriptor(v: unknown): v is GraphPageDescriptor {
     exact(v.kinds, [...graphKinds]) &&
     graphKinds.every((k) => uint((v.kinds as Record<string, unknown>)[k], IMPORT_LIMITS.page)) &&
     Object.values(v.kinds).reduce<number>((n, v) => n + Number(v), 0) === v.records
-  )
-}
-export function isGraphReadRequest(v: Record<string, unknown>): boolean {
-  const base = ['projectId', 'workspaceId', 'action', 'batchId', 'graphId']
-  return (
-    isId(v.batchId) &&
-    isId(v.graphId) &&
-    ((v.action === 'graph-read' &&
-      exact(v, [...base, 'view', 'offset', 'filter', 'recordId']) &&
-      ['records', 'relations'].includes(String(v.view)) &&
-      uint(v.offset, GRAPH_LIMITS.relations) &&
-      ['all', ...graphKinds].includes(String(v.filter)) &&
-      idOrNull(v.recordId) &&
-      (v.recordId === null || (v.view === 'records' && v.offset === 0 && v.filter === 'all'))) ||
-      (v.action === 'graph-text' &&
-        exact(v, [...base, 'recordId', 'textId', 'offset']) &&
-        isId(v.recordId) &&
-        isId(v.textId) &&
-        uint(v.offset, GRAPH_LIMITS.string)))
-  )
-}
-export function isGraphValue(v: Record<string, unknown>): v is GraphValue {
-  if (v.type === 'graph-text')
-    return (
-      exact(v, [
-        'type',
-        'graphId',
-        'recordId',
-        'textId',
-        'text',
-        'offset',
-        'total',
-        'nextOffset'
-      ]) &&
-      [v.graphId, v.recordId, v.textId].every(isId) &&
-      str(v.text, GRAPH_LIMITS.preview) &&
-      uint(v.offset, GRAPH_LIMITS.string) &&
-      uint(v.total, GRAPH_LIMITS.string) &&
-      v.offset + v.text.length <= v.total &&
-      (v.nextOffset === null
-        ? v.offset + v.text.length === v.total
-        : uint(v.nextOffset, GRAPH_LIMITS.string) &&
-          v.nextOffset === v.offset + v.text.length &&
-          v.nextOffset < v.total &&
-          v.text.length > 0)
-    )
-  return (
-    v.type === 'graph' &&
-    exact(v, ['type', 'graph', 'records', 'relations', 'total', 'nextOffset']) &&
-    isImportGraph(v.graph) &&
-    Array.isArray(v.records) &&
-    v.records.length <= IMPORT_LIMITS.page &&
-    v.records.every(isGraphRecord) &&
-    Array.isArray(v.relations) &&
-    v.relations.length <= IMPORT_LIMITS.page &&
-    v.relations.every(isGraphRelation) &&
-    uint(v.total, GRAPH_LIMITS.relations) &&
-    (v.nextOffset === null || uint(v.nextOffset, GRAPH_LIMITS.relations)) &&
-    JSON.stringify(v).length <= GRAPH_LIMITS.pageUnits
   )
 }

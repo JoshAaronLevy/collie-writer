@@ -16,7 +16,7 @@ import { requestDigest } from '../storage/digest'
 import { candidateRows, fromCsl, normalizeMetadata, parseBibliographyRows } from './sources'
 import { readGraph, readImportBlob, parseGraphPage } from './import-graphs'
 import { parseInputJson, valueAt } from './import-readers/json'
-import { graphId, textBoundary } from './import-readers/graph'
+import { graphId } from './import-readers/graph'
 import { OriginalTranscriptText } from './conversation-transcript'
 import { readContentOrigins } from './imported-provenance'
 
@@ -28,7 +28,6 @@ export type PreparedContent = {
   relations: GraphRelation[]
   rows: ContentCandidate[]
   notes: Map<string, DocumentPayload>
-  counts: Extract<ImportContentValue, { type: 'content-preview' }>['counts']
 }
 const corrupt = (): never => {
   throw new ProjectError('CORRUPT_PROJECT')
@@ -180,26 +179,14 @@ export async function prepareImportContent(
     records.push(...parsed.records)
     relations.push(...parsed.relations)
   }
-  const references = new Map(
-    relations.filter((r) => r.kind === 'reference' && r.to).map((r) => [r.to!, r])
-  )
   const original = new OriginalFields(ctx, batchId),
     texts = new OriginalTranscriptText(ctx, batchId),
     notes = new Map<string, DocumentPayload>(),
     rows: ContentCandidate[] = []
-  const groups = new Map<string, ContentCandidate[]>(),
-    counts = { chats: 0, sources: 0, notes: 0, occurrences: 0, retained: 0, needsReview: 0 }
-  counts.chats = settings.categories.includes('chats')
-    ? new Set(
-        records
-          .filter((r) => r.kind === 'conversation' && r.eligible && r.disposition === 'candidate')
-          .map((r) => r.identityId)
-      ).size
-    : 0
+  const groups = new Map<string, ContentCandidate[]>()
   for (const r of records) {
     if (r.kind !== 'source' && r.kind !== 'note') continue
-    const ref = references.get(r.id),
-      losses = [...r.issues]
+    const losses = [...r.issues]
     const row: ContentCandidate = {
       recordId: r.id,
       kind: r.kind,
@@ -208,18 +195,11 @@ export async function prepareImportContent(
       group: null,
       metadata: null,
       candidates: [],
-      decision: ref?.decision ?? null,
-      grade: ref?.grade ?? null,
-      originatingRecordId: ref?.from ?? null,
       authorship: 'unspecified',
       labels: [],
-      losses,
-      preview: '',
-      textUnits: 0,
-      locator: r.locator
+      losses
     }
     if (r.kind === 'source') {
-      counts.occurrences++
       // Internal/unsupported records are not interpreted as usable sources.
       if (r.disposition !== 'internal' && r.disposition !== 'unsupported') {
         const { value, file } = await original.read(r)
@@ -261,8 +241,6 @@ export async function prepareImportContent(
         const text = await texts.read(r),
           body = importedNoteBody(r, text),
           { value } = await original.read(r)
-        row.textUnits = text.length
-        row.preview = text.slice(0, textBoundary(text, Math.min(text.length, 1500)))
         losses.push(
           'Imported text is preserved literally. Markdown, HTML, tables, images and embedded citations are not converted to rich structures or fetched.'
         )
@@ -321,7 +299,6 @@ export async function prepareImportContent(
         ) {
           row.eligible = true
           notes.set(r.id, body)
-          counts.notes++
         }
         if (!body)
           losses.push(
@@ -332,8 +309,6 @@ export async function prepareImportContent(
           'Unsupported or oversized note remains in the original without a note destination.'
         )
     }
-    if (!row.eligible) counts.retained++
-    if (!row.eligible && r.eligible) counts.needsReview++
     rows.push(row)
   }
   // Join shared strong identifiers across representations (a DOI-bearing row may also share
@@ -380,14 +355,12 @@ export async function prepareImportContent(
     })
     for (const row of group) row.group = id
     if (new Set(group.map((r) => requestDigest(r.metadata))).size > 1) {
-      counts.needsReview++
       for (const r of group)
         r.losses.push(
           'Same identifier has different metadata in this batch. Choose the destination metadata explicitly during review; no merge is performed.'
         )
     }
   }
-  counts.sources = groups.size
   for (const r of rows) {
     const all = [...new Set(r.losses)],
       selected: string[] = []
@@ -412,31 +385,11 @@ export async function prepareImportContent(
     ).id !== head
   )
     throw new ProjectError('STALE_REVISION')
-  return { manifest, head, records, relations, rows, notes, counts }
+  return { manifest, head, records, relations, rows, notes }
 }
 export async function importContentCommand(
   ctx: ContentContext,
   input: ImportContentRequest
 ): Promise<ImportContentValue> {
-  if (input.action === 'content-origins') return readContentOrigins(ctx.db, ctx.projectId, input)
-  const prepared = await prepareImportContent(ctx, input.batchId, input.graphId),
-    rows: ContentCandidate[] = []
-  let i = input.offset,
-    size = 0
-  while (i < prepared.rows.length && rows.length < 10) {
-    const row = prepared.rows[i],
-      length = JSON.stringify(row).length
-    if (size + length > 90000 && rows.length) break
-    rows.push(row)
-    size += length
-    i++
-  }
-  return {
-    type: 'content-preview',
-    graphId: input.graphId,
-    projectHead: prepared.head,
-    rows,
-    counts: prepared.counts,
-    nextOffset: i < prepared.rows.length ? i : null
-  }
+  return readContentOrigins(ctx.db, ctx.projectId, input)
 }

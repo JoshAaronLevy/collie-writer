@@ -1,4 +1,11 @@
 import {
+  automaticChoices,
+  compatibleSourceMetadata,
+  outsideSelectionReason,
+  sourceKeys
+} from './import-automatic'
+import { OriginalTranscriptText } from './conversation-transcript'
+import {
   acceptedIdentities,
   importIdentity,
   alreadyImportedReason,
@@ -14,6 +21,8 @@ import {
   isReviewRequest,
   isConfirmationManifest,
   isConfirmationEntry,
+  type AutomaticReviewRequest,
+  type ImportSummary,
   type ImportReview,
   type ReviewChoice,
   type ReviewRevision,
@@ -41,6 +50,12 @@ import { analysisReservedBytes } from './import-analysis-budget'
 import { requireSpace } from './streams'
 import { LIMITS } from './manifest'
 import type { AnalysisContext } from './import-analysis-capture'
+import {
+  isAnalysisCapture,
+  isAnalysisRun,
+  type AnalysisCapture,
+  type AnalysisRun
+} from '../../shared/import-analysis'
 import { hasControlCharacters } from '../../shared/control-characters'
 
 const corrupt = (): never => {
@@ -152,13 +167,88 @@ function results(
       return { partId, attemptId, digest: requestDigest({ capture: a.capture, run: a.run }) }
     })
 }
+/** A v1 result remains the original protected attempt, never a fabricated multipart attempt. */
+function legacyResult(
+  db: Database.Database,
+  p: string,
+  attemptId: string
+): { capture: AnalysisCapture; run: AnalysisRun } {
+  const run = decode(
+      db
+        .prepare('SELECT body FROM import_analysis_runs WHERE project_id=? AND id=?')
+        .get(p, attemptId),
+      isAnalysisRun,
+      1100000
+    ),
+    capture = decode(
+      db
+        .prepare('SELECT body FROM import_analysis_captures WHERE project_id=? AND id=?')
+        .get(p, run.captureId),
+      isAnalysisCapture,
+      1100000
+    )
+  if (
+    capture.version !== 1 ||
+    run.version !== 1 ||
+    run.validation !== 'valid' ||
+    !run.proposal ||
+    run.captureId !== capture.id ||
+    run.proposal.captureDigest !== capture.packet.captureDigest
+  )
+    return corrupt()
+  return { capture, run }
+}
+function reviewResults(
+  db: Database.Database,
+  p: string,
+  review: ImportReview
+): ImportReview['results'] {
+  if (review.version === 1) return results(db, p, review.planId, review.proposalId)
+  const entry = legacyResult(db, p, review.legacyAttemptId)
+  if (
+    entry.capture.packet.batchId !== review.batchId ||
+    entry.capture.packet.graphId !== review.graphId ||
+    entry.capture.packet.graphDigest !== review.graphDigest
+  )
+    return corrupt()
+  return [
+    { partId: entry.capture.packet.partId, attemptId: entry.run.id, digest: requestDigest(entry) }
+  ]
+}
+function reviewAttempts(
+  db: Database.Database,
+  p: string,
+  review: ImportReview
+): Array<{ capture: AnalysisCapture; run: AnalysisRun }> {
+  return review.version === 2
+    ? [legacyResult(db, p, review.legacyAttemptId)]
+    : attempts(db, p, review.planId)
+}
+function reviewIdentity(review: ImportReview): string {
+  return graphId(
+    review.version === 2
+      ? ['import-review-legacy-v2', review.planId, review.legacyAttemptId]
+      : ['import-review-v1', review.planId, review.proposalId]
+  )
+}
+function manualChoices(
+  db: Database.Database,
+  p: string,
+  reviewId: string,
+  revisionId?: string
+): ReviewChoice[] {
+  return [...reviewChoices(db, p, reviewId, revisionId).choices.values()]
+    .filter((c) => c.state !== 'undecided' && !c.automatic && c.reason !== alreadyImportedReason)
+    .sort((a, b) => a.itemId.localeCompare(b.itemId))
+}
 function current(ctx: AnalysisContext, review: ImportReview): boolean {
   const rev = currentImport(ctx, review.batchId)
   return (
     !importBatchAccepted(ctx.db, ctx.projectId, review.batchId) &&
     rev.phase === 'preparing' &&
     rev.graphId === review.graphId &&
-    selections(ctx.db, ctx.projectId, review.planId).id === review.proposalId
+    (review.version === 2 ||
+      selections(ctx.db, ctx.projectId, review.planId).id === review.proposalId)
   )
 }
 function source(
@@ -201,14 +291,38 @@ function source(
   }
   return null
 }
-function identifiedRecords(db: Database.Database, p: string, review: ImportReview): string[] {
-  const runs = new Map(attempts(db, p, review.planId).map((a) => [a.run.id, a.run])),
+function identifiedRecords(
+  db: Database.Database,
+  p: string,
+  review: ImportReview,
+  automatic = false
+): string[] {
+  if (review.version === 2) {
+    const { capture, run } = legacyResult(db, p, review.legacyAttemptId)
+    if (capture.version !== 1 || run.version !== 1 || !run.proposal) return corrupt()
+    const covered = new Set(
+        run.proposal.coverage.filter((c) => c.outcome === 'identified').map((c) => c.fragmentId)
+      ),
+      entities = new Set(run.proposal.entities.flatMap((e) => e.recordRefs))
+    return capture.packet.fragments
+      .filter((f) => covered.has(f.id) && (!automatic || entities.has(f.record.id)))
+      .map((f) => f.record.id)
+  }
+  const runs = new Map(reviewAttempts(db, p, review).map((a) => [a.run.id, a.run])),
     covered = new Set<string>(),
     totals = new Map<string, { all: number; identified: number }>()
   for (const result of review.results) {
     const run = runs.get(result.attemptId)
     if (!run || run.version !== 2 || !run.proposal || run.validation !== 'valid') return corrupt()
-    for (const c of run.proposal.coverage) if (c.outcome === 'identified') covered.add(c.fragmentId)
+    const entityIds = new Set(run.proposal.entities.map((e) => e.candidateId))
+    for (const c of run.proposal.coverage)
+      if (c.outcome === 'identified') {
+        if (!automatic) covered.add(c.fragmentId)
+        else
+          for (const f of readPart(db, p, review.planId, result.partId).fragments)
+            if (f.id === c.fragmentId && f.kind !== 'relation' && entityIds.has(f.recordId))
+              covered.add(f.id)
+      }
   }
   const plan = readPlan(db, p, review.planId)
   for (const id of plan.parts)
@@ -218,17 +332,40 @@ function identifiedRecords(db: Database.Database, p: string, review: ImportRevie
       if (covered.has(f.id)) count.identified++
       totals.set(f.recordId, count)
     }
-  return [...totals].filter(([, c]) => c.all === c.identified).map(([id]) => id)
+  return [...totals]
+    .filter(([, c]) => (automatic ? c.identified > 0 : c.all === c.identified))
+    .map(([id]) => id)
 }
-function blockedPartRecords(db: Database.Database, p: string, review: ImportReview): string[] {
-  const runs = new Map(attempts(db, p, review.planId).map((a) => [a.run.id, a.run])),
+function blockedPartRecords(
+  db: Database.Database,
+  p: string,
+  review: ImportReview,
+  automatic = false
+): string[] {
+  const runs = new Map(reviewAttempts(db, p, review).map((a) => [a.run.id, a.run])),
     blocked = new Set<string>()
   for (const result of review.results) {
     const run = runs.get(result.attemptId)
     if (!run?.proposal) return corrupt()
-    if (run.proposal.issues.some((i) => i.blocking && !i.recordRefs.length))
-      for (const f of readPart(db, p, review.planId, result.partId).fragments)
-        blocked.add(f.recordId)
+    if (automatic)
+      for (const issue of run.proposal.issues)
+        if (issue.blocking && !['missing-metadata', 'conversion-loss'].includes(issue.code))
+          for (const id of issue.recordRefs) blocked.add(id)
+    if (
+      run.proposal.issues.some(
+        (i) =>
+          i.blocking &&
+          !i.recordRefs.length &&
+          (!automatic || !['missing-metadata', 'conversion-loss'].includes(i.code))
+      )
+    )
+      if (review.version === 2) {
+        const entry = legacyResult(db, p, review.legacyAttemptId)
+        if (entry.capture.version !== 1) return corrupt()
+        for (const f of entry.capture.packet.fragments) blocked.add(f.record.id)
+      } else
+        for (const f of readPart(db, p, review.planId, result.partId).fragments)
+          blocked.add(f.recordId)
   }
   return [...blocked]
 }
@@ -283,7 +420,7 @@ function seed(g: Group, content: Map<string, ContentCandidate>): ReviewChoice {
     acknowledged: false
   }
 }
-type Prepared = {
+export type Prepared = {
   review: ImportReview
   content: PreparedContent
   groups: Group[]
@@ -294,9 +431,8 @@ type Prepared = {
   children: Map<string, string[]>
   contentRows: Map<string, ContentCandidate>
   identified: Set<string>
-  suggestions: Map<string, string[]>
-  issues: Map<string, string[]>
-  globalIssues: string[]
+  recognized: Set<string>
+  automaticBlocked: Set<string>
   blockedRecords: Set<string>
   revisionId: string | null
   manifestId: string | null
@@ -310,55 +446,33 @@ type Prepared = {
 }
 export async function prepareImportReview(
   ctx: AnalysisContext,
-  review: ImportReview
+  review: ImportReview,
+  override?: Map<string, ReviewChoice>
 ): Promise<Prepared> {
   const content = await prepareImportContent(ctx, review.batchId, review.graphId),
     gs = groups(content.records),
     contentRows = new Map(content.rows.map((c) => [c.recordId, c])),
     records = new Map(content.records.map((r) => [r.id, r])),
     selection = reviewChoices(ctx.db, ctx.projectId, review.id),
-    identified = new Set<string>(),
-    suggestions = new Map<string, string[]>(),
-    issues = new Map<string, string[]>(),
-    globalIssues: string[] = []
-  if (
-    requestDigest(review.results) !==
-    requestDigest(results(ctx.db, ctx.projectId, review.planId, review.proposalId))
-  )
+    identified = new Set(identifiedRecords(ctx.db, ctx.projectId, review)),
+    issues = new Map<string, string[]>()
+  if (requestDigest(review.results) !== requestDigest(reviewResults(ctx.db, ctx.projectId, review)))
     return corrupt()
-  const runMap = new Map(attempts(ctx.db, ctx.projectId, review.planId).map((a) => [a.run.id, a])),
-    coverage = new Map<string, boolean>()
+  const runMap = new Map(reviewAttempts(ctx.db, ctx.projectId, review).map((a) => [a.run.id, a]))
   for (const result of review.results) {
     const entry = runMap.get(result.attemptId)!
-    if (entry.capture.version !== 2 || entry.run.version !== 2 || !entry.run.proposal)
-      return corrupt()
-    const packet = entry.capture.packet,
-      proposal = entry.run.proposal,
-      covered = new Map(proposal.coverage.map((c) => [c.fragmentId, c.outcome === 'identified']))
-    for (const f of packet.fragments) coverage.set(f.id, covered.get(f.id) === true)
-    for (const e of proposal.entities) {
-      const titles = e.fields
-        .filter((f) => f.name === 'title' && f.inferred && f.suggestedValue !== null)
-        .map((f) => f.suggestedValue!)
-      suggestions.set(
-        e.candidateId,
-        [...new Set([...(suggestions.get(e.candidateId) ?? []), ...titles])].slice(0, 64)
-      )
-    }
+    if (!entry.run.proposal) return corrupt()
+    const proposal = entry.run.proposal
     for (const i of proposal.issues) {
       const text = `${i.blocking ? 'Needs resolution' : 'Notice'}: ${i.code}: ${i.explanation}`
-      if (!i.recordRefs.length) globalIssues.push(text)
       for (const id of i.recordRefs) issues.set(id, [...(issues.get(id) ?? []), text].slice(0, 64))
     }
   }
-  const fragments = new Map<string, boolean[]>()
-  const plan = readPlan(ctx.db, ctx.projectId, review.planId)
-  for (const partId of plan.parts)
-    for (const f of readPart(ctx.db, ctx.projectId, plan.id, partId).fragments)
-      fragments.set(f.recordId, [...(fragments.get(f.recordId) ?? []), coverage.get(f.id) === true])
-  for (const [id, flags] of fragments) if (flags.length && flags.every(Boolean)) identified.add(id)
   const choices = new Map(
-      gs.map((g) => [g.id, selection.choices.get(g.id) ?? seed(g, contentRows)])
+      gs.map((g) => [
+        g.id,
+        override?.get(g.id) ?? selection.choices.get(g.id) ?? seed(g, contentRows)
+      ])
     ),
     prepared: Prepared = {
       review,
@@ -371,9 +485,8 @@ export async function prepareImportReview(
       children: new Map(),
       contentRows,
       identified,
-      suggestions,
-      issues,
-      globalIssues: [...new Set(globalIssues)].slice(0, 64),
+      recognized: new Set(identifiedRecords(ctx.db, ctx.projectId, review, true)),
+      automaticBlocked: new Set(blockedPartRecords(ctx.db, ctx.projectId, review, true)),
       blockedRecords: new Set(blockedPartRecords(ctx.db, ctx.projectId, review)),
       revisionId: selection.revisionId,
       manifestId: (
@@ -457,9 +570,9 @@ export async function prepareImportReview(
             ? 'Already imported. Exclude this original to avoid a duplicate.'
             : 'An accepted identity has different original content. Exclude this conflict before confirmation.'
         )
-      if (prepared.blockedRecords.has(r.id))
+      if ((c.automatic ? prepared.automaticBlocked : prepared.blockedRecords).has(r.id))
         blockers.push(
-          'A blocking analysis issue has no exact record references in a part supplying this original. Exclude this affected original or explicitly reanalyze the part; unrelated completed material may remain included.'
+          'A blocking analysis issue prevents this original from being included. Saved findings and originals remain retained.'
         )
       if (g.kind === 'retained')
         blockers.push(
@@ -469,13 +582,17 @@ export async function prepareImportReview(
         blockers.push(
           'This original is not eligible. Changing categories or paths requires a new analyzed selection.'
         )
-      if (!identified.has(r.id))
+      if (!(c.automatic ? prepared.recognized : identified).has(r.id))
         blockers.push(
           'Not every planned fragment of this original has an identified protected result. Analyze it or explicitly exclude it.'
         )
       if (g.kind !== 'message' && !(g.kind === 'source' && c.reuse) && !c.title.trim())
         blockers.push('A destination title is required.')
-      if ((warnings.length || r.unknownFields.length || g.records.length > 1) && !c.acknowledged)
+      if (
+        (warnings.length || r.unknownFields.length || g.records.length > 1) &&
+        !c.acknowledged &&
+        !c.automatic
+      )
         blockers.push(
           'Acknowledge the shown original differences, unknown fields and mapping losses.'
         )
@@ -533,8 +650,7 @@ export async function prepareImportReview(
       records: g.records.length,
       eligible,
       choice: c,
-      blockers,
-      warnings: warnings.slice(0, 64)
+      blockers
     }
     prepared.rows.push(row)
   }
@@ -556,7 +672,9 @@ export async function prepareImportReview(
     if (
       rows.length > 1 &&
       !(
-        rows.every((r) => r.choice.reuse) && new Set(rows.map((r) => r.choice.reuse!.id)).size === 1
+        (rows.every((r) => r.choice.reuse) &&
+          new Set(rows.map((r) => r.choice.reuse!.id)).size === 1) ||
+        new Set(rows.map((r) => r.choice.automatic?.sourceItemId ?? r.id)).size === 1
       )
     )
       for (const row of rows)
@@ -568,6 +686,24 @@ export async function prepareImportReview(
           row.blockers.push(
             'Included sources share a strong identifier. Exclude duplicate occurrences or explicitly reuse the same existing source.'
           )
+  for (const row of prepared.rows) {
+    const link = row.choice.automatic?.sourceItemId
+    if (!link) continue
+    const target = choices.get(link)
+    if (
+      row.kind !== 'source' ||
+      row.choice.state !== 'include' ||
+      !target ||
+      target.state !== 'include' ||
+      target.reuse ||
+      target.automatic?.sourceItemId ||
+      !row.choice.metadata ||
+      !target.metadata ||
+      !compatibleSourceMetadata([row.choice.metadata, target.metadata]) ||
+      !sourceKeys(row.choice.metadata).some((k) => sourceKeys(target.metadata!).includes(k))
+    )
+      row.blockers.push('The consolidated source target is no longer available.')
+  }
   const reused = new Set<string>()
   for (const row of prepared.rows) {
     prepared.blocking += row.blockers.length ? 1 : 0
@@ -579,95 +715,21 @@ export async function prepareImportReview(
     if (row.kind === 'note') prepared.counts.notes++
     if (row.kind === 'source') {
       if (row.choice.reuse) reused.add(row.choice.reuse.id)
-      else prepared.counts.newSources++
+      else if (!row.choice.automatic?.sourceItemId) prepared.counts.newSources++
     }
   }
   prepared.counts.reusedSources = reused.size
   prepared.counts.sources = prepared.counts.newSources + reused.size
   return prepared
 }
-function page(
-  prepared: Prepared,
-  tab: Extract<ReviewRequest, { action: 'review-page' }>['tab'] = 'chats',
-  offset = 0
-): ReviewValue {
-  const rows = prepared.rows.filter((r) =>
-      tab === 'issues'
-        ? r.blockers.length || r.warnings.length || !r.eligible
-        : tab === 'chats'
-          ? ['chat', 'message'].includes(r.kind)
-          : tab === 'sources'
-            ? r.kind === 'source'
-            : r.kind === 'note'
-    ),
-    plan = readPlanCache(prepared)
-  const value: Extract<ReviewValue, { type: 'review-page' }> = {
-    type: 'review-page',
+function page(prepared: Prepared): ReviewValue {
+  return {
+    type: 'review-state',
     review: prepared.review,
     revisionId: prepared.revisionId,
     manifestId: prepared.manifestId,
-    current: prepared.current,
-    counts: prepared.counts,
-    undecided: prepared.undecided,
-    blocking: prepared.blocking,
-    partial: prepared.partial,
-    tab,
-    offset,
-    total: rows.length,
-    rows: [],
-    files: plan,
-    globalIssues: prepared.globalIssues
+    current: prepared.current
   }
-  let size = JSON.stringify(value).length
-  for (const row of rows.slice(offset, offset + 10)) {
-    const units = JSON.stringify(row).length
-    if (size + units > 850000 && value.rows.length) break
-    value.rows.push(row)
-    size += units
-  }
-  return value
-}
-/** Only complete, uniquely evidenced, undecided messages in this exact envelope. */
-function readyMessages(p: Prepared, chatRecordId: string): ReviewChoice[] {
-  const result: ReviewChoice[] = [],
-    seen = new Set<string>()
-  for (const id of p.children.get(chatRecordId) ?? []) {
-    const group = p.recordGroups.get(id)
-    if (!group || group.kind !== 'message' || seen.has(group.id)) continue
-    seen.add(group.id)
-    if (p.choices.get(group.id)?.state !== 'undecided') continue
-    const originals = group.records.filter(
-      (r) =>
-        r.eligible &&
-        r.disposition === 'candidate' &&
-        p.identified.has(r.id) &&
-        !p.blockedRecords.has(r.id) &&
-        p.members.get(r.id)?.to === chatRecordId &&
-        ['selected', 'array-order'].includes(r.path) &&
-        !!r.role &&
-        r.texts.length > 0
-    )
-    if (originals.length !== 1) continue
-    const r = originals[0]
-    result.push({
-      ...seed(group, p.contentRows),
-      recordId: r.id,
-      title: hasControlCharacters(r.label) ? '' : r.label.slice(0, 500),
-      state: 'include',
-      acknowledged: true
-    })
-  }
-  return result
-}
-function readPlanCache(p: Prepared): Extract<ReviewValue, { type: 'review-page' }>['files'] {
-  return p.content.manifest.files.map((file) => ({
-    id: file.fileId,
-    name: '',
-    records: p.content.records.filter((r) => r.locator.fileId === file.fileId && r.eligible).length,
-    identified: p.content.records.filter(
-      (r) => r.locator.fileId === file.fileId && p.identified.has(r.id)
-    ).length
-  }))
 }
 function projectHead(ctx: AnalysisContext): { id: string; title: string } {
   return ctx.db
@@ -720,36 +782,30 @@ function commandBody(input: ReviewRequest): string {
   void __
   return JSON.stringify(body)
 }
-function validateChoice(p: Prepared, c: ReviewChoice): void {
-  const g = p.byId.get(c.itemId),
-    r = g?.records.find((r) => r.id === c.recordId)
-  if (!g || !r || (c.state === 'exclude' && !c.reason.trim())) throw new ProjectError('VALIDATION')
-  if (g.kind === 'source') {
-    if (c.labels.length) throw new ProjectError('VALIDATION')
-    if (c.metadata) normalizeMetadata(c.metadata)
-  } else if (c.metadata !== null || c.reuse !== null || (g.kind !== 'note' && c.labels.length))
-    throw new ProjectError('VALIDATION')
-  if (
-    g.kind === 'message' &&
-    c.title !== (hasControlCharacters(r.label) ? '' : r.label.slice(0, 500))
-  )
-    throw new ProjectError('VALIDATION')
-}
 function writeRevision(
   ctx: AnalysisContext,
   p: Prepared,
-  input: Extract<ReviewRequest, { action: 'review-save' | 'review-chat' | 'review-partial' }>,
+  input: Extract<
+    ReviewRequest,
+    {
+      action:
+        'review-save' | 'review-chat' | 'review-partial' | 'review-automatic' | 'review-inherit'
+    }
+  >,
   changes: ReviewChoice[]
 ): void {
   const { db, projectId: id } = ctx,
     revision: ReviewRevision = {
-      version: 1,
+      version: input.action === 'review-inherit' ? 3 : input.action === 'review-automatic' ? 2 : 1,
       id: input.operationId,
       reviewId: p.review.id,
       parentId: p.revisionId,
       changes: changes.length,
       digest: requestDigest(changes),
-      partial: input.action === 'review-partial'
+      partial:
+        input.action === 'review-partial' ||
+        (['review-automatic', 'review-inherit'].includes(input.action) &&
+          changes.some((c) => c.state === 'exclude'))
     }
   if (
     !current(ctx, p.review) ||
@@ -806,13 +862,13 @@ function manifestEntries(p: Prepared): ConfirmationEntry[] {
         .map((g) => [g.id, p.choices.get(g.id)!.reuse?.id ?? randomUUID()])
     ),
     groupByRecord = new Map(p.groups.flatMap((g) => g.records.map((r) => [r.id, g.id] as const)))
-  return p.groups.map((g) => {
+  const entries = p.groups.map((g) => {
     const c = p.choices.get(g.id)!,
       r = p.records.get(c.recordId)!,
       include = c.state === 'include',
       member = p.members.get(r.id)
     return {
-      version: 1,
+      version: c.automatic ? 2 : 1,
       itemId: g.id,
       kind: g.kind,
       title: g.kind === 'source' ? (c.metadata?.title ?? c.title) : c.title.trim(),
@@ -823,7 +879,13 @@ function manifestEntries(p: Prepared): ConfirmationEntry[] {
           .sort((a, b) => a.id.localeCompare(b.id))
       ),
       choice: c,
-      action: include ? (c.reuse ? 'reuse' : 'create') : 'exclude',
+      action: include
+        ? c.reuse
+          ? 'reuse'
+          : c.automatic?.sourceItemId
+            ? 'link'
+            : 'create'
+        : 'exclude',
       destinationId: include ? ids.get(g.id)! : null,
       revisionId: include ? (c.reuse?.revisionId ?? randomUUID()) : null,
       originId: include ? randomUUID() : null,
@@ -840,6 +902,16 @@ function manifestEntries(p: Prepared): ConfirmationEntry[] {
       labels: []
     } satisfies ConfirmationEntry
   })
+  const byId = new Map(entries.map((e) => [e.itemId, e]))
+  for (const e of entries)
+    if (e.action === 'link') {
+      const target = byId.get(e.choice.automatic!.sourceItemId!)
+      if (!target || target.action !== 'create' || target.kind !== 'source') return corrupt()
+      e.destinationId = target.destinationId
+      e.revisionId = target.revisionId
+      e.title = target.title
+    }
+  return entries
 }
 export function manifestCurrent(
   ctx: AnalysisContext,
@@ -900,11 +972,249 @@ export function storedManifest(
   if (entries.length > 50000 || requestDigest(entries) !== manifest.entriesDigest) return corrupt()
   return { manifest, entries }
 }
+async function prepareManifest(
+  ctx: AnalysisContext,
+  p: Prepared,
+  input: Extract<ReviewRequest, { action: 'confirmation-prepare' }>,
+  automatic?: { command: AutomaticReviewRequest; changes: ReviewChoice[] }
+): Promise<ReviewValue> {
+  const { db, projectId: id } = ctx,
+    review = p.review
+  const prior = db
+    .prepare('SELECT id FROM import_confirmation_manifests WHERE project_id=? AND id=?')
+    .get(id, input.operationId)
+  if (prior) {
+    const saved = storedManifest(ctx, input.operationId)
+    if (
+      saved.manifest.reviewId !== review.id ||
+      saved.manifest.revisionId !== input.expectedRevision
+    )
+      throw new ProjectError('OPERATION_CONFLICT')
+    return importSummary(saved, manifestCurrent(ctx, saved.manifest, p, saved.entries))
+  }
+  if (
+    !p.current ||
+    p.revisionId !== (automatic ? automatic.command.expectedRevision : input.expectedRevision)
+  )
+    throw new ProjectError('STALE_REVISION')
+  if (
+    (
+      db
+        .prepare(
+          'SELECT count(*) AS n FROM import_confirmation_manifests WHERE project_id=? AND review_id=?'
+        )
+        .get(id, review.id) as { n: number }
+    ).n >= 1024
+  )
+    throw new ProjectError('LIMIT_EXCEEDED')
+  if (
+    p.blocking ||
+    p.undecided ||
+    (!automatic &&
+      !Object.entries(p.counts).some(
+        ([k, n]) => ['chats', 'sources', 'notes'].includes(k) && n > 0
+      ) &&
+      !p.rows.some((r) => r.choice.reason === alreadyImportedReason))
+  )
+    throw new ProjectError('VALIDATION')
+  const entries = manifestEntries(p),
+    labels = new Map<string, ConfirmationEntry['labels'][number]>()
+  for (const e of entries)
+    if (e.action === 'reuse') e.title = source(db, id, e.destinationId!)!.title
+  for (const e of entries.filter((e) => e.kind === 'note' && e.action === 'create'))
+    for (const l of e.choice.labels) {
+      const normalized = l.name.trim().normalize('NFKC').toLowerCase(),
+        key = `${l.kind}:${normalized}`
+      let label = labels.get(key)
+      if (!label) {
+        const row = db
+          .prepare(
+            "SELECT id,revision_id,name FROM note_labels WHERE project_id=? AND kind=? AND normalized=? AND state='active'"
+          )
+          .get(id, l.kind, normalized) as
+          { id: string; revision_id: string; name: string } | undefined
+        label = {
+          ...l,
+          name: row?.name ?? l.name.trim(),
+          id: row?.id ?? randomUUID(),
+          revisionId: row?.revision_id ?? null,
+          action: row ? 'reuse' : 'create'
+        }
+        labels.set(key, label)
+      }
+      if (!e.labels.some((old) => old.id === label.id)) e.labels.push(label)
+    }
+  const artifacts = (
+      db
+        .prepare(
+          'SELECT id,body FROM import_files WHERE project_id=? AND batch_id=? UNION ALL SELECT id,body FROM import_artifacts WHERE project_id=? AND batch_id=? UNION ALL SELECT id,body FROM import_graph_pages WHERE project_id=? AND graph_id=?'
+        )
+        .all(id, review.batchId, id, review.batchId, id, review.graphId) as {
+        id: string
+        body: string
+      }[]
+    )
+      .map((r) => {
+        const a = JSON.parse(r.body) as { sha256: string; bytes: number }
+        return { id: r.id, sha256: a.sha256, bytes: a.bytes }
+      })
+      .sort((a, b) => a.id.localeCompare(b.id)),
+    manifest: ConfirmationManifest = {
+      version: automatic || entries.some((e) => e.version === 2) ? 2 : 1,
+      id: input.operationId,
+      reviewId: review.id,
+      revisionId: automatic?.command.operationId ?? p.revisionId!,
+      planId: review.planId,
+      batchId: review.batchId,
+      graphId: review.graphId,
+      graphDigest: review.graphDigest,
+      proposalId: review.proposalId,
+      resultsDigest: requestDigest(review.results),
+      choicesDigest: requestDigest(entries.map((e) => e.choice)),
+      entriesDigest: requestDigest(entries),
+      artifacts,
+      expectedHead: randomUUID(),
+      receiptId: randomUUID(),
+      destinationTitle: projectHead(ctx).title,
+      partial:
+        automatic || entries.some((e) => e.version === 2)
+          ? entries.some(isMaterialOmission)
+          : p.partial || p.counts.excluded > 0,
+      counts: p.counts,
+      createdAt: new Date().toISOString()
+    }
+  if (
+    !isConfirmationManifest(manifest) ||
+    JSON.stringify(manifest).length > 256000 ||
+    entries.some((e) => !isConfirmationEntry(e) || JSON.stringify(e).length > 60000)
+  )
+    throw new ProjectError('LIMIT_EXCEEDED')
+  await importReviewCapacity(
+    ctx,
+    review.batchId,
+    Buffer.byteLength(JSON.stringify(manifest)) +
+      entries.reduce((n, e) => n + Buffer.byteLength(JSON.stringify(e)) + 512, 32768) +
+      (automatic?.changes.reduce((n, c) => n + Buffer.byteLength(JSON.stringify(c)) + 512, 32768) ??
+        0)
+  )
+  const head = p.content.head
+  inWriteTransaction(db, () => {
+    if (
+      !current(ctx, review) ||
+      reviewChoices(db, id, review.id).revisionId !== p.revisionId ||
+      projectHead(ctx).id !== head ||
+      entries.some((e) => !reuseCurrent(ctx, e.choice))
+    )
+      throw new ProjectError('STALE_REVISION')
+    if (automatic) writeRevision(ctx, p, automatic.command, automatic.changes)
+    db.prepare('INSERT INTO import_confirmation_manifests VALUES (?,?,?,?,?)').run(
+      id,
+      manifest.id,
+      review.id,
+      manifest.revisionId,
+      JSON.stringify(manifest)
+    )
+    for (const e of entries)
+      db.prepare('INSERT INTO import_confirmation_entries VALUES (?,?,?,?)').run(
+        id,
+        manifest.id,
+        e.itemId,
+        JSON.stringify(e)
+      )
+    db.prepare(
+      'UPDATE import_review_state SET current_manifest_id=? WHERE project_id=? AND review_id=?'
+    ).run(manifest.id, id, review.id)
+    advance(ctx, manifest.expectedHead)
+  })
+  return importSummary({ manifest, entries }, true)
+}
+
+const isMaterialOmission = (entry: ConfirmationEntry): boolean =>
+  entry.action === 'exclude' &&
+  entry.kind !== 'retained' &&
+  entry.choice.reason !== alreadyImportedReason &&
+  entry.choice.reason !== outsideSelectionReason
+
+const automaticManifestId = (operationId: string): string =>
+  graphId(['import-automatic-manifest-v1', operationId])
+function importSummary(
+  saved: ReturnType<typeof storedManifest>,
+  current: boolean,
+  offset = 0
+): ImportSummary {
+  const { manifest, entries } = saved,
+    counts = new Map<string, number>()
+  for (const e of entries)
+    if (e.kind === 'message' && e.action === 'create' && e.parentDestinationId)
+      counts.set(e.parentDestinationId, (counts.get(e.parentDestinationId) ?? 0) + 1)
+  const chats = entries.filter((e) => e.kind === 'chat' && e.action === 'create'),
+    omitted = entries.filter(isMaterialOmission).length,
+    conversations = chats.slice(offset, offset + 50).map((e) => ({
+      id: e.destinationId!,
+      title: e.title,
+      messages: counts.get(e.destinationId!) ?? 0
+    }))
+  return {
+    type: 'import-summary',
+    manifest,
+    current,
+    outcome: entries.some((e) => e.action !== 'exclude')
+      ? 'ready'
+      : entries.some((e) => e.choice.reason === alreadyImportedReason) && omitted === 0
+        ? 'already-present'
+        : 'empty',
+    omitted,
+    conversations,
+    offset,
+    total: chats.length
+  }
+}
 export async function importReviewCommand(
   ctx: AnalysisContext,
   input: ReviewRequest
 ): Promise<ReviewValue> {
   const { db, projectId: id } = ctx
+  if (input.action === 'review-find') {
+    const planRow = db
+      .prepare(
+        'SELECT id FROM import_analysis_plans WHERE project_id=? AND batch_id=? AND graph_id=?'
+      )
+      .get(id, input.batchId, input.graphId) as { id: string } | undefined
+    let reviewId: string | null = null
+    if (planRow) {
+      const normal = graphId(['import-review-v1', planRow.id, selections(db, id, planRow.id).id]),
+        found = db
+          .prepare('SELECT id FROM import_reviews WHERE project_id=? AND id=?')
+          .get(id, normal) as { id: string } | undefined,
+        legacy = db
+          .prepare(
+            "SELECT id FROM import_reviews WHERE project_id=? AND plan_id=? AND json_extract(body,'$.version')=2 ORDER BY rowid DESC LIMIT 1"
+          )
+          .get(id, planRow.id) as { id: string } | undefined
+      reviewId =
+        found?.id ?? (selections(db, id, planRow.id).selected.size ? null : (legacy?.id ?? null))
+    }
+    const selector = reviewId
+        ? (db
+            .prepare(
+              'SELECT current_manifest_id AS id FROM import_review_state WHERE project_id=? AND review_id=?'
+            )
+            .get(id, reviewId) as { id: string | null })
+        : null,
+      rows = db
+        .prepare(
+          "SELECT r.id,r.body FROM import_analysis_runs r JOIN import_analysis_captures c ON c.project_id=r.project_id AND c.id=r.capture_id WHERE r.project_id=? AND c.batch_id=? AND json_extract(c.body,'$.packet.graphId')=? AND json_extract(c.body,'$.version')=1 ORDER BY r.rowid DESC LIMIT 1025"
+        )
+        .all(id, input.batchId, input.graphId) as { id: string; body: string }[]
+    if (rows.length > 1024) return corrupt()
+    const usable = rows.find((r) => decode(r, isAnalysisRun, 1100000).validation === 'valid')
+    return {
+      type: 'review-found',
+      reviewId,
+      manifestId: selector?.id ?? null,
+      legacyAttemptId: usable?.id ?? rows[0]?.id ?? null
+    }
+  }
   if (input.action === 'review-reconcile') {
     const original = input.command
     readImportReview(db, id, original.reviewId)
@@ -924,35 +1234,53 @@ export async function importReviewCommand(
       }
     return importReviewCommand(ctx, original)
   }
-  if (input.action === 'review-sources') {
-    const rows = (
-      db
-        .prepare(
-          "SELECT id FROM sources WHERE project_id=? AND state='active' AND instr(lower(json_extract(metadata,'$.title')),lower(?))>0 ORDER BY id LIMIT 21 OFFSET ?"
-        )
-        .all(id, input.query, input.offset) as { id: string }[]
-    )
-      .map((r) => source(db, id, r.id)!)
-      .filter(Boolean)
-    return {
-      type: 'review-sources',
-      rows: rows.slice(0, 20),
-      offset: input.offset,
-      more: rows.length > 20
-    }
-  }
-  if (input.action === 'review-open') {
+  if (input.action === 'review-open' || input.action === 'review-legacy') {
     const plan = readPlan(db, id, input.planId),
-      review: ImportReview = {
-        version: 1,
-        id: graphId(['import-review-v1', plan.id, input.proposalId]),
-        planId: plan.id,
-        batchId: plan.batchId,
-        graphId: plan.graphId,
-        graphDigest: plan.graphDigest,
-        proposalId: input.proposalId,
-        results: results(db, id, plan.id, input.proposalId)
-      }
+      legacy = input.action === 'review-legacy' ? legacyResult(db, id, input.attemptId) : null,
+      review: ImportReview = legacy
+        ? {
+            version: 2,
+            legacyAttemptId: legacy.run.id,
+            id: graphId(['import-review-legacy-v2', plan.id, legacy.run.id]),
+            planId: plan.id,
+            batchId: plan.batchId,
+            graphId: plan.graphId,
+            graphDigest: plan.graphDigest,
+            proposalId: null,
+            results: [
+              {
+                partId: legacy.capture.packet.partId,
+                attemptId: legacy.run.id,
+                digest: requestDigest(legacy)
+              }
+            ]
+          }
+        : {
+            version: 1,
+            id: graphId([
+              'import-review-v1',
+              plan.id,
+              input.action === 'review-open' ? input.proposalId : null
+            ]),
+            planId: plan.id,
+            batchId: plan.batchId,
+            graphId: plan.graphId,
+            graphDigest: plan.graphDigest,
+            proposalId: input.action === 'review-open' ? input.proposalId : null,
+            results: results(
+              db,
+              id,
+              plan.id,
+              input.action === 'review-open' ? input.proposalId : null
+            )
+          }
+    if (
+      legacy &&
+      (legacy.capture.packet.batchId !== plan.batchId ||
+        legacy.capture.packet.graphId !== plan.graphId ||
+        legacy.capture.packet.graphDigest !== plan.graphDigest)
+    )
+      throw new ProjectError('DENIED')
     if (!current(ctx, review)) throw new ProjectError('STALE_REVISION')
     if (
       !db.prepare('SELECT 1 FROM import_reviews WHERE project_id=? AND id=?').get(id, review.id)
@@ -971,6 +1299,13 @@ export async function importReviewCommand(
         Buffer.byteLength(JSON.stringify(review)) + 32768
       )
       inWriteTransaction(db, () => {
+        if (
+          legacy &&
+          (legacy.capture.packet.batchId !== plan.batchId ||
+            legacy.capture.packet.graphId !== plan.graphId ||
+            legacy.capture.packet.graphDigest !== plan.graphDigest)
+        )
+          throw new ProjectError('DENIED')
         if (!current(ctx, review)) throw new ProjectError('STALE_REVISION')
         db.prepare('INSERT INTO import_reviews VALUES (?,?,?,?,?)').run(
           id,
@@ -984,6 +1319,53 @@ export async function importReviewCommand(
       })
     }
     let prepared = await prepareImportReview(ctx, readImportReview(db, id, review.id))
+    if (!prepared.revisionId) {
+      const previous = db
+        .prepare(
+          'SELECT id FROM import_reviews WHERE project_id=? AND plan_id=? AND rowid<(SELECT rowid FROM import_reviews WHERE project_id=? AND id=?) ORDER BY rowid DESC LIMIT 256'
+        )
+        .all(id, plan.id, id, review.id) as { id: string }[]
+      for (const source of previous) {
+        const selection = reviewChoices(db, id, source.id),
+          changes = manualChoices(db, id, source.id)
+        if (!selection.revisionId || !changes.length) continue
+        if (
+          changes.some(
+            (c) => !prepared.byId.get(c.itemId)?.records.some((r) => r.id === c.recordId)
+          )
+        )
+          return corrupt()
+        await importReviewCapacity(
+          ctx,
+          review.batchId,
+          Buffer.byteLength(JSON.stringify(changes)) + 32768
+        )
+        inWriteTransaction(db, () =>
+          writeRevision(
+            ctx,
+            prepared,
+            {
+              projectId: id,
+              workspaceId: ctx.workspaceId,
+              action: 'review-inherit',
+              reviewId: review.id,
+              operationId: graphId([
+                'import-review-inherit-v3',
+                review.id,
+                source.id,
+                selection.revisionId
+              ]),
+              expectedRevision: null,
+              fromReviewId: source.id,
+              fromRevisionId: selection.revisionId!
+            },
+            changes
+          )
+        )
+        prepared = await prepareImportReview(ctx, review)
+        break
+      }
+    }
     if (!prepared.revisionId) {
       const accepted = acceptedIdentities(db, id)
       const skipped = prepared.groups.flatMap((g) => {
@@ -1019,9 +1401,76 @@ export async function importReviewCommand(
         prepared = await prepareImportReview(ctx, review)
       }
     }
-    return withFileNames(ctx, page(prepared))
+    return page(prepared)
   }
   const review = readImportReview(db, id, input.reviewId)
+  if (input.action === 'review-automatic') {
+    const prior = db
+      .prepare('SELECT request FROM import_review_revisions WHERE project_id=? AND id=?')
+      .get(id, input.operationId) as { request: string } | undefined
+    if (prior) {
+      if (
+        requestDigest(JSON.parse(prior.request)) !== requestDigest(JSON.parse(commandBody(input)))
+      )
+        throw new ProjectError('OPERATION_CONFLICT')
+      const saved = storedManifest(ctx, automaticManifestId(input.operationId)),
+        prepared = await prepareImportReview(ctx, review)
+      return importSummary(saved, manifestCurrent(ctx, saved.manifest, prepared, saved.entries))
+    }
+    const manifestId = automaticManifestId(input.operationId)
+    for (const operation of [input.operationId, manifestId])
+      for (const table of [
+        'import_review_revisions',
+        'import_confirmation_manifests',
+        'domain_operations'
+      ]) {
+        const key = table === 'domain_operations' ? 'operation_id' : 'id'
+        if (db.prepare(`SELECT 1 FROM ${table} WHERE project_id=? AND ${key}=?`).get(id, operation))
+          throw new ProjectError('OPERATION_CONFLICT')
+      }
+    if (!review.results.length) throw new ProjectError('VALIDATION')
+    const initial = await prepareImportReview(ctx, review)
+    if (!initial.current || initial.revisionId !== input.expectedRevision)
+      throw new ProjectError('STALE_REVISION')
+    const choices = automaticChoices(db, id, initial)
+    let prepared = await prepareImportReview(ctx, review, choices)
+    // Settle unsupported dependencies without reinterpreting saved human corrections.
+    for (let pass = 0; pass < 3; pass++) {
+      const blocked = prepared.rows.filter(
+        (r) => r.choice.automatic && r.choice.state === 'include' && r.blockers.length
+      )
+      if (!blocked.length) break
+      for (const row of blocked)
+        choices.set(row.id, {
+          ...row.choice,
+          state: 'exclude',
+          reason: 'Required original evidence or a compatible destination was unavailable.',
+          reuse: null,
+          automatic: { version: 1, sourceItemId: null }
+        })
+      prepared = await prepareImportReview(ctx, review, choices)
+    }
+    if (prepared.blocking || prepared.undecided) throw new ProjectError('VALIDATION')
+    const originals = new OriginalTranscriptText(ctx, review.batchId)
+    for (const row of prepared.rows)
+      if (row.kind === 'message' && row.choice.state === 'include')
+        await originals.read(prepared.records.get(row.choice.recordId)!)
+    const changes = [...choices.values()]
+      .filter((c) => requestDigest(c) !== requestDigest(initial.choices.get(c.itemId)))
+      .sort((a, b) => a.itemId.localeCompare(b.itemId))
+    await prepareManifest(
+      ctx,
+      prepared,
+      {
+        ...input,
+        action: 'confirmation-prepare',
+        operationId: manifestId,
+        expectedRevision: input.operationId
+      },
+      { command: input, changes }
+    )
+    return importSummary(storedManifest(ctx, manifestId), true)
+  }
   if (
     input.action === 'review-save' ||
     input.action === 'review-chat' ||
@@ -1054,311 +1503,31 @@ export async function importReviewCommand(
         requestDigest(JSON.parse(prior.request)) !== requestDigest(JSON.parse(commandBody(input)))
       )
         throw new ProjectError('OPERATION_CONFLICT')
-      return withFileNames(ctx, page(await prepareImportReview(ctx, review)))
+      return page(await prepareImportReview(ctx, review))
     }
   }
   const p = await prepareImportReview(ctx, review)
-  if (input.action === 'review-page') return withFileNames(ctx, page(p, input.tab, input.offset))
-  if (input.action === 'review-item') {
-    const g = p.byId.get(input.itemId),
-      row = p.rows.find((r) => r.id === input.itemId)
-    if (!g || !row) throw new ProjectError('NOT_FOUND')
-    const parents = new Map<string, string>()
-    for (const r of g.records)
-      for (const l of p.content.relations.filter((l) => l.kind === 'member' && l.from === r.id))
-        if (l.to) {
-          const parent = p.records.get(l.to)
-          if (parent) parents.set(parent.id, parent.label)
-        }
-    const value: Extract<ReviewValue, { type: 'review-item' }> = {
-      type: 'review-item',
-      reviewId: review.id,
-      revisionId: p.revisionId,
-      row,
-      total: g.records.length,
-      offset: input.offset,
-      variants: g.records.slice(input.offset, input.offset + 10).map((r) => {
-        const c = p.contentRows.get(r.id)
-        return {
-          record: r,
-          identified: p.identified.has(r.id),
-          suggestedTitles: p.suggestions.get(r.id) ?? [],
-          metadata: reviewMetadata(c?.metadata ?? null),
-          labels: c?.labels ?? [],
-          authorship: c?.authorship ?? 'unspecified',
-          decision: c?.decision ?? null,
-          grade: c?.grade ?? null,
-          originatingRecordId: c?.originatingRecordId ?? null,
-          losses:
-            c?.metadata && !reviewMetadata(c.metadata)
-              ? [
-                  ...c.losses.slice(0, 63),
-                  'Original bibliography metadata exceeds the correction form limit; retained unchanged. Supply a bounded mapping explicitly.'
-                ]
-              : (c?.losses ?? []),
-          candidates: (c?.candidates ?? [])
-            .map((s) => source(db, id, s.id, s.reason))
-            .filter((s): s is ReviewSource => !!s)
-        }
-      }),
-      readyMessages: readyMessages(p, row.choice.recordId).length,
-      parents: [...parents].slice(0, 10).map(([id, title]) => ({ id, title }))
-    }
-    while (JSON.stringify(value).length > 850000 && value.variants.length > 1) value.variants.pop()
-    return value
-  }
-  if (
-    input.action === 'review-save' ||
-    input.action === 'review-chat' ||
-    input.action === 'review-partial'
-  ) {
-    if (!p.current || p.revisionId !== input.expectedRevision)
-      throw new ProjectError('STALE_REVISION')
-    let changes: ReviewChoice[]
-    if (input.action === 'review-save' || input.action === 'review-chat') {
-      validateChoice(p, input.choice)
-      if (!reuseCurrent(ctx, input.choice)) throw new ProjectError('STALE_REVISION')
-      changes = [
-        {
-          ...input.choice,
-          metadata: input.choice.metadata ? normalizeMetadata(input.choice.metadata) : null
-        }
-      ]
-      if (input.action === 'review-chat') {
-        if (
-          p.byId.get(input.choice.itemId)?.kind !== 'chat' ||
-          input.choice.state !== 'include' ||
-          !input.choice.acknowledged ||
-          !p.identified.has(input.choice.recordId) ||
-          p.blockedRecords.has(input.choice.recordId)
-        )
-          throw new ProjectError('VALIDATION')
-        changes.push(...readyMessages(p, input.choice.recordId))
-      }
-    } else {
-      // One explicit operation excludes all outstanding and blocked dependency groups, with a
-      // stable reason. Propagate to chats/messages until no included dependency is orphaned.
-      const excluded = new Set(
-        p.rows
-          .filter((r) => r.eligible && (r.choice.state === 'undecided' || r.blockers.length))
-          .map((r) => r.id)
-      )
-      let more = true
-      while (more) {
-        more = false
-        for (const row of p.rows.filter(
-          (r) => r.kind === 'message' && r.choice.state === 'include' && !excluded.has(r.id)
-        )) {
-          const member = p.members.get(row.choice.recordId),
-            parent = member?.to ? p.recordGroups.get(member.to) : undefined
-          if (!parent || excluded.has(parent.id)) {
-            excluded.add(row.id)
-            more = true
-          }
-        }
-        for (const row of p.rows.filter(
-          (r) => r.kind === 'chat' && r.choice.state === 'include' && !excluded.has(r.id)
-        )) {
-          const messages = (p.children.get(row.choice.recordId) ?? [])
-            .map((id) => p.recordGroups.get(id))
-            .filter((g): g is Group => !!g)
-            .filter(
-              (g) =>
-                p.choices.get(g.id)?.state === 'include' &&
-                p.members.get(p.choices.get(g.id)!.recordId)?.to === row.choice.recordId
-            )
-          if (!messages.some((g) => !excluded.has(g.id))) {
-            excluded.add(row.id)
-            more = true
-          }
-        }
-      }
-      changes = p.rows
-        .filter((r) => excluded.has(r.id))
-        .map((r) => ({ ...r.choice, state: 'exclude' as const, reason: input.reason }))
-    }
-    changes.sort((a, b) => a.itemId.localeCompare(b.itemId))
-    await importReviewCapacity(
-      ctx,
-      review.batchId,
-      changes.reduce((n, c) => n + Buffer.byteLength(JSON.stringify(c)) + 512, 32768)
+  if (input.action === 'import-summary') {
+    const saved = storedManifest(ctx, input.manifestId)
+    if (saved.manifest.reviewId !== review.id) throw new ProjectError('DENIED')
+    return importSummary(
+      saved,
+      manifestCurrent(ctx, saved.manifest, p, saved.entries),
+      input.offset
     )
-    inWriteTransaction(db, () => writeRevision(ctx, p, input, changes))
-    return withFileNames(ctx, page(await prepareImportReview(ctx, review)))
   }
+  // Retained manual commands can reconcile an applied operation, but cannot author new choices.
   if (input.action === 'confirmation-prepare') {
-    const prior = db
-      .prepare('SELECT id FROM import_confirmation_manifests WHERE project_id=? AND id=?')
-      .get(id, input.operationId)
-    if (prior) {
-      const saved = storedManifest(ctx, input.operationId)
-      if (
-        saved.manifest.reviewId !== review.id ||
-        saved.manifest.revisionId !== input.expectedRevision
-      )
-        throw new ProjectError('OPERATION_CONFLICT')
-      return {
-        type: 'confirmation-page',
-        ...saved,
-        entries: saved.entries.slice(0, 10),
-        current: manifestCurrent(ctx, saved.manifest, p, saved.entries),
-        offset: 0,
-        total: saved.entries.length
-      }
-    }
-    if (!p.current || p.revisionId !== input.expectedRevision)
-      throw new ProjectError('STALE_REVISION')
+    const saved = storedManifest(ctx, input.operationId)
     if (
-      (
-        db
-          .prepare(
-            'SELECT count(*) AS n FROM import_confirmation_manifests WHERE project_id=? AND review_id=?'
-          )
-          .get(id, review.id) as { n: number }
-      ).n >= 1024
+      saved.manifest.reviewId !== review.id ||
+      saved.manifest.revisionId !== input.expectedRevision
     )
-      throw new ProjectError('LIMIT_EXCEEDED')
-    if (
-      p.blocking ||
-      p.undecided ||
-      (!Object.entries(p.counts).some(
-        ([k, n]) => ['chats', 'sources', 'notes'].includes(k) && n > 0
-      ) &&
-        !p.rows.some((r) => r.choice.reason === alreadyImportedReason))
-    )
-      throw new ProjectError('VALIDATION')
-    const entries = manifestEntries(p),
-      labels = new Map<string, ConfirmationEntry['labels'][number]>()
-    for (const e of entries)
-      if (e.action === 'reuse') e.title = source(db, id, e.destinationId!)!.title
-    for (const e of entries.filter((e) => e.kind === 'note' && e.action === 'create'))
-      for (const l of e.choice.labels) {
-        const normalized = l.name.trim().normalize('NFKC').toLowerCase(),
-          key = `${l.kind}:${normalized}`
-        let label = labels.get(key)
-        if (!label) {
-          const row = db
-            .prepare(
-              "SELECT id,revision_id,name FROM note_labels WHERE project_id=? AND kind=? AND normalized=? AND state='active'"
-            )
-            .get(id, l.kind, normalized) as
-            { id: string; revision_id: string; name: string } | undefined
-          label = {
-            ...l,
-            name: row?.name ?? l.name.trim(),
-            id: row?.id ?? randomUUID(),
-            revisionId: row?.revision_id ?? null,
-            action: row ? 'reuse' : 'create'
-          }
-          labels.set(key, label)
-        }
-        if (!e.labels.some((old) => old.id === label.id)) e.labels.push(label)
-      }
-    const artifacts = (
-        db
-          .prepare(
-            'SELECT id,body FROM import_files WHERE project_id=? AND batch_id=? UNION ALL SELECT id,body FROM import_artifacts WHERE project_id=? AND batch_id=? UNION ALL SELECT id,body FROM import_graph_pages WHERE project_id=? AND graph_id=?'
-          )
-          .all(id, review.batchId, id, review.batchId, id, review.graphId) as {
-          id: string
-          body: string
-        }[]
-      )
-        .map((r) => {
-          const a = JSON.parse(r.body) as { sha256: string; bytes: number }
-          return { id: r.id, sha256: a.sha256, bytes: a.bytes }
-        })
-        .sort((a, b) => a.id.localeCompare(b.id)),
-      manifest: ConfirmationManifest = {
-        version: 1,
-        id: input.operationId,
-        reviewId: review.id,
-        revisionId: p.revisionId!,
-        planId: review.planId,
-        batchId: review.batchId,
-        graphId: review.graphId,
-        graphDigest: review.graphDigest,
-        proposalId: review.proposalId,
-        resultsDigest: requestDigest(review.results),
-        choicesDigest: requestDigest(entries.map((e) => e.choice)),
-        entriesDigest: requestDigest(entries),
-        artifacts,
-        expectedHead: randomUUID(),
-        receiptId: randomUUID(),
-        destinationTitle: projectHead(ctx).title,
-        partial: p.partial || p.counts.excluded > 0,
-        counts: p.counts,
-        createdAt: new Date().toISOString()
-      }
-    if (
-      !isConfirmationManifest(manifest) ||
-      JSON.stringify(manifest).length > 256000 ||
-      entries.some((e) => !isConfirmationEntry(e) || JSON.stringify(e).length > 60000)
-    )
-      throw new ProjectError('LIMIT_EXCEEDED')
-    await importReviewCapacity(
-      ctx,
-      review.batchId,
-      Buffer.byteLength(JSON.stringify(manifest)) +
-        entries.reduce((n, e) => n + Buffer.byteLength(JSON.stringify(e)) + 512, 32768)
-    )
-    const head = p.content.head
-    inWriteTransaction(db, () => {
-      if (
-        !current(ctx, review) ||
-        reviewChoices(db, id, review.id).revisionId !== p.revisionId ||
-        projectHead(ctx).id !== head ||
-        entries.some((e) => !reuseCurrent(ctx, e.choice))
-      )
-        throw new ProjectError('STALE_REVISION')
-      db.prepare('INSERT INTO import_confirmation_manifests VALUES (?,?,?,?,?)').run(
-        id,
-        manifest.id,
-        review.id,
-        p.revisionId,
-        JSON.stringify(manifest)
-      )
-      for (const e of entries)
-        db.prepare('INSERT INTO import_confirmation_entries VALUES (?,?,?,?)').run(
-          id,
-          manifest.id,
-          e.itemId,
-          JSON.stringify(e)
-        )
-      db.prepare(
-        'UPDATE import_review_state SET current_manifest_id=? WHERE project_id=? AND review_id=?'
-      ).run(manifest.id, id, review.id)
-      advance(ctx, manifest.expectedHead)
-    })
-    return {
-      type: 'confirmation-page',
-      manifest,
-      current: true,
-      entries: entries.slice(0, 10),
-      offset: 0,
-      total: entries.length
-    }
+      throw new ProjectError('OPERATION_CONFLICT')
+    return importSummary(saved, manifestCurrent(ctx, saved.manifest, p, saved.entries))
   }
-  const saved = storedManifest(ctx, input.manifestId)
-  if (saved.manifest.reviewId !== review.id) throw new ProjectError('DENIED')
-  return {
-    type: 'confirmation-page',
-    manifest: saved.manifest,
-    current: manifestCurrent(ctx, saved.manifest, p, saved.entries),
-    entries: saved.entries.slice(input.offset, input.offset + 10),
-    offset: input.offset,
-    total: saved.entries.length
-  }
+  throw new ProjectError('DENIED')
 }
-function withFileNames(ctx: AnalysisContext, v: ReviewValue): ReviewValue {
-  if (v.type === 'review-page') {
-    const plan = readPlan(ctx.db, ctx.projectId, v.review.planId)
-    for (const f of v.files) f.name = plan.files.find((p) => p.id === f.id)?.name ?? 'Retained file'
-  }
-  return v
-}
-
-/** Structural portable admission; actual original-record evidence is checked with graph pages. */
 export function validatePortableReviews(db: Database.Database, p: string): void {
   if (
     (db.prepare('SELECT schema_version AS v FROM format WHERE singleton=1').get() as { v: number })
@@ -1384,14 +1553,16 @@ export function validatePortableReviews(db: Database.Database, p: string): void 
     const review = decode(row, isImportReview),
       plan = readPlan(db, p, review.planId)
     if (
+      (review.version === 2 &&
+        (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 32) ||
       review.id !== row.id ||
-      review.id !== graphId(['import-review-v1', plan.id, review.proposalId]) ||
+      review.id !== reviewIdentity(review) ||
       review.planId !== row.plan_id ||
       review.proposalId !== row.proposal_id ||
       review.batchId !== plan.batchId ||
       review.graphId !== plan.graphId ||
       review.graphDigest !== plan.graphDigest ||
-      requestDigest(review.results) !== requestDigest(results(db, p, plan.id, review.proposalId))
+      requestDigest(review.results) !== requestDigest(reviewResults(db, p, review))
     )
       return corrupt()
     reviewChoices(db, p, review.id)
@@ -1431,14 +1602,26 @@ export function validatePortableReviews(db: Database.Database, p: string): void 
         routing = { projectId: p, workspaceId: p, ...request }
       if (
         !isReviewRequest(routing) ||
-        !['review-save', 'review-chat', 'review-partial'].includes(routing.action) ||
+        ![
+          'review-save',
+          'review-chat',
+          'review-partial',
+          'review-automatic',
+          'review-inherit'
+        ].includes(routing.action) ||
         rev.id !== r.id ||
         rev.reviewId !== review.id ||
         rev.parentId !== r.parent_id ||
         request.operationId !== rev.id ||
         request.reviewId !== review.id ||
         request.expectedRevision !== rev.parentId ||
-        rev.partial !== (request.action === 'review-partial')
+        (rev.version === 2) !== (request.action === 'review-automatic') ||
+        (rev.version === 3) !== (request.action === 'review-inherit') ||
+        (rev.version === 3 &&
+          (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 32) ||
+        (rev.version === 1 && rev.partial !== (request.action === 'review-partial')) ||
+        (rev.version === 2 &&
+          (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 31)
       )
         return corrupt()
       const choices = (
@@ -1468,6 +1651,45 @@ export function validatePortableReviews(db: Database.Database, p: string): void 
           choices.some((c) => c.state !== 'exclude' || c.reason !== request.reason))
       )
         return corrupt()
+      if ((rev.version === 1 || rev.version === 3) && choices.some((c) => c.automatic))
+        return corrupt()
+      if (routing.action === 'review-inherit') {
+        const source = readImportReview(db, p, routing.fromReviewId),
+          order = db
+            .prepare(
+              'SELECT (SELECT rowid FROM import_reviews WHERE project_id=? AND id=?) < (SELECT rowid FROM import_reviews WHERE project_id=? AND id=?) AS earlier'
+            )
+            .get(p, source.id, p, review.id) as { earlier: number }
+        if (
+          source.id === review.id ||
+          source.planId !== review.planId ||
+          source.graphId !== review.graphId ||
+          order.earlier !== 1 ||
+          rev.id !==
+            graphId(['import-review-inherit-v3', review.id, source.id, routing.fromRevisionId]) ||
+          rev.partial !== choices.some((c) => c.state === 'exclude') ||
+          requestDigest(choices) !==
+            requestDigest(manualChoices(db, p, source.id, routing.fromRevisionId))
+        )
+          return corrupt()
+      }
+      if (rev.version === 2) {
+        if (
+          choices.some((c) => !c.automatic) ||
+          rev.partial !== choices.some((c) => c.state === 'exclude')
+        )
+          return corrupt()
+        const saved = storedManifest(
+          { db, projectId: p } as AnalysisContext,
+          automaticManifestId(rev.id)
+        )
+        if (
+          saved.manifest.version !== 2 ||
+          saved.manifest.reviewId !== review.id ||
+          saved.manifest.revisionId !== rev.id
+        )
+          return corrupt()
+      }
       if (request.action === 'review-chat') {
         const requested = request.choice as ReviewChoice,
           saved = choices.find((c) => c.itemId === requested.itemId)
@@ -1492,6 +1714,8 @@ export function validatePortableReviews(db: Database.Database, p: string): void 
         saved = storedManifest({ db, projectId: p } as AnalysisContext, m.id),
         choices = reviewChoices(db, p, review.id, m.revisionId).choices
       if (
+        ((m.version === 2 || saved.entries.some((e) => e.version === 2 || e.choice.automatic)) &&
+          (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 31) ||
         m.id !== row.id ||
         m.revisionId !== row.revision_id ||
         m.reviewId !== review.id ||
@@ -1544,6 +1768,8 @@ export function reviewGraphEvidence(
   review: ImportReview
   choices: ReviewChoice[]
   identified: string[]
+  recognized: string[]
+  automaticBlocked: string[]
   blockedRecords: string[]
   manifests: Array<{ manifest: ConfirmationManifest; entries: ConfirmationEntry[] }>
 }> {
@@ -1561,6 +1787,8 @@ export function reviewGraphEvidence(
   ).map(({ id }) => ({
     review: readImportReview(db, p, id),
     identified: identifiedRecords(db, p, readImportReview(db, p, id)),
+    recognized: identifiedRecords(db, p, readImportReview(db, p, id), true),
+    automaticBlocked: blockedPartRecords(db, p, readImportReview(db, p, id), true),
     blockedRecords: blockedPartRecords(db, p, readImportReview(db, p, id)),
     choices: (
       db
@@ -1590,12 +1818,15 @@ export function validateReviewGraph(
   }
   for (const e of evidence) {
     const identified = new Set(e.identified),
+      recognized = new Set(e.recognized),
+      automaticBlocked = new Set(e.automaticBlocked),
       blocked = new Set(e.blockedRecords)
     for (const c of e.choices)
       if (!byId.get(c.itemId)?.records.some((r) => r.id === c.recordId)) return corrupt()
     for (const { manifest: m, entries } of e.manifests) {
       if (entries.length !== gs.length) return corrupt()
-      const destinations = new Map(entries.map((e) => [e.choice.recordId, e])),
+      const entryById = new Map(entries.map((e) => [e.itemId, e])),
+        destinations = new Map(entries.map((e) => [e.choice.recordId, e])),
         counts: ReviewCounts = {
           chats: 0,
           messages: 0,
@@ -1624,6 +1855,8 @@ export function validateReviewGraph(
             )
         )
           return corrupt()
+        if (entry.version > m.version || (entry.choice.automatic && m.version !== 2))
+          return corrupt()
         const eligible = g.records.some((r) => r.eligible && r.disposition === 'candidate')
         counts.retained +=
           entry.choice.state === 'include' ? g.records.length - 1 : g.records.length
@@ -1646,8 +1879,8 @@ export function validateReviewGraph(
           !r.eligible ||
           r.disposition !== 'candidate' ||
           entry.kind === 'retained' ||
-          !identified.has(r.id) ||
-          blocked.has(r.id) ||
+          !(entry.choice.automatic ? recognized : identified).has(r.id) ||
+          (entry.choice.automatic ? automaticBlocked : blocked).has(r.id) ||
           !entry.destinationId ||
           !entry.revisionId ||
           !entry.originId ||
@@ -1658,6 +1891,25 @@ export function validateReviewGraph(
               entry.revisionId !== entry.choice.reuse.revisionId))
         )
           return corrupt()
+        if (entry.action === 'link') {
+          const target = entryById.get(entry.choice.automatic!.sourceItemId!)
+          if (
+            entry.kind !== 'source' ||
+            !target ||
+            target.kind !== 'source' ||
+            target.action !== 'create' ||
+            target.destinationId !== entry.destinationId ||
+            target.revisionId !== entry.revisionId ||
+            target.title !== entry.title ||
+            !entry.choice.metadata ||
+            !target.choice.metadata ||
+            !compatibleSourceMetadata([entry.choice.metadata, target.choice.metadata]) ||
+            !sourceKeys(entry.choice.metadata).some((k) =>
+              sourceKeys(target.choice.metadata!).includes(k)
+            )
+          )
+            return corrupt()
+        }
         if (entry.action === 'create') {
           if (ids.has(entry.destinationId)) return corrupt()
           ids.add(entry.destinationId)
@@ -1691,7 +1943,7 @@ export function validateReviewGraph(
           )
             return corrupt()
           if (entry.action === 'reuse') reused.add(entry.destinationId)
-          else counts.newSources++
+          else if (entry.action === 'create') counts.newSources++
         }
       }
       counts.reusedSources = reused.size
@@ -1707,7 +1959,11 @@ export function validateReviewGraph(
         )
       )
         return corrupt()
-      if (requestDigest(counts) !== requestDigest(m.counts)) return corrupt()
+      if (
+        requestDigest(counts) !== requestDigest(m.counts) ||
+        (m.version === 2 && m.partial !== entries.some(isMaterialOmission))
+      )
+        return corrupt()
     }
   }
 }

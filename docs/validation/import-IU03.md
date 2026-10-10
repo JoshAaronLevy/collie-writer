@@ -1,0 +1,27 @@
+# IU03 implementation and acceptance record
+
+October 10, 2026. **Implementation complete — awaiting user testing.** Josh requested plan review and IU03 after IU02. The ordinary revised import now runs through setup, one Submit, short results and one Accept. Full older-import/restart recovery and final supporting-route cleanup remain IU04; integrated polish remains IU05. No runtime or earlier UX acceptance is inferred. Release remains **NO-GO**.
+
+## Implemented
+
+- The single retained modal owner transitions automatically from setup/processing to Ready to import. Results contain only requested-category totals, conversation titles/message counts, brief relevant omission/empty/already-present copy and Cancel/Re-Analyze/Accept. Re-Analyze is disabled with a visible accessible Coming later explanation and no action handler.
+- The controller reads all bounded summary pages before enabling acceptance and checks frozen manifest identity, offsets/totals, unique destinations and full message totals. Sources count canonical destinations, including existing Research links; note totals appear only when requested. Long conversation lists reveal rows in batches while the one modal body scrolls, keeping the footer reachable.
+- Cancel, close and Escape from idle results return to setup with inputs/model intact. An unchanged Submit reads the retained summary without inference. Stale retained summaries refresh locally rather than silently continuing unsent analysis. Changed input/model still requires explicit Submit for fresh analysis.
+- Accept protects project drafts, rechecks the exact manifest and sends the existing preallocated atomic command. Live guards prevent duplicate clicks and unsafe dismissal. Staleness performs local preparation only and requires another Accept; no automatic equivalence acceptance or AI repair is attempted.
+- The exact pending command is retained before dispatch. An uncertain reply performs one receipt lookup, then exposes Check status if still unresolved. No second write is possible until receipt/absence is established. The modal can be dismissed/reopened after uncertainty, preserving input and the command. Empty/already-present results disable acceptance instead of reporting a new import.
+- Confirmed receipt success refreshes the existing head owner, closes the modal and shows a brief dismissible notice naming actual additions/existing source links. Workspace destination, editor buffers and ordinary destination/form owners remain intact. No selected-file Save or provider request is part of acceptance. Normal Chats/Research/Notes retain their supported original links.
+- Setup/results use the existing 38rem viewport-bounded dialog and semantic controls. Keyboard focus on results entry is guarded against newer focus/scope/navigation changes; statuses/errors are announced and the existing reduced-motion preferences remain in use.
+
+See [the acceptance extension](../formats/import-commit-v1.md#iu03-simple-summary-and-accept--october-10-2026) and [user guide](../manual-testing/import-IU03.md).
+
+## Cleanup and retained dependencies
+
+Removed the IU02 temporary saved-findings message. Renamed the multipart-only renderer hook to `useImportFlow.ts` and extended that same retained owner for summary/Accept/recovery; the former `useMultipartAnalysis.tsx` file is removed. `ImportResults.tsx` is the small summary presentation, not a second review/state/commit system. No item-choice/correction/confirmation screen, raw payload, completed-report detour or per-item action was reintroduced. Those obsolete screens/hooks were already deleted in IU02. Duplicate footer styling was consolidated.
+
+The existing worker automatic preparation, exact commit transaction/receipt, old manual revision readers, read-only reports and accepted transcript/origin readers remain necessary. Shared AI work and compact legacy saved-attempt recovery remain used. IU04 must complete older unfinished-import/restart adaptation and trace/remove supporting routes/helpers no longer needed afterward. No new dependency, persisted schema or provider format was added. Original files, retained history and historical test code were not deleted or edited. Import-wide cleanup is not claimed finished.
+
+## Checks and limitations
+
+Required checks completed with the pinned Node 24.21.0 toolchain, in order: `npm run format` succeeded; `npm run lint` finished with no warnings or errors; `npm run typecheck` passed both node and web checks. The initial lint finding about assigning an exception parameter was fixed without suppression or rule changes. Script/ignore scope preserves vendor/generated artifacts and historical testing infrastructure. Source review covered summary paging, retained command/receipt matching, cancellation/staleness and head-dependent destination refresh. Source inspection is not runtime evidence. No tests, builds, launches, sample imports, provider requests, browser automation or runtime verification were performed.
+
+Live extraction accuracy, native acceptance/Save/reopen/copy, relationship navigation, naturally encountered uncertain outcomes and visual/keyboard/zoom behavior await Josh. No artificial failures or generated corpus were introduced. Older projects keep their data/readers, but full recovery mapping and active-slot retirement still belong to IU04. These limitations do not imply that prior runtime acceptance or commercial release gates passed.

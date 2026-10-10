@@ -192,7 +192,6 @@ export async function importPlanCommand(
   input: MultiWorker
 ): Promise<MultiValue> {
   const { db, projectId: p } = ctx
-  if (input.action === 'plan-consolidate') throw new ProjectError('DENIED') // settlement is the sole writer
   if (input.action === 'plan-find') {
     const found = db
       .prepare(
@@ -276,17 +275,12 @@ export async function importPlanCommand(
       !importBatchAccepted(db, p, plan.batchId) &&
       revision.phase === 'preparing' &&
       revision.graphId === plan.graphId
-  if (input.action === 'part-read')
-    return { type: 'part', packet: readPart(db, p, plan.id, input.partId) }
   const entries = attempts(db, p, plan.id),
     latest = new Map(entries.map((e) => [e.capture.packet.partId, e])),
     choice = selections(db, p, plan.id)
   if (input.action === 'plan-select') {
     if (!current || input.proposalId !== choice.id) throw new ProjectError('STALE_REVISION')
-    const partIds =
-      input.mode === 'remaining'
-        ? plan.parts.filter((id) => !latest.has(id)).slice(0, input.limit)
-        : plan.parts.filter((id) => id === input.partId)
+    const partIds = plan.parts.filter((id) => !latest.has(id)).slice(0, input.limit)
     if (!partIds.length) throw new ProjectError('VALIDATION')
     if (
       (
@@ -309,95 +303,6 @@ export async function importPlanCommand(
       units: packets.reduce((n, v) => n + JSON.stringify(v).length, 0),
       bytes: packets.reduce((n, v) => n + Buffer.byteLength(JSON.stringify(v)), 0)
     }
-  }
-  if (input.action === 'proposal-read') {
-    if (input.proposalId !== choice.id) throw new ProjectError('STALE_REVISION')
-    const equivalence = new Map<string, string>(),
-      identityGroups = new Map<string, string>(),
-      fragmentRecords = new Map<string, { identityId: string }>()
-    const root = (map: Map<string, string>, id: string): string => {
-      let next = map.get(id)
-      while (next && next !== id) {
-        id = next
-        next = map.get(id)
-      }
-      return id
-    }
-    const join = (map: Map<string, string>, a: string, b: string): void => {
-      const x = root(map, a),
-        y = root(map, b)
-      if (x !== y) map.set(x < y ? y : x, x < y ? x : y)
-    }
-    const packets = plan.parts.map((id) => readPart(db, p, plan.id, id))
-    for (const packet of packets)
-      for (const f of packet.fragments)
-        if (f.kind !== 'relation') fragmentRecords.set(f.recordId, { identityId: f.identityId })
-    for (const packet of packets)
-      for (const relation of packet.relations)
-        if (relation.kind === 'equivalent' && relation.to) {
-          join(equivalence, relation.from, relation.to)
-          const a = fragmentRecords.get(relation.from),
-            b = fragmentRecords.get(relation.to)
-          if (a && b) join(identityGroups, a.identityId, b.identityId)
-        }
-    const groups = new Map<
-      string,
-      {
-        id: string
-        kind: string
-        label: string
-        records: Set<string>
-        digests: Set<string>
-        variants: Set<string>
-      }
-    >()
-    for (const entry of entries) {
-      if (
-        choice.selected.get(entry.capture.packet.partId) !== entry.run.id ||
-        entry.capture.version !== 2 ||
-        !entry.run.proposal
-      )
-        continue
-      for (const entity of entry.run.proposal.entities) {
-        const fragment = entry.capture.packet.fragments.find(
-          (f) => f.kind !== 'relation' && f.recordId === entity.candidateId
-        )
-        if (!fragment) return corrupt()
-        const groupId = root(identityGroups, fragment.identityId)
-        const g = groups.get(groupId) ?? {
-          id: groupId,
-          kind: entity.kind,
-          label: fragment.label,
-          records: new Set<string>(),
-          digests: new Set<string>(),
-          variants: new Set<string>()
-        }
-        g.records.add(fragment.recordId)
-        g.digests.add(root(equivalence, fragment.recordId))
-        for (const field of entity.fields)
-          if (field.suggestedValue !== null)
-            g.variants.add(`${field.name}: ${field.suggestedValue}`.slice(0, 500))
-        groups.set(g.id, g)
-      }
-    }
-    const value: Extract<MultiValue, { type: 'proposal-page' }> = {
-      type: 'proposal-page',
-      proposalId: choice.id,
-      total: groups.size,
-      items: [...groups.values()]
-        .sort((a, b) => a.id.localeCompare(b.id))
-        .slice(input.offset, input.offset + 50)
-        .map((g) => ({
-          id: g.id,
-          kind: g.kind,
-          label: g.label,
-          members: g.records.size,
-          variants: [...g.variants].sort().slice(0, 2),
-          conflict: g.digests.size > 1 || g.variants.size > 1
-        }))
-    }
-    while (JSON.stringify(value).length > 98000 && value.items.length) value.items.pop()
-    return value
   }
   const fileCoverage = new Map(
     plan.files.map((f) => [f.id, { fileId: f.id, identified: 0, unresolved: 0 }])

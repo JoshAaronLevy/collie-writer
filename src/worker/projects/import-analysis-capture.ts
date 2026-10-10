@@ -1,15 +1,9 @@
-import { importBatchAccepted } from './import-identities'
 import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 import { type OpenInput } from '../../shared/projects'
-import { IMPORT_LIMITS, type ImportFile, type ImportRevision } from '../../shared/project-import'
 import {
   IMPORT_ANALYSIS_INSTRUCTIONS,
-  IMPORT_ANALYSIS_PROMPT,
-  isAnalysisPacket,
-  isAnalysisCapture,
   isAnalysisProposal,
-  type AnalysisReviewV1 as AnalysisReview,
   type AnalysisCaptureV1 as AnalysisCapture,
   type AnalysisPacket,
   type AnalysisProposal
@@ -17,8 +11,6 @@ import {
 import { type GraphRecord, type GraphRelation } from '../../shared/import-graph'
 import { requestDigest } from '../storage/digest'
 import { captureDigest } from '../ai/capture'
-import { readGraph, readImportBlob, parseGraphPage } from './import-graphs'
-import { OriginalTranscriptText } from './conversation-transcript'
 import { parseInputJson } from './import-readers/json'
 import { textDigest } from './import-readers/graph'
 export type AnalysisContext = OpenInput & {
@@ -35,124 +27,6 @@ export function packetDigest(packet: AnalysisPacket): string {
     packet: rest,
     instructions: IMPORT_ANALYSIS_INSTRUCTIONS
   })
-}
-export async function prepareAnalysis(
-  ctx: AnalysisContext,
-  input: AnalysisReview
-): Promise<AnalysisCapture> {
-  const { db, projectId: p } = ctx
-  const saved = db
-    .prepare('SELECT current_revision_id FROM import_batches WHERE project_id=? AND id=?')
-    .get(p, input.batchId) as { current_revision_id: string } | undefined
-  if (!saved || saved.current_revision_id !== input.expectedRevision)
-    throw new ProjectError('STALE_REVISION')
-  const revision = JSON.parse(
-    (
-      db
-        .prepare(
-          'SELECT body FROM import_batch_revisions WHERE project_id=? AND batch_id=? AND id=?'
-        )
-        .get(p, input.batchId, input.expectedRevision) as { body: string }
-    ).body
-  ) as ImportRevision
-  if (
-    importBatchAccepted(db, p, input.batchId) ||
-    revision.phase !== 'preparing' ||
-    revision.graphId !== input.graphId
-  )
-    throw new ProjectError('STALE_REVISION')
-  const { manifest, pages } = readGraph(db, p, input.graphId)
-  if (manifest.batchId !== input.batchId) throw new ProjectError('DENIED')
-  const records: GraphRecord[] = [],
-    relations: GraphRelation[] = []
-  for (const page of pages) {
-    const parsed = parseGraphPage(
-      await readImportBlob(ctx, page, IMPORT_LIMITS.artifactBytes),
-      page
-    )
-    records.push(...parsed.records)
-    const admitted = records.filter((r) => r.eligible && r.disposition === 'candidate')
-    if (
-      admitted.length > 128 ||
-      admitted.reduce((n, r) => n + r.texts.reduce((n, t) => n + t.units, 0), 0) > 55000
-    )
-      throw new ProjectError('LIMIT_EXCEEDED')
-    relations.push(...parsed.relations)
-  }
-  const selected = records.filter((r) => r.eligible && r.disposition === 'candidate')
-  // IM07 admits exactly one complete part. Never send a truncated prefix of a larger graph.
-  if (
-    !selected.length ||
-    selected.length > 128 ||
-    selected.reduce((n, r) => n + r.texts.reduce((n, t) => n + t.units, 0), 0) > 55000
-  )
-    throw new ProjectError('LIMIT_EXCEEDED')
-  const ids = new Set(selected.map((r) => r.id)),
-    chosen = relations.filter((r) => ids.has(r.from) || (!!r.to && ids.has(r.to)))
-  if (chosen.length > 256) throw new ProjectError('LIMIT_EXCEEDED')
-  const text = new OriginalTranscriptText(ctx, input.batchId),
-    fragments: AnalysisPacket['fragments'] = []
-  for (const r of selected) fragments.push({ id: r.id, record: r, text: await text.read(r) })
-  const files = manifest.files.map((f) => {
-    const file = JSON.parse(
-      (
-        db
-          .prepare('SELECT body FROM import_files WHERE project_id=? AND batch_id=? AND id=?')
-          .get(p, input.batchId, f.fileId) as { body: string }
-      ).body
-    ) as ImportFile
-    return { id: file.id, name: file.originalName, sha256: file.sha256 }
-  })
-  const packet: AnalysisPacket = {
-    version: 1,
-    contract: 'project-import-analysis-v1',
-    partId: input.captureId,
-    captureDigest: '',
-    batchId: input.batchId,
-    graphId: manifest.id,
-    graphDigest: manifest.digest,
-    settings: revision.settings,
-    projectContext: null,
-    files,
-    fragments,
-    relations: chosen,
-    excluded: records.length - selected.length,
-    outputContract: 'project-import-proposal-v1'
-  }
-  packet.captureDigest = packetDigest(packet)
-  if (!isAnalysisPacket(packet) || Buffer.byteLength(JSON.stringify(packet)) > 240000)
-    throw new ProjectError('LIMIT_EXCEEDED')
-  const capture: AnalysisCapture = {
-    version: 1,
-    id: input.captureId,
-    createdAt: input.createdAt,
-    head: manifest.revisionId,
-    prompt: IMPORT_ANALYSIS_PROMPT,
-    source: { kind: 'none' },
-    context: [
-      {
-        kind: 'note',
-        id: input.captureId,
-        revision: manifest.id,
-        label: 'Selected import material',
-        text: JSON.stringify(packet)
-      }
-    ],
-    digest: '',
-    template: 'project-import-analysis-v1',
-    packet
-  }
-  // Stable across unrelated manuscript saves; capture head is the graph's real committed head.
-  capture.head = (
-    db
-      .prepare(
-        'SELECT head_commit_id AS id FROM import_batch_revisions WHERE project_id=? AND id=?'
-      )
-      .get(p, manifest.revisionId) as { id: string }
-  ).id
-  capture.digest = captureDigest(capture)
-  if (!isAnalysisCapture(capture)) throw new ProjectError('VALIDATION')
-  return capture
 }
 const fields: Record<string, string[]> = {
   chat: ['title'],

@@ -133,9 +133,7 @@ export class ImportAnalysisService extends AiContentService {
         g.execution.activeAttemptId = null
       }
       if (g.next >= g.value.partIds.length) {
-        this.pause(
-          'This authorization is finished. Review coverage before authorizing more requests.'
-        )
+        this.pause('Analysis is complete. Saved findings are ready.')
         return
       }
       if (super.hasPendingWork() || this.provider.hasPendingWork() || this.otherPending()) {
@@ -154,7 +152,7 @@ export class ImportAnalysisService extends AiContentService {
         planId: g.plan.id,
         proposalId: page.proposalId,
         mode: g.value.mode,
-        partId: g.value.mode === 'reanalyze' ? partId : null,
+        partId: null,
         limit: 64
       })
       this.guard(g)
@@ -219,10 +217,8 @@ export class ImportAnalysisService extends AiContentService {
     if (isCommitRequest(input) || isReviewRequest(input)) {
       const mutation = [
         'review-open',
-        'review-save',
-        'review-chat',
-        'review-partial',
-        'confirmation-prepare',
+        'review-automatic',
+        'review-legacy',
         'import-commit'
       ].includes(input.action)
       if (
@@ -249,12 +245,8 @@ export class ImportAnalysisService extends AiContentService {
     if (input.action === 'cancel')
       this.pause('Stopped by you. Completed parts are retained; unfinished attempts need review.')
     if (!isMultiRequest(input)) {
-      // Multipart sends are reserved for the finite coordinator, never a renderer-created single request.
-      if (
-        (input.action === 'review' && 'version' in input) ||
-        (input.action === 'submit' && 'version' in input.review)
-      )
-        throw new ProjectError('DENIED')
+      // All new inference belongs to the finite coordinator. Older attempts retain only recovery.
+      if (input.action === 'review' || input.action === 'submit') throw new ProjectError('DENIED')
       const value = await super.command(input)
       if (!isAnalysisValue(value)) throw new ProjectError('UNAVAILABLE')
       return value
@@ -305,7 +297,7 @@ export class ImportAnalysisService extends AiContentService {
         planId: offer.plan.id,
         proposalId: offer.value.proposalId,
         mode: offer.value.mode,
-        partId: offer.value.mode === 'reanalyze' ? offer.value.partIds[0] : null,
+        partId: null,
         limit: offer.value.partIds.length
       })
       if (
@@ -345,9 +337,22 @@ export class ImportAnalysisService extends AiContentService {
         !status.catalog.selectedModelId
       )
         throw new ProjectError('UNAVAILABLE')
-      const selection = await this.worker({ ...input, action: 'plan-select' })
+      if (
+        input.submission &&
+        (input.submission.connectionId !== status.activeConnectionId ||
+          input.submission.model !== status.catalog.selectedModelId ||
+          input.submission.catalogRevision !== status.catalog.revision ||
+          input.submission.reviewRevision !== status.reviewRevision)
+      )
+        throw new ProjectError('STALE_REVISION')
+      const { submission: _, ...selectionInput } = input
+      void _
+      const selection = await this.worker({ ...selectionInput, action: 'plan-select' })
       if (selection.type !== 'plan-selection' || !this.provider.contentReviewCurrent(stamp))
         throw new ProjectError('STALE_REVISION')
+      // One Submit covers the entire supported plan; never silently trim a larger selection.
+      if (input.submission && selection.plan.parts.length > 64)
+        throw new ProjectError('LIMIT_EXCEEDED')
       const value: PlanReview = {
         type: 'plan-review',
         reviewId: randomUUID(),

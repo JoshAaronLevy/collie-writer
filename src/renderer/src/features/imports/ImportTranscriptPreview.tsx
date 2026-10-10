@@ -2,7 +2,6 @@ import { ImportedMessageLinks } from './ImportedMessageLinks'
 import { useEffect, useRef, useState } from 'react'
 import { TextInput } from '@mantine/core'
 import { AppButton } from '../../components/ui/Controls'
-import type { ImportFile } from '../../../../shared/project-import'
 import type { OpenInput } from '../../../../shared/projects'
 import type {
   TranscriptValue,
@@ -17,10 +16,6 @@ type Slice = Extract<TranscriptValue, { type: 'transcript-text' }>
 type Matches = Extract<TranscriptValue, { type: 'transcript-matches' }>
 export function ImportTranscriptPreview({
   scope,
-  batchId,
-  graphId,
-  recordId,
-  files,
   accepted,
   initialTarget,
   onSource,
@@ -28,11 +23,7 @@ export function ImportTranscriptPreview({
   onClose
 }: {
   scope: OpenInput
-  batchId: string
-  graphId: string
-  recordId: string
-  files: ImportFile[]
-  accepted?: { conversationId: string; revisionId: string }
+  accepted: { conversationId: string; revisionId: string }
   initialTarget?: TranscriptKey
   onSource?: (id: string) => void
   disabled: boolean
@@ -52,18 +43,14 @@ export function ImportTranscriptPreview({
     },
     []
   )
-  const source = accepted
-    ? { kind: 'accepted' as const, ...accepted }
-    : { kind: 'staged' as const, batchId, graphId, recordId }
+  const source = { kind: 'accepted' as const, ...accepted }
   async function request(input: TranscriptInput): Promise<void> {
     if (disabled || busy) return
     const current = ++generation.current
     setBusy(true)
     setIssue('')
     try {
-      const result = await (accepted
-        ? window.collie.conversation(input)
-        : window.collie.projectImport(input))
+      const result = await window.collie.conversation(input)
       if (current !== generation.current) return
       if (!result.ok) {
         setIssue(result.error.message)
@@ -98,20 +85,14 @@ export function ImportTranscriptPreview({
   }
   const locked = busy || disabled
   return (
-    <section
-      className={styles.preview}
-      aria-label={accepted ? 'Imported transcript' : 'Staged transcript'}
-    >
+    <section className={styles.preview} aria-label="Imported transcript">
       <h3 tabIndex={-1}>
-        {accepted ? 'Imported transcript' : 'Staged transcript'}
+        Imported transcript
         {page ? ` · ${page.title}` : ''}
       </h3>
       <p>
         Original ordered messages from this conversation representation. Other raw/curated variants
-        remain linked.{' '}
-        {accepted
-          ? 'This is protected imported history; opening it sends no request.'
-          : 'This preview has no live request status and has not imported a chat.'}
+        remain linked. This is protected imported history; opening it sends no request.
       </p>
       <div className={styles.actions}>
         <AppButton variant="default" disabled={locked} onClick={() => load()}>
@@ -264,11 +245,7 @@ export function ImportTranscriptPreview({
                   {entry.external ? (
                     <details>
                       <summary>Origin and variants</summary>
-                      <p>
-                        {files.find((f) => f.id === entry.external!.record.locator.fileId)
-                          ?.originalName ?? 'Retained original'}{' '}
-                        · {entry.external.record.locator.pointer}
-                      </p>
+                      <p>Retained original · {entry.external.record.locator.pointer}</p>
                       <p>
                         External message {entry.external.record.externalId ?? 'not supplied'} ·
                         mapping node {entry.external.record.nodeId ?? 'not supplied'} ·{' '}

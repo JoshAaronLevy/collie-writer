@@ -240,7 +240,9 @@ export function installReviewedContent(
     references = new Map(
       prepared.relations.filter((l) => l.kind === 'reference' && l.to).map((l) => [l.to!, l])
     )
-  for (const e of entries) {
+  for (const e of [...entries].sort(
+    (a, b) => Number(a.action === 'link') - Number(b.action === 'link')
+  )) {
     if (e.action === 'exclude' || !['source', 'note'].includes(e.kind)) continue
     const r = records.get(e.choice.recordId)!,
       row = rows.get(r.id)
