@@ -2,6 +2,8 @@
 
 ## Status and purpose
 
+**RF06 presentation update, October 11, 2026:** the inactive Re-Analyze placeholder is removed. The current summary has Cancel and Accept; explicit continuation/retry and retained recovery remain unchanged. See the [RF06 guide](docs/manual-testing/refactor-RF06.md).
+
 Updated October 11, 2026 — **IH01–IH07 implementation complete — awaiting user testing.** Josh approved the architecture: use TypeScript for reading, transforming, validating and importing data; use ChatGPT to understand unfamiliar structures and interpret content only where needed. This document plans that replacement and records requested stage implementation below. Stage progression does not establish runtime acceptance of earlier work.
 
 The existing [import plan](import-implementation-plan.md) records the storage and provenance foundation. The [UX revision plan](import-ux-implementation-plan.md) establishes the interaction that remains required: **choose files, categories, optional instructions and model → Submit → short summary → Accept**. This plan supersedes their requirement that newly imported records first receive AI recognition. It also lifts their deferral of extraction improvements, specifically for the hybrid work described here. Historical project formats and saved work retain their meaning.
@@ -46,7 +48,7 @@ IH06 extends SQL/minimum reader to **37**, with typed refusal records, execution
 | Original content                | Copy original message/note bodies from retained files. Preserve identity, ordering and source occurrences; generated summaries are not imported original notes.                                         |
 | Acceptance                      | Only Accept creates destination content, through the existing atomic manifest/commit owner. Summary counts come from exactly that manifest.                                                             |
 | Partial results                 | Retain usable independent findings and explain omissions briefly. Missing AI work is not evidence that the input has no content.                                                                        |
-| Re-Analyze                      | Keep the disabled placeholder. Recovery of an interrupted request is distinct from a new general reanalysis feature.                                                                                    |
+| Re-Analyze                      | No inactive placeholder or general reanalysis action. Explicit interrupted-request recovery remains separate.                                                                                           |
 
 File contents are data. Embedded instructions, URLs and local paths never become execution authority. Only the user's form instructions direct the import, within the supported extraction behavior.
 

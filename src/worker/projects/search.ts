@@ -134,7 +134,21 @@ export class LocalSearch {
     uninspectedSources: number
     uninspected: SearchActivity['uninspected']
   } | null = null
-  constructor(path: string, nativeBinding?: string) {
+  constructor(path: string, nativeBinding?: string, existingProjection?: Database.Database) {
+    if (existingProjection) {
+      // Clearing may load an existing cache, but must not initialize an unverified database.
+      const existing = new Database(path, {
+        readonly: true,
+        fileMustExist: true,
+        ...(nativeBinding ? { nativeBinding } : {})
+      })
+      try {
+        existing.pragma('trusted_schema=OFF')
+        if (!searchProjection(existing, existingProjection)) throw new ProjectError('DENIED')
+      } finally {
+        existing.close()
+      }
+    }
     this.index = openStorageDatabase(path, nativeBinding)
     try {
       const info = lstatSync(path, { bigint: true })

@@ -8,7 +8,7 @@
 
 The [improvement plan](../../app-improvement-plan.md) requires the writer's own eligible subscription, browser sign-in, no copied API key, and no purchased-credit/top-up fallback. This record preserves that product requirement. A coding-oriented runtime is acceptable for writing; usefulness remains a future user assessment. The [experience specification](../design/app-experience.md#s03--optional-ai-connection) defines the UI without asserting that any connection works today.
 
-**I14 update, October 2, 2026:** Grok and Claude sources were refreshed. Grok Build is now selected for an independently implemented ACP transport component; **I14 engineering remains partial**. Its public Apache-licensed source resolves the earlier uncertainty about a source-level engineering basis. Protected auth, funding/isolation, product account routing and exact packaged artifacts remain unfinished. The [Grok runbook](grok-runtime.md) owns current source links, component status and continuation. The older I01 rows below are historical evidence, not claims that no Grok source license or profile controls exist today. No second provider is connectable and no live action occurred.
+**I14 history / RF06 update, October 11, 2026:** the earlier Grok ACP component and closed launch owner have been removed as dormant code; no second provider is connectable. The [historical Grok research](grok-runtime.md) retains the October 2 source/license reading and unresolved auth, funding, isolation and distribution requirements. Current own-account ChatGPT selection and eligibility/release gates are unchanged. No provider action or approval occurred.
 
 ## Disposition
 

@@ -1,3 +1,5 @@
+import WorkingCopyPanel from '../settings/WorkingCopyPanel'
+import { RecoveryProvider } from '../recovery/RecoveryProvider'
 import { Context } from './workspaceContext'
 import { type ReactNode } from 'react'
 import type { StorageStatus } from '../../../../shared/storage'
@@ -18,7 +20,12 @@ export function WorkspaceSessionProvider({
     <Context.Provider value={session}>
       <DraftContext.Provider value={session.drafts}>
         <StorageNoticesProvider>
-          <ResearchDataProvider project={session.project}>{children}</ResearchDataProvider>
+          <ResearchDataProvider project={session.project}>
+            <RecoveryProvider>
+              {children}
+              <WorkingCopyPanel />
+            </RecoveryProvider>
+          </ResearchDataProvider>
         </StorageNoticesProvider>
       </DraftContext.Provider>
     </Context.Provider>

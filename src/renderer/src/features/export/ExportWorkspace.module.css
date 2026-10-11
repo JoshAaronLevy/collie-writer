@@ -1,7 +1,11 @@
 .export-workspace {
-  max-width: 64rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 18rem;
+  max-height: calc(100dvh - 11rem);
+  max-width: 52rem;
   margin: auto;
-  padding: var(--collie-space-6);
+  padding: var(--collie-space-5);
   background: var(--collie-surface);
   border: 1px solid var(--collie-border);
   border-radius: var(--collie-radius-surface);
@@ -10,28 +14,27 @@
   margin: 0;
   font: 400 2rem/1.2 var(--collie-font-manuscript);
 }
-.export-eyebrow {
-  color: var(--collie-text-secondary);
+.export-workspace header,
+.export-workspace footer {
+  flex-shrink: 0;
 }
-.export-steps,
+.export-workspace footer {
+  padding-block-start: var(--collie-space-4);
+  border-block-start: 1px solid var(--collie-border);
+}
+.export-body {
+  display: grid;
+  gap: var(--collie-space-4);
+  min-height: 0;
+  min-width: 0;
+  padding: var(--collie-space-2);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
 .export-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--collie-space-2);
-}
-.export-steps {
-  padding-block: var(--collie-space-4);
-  border-block: 1px solid var(--collie-border);
-}
-.export-options,
-.export-review {
-  display: grid;
-  gap: var(--collie-space-4);
-  min-width: 0;
-}
-.export-options > button,
-.export-review > button {
-  justify-self: start;
 }
 .export-section-list,
 .export-format-options {
@@ -42,10 +45,8 @@
   gap: var(--collie-space-2);
   min-width: 0;
 }
-.export-fields {
-  display: grid;
+.export-format-options {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--collie-space-4);
 }
 .export-disclosure {
   border-block-start: 1px solid var(--collie-border);
@@ -62,21 +63,36 @@
 .export-order {
   padding-inline-start: var(--collie-space-6);
 }
-.export-order li {
+.export-order li,
+.export-result li {
   margin-block: var(--collie-space-3);
 }
 .export-result {
-  margin-block: var(--collie-space-4);
   padding: var(--collie-space-4);
   border: 1px solid var(--collie-border);
   border-radius: var(--collie-radius-control);
   overflow-wrap: anywhere;
 }
-.export-result li {
-  margin-block: var(--collie-space-3);
+.export-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 3rem);
+}
+.export-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--collie-space-4);
+  min-height: 0;
+  overflow: hidden;
+}
+.export-dialog-scroll {
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
 }
 .export-reference-tools {
-  max-width: 64rem;
+  max-width: 52rem;
   margin: var(--collie-space-4) auto;
   padding: var(--collie-space-4);
   border: 1px solid var(--collie-border);
@@ -90,7 +106,7 @@
   font-weight: 600;
 }
 @media (max-width: 40rem) {
-  .export-fields {
+  .export-format-options {
     grid-template-columns: minmax(0, 1fr);
   }
   .export-workspace {

@@ -14,7 +14,6 @@ import {
 
 export const FILE_CHANNELS = {
   backup: 'files.backup',
-  move: 'files.move',
   restore: 'files.restore',
   duplicate: 'files.duplicate',
   recover: 'files.recover',
@@ -39,9 +38,9 @@ export type FileAction = {
   kind:
     'save' | 'save-as' | 'open' | 'open-shell' | 'close' | 'close-cancelled' | 'suspend' | 'resume'
 }
-export type FileChoice = 'cancel' | 'open-copy' | 'use-local' | 'import'
+export type FileChoice = 'cancel' | 'open-copy' | 'use-local'
 export type PickInput = {
-  purpose: 'save' | 'open' | 'locate' | 'backup' | 'move' | 'restore'
+  purpose: 'save' | 'open' | 'locate' | 'backup' | 'restore'
   scope: OpenInput | null
   suggestedName?: string
 }
@@ -57,6 +56,7 @@ export type SelectedInput = { operationId: string; token: string }
 export type LocateInput = SelectedInput & { scope: OpenInput }
 export type InspectInput = { scope: OpenInput; operationId: string }
 export type FileInspection = {
+  createdAt: string
   projectId: string
   snapshotId: string
   headCommitId: string
@@ -97,7 +97,6 @@ export type FileStatus = {
 }
 export type FileAPI = {
   backupProject: (input: SaveInput) => Promise<ProjectResult<FileStatus>>
-  moveProject: (input: SaveInput) => Promise<ProjectResult<FileStatus>>
   restoreProject: (input: SelectedInput) => Promise<ProjectResult<FileStatus>>
   duplicateProject: (input: {
     scope: OpenInput
@@ -136,12 +135,12 @@ export function isPickInput(v: unknown): v is PickInput {
       ...(Object.hasOwn(v, 'suggestedName') ? ['suggestedName'] : [])
     ]) &&
     (!Object.hasOwn(v, 'suggestedName') ||
-      (['save', 'backup', 'move'].includes(String(v.purpose)) &&
+      (['save', 'backup'].includes(String(v.purpose)) &&
         typeof v.suggestedName === 'string' &&
         v.suggestedName.length <= 2000)) &&
     (['open', 'restore'].includes(String(v.purpose))
       ? v.scope === null
-      : ['save', 'locate', 'backup', 'move'].includes(String(v.purpose)) && isOpenInput(v.scope))
+      : ['save', 'locate', 'backup'].includes(String(v.purpose)) && isOpenInput(v.scope))
   )
 }
 export function isSelection(v: unknown): v is FileSelection | null {
@@ -183,7 +182,7 @@ export function isInspectInput(v: unknown): v is InspectInput {
   )
 }
 export function isFileChoice(v: unknown): v is FileChoice {
-  return ['cancel', 'open-copy', 'use-local', 'import'].includes(String(v))
+  return ['cancel', 'open-copy', 'use-local'].includes(String(v))
 }
 export function sameScope(a: OpenInput | null, b: OpenInput | null): boolean {
   return a === null
@@ -274,7 +273,10 @@ export function isFileStatus(v: unknown): v is FileStatus {
   return (
     i === null ||
     (record(i) &&
-      exact(i, ['projectId', 'snapshotId', 'headCommitId', 'title', 'local']) &&
+      exact(i, ['projectId', 'snapshotId', 'headCommitId', 'title', 'local', 'createdAt']) &&
+      typeof i.createdAt === 'string' &&
+      i.createdAt.length <= 40 &&
+      Number.isFinite(Date.parse(i.createdAt)) &&
       [i.projectId, i.snapshotId, i.headCommitId].every(isId) &&
       typeof i.title === 'string' &&
       i.title.length <= 500 &&

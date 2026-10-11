@@ -5,11 +5,15 @@ import type { ExportJob } from '../../../../shared/exports'
 import type { ExportOperation } from './useExportOperations'
 import type { OutlineDocument } from '../../../../shared/outline'
 import { savePresentation, type SavePresentation } from '../projects/project-file-presentation'
+import { spaceMessage } from '../../../../shared/storage-space'
 type WorkspaceControllerState = {
+  localCopyTarget: OpenInput | null
+  setLocalCopyTarget: React.Dispatch<React.SetStateAction<OpenInput | null>>
+  projectDetailsOpen: boolean
+  setProjectDetailsOpen: React.Dispatch<React.SetStateAction<boolean>>
   acceptProjectDetails: (next: OpenProject) => void
   composition: React.RefObject<boolean>
   actionTask: React.RefObject<Promise<unknown> | null>
-  renamePending: React.RefObject<RenameInput | null>
   storage: StorageStatus
   drafts: DraftRegistry
   destination: AppDestination
@@ -112,6 +116,7 @@ type WorkspaceControllerState = {
   changed: () => void
   refresh: () => Promise<void>
   refreshData: () => Promise<void>
+  reviewRecovery: () => Promise<ProjectResult<DataLocations> | null>
   importImage: (details: { alt: string; caption: string }) => Promise<void>
   navigateSection: (documentId: string, anchorId?: string) => Promise<void>
   navigateSearch: (hit: SearchHit) => void
@@ -126,11 +131,10 @@ type WorkspaceControllerState = {
   openLocal: (scope: OpenInput, after?: 'write' | 'details') => Promise<void>
   openFile: (inspect?: boolean, locate?: boolean, shell?: boolean) => Promise<void>
   lifecycleFile: (
-    kind: 'backup' | 'move' | 'duplicate' | 'restore' | 'recover',
+    kind: 'backup' | 'duplicate' | 'restore' | 'recover',
     artifactId?: string
-  ) => Promise<void>
-  manage: (title?: string) => Promise<void>
-  resetLocal: (review: string) => Promise<void>
+  ) => Promise<boolean>
+  archive: (input: ArchiveInput) => Promise<boolean>
   captureAnnotation: () => Promise<void>
   afterNoteCommit: () => Promise<void>
   changeAccess: (kind: 'designate' | 'finish' | 'import') => Promise<void>
@@ -181,7 +185,7 @@ import {
   type OutlineChange,
   type HistoryView
 } from '../../../../shared/outline'
-import type { DataLocations, RenameInput } from '../../../../shared/project-lifecycle'
+import type { DataLocations, ArchiveInput } from '../../../../shared/project-lifecycle'
 import type { StorageStatus } from '../../../../shared/storage'
 import {
   projectMessages,
@@ -210,7 +214,7 @@ import {
   type SetupEditingIntent,
   type SetupCompletion
 } from '../onboarding/setup-draft'
-import { forgetLastProject, readLastProject, rememberLastProject } from '../library/last-project'
+import { readLastProject, rememberLastProject } from '../library/last-project'
 import type { AnnotationCapture } from '../projects/NotesPanel'
 import type { CitationsView } from '../../../../shared/citations'
 import type { SourceRecord } from '../../../../shared/sources'
@@ -297,6 +301,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     [retry, setRetry] = useState<CommitInput | null>(null)
   const [error, setError] = useState(''),
     [notice, setNotice] = useState('')
+  const [localCopyTarget, setLocalCopyTarget] = useState<OpenInput | null>(null)
   const [history, setHistory] = useState<HistoryView | null>(null)
   const [annotationCapture, setAnnotationCapture] = useState<AnnotationCapture | null>(null)
   const [inspectionTarget, setInspectionTarget] = useState<{
@@ -322,7 +327,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
   const [conflict, setConflict] = useState<OpenProject | null>(null)
   const [files, setFiles] = useState<FileStatus>(emptyFiles)
   const [data, setData] = useState<DataLocations | null>(null)
-  const renamePending = useRef<RenameInput | null>(null)
+  const [projectDetailsOpen, setProjectDetailsOpen] = useState(false)
   const metaPending = useRef<SectionMetaInput | null>(null)
   const current = useRef<OpenProject | null>(null),
     editorRef = useRef<Editor | null>(null)
@@ -482,8 +487,10 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       void flushManuscript()
   })
   const onDirtyChanged = useEffectEvent(() => window.collie.setUnprotectedChanges(isDirty()))
-  const onStorageReady = useEffectEvent(() => {
-    void refreshData()
+  const onStorageReady = useEffectEvent(async () => {
+    // The library and intended project become available before the broader recovery/size scan.
+    await refresh()
+    if (alive.current && !closingRef.current && (await waitActive())) await refreshData()
   })
   useEffect(() => {
     const waiters = jobWaiters.current
@@ -536,7 +543,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
   }, [destination, project])
   useEffect(() => {
     if (storage.state === 'ready') {
-      onStorageReady()
+      void onStorageReady()
       return
     }
     if (storage.state === 'unavailable') {
@@ -574,25 +581,17 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     initialDestinationResolved.current = true
     try {
       if (destinationRef.current.kind !== 'setup' || hasResumableSetup()) return
-      if (projects.projects.length === 0) {
-        if (projects.issues.length) {
-          setLibraryIssue(
-            'Local project records need attention. Review recovery before creating more work.'
-          )
-          showDestination({ kind: 'library' })
-        }
-        return
-      }
+      if (projects.projects.length === 0 && projects.issues.length === 0) return
       const saved = readLastProject()
       if (saved.issue) setLibraryIssue(saved.issue)
       const last = saved.value
       if (last) {
         const summary = projects.projects.find((item) => sameScope(item, last))
-        if (!summary)
+        if (!summary && !projects.issues.some((p) => sameScope(p.scope, last)))
           setLibraryIssue(
             'The previous project is not in this local library. Choose a project or review recovery.'
           )
-        else if (summary.archived) {
+        else if (summary?.archived) {
           setLibraryView('archived')
           setLibraryIssue(
             'The previous project is archived. Open it from Archived when you are ready.'
@@ -626,7 +625,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     if (!alive.current) return
     if (result.ok) {
       setList(result.value)
-      void resolveInitialDestination(result.value)
+      await resolveInitialDestination(result.value)
     } else {
       setError(result.error.message)
       if (
@@ -653,6 +652,29 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       setError(result.error.message)
       await refresh()
     }
+  }
+  async function reviewRecovery(): Promise<ProjectResult<DataLocations> | null> {
+    const result = await window.collie.reviewRecovery()
+    if (!alive.current) return null
+    if (!result.ok) return result
+    setData(result.value)
+    setList(result.value.projects)
+    const retained = pendingSave.current
+    if (
+      retained &&
+      result.value.recovery.some(
+        (i) =>
+          i.kind === 'save' &&
+          i.outcome === 'confirmed' &&
+          sameScope(i.scope, retained.scope) &&
+          i.operationId === retained.operationId
+      )
+    )
+      retainSave(null)
+    // Destination changes never replace editor content, selection, or buffered metadata.
+    await refreshFiles(true)
+    await waitActive()
+    return result
   }
   async function refreshFiles(recheck = false): Promise<void> {
     const result = await window.collie.getProjectFileStatus(
@@ -728,6 +750,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
         editorRef.current.schema.nodeFromJSON(hydrateDocument(next.payload))
       )
     if (!sameScope(current.current, next)) {
+      setProjectDetailsOpen(false)
       setBackTrail([])
       setReferenceAnchor(null)
     }
@@ -1221,7 +1244,8 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       if (fileState.current.job?.id !== id) return null
     }
     const job = await waitJob(id)
-    if (job?.error && job.state !== 'cancelled') setError(projectMessages[job.error])
+    if (job?.error && job.state !== 'cancelled')
+      setError(job.space ? spaceMessage(job.space) : projectMessages[job.error])
     return job
   }
   function run(work: () => Promise<unknown>): void {
@@ -1307,13 +1331,20 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     const result = await window.collie.openProject(scope)
     if (result.ok) {
       await select(await resumeItem(result.value), after)
+      await refresh()
       setLibraryIssue(null)
-    } else setError(result.error.message)
+    } else {
+      const title = list.projects.find((p) => sameScope(p, scope))?.title
+      setError(
+        `${title ? `Could not open “${title}”` : 'The selected project could not open'}: ${result.error.message}`
+      )
+    }
   }
   async function openFile(inspect = false, locate = false, shell = false): Promise<void> {
     if (!(await waitActive())) return
     setBusy(true)
     if (current.current && !(await flush(false, 'replace'))) return
+    setError('')
     const p = current.current,
       operationId = crypto.randomUUID()
     let result: ProjectResult<FileStatus>
@@ -1344,15 +1375,22 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     await refresh()
   }
   async function lifecycleFile(
-    kind: 'backup' | 'move' | 'duplicate' | 'restore' | 'recover',
+    kind: 'backup' | 'duplicate' | 'restore' | 'recover',
     artifactId?: string
-  ): Promise<void> {
-    if (!(await waitActive())) return
+  ): Promise<boolean> {
+    if (pendingSave.current) {
+      setError(
+        'Collie has not confirmed the pending Save. Finish that Save before creating or opening another copy.'
+      )
+      return false
+    }
+    if (!(await waitActive())) return false
     setBusy(true)
     const p = current.current
       ? await flush(false, ['duplicate', 'restore', 'recover'].includes(kind) ? 'replace' : 'save')
       : null
-    if (current.current && !p) return
+    if (current.current && !p) return false
+    setError('')
     const operationId = crypto.randomUUID()
     let result: ProjectResult<FileStatus>
     if (kind === 'recover' && artifactId)
@@ -1361,7 +1399,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       const selection = await window.collie.pickProjectFile({ purpose: 'restore', scope: null })
       if (!selection.ok || !selection.value) {
         if (!selection.ok) setError(selection.error.message)
-        return
+        return false
       }
       result = await window.collie.restoreProject({ operationId, token: selection.value.token })
     } else if (p && kind === 'duplicate')
@@ -1370,17 +1408,17 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
         scope: scopeOf(p),
         expectedHead: p.headCommitId
       })
-    else if (p && (kind === 'backup' || kind === 'move')) {
+    else if (p && kind === 'backup') {
       await refreshFiles()
-      if (!(await waitActive())) return
+      if (!(await waitActive())) return false
       const selection = await window.collie.pickProjectFile({
-        purpose: kind,
+        purpose: 'backup',
         scope: scopeOf(p),
         suggestedName: p.title
       })
       if (!selection.ok || !selection.value) {
         if (!selection.ok) setError(selection.error.message)
-        return
+        return false
       }
       const input: SaveInput = {
         operationId,
@@ -1389,116 +1427,50 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
         expectedGeneration: fileState.current.destination?.generationId ?? null,
         token: selection.value.token
       }
-      result =
-        kind === 'backup'
-          ? await window.collie.backupProject(input)
-          : await window.collie.moveProject(input)
-    } else return
+      result = await window.collie.backupProject(input)
+    } else return false
     const job = await finishJob(result, operationId)
     if (job?.state === 'completed') {
-      if (job.opened) await openLocal(job.opened)
+      if (job.opened) {
+        await openLocal(job.opened)
+        if (!sameScope(current.current, job.opened)) return false
+      }
       setNotice(
         kind === 'backup'
-          ? `Backup written and reopened at revision ${job.capturedHead?.slice(0, 8) ?? ''}. The save location is unchanged; later typing may still need protection.`
-          : kind === 'move'
-            ? 'New location written and reopened. The old file is retained.'
-            : 'Independent project opened. The original work is retained.'
+          ? 'Backup saved. The project’s Save location is unchanged.'
+          : kind === 'duplicate'
+            ? 'Duplicate opened. The original project is kept; first Save asks for a location.'
+            : 'Restored copy opened. Existing projects and files are kept; first Save asks for a location.'
       )
     }
-    if (!(await waitActive())) return
+    if (!(await waitActive())) return false
     await refreshData()
+    return job?.state === 'completed'
   }
-  async function manage(title?: string): Promise<void> {
-    if (!(await waitActive())) return
+  async function archive(input: ArchiveInput): Promise<boolean> {
+    if (!(await waitActive())) return false
     setBusy(true)
-    const p = await flush(false, 'save', ['project-title'])
-    if (!p) return
-    if (renamePending.current && !sameScope(renamePending.current.scope, scopeOf(p))) {
-      setError('Reopen the project with the pending rename before retrying it.')
-      return
+    const p = await flush()
+    if (!p) return false
+    if (!sameScope(p, input.scope)) {
+      setError('Open the selected project before changing its archive status.')
+      return false
     }
-    if (title !== undefined) {
-      renamePending.current ??= {
-        scope: scopeOf(p),
-        operationId: crypto.randomUUID(),
-        expectedHead: p.headCommitId,
-        title
-      }
-      const result = await window.collie.renameProject(renamePending.current)
-      if (result.ok) {
-        renamePending.current = null
-        const selected = await window.collie.openSection({
-          ...scopeOf(result.value),
-          documentId: p.documentId
-        })
-        await select(selected.ok ? selected.value : result.value)
-      } else {
-        if (result.error.code !== 'UNAVAILABLE') renamePending.current = null
-        setError(result.error.message)
-        return
-      }
-    } else {
-      const result = await window.collie.archiveProject({
-        scope: scopeOf(p),
-        archived: !p.archived
-      })
-      if (result.ok) {
-        const selected = await window.collie.openSection({
-          ...scopeOf(result.value),
-          documentId: p.documentId
-        })
-        await select(selected.ok ? selected.value : result.value)
-        setNotice(
-          result.value.archived
-            ? 'Archived locally. Find it under Projects → Archived.'
-            : 'Project returned to the active list.'
-        )
-      } else {
-        setError(result.error.message)
-        return
-      }
-    }
-    await waitActive()
-    await refreshData()
-  }
-  async function resetLocal(review: string): Promise<void> {
-    if (!(await waitActive())) return
-    setBusy(true)
-    const wasDirty = isDirty()
-    if (current.current && !(await flush(false, 'replace'))) return
-    if (wasDirty) {
-      await refreshData()
-      setError(
-        'Writing was protected. Review the updated project list before confirming reset again.'
-      )
-      return
-    }
-    const result = await window.collie.resetLocalWork({ review, confirmation: 'RESET LOCAL WORK' })
+    const result = await window.collie.archiveProject(input)
     if (!result.ok) {
       setError(result.error.message)
-      // A lost response is not proof that reset rolled back. Keep the buffer visible for copying.
-      if (result.error.code === 'UNAVAILABLE')
-        setNotice(
-          'Reset outcome is unknown. Refresh recovery before opening or creating another project. Your visible writing remains available for copying.'
-        )
-      return
+      return false
     }
-    showDestination({ kind: 'library' })
-    updateProject(null)
-    editVersionRef.current = 0
-    protectedVersionRef.current = 0
-    setEditVersion(0)
-    setProtectedVersion(0)
-    retryCommit.current = null
-    setRetry(null)
-    retainSave(null)
-    renamePending.current = null
-    applyFiles(emptyFiles)
-    window.collie.setUnprotectedChanges(false)
-    forgetLastProject()
-    setData(result.value)
-    setList(result.value.projects)
-    setNotice('Local list reset. Recover the retained projects in Reset recovery.')
+    // Organization changes do not replace editor content, selection or undo history.
+    updateProject({ ...p, archived: result.value.archived })
+    setNotice(
+      result.value.archived
+        ? 'Find this project under Projects → Archived.'
+        : 'Project returned to All active.'
+    )
+    await waitActive()
+    await refresh()
+    return true
   }
   async function handleAction(action: FileAction): Promise<void> {
     if (action.kind === 'close-cancelled') {
@@ -2226,11 +2198,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
         busy: !!pendingSave.current && !!actionTask.current,
         pendingOperation: pendingSave.current,
         policy: 'operation',
-        target: {
-          kind: 'workspace',
-          scope: pendingSave.current?.scope ?? scopeOf(owner),
-          view: 'details'
-        }
+        target: writingDestination(pendingSave.current?.scope ?? owner, owner.documentId)
       })
     })
   }, [drafts, project])
@@ -2342,19 +2310,17 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       return blocked('Protect the pending work shown above, then continue with this saved project.')
     window.collie.setUnprotectedChanges(isDirty())
     if (isDirty()) return blocked('Protect every pending draft before continuing.')
-    const inventory = await window.collie.listProjects()
-    if (!inventory.ok) return blocked(inventory.error.message)
-    setList(inventory.value)
-    const found = inventory.value.projects.find((item) => sameProject(item, receipt))
-    if (!found)
-      return blocked(
-        'This saved project could not be found. Review Projects or Data & recovery; its project record is kept.'
-      )
-    if (found.archived)
-      return blocked(
-        'This project is archived. Restore it from Projects before continuing; its project record is kept.'
-      )
     const scope = scopeOf(receipt)
+    // Receipts and library hints do not retain worker ownership across restart.
+    // Open before reading sections or granting editing access to this saved project.
+    if (!sameScope(current.current, scope)) {
+      const opened = await window.collie.openProject(scope)
+      if (!opened.ok) return blocked(opened.error.message)
+      const selected = await resumeItem(opened.value, receipt.documentId)
+      await select(selected, 'setup')
+    }
+    if (current.current?.archived)
+      return blocked('This project was archived. Restore it from Projects before continuing.')
     if (mode === 'read') {
       await readSetupAccess()
     }
@@ -2410,17 +2376,6 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       }
     }
     if (closingRef.current) return blocked('Finish closing or return to setup to continue.')
-    if (!sameScope(current.current, scope)) {
-      // A retained setup receipt survives restart; the worker's active project
-      // does not. Acquire it through the normal project-opening guards before
-      // requesting a section, which only reads the already-owned project.
-      const opened = await window.collie.openProject(scope)
-      if (!opened.ok) return blocked(opened.error.message)
-      if (opened.value.archived)
-        return blocked('This project was archived. Restore it from Projects before continuing.')
-      const selected = await resumeItem(opened.value, receipt.documentId)
-      await select(selected, 'setup')
-    }
     if (mode === 'write') {
       const confirmed = await readSetupAccess()
       if (
@@ -2473,7 +2428,8 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     acceptProjectDetails,
     composition,
     actionTask,
-    renamePending,
+    projectDetailsOpen,
+    setProjectDetailsOpen,
     storage,
     drafts,
     destination,
@@ -2518,6 +2474,8 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     setError,
     notice,
     setNotice,
+    localCopyTarget,
+    setLocalCopyTarget,
     history,
     annotationCapture,
     noteDirty,
@@ -2552,6 +2510,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     changed,
     refresh,
     refreshData,
+    reviewRecovery,
     importImage,
     navigateSection,
     navigateSearch,
@@ -2566,8 +2525,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     openLocal,
     openFile,
     lifecycleFile,
-    manage,
-    resetLocal,
+    archive,
     captureAnnotation,
     afterNoteCommit,
     changeAccess,

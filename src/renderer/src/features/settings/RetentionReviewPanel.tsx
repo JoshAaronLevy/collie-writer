@@ -1,5 +1,5 @@
-import { Radio } from '@mantine/core'
-import { useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { AppDialog } from '../../components/ui/AppDialog'
 import { AppButton } from '../../components/ui/Controls'
 import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { useRetainedDraft } from '../workspace/DraftOwner'
@@ -20,12 +20,12 @@ type ReviewKind = 'previous' | 'local'
 const reviews = {
   previous: {
     key: 'collie.retained-version-action.v1',
-    title: 'Previous Save versions',
+    title: 'Older saved versions',
     label: 'previous Save version removal'
   },
   local: {
     key: 'collie.local-artifact-action.v1',
-    title: 'Completed local artifacts',
+    title: 'Temporary files',
     label: 'completed local artifact removal'
   }
 } as const
@@ -90,67 +90,151 @@ export default function RetentionReviewPanel({
   const [view, setView] = useState<RetentionView | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [error, setError] = useState(initial.issue)
+  const projectId = project?.projectId
+  const workspaceId = project?.workspaceId
   const scope = project ? { projectId: project.projectId, workspaceId: project.workspaceId } : null
   const owner = pendingValue?.scope ?? scope
   const current = !!scope && !!view && sameScope(scope, view.scope)
   const chosen = view?.files.find((f) => f.id === selected && f.state === 'eligible')
-  const blocked = disabled || !active || busyValue || !!initial.issue
-  async function send(input: RetentionInput): Promise<void> {
-    if (busy.current) return
+  const [message, setMessage] = useState('')
+  const stop = useRef(false)
+  const inspected = useRef<string | null>(null)
+  const anotherBusy = (): boolean =>
+    drafts.states().some((d) => d.id !== `${kind}-retention-action` && d.busy)
+  const waiting = anotherBusy()
+  const blocked = disabled || !active || waiting || busyValue || !!initial.issue
+  async function send(input: RetentionInput): Promise<RetentionView> {
+    const result = await window.collie[local ? 'localArtifacts' : 'retainedVersions'](input)
+    if (!result.ok) throw new Error(result.error.message)
+    if (!sameScope(input.scope, result.value.scope)) throw new Error('The project changed.')
+    setView(result.value)
+    if (input.kind !== 'preview' && result.value.phase !== 'preview') {
+      localStorage.removeItem(config.key)
+      setPending(null)
+    }
+    return result.value
+  }
+  async function preview(target: OpenInput, offset: number): Promise<RetentionView> {
+    let next = await send({ kind: 'preview', scope: target, id: crypto.randomUUID(), offset })
+    // Temporary files have no per-file decisions. Find the first eligible page internally.
+    while (
+      local &&
+      !stop.current &&
+      next.hasOlder &&
+      !next.files.some((f) => f.state === 'eligible')
+    ) {
+      next = await send({
+        kind: 'preview',
+        scope: target,
+        id: crypto.randomUUID(),
+        offset: next.offset + 4
+      })
+    }
+    return next
+  }
+  async function removeFile(next: RetentionView, artifactId: string): Promise<RetentionView> {
+    if (!next.reviewId) throw new Error('The file needs to be checked again.')
+    const input: Pending = {
+      kind: 'remove',
+      scope: next.scope,
+      id: next.id,
+      reviewId: next.reviewId,
+      artifactId
+    }
+    localStorage.setItem(config.key, JSON.stringify(input))
+    setPending(input)
+    drafts.changed()
+    return send(input)
+  }
+  async function run(action: 'preview' | 'remove' | 'clean' | 'status', offset = 0): Promise<void> {
+    if (blocked || busy.current || anotherBusy() || (action !== 'status' && pending.current)) return
+    const target = action === 'status' ? pending.current?.scope : scope
+    if (!target) return
     setBusy(true)
+    stop.current = false
     drafts.changed()
     setError('')
+    setMessage('')
+    setSelected(null)
+    let removed = 0
     try {
-      const result = await window.collie[local ? 'localArtifacts' : 'retainedVersions'](input)
-      if (!result.ok) {
-        setError(
-          `${result.error.message}${pending.current ? ' Check the original outcome before reviewing again.' : ''}`
+      if (action === 'status' && pending.current) {
+        const outcome = await send({ kind: 'status', scope: target, id: pending.current.id })
+        setMessage(
+          outcome.phase === 'not-started'
+            ? 'No deletion was recorded. You can check the remaining files again.'
+            : 'The original deletion outcome was checked. No deletion was repeated.'
         )
-        if (input.kind === 'remove') {
-          setView(null)
-          setSelected(null)
+      } else if (action === 'preview') {
+        setView(null)
+        await preview(target, offset)
+      } else if (action === 'remove' && current && chosen && view) {
+        const outcome = await removeFile(view, chosen.id)
+        const deleted = outcome.files.some((f) => f.id === chosen.id && f.state === 'removed')
+        if (deleted) await preview(target, view.offset)
+        setMessage(
+          deleted
+            ? 'Older saved version deleted.'
+            : 'Deletion could not be fully confirmed. Check the remaining versions again.'
+        )
+      } else if (action === 'clean' && current && view) {
+        let next = view
+        // Each exact file keeps its existing receipt; a settled result precedes the next request.
+        for (let attempts = 0; attempts < 4096 && !stop.current; attempts++) {
+          const file = next.files.find((f) => f.state === 'eligible')
+          if (!file) break
+          const outcome = await removeFile(next, file.id)
+          if (!outcome.files.some((f) => f.id === file.id && f.state === 'removed')) {
+            setMessage(
+              `${removed} temporary files cleaned. The last deletion could not be fully confirmed; cleanup stopped.`
+            )
+            return
+          }
+          removed++
+          if (!stop.current) next = await preview(target, 0)
         }
-        return
+        setMessage(
+          `${removed} temporary file${removed === 1 ? '' : 's'} cleaned.${stop.current ? ' Cleanup stopped; remaining files were kept.' : next.files.some((f) => f.state === 'eligible') ? ' More files remain; clean again when ready.' : ' Project content and recovery were kept.'}`
+        )
       }
-      setView(result.value)
-      setSelected(null)
-      if (input.kind !== 'preview' && result.value.phase !== 'preview') {
-        localStorage.removeItem(config.key)
-        setPending(null)
-        refresh()
-      }
-    } catch {
+    } catch (error) {
       setError(
-        pending.current
-          ? 'The removal outcome is unconfirmed. Check outcome reads the original receipt and never repeats deletion.'
-          : 'Retained files could not be reviewed. Files remain retained; retry when storage is available.'
+        `${error instanceof Error ? error.message : 'Storage maintenance is unavailable.'}${pending.current ? ' Check the original outcome before trying again.' : ' Remaining files were kept.'}${removed ? ` ${removed} temporary files were cleaned before cleanup stopped.` : ''}`
       )
     } finally {
       setBusy(false)
       drafts.changed()
+      if (action !== 'preview' && !pending.current) refresh()
     }
   }
-  function remove(): void {
-    if (blocked || pending.current || !current || !view?.reviewId || !chosen) return
-    const input: Pending = {
-      kind: 'remove',
-      scope: view.scope,
-      id: view.id,
-      reviewId: view.reviewId,
-      artifactId: chosen.id
-    }
-    try {
-      localStorage.setItem(config.key, JSON.stringify(input))
-    } catch {
-      setError(
-        'The exact removal request could not be protected locally. No removal was requested.'
-      )
+  const load = useEffectEvent(() => {
+    const identity = `${projectId}:${workspaceId}`
+    if (
+      inspected.current === identity ||
+      anotherBusy() ||
+      pending.current ||
+      busy.current ||
+      initial.issue
+    )
+      return
+    inspected.current = identity
+    void run('preview')
+  })
+  useEffect(() => {
+    if (!active) {
+      inspected.current = null
+      stop.current = true
       return
     }
-    setPending(input)
-    drafts.changed()
-    void send(input)
-  }
+    if (disabled || waiting || !projectId) return
+    const frame = requestAnimationFrame(() => load())
+    return () => {
+      cancelAnimationFrame(frame)
+      stop.current = true
+    }
+  }, [active, disabled, waiting, projectId, workspaceId])
+  const files =
+    current && view?.phase === 'preview' ? view.files.filter((f) => f.state === 'eligible') : []
   return (
     <section
       className={styles['retention-review-panel']}
@@ -165,239 +249,127 @@ export default function RetentionReviewPanel({
       ) : null}
       <h3 id={`${kind}-retention-heading`}>{config.title}</h3>
       <p>
-        {project ? `Current project: ${project.title}. ` : 'Open a project first. '}
+        {project ? `For ${project.title}. ` : 'Open a project first. '}
         {local
-          ? 'Review individual leftover files from completed snapshot and Save/Backup inspections. Successful operations normally remove these copies already; an empty review is normal.'
-          : 'Review full previous copies created by ordinary Saves to the current destination. These are retained project versions, separate from rebuildable search cache.'}
+          ? 'Only redundant files from completed Save or Backup operations can be cleaned. Project content and recovery are kept.'
+          : 'The newest previous version is kept. Deleting an older version is permanent.'}
       </p>
-      <p>
-        {local
-          ? 'Only files proven redundant by their completed owner, released snapshot lease and verified destination are eligible. Select one exact file at a time; small operation receipts and empty folders stay retained.'
-          : 'The newest previous copy, selected files, explicit backups and uncertain records stay protected. Choose one older verified copy at a time, preferably oldest first so its newer replacement remains available for review.'}{' '}
-        Removal is permanent; there is no Undo.
-      </p>
-      {local ? (
-        <details>
-          <summary>What stays protected</summary>
-          <ul>
-            <li>Incoming files and inspection copies without a durable consumption receipt.</li>
-            <li>
-              Untransferred snapshots, provisional/exact leases, interrupted or unreadable journals,
-              and changed destinations.
-            </li>
-            <li>Exports while publication and result recovery remain unresolved.</li>
-            <li>
-              Migration originals, reset recovery, managed assets, local writing/history, and AI
-              output or recovery records.
-            </li>
-            <li>
-              Unknown files, unsupported or oversized payloads, and unresolved or reappearing
-              removals.
-            </li>
-          </ul>
-          <p>
-            These bytes remain in the storage breakdown and their existing recovery controls remain
-            available. This review never reruns Save, import, export or AI work.
-          </p>
-        </details>
-      ) : null}
-      <div className={maintenanceStyles['storage-maintenance-actions']}>
-        <AppButton
-          variant="default"
-          disabled={blocked || !scope || !!pendingValue}
-          onClick={() => {
-            if (scope) {
-              setView(null)
-              setSelected(null)
-              void send({ kind: 'preview', scope, id: crypto.randomUUID(), offset: 0 })
-            }
-          }}
-        >
-          {local ? 'Review completed local artifacts' : 'Review previous Save versions'}
-        </AppButton>
-        {pendingValue ? (
-          <AppButton
-            disabled={blocked}
-            onClick={() =>
-              void send({ kind: 'status', scope: pendingValue.scope, id: pendingValue.id })
-            }
-          >
-            Check removal outcome
-          </AppButton>
-        ) : null}
-      </div>
+      {error ? <p role="alert">{error}</p> : null}
+      {message ? <p role="status">{message}</p> : null}
       {busyValue ? (
         <p role="status">
-          {pendingValue
-            ? 'Settling the reviewed removal…'
-            : 'Reading local journals and verifying saved archives…'}
+          {pendingValue ? 'Deleting the selected file…' : 'Checking retained files…'}
         </p>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
-      {pendingValue && !busyValue ? (
-        <p role="status">
-          The original removal still needs its outcome checked before another review, project change
-          or close.
-        </p>
-      ) : null}
-      {view ? (
+      {pendingValue ? (
+        <AppButton disabled={blocked} onClick={() => void run('status')}>
+          Check deletion outcome
+        </AppButton>
+      ) : local ? (
+        <div className={maintenanceStyles['storage-maintenance-actions']}>
+          {files.length ? (
+            <AppButton variant="default" disabled={blocked} onClick={() => void run('clean')}>
+              Clean temporary files
+            </AppButton>
+          ) : null}
+          {!busyValue ? (
+            <AppButton
+              variant="subtle"
+              disabled={blocked || !scope}
+              onClick={() => void run('preview')}
+            >
+              Check temporary files
+            </AppButton>
+          ) : null}
+        </div>
+      ) : (
         <>
-          <p role="status">{view.message}</p>
-          {view.phase === 'preview' ? (
-            <div className={maintenanceStyles['storage-maintenance-actions']}>
+          {files.length ? (
+            <ul className={styles['retention-version-list']}>
+              {files.map((file) => (
+                <li key={file.id}>
+                  <div>
+                    <strong>{project?.title}</strong>
+                    <p>
+                      {file.createdAt ? new Date(file.createdAt).toLocaleString() : 'Date unknown'}{' '}
+                      · {file.bytes === null ? 'Size unknown' : storageBytes(file.bytes)}
+                    </p>
+                  </div>
+                  <AppButton
+                    variant="default"
+                    disabled={blocked || !!pendingValue}
+                    onClick={() => setSelected(file.id)}
+                  >
+                    Delete version…
+                  </AppButton>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div className={maintenanceStyles['storage-maintenance-actions']}>
+            <AppButton
+              variant="subtle"
+              disabled={blocked || !scope}
+              onClick={() => void run('preview')}
+            >
+              Refresh versions
+            </AppButton>
+            {current && view?.hasOlder ? (
               <AppButton
                 variant="subtle"
-                disabled={blocked || !!pendingValue || !current || view.offset === 0}
-                onClick={() => {
-                  if (scope)
-                    void send({
-                      kind: 'preview',
-                      scope,
-                      id: crypto.randomUUID(),
-                      offset: Math.max(0, view.offset - 4)
-                    })
-                }}
+                disabled={blocked}
+                onClick={() => void run('preview', view.offset + 4)}
               >
-                {local ? 'Previous files' : 'Newer versions'}
+                More older versions
               </AppButton>
-              <AppButton
-                variant="subtle"
-                disabled={
-                  blocked || !!pendingValue || !current || !view.hasOlder || view.offset >= 4096
-                }
-                onClick={() => {
-                  if (scope)
-                    void send({
-                      kind: 'preview',
-                      scope,
-                      id: crypto.randomUUID(),
-                      offset: view.offset + 4
-                    })
-                }}
-              >
-                {local ? 'More files' : 'Older versions'}
-              </AppButton>
-            </div>
-          ) : null}
-          {view.limited ? (
-            <p>
-              This bounded review is incomplete. Uninspected or unavailable files remain retained.
-            </p>
-          ) : null}
-          <p>
-            Sizes are file lengths. Physical space reclaimed can differ. Archive ownership and
-            snapshot dates come from inspected content; unknown values are shown explicitly.
-            {local ? ' Local artifacts must match the verified destination snapshot.' : null}
-          </p>
-          {view.files.length ? (
-            <div className={maintenanceStyles['storage-maintenance-table']}>
-              <table>
-                <caption>
-                  {local
-                    ? 'Local artifact files and owning operations'
-                    : 'Previous versions, oldest inspected first'}
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Choose / file</th>
-                    <th scope="col">Snapshot</th>
-                    <th scope="col">Size</th>
-                    <th scope="col">Status and reason</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {view.files.map((file) => (
-                    <tr key={file.id}>
-                      <td>
-                        {view.phase === 'preview' && file.state === 'eligible' ? (
-                          <Radio
-                            name={`${kind}-retention-selection`}
-                            label={
-                              local
-                                ? `Select ${file.path}`
-                                : `Select snapshot ${file.createdAt ? new Date(file.createdAt).toLocaleString() : 'with unknown date'}`
-                            }
-                            checked={selected === file.id}
-                            onChange={() => setSelected(file.id)}
-                            disabled={blocked || !!pendingValue || !current}
-                          />
-                        ) : null}
-                        <span className={styles['retention-file-path']}>{file.path}</span>
-                      </td>
-                      <td>
-                        {file.createdAt
-                          ? new Date(file.createdAt).toLocaleString()
-                          : 'Unknown date'}
-                        <br />
-                        {file.projectId === project?.projectId
-                          ? 'Current project'
-                          : file.projectId
-                            ? 'Different project'
-                            : 'Unverified project'}
-                        <details>
-                          <summary>Snapshot identity</summary>
-                          <p>
-                            Project: {file.projectId ?? 'Unknown'}
-                            <br />
-                            Snapshot: {file.snapshotId ?? 'Unknown'}
-                            <br />
-                            Revision: {file.head ?? 'Unknown'}
-                          </p>
-                        </details>
-                      </td>
-                      <td>{file.bytes === null ? 'Unknown' : storageBytes(file.bytes)}</td>
-                      <td>
-                        {file.state}
-                        <br />
-                        {file.reason}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p>
-              {local
-                ? 'No leftover files are listed in this bounded review. Other recovery categories remain protected and visible in the storage breakdown.'
-                : 'No previous versions are listed in this review.'}
-            </p>
-          )}
-          {view.phase === 'preview' && !pendingValue ? (
+            ) : null}
+          </div>
+        </>
+      )}
+      {local && busyValue ? (
+        <AppButton
+          variant="subtle"
+          onClick={() => {
+            stop.current = true
+          }}
+        >
+          Stop
+        </AppButton>
+      ) : null}
+      {!busyValue && current && view?.phase === 'preview' && !files.length ? (
+        <p>
+          {view.limited
+            ? 'Some files could not be checked. They remain protected.'
+            : local
+              ? 'No verified temporary files are available to clean.'
+              : 'No deletable older versions on this page. Newest, changed or unverified copies are kept.'}
+        </p>
+      ) : null}
+      {!local ? (
+        <AppDialog
+          opened={!!chosen && current && !pendingValue}
+          title="Delete older saved version"
+          onClose={() => setSelected(null)}
+        >
+          {chosen ? (
             <>
-              {chosen ? (
-                <p className={styles['retention-file-path']}>
-                  Selected for permanent removal: {chosen.path} (
-                  {chosen.bytes === null ? 'unknown size' : storageBytes(chosen.bytes)}).
-                </p>
-              ) : null}
+              <p>
+                Permanently delete the version of {project?.title} from{' '}
+                {chosen.createdAt ? new Date(chosen.createdAt).toLocaleString() : 'an unknown date'}
+                ? This cannot be undone.
+              </p>
+              <p className={styles['retention-review-path']}>{chosen.path}</p>
               <div className={maintenanceStyles['storage-maintenance-actions']}>
-                <AppButton disabled={blocked || !current || !chosen} onClick={remove}>
-                  {local
-                    ? 'Permanently remove selected local file'
-                    : 'Permanently remove selected previous version'}
+                <AppButton variant="default" onClick={() => setSelected(null)}>
+                  Cancel
                 </AppButton>
-                <AppButton
-                  variant="subtle"
-                  disabled={busyValue}
-                  onClick={() => {
-                    setView(null)
-                    setSelected(null)
-                    setError('')
-                  }}
-                >
-                  Cancel review
+                <AppButton disabled={blocked} onClick={() => void run('remove')}>
+                  Delete selected version
                 </AppButton>
               </div>
-              {!current ? (
-                <p>
-                  This review belongs to another project. Review the current project before removing
-                  anything.
-                </p>
-              ) : null}
             </>
           ) : null}
-        </>
+        </AppDialog>
       ) : null}
     </section>
   )

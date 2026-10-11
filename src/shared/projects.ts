@@ -70,11 +70,9 @@ import {
   isRenameInput,
   isArchiveInput,
   isDataLocations,
-  isResetInput,
   type RenameInput,
   type ArchiveInput,
-  type DataLocations,
-  type ResetInput
+  type DataLocations
 } from './project-lifecycle'
 import { isId, readDocument, type DocumentPayload } from '../domain/editor/schema'
 import { isNoteChangeInput, isNotesView, type NoteChangeInput, type NotesView } from './notes'
@@ -145,17 +143,15 @@ import {
 } from './search'
 import {
   isExportOptions,
-  isWorkerExportStart,
   isWorkerExportBatchStart,
   isExportJobInput,
   isExportPreview,
   isExportJob,
   type ExportOptions,
-  type ExportStartInput,
-  type WorkerExportStart,
   type ExportBatchStartInput,
   type WorkerExportBatchStart,
   type ExportJobInput,
+  type ExportRevealInput,
   type ExportPreview,
   type ExportJob
 } from './exports'
@@ -177,7 +173,7 @@ import {
 
 export const PROJECT_CHANNELS = {
   exportPreview: 'export.docx.preview',
-  exportStart: 'export.docx.start',
+  exportReveal: 'export.reveal',
   exportStatus: 'export.docx.status',
   exportCancel: 'export.docx.cancel',
   exportBatchStart: 'export.batch.start',
@@ -197,9 +193,8 @@ export const PROJECT_CHANNELS = {
   rename: 'projects.rename',
   archive: 'projects.archive',
   data: 'projects.data',
-  reset: 'projects.reset',
+  recovery: 'projects.recovery',
   recoverReset: 'projects.recoverReset',
-  cleanup: 'projects.cleanup',
   list: 'projects.list',
   create: 'projects.create',
   open: 'projects.open',
@@ -282,12 +277,12 @@ export const projectMessages: Record<ProjectCode, string> = {
   ISSUER_UNCONFIGURED:
     'Signed access is not configured in this build. Free access has no time limit.',
   VALIDATION: 'This document or request is not supported. Your current text has been kept.',
-  DENIED: 'Access to local storage was denied. Your current text has been kept.',
-  UNAVAILABLE: 'Local storage is unavailable. Keep this window open and copy any unprotected text.',
+  DENIED: 'Collie could not access the requested project or location.',
+  UNAVAILABLE:
+    'Collie could not confirm this operation. Keep this window open; its outcome may still be pending.',
   STORAGE_LOCATION_REQUIRED:
     'Choose a device-local working folder outside cloud sync and network storage.',
-  PROJECT_LOCKED:
-    'This project is already owned by another process. Close that copy before reopening.',
+  PROJECT_LOCKED: 'This project is busy. Let the current work finish, then try again.',
   STALE_REVISION:
     'The document changed since it was opened. Your text is kept; copy it before reopening the stored version.',
   OPERATION_CONFLICT:
@@ -319,12 +314,33 @@ export const projectMessages: Record<ProjectCode, string> = {
   LIMIT_EXCEEDED:
     'This file exceeds the supported size or resource limits. The original and local work have been kept.'
 }
+export const projectContextMessages = {
+  'owner-missing':
+    'This project must be reopened before Collie can continue. Keep any visible unsaved writing.',
+  'file-busy':
+    'A project file operation is still finishing. Wait for it to finish before continuing.',
+  'project-in-use':
+    'Another Collie process is using this project. Close that copy before reopening.'
+} as const
+export type ProjectErrorContext = keyof typeof projectContextMessages
+export function isProjectErrorContext(code: ProjectCode, v: unknown): v is ProjectErrorContext {
+  return (
+    (code === 'DENIED' && v === 'owner-missing') ||
+    (code === 'PROJECT_LOCKED' && (v === 'file-busy' || v === 'project-in-use'))
+  )
+}
 export type ProjectResult<T> =
   | { ok: true; requestId: string; value: T }
   | {
       ok: false
       requestId: string
-      error: { code: ProjectCode; message: string; retryable: boolean; space?: SpaceIssue }
+      error: {
+        code: ProjectCode
+        message: string
+        retryable: boolean
+        space?: SpaceIssue
+        context?: ProjectErrorContext
+      }
     }
 export type LocationStatus = { state: 'ready' | 'required'; path: string | null; message: string }
 export type DestinationView = {
@@ -343,9 +359,13 @@ export type ProjectSummary = {
   archived: boolean
   destination: DestinationView | null
 }
+/** Display hints only; opening the scope admits the project and its current head. */
+export type ProjectListing = Omit<ProjectSummary, 'headCommitId' | 'projectKind'> & {
+  projectKind: ProjectKind | null
+}
 export type ProjectList = {
-  projects: ProjectSummary[]
-  issues: { projectId: string; code: ProjectCode }[]
+  projects: ProjectListing[]
+  issues: { projectId: string; scope: OpenInput | null; title: string | null; code: ProjectCode }[]
 }
 export type DocumentSummary = OutlineDocument
 export type OpenProject = ProjectSummary & {
@@ -414,7 +434,6 @@ export type ProjectCommand =
   | { kind: 'conversation'; input: ConversationWorkerInput }
   | { kind: 'details'; input: ProjectDetailsInput }
   | { kind: 'exportPreview'; input: ExportOptions }
-  | { kind: 'exportStart'; input: WorkerExportStart }
   | { kind: 'exportBatchStart'; input: WorkerExportBatchStart }
   | { kind: 'exportStatus' | 'exportCancel'; input: ExportJobInput }
   | { kind: 'recipes'; input: OpenInput }
@@ -445,8 +464,7 @@ export type ProjectCommand =
   | { kind: 'history'; input: HistoryInput }
   | { kind: 'rename'; input: RenameInput }
   | { kind: 'archive'; input: ArchiveInput }
-  | { kind: 'data' | 'cleanup' }
-  | { kind: 'reset'; input: ResetInput }
+  | { kind: 'data' | 'recovery' }
   | { kind: 'recoverReset'; input: string }
   | { kind: 'list' }
   | { kind: 'create'; input: CreateInput }
@@ -489,7 +507,7 @@ export type ProjectValue =
 export type ProjectAPI = {
   updateProjectDetails: (input: ProjectDetailsInput) => Promise<ProjectResult<OpenProject>>
   previewDocx: (input: ExportOptions) => Promise<ProjectResult<ExportPreview>>
-  startDocx: (input: ExportStartInput) => Promise<ProjectResult<ExportJob>>
+  revealExport: (input: ExportRevealInput) => Promise<ProjectResult<boolean>>
   docxStatus: (input: ExportJobInput) => Promise<ProjectResult<ExportJob>>
   cancelDocx: (input: ExportJobInput) => Promise<ProjectResult<ExportJob>>
   startCompilation: (input: ExportBatchStartInput) => Promise<ProjectResult<ExportJob>>
@@ -557,14 +575,20 @@ export function isProjectCode(v: unknown): v is ProjectCode {
 export function projectFailure(
   requestId: string,
   code: ProjectCode,
-  space?: SpaceIssue
+  space?: SpaceIssue,
+  context?: ProjectErrorContext
 ): ProjectResult<never> {
   return {
     ok: false,
     requestId,
     error: {
       code,
-      message: space ? spaceMessage(space) : projectMessages[code],
+      message: space
+        ? spaceMessage(space)
+        : context && isProjectErrorContext(code, context)
+          ? projectContextMessages[context]
+          : projectMessages[code],
+      ...(context && isProjectErrorContext(code, context) ? { context } : {}),
       ...(space ? { space } : {}),
       retryable: ['UNAVAILABLE', 'DISK_FULL', 'PROJECT_LOCKED'].includes(code)
     }
@@ -701,14 +725,13 @@ export function isCommitInput(v: unknown): v is CommitInput {
 }
 export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (!record(v)) return false
-  if (['list', 'data', 'cleanup'].includes(String(v.kind))) return exact(v, ['kind'])
+  if (['list', 'data', 'recovery'].includes(String(v.kind))) return exact(v, ['kind'])
   if (!exact(v, ['kind', 'input'])) return false
   if (v.kind === 'importAnalysis') return isAnalysisWorkerInput(v.input)
   if (v.kind === 'importSession') return isImportWorkerInput(v.input)
   if (v.kind === 'proofreading') return isProofreadWorkerInput(v.input)
   if (v.kind === 'conversation') return isConversationWorkerInput(v.input)
   if (v.kind === 'exportPreview') return isExportOptions(v.input)
-  if (v.kind === 'exportStart') return isWorkerExportStart(v.input)
   if (v.kind === 'exportBatchStart') return isWorkerExportBatchStart(v.input)
   if (v.kind === 'exportStatus' || v.kind === 'exportCancel') return isExportJobInput(v.input)
   if (v.kind === 'recipes') return isOpenInput(v.input)
@@ -804,7 +827,6 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (v.kind === 'details') return isProjectDetailsInput(v.input)
   if (v.kind === 'rename') return isRenameInput(v.input)
   if (v.kind === 'archive') return isArchiveInput(v.input)
-  if (v.kind === 'reset') return isResetInput(v.input)
   if (v.kind === 'recoverReset') return isId(v.input)
   return v.kind === 'create'
     ? isCreateInput(v.input)
@@ -830,17 +852,21 @@ export function isDestination(v: unknown): v is DestinationView {
     [v.snapshotId, v.headCommitId, v.generationId].every(isId)
   )
 }
-function summary(v: unknown): v is ProjectSummary & Record<string, unknown> {
+function listing(v: unknown): v is ProjectListing & Record<string, unknown> {
   return (
     record(v) &&
-    [v.projectId, v.workspaceId, v.headCommitId].every(isId) &&
+    [v.projectId, v.workspaceId].every(isId) &&
     typeof v.archived === 'boolean' &&
     storedProjectTitle(v.title) &&
-    isProjectKind(v.projectKind) &&
+    (v.projectKind === null || isProjectKind(v.projectKind)) &&
     typeof v.updatedAt === 'string' &&
     /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v.updatedAt) &&
+    Number.isFinite(Date.parse(v.updatedAt)) &&
     (v.destination === null || isDestination(v.destination))
   )
+}
+function summary(v: unknown): v is ProjectSummary & Record<string, unknown> {
+  return listing(v) && isId(v.headCommitId) && isProjectKind(v.projectKind)
 }
 export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is ProjectValue {
   if (kind === 'importAnalysis') return isAnalysisValue(v)
@@ -848,12 +874,7 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
   if (kind === 'proofreading') return isProofreadValue(v)
   if (kind === 'conversation') return isConversationValue(v)
   if (kind === 'exportPreview') return isExportPreview(v)
-  if (
-    kind === 'exportStart' ||
-    kind === 'exportBatchStart' ||
-    kind === 'exportStatus' ||
-    kind === 'exportCancel'
-  )
+  if (kind === 'exportBatchStart' || kind === 'exportStatus' || kind === 'exportCancel')
     return isExportJob(v)
   if (kind === 'recipes' || kind === 'recipeChange') return isRecipesView(v)
   if (kind === 'interchangePreview') return isImportPreview(v)
@@ -901,7 +922,7 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
       v.losses.length <= 100000 &&
       v.losses.every((x: unknown) => typeof x === 'string' && x.length <= 2000)
     )
-  if (['data', 'cleanup', 'reset', 'recoverReset'].includes(kind)) return isDataLocations(v)
+  if (['data', 'recovery', 'recoverReset'].includes(kind)) return isDataLocations(v)
   if (kind === 'list')
     return (
       exact(v, ['projects', 'issues']) &&
@@ -909,13 +930,12 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
       v.projects.length <= 10000 &&
       v.projects.every(
         (p) =>
-          summary(p) &&
+          listing(p) &&
           exact(p, [
             'projectId',
             'workspaceId',
             'title',
             'projectKind',
-            'headCommitId',
             'updatedAt',
             'archived',
             'destination'
@@ -925,7 +945,12 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
       v.issues.length <= 10000 &&
       v.issues.every(
         (p) =>
-          record(p) && exact(p, ['projectId', 'code']) && isId(p.projectId) && isProjectCode(p.code)
+          record(p) &&
+          exact(p, ['projectId', 'scope', 'title', 'code']) &&
+          isId(p.projectId) &&
+          (p.scope === null || (isOpenInput(p.scope) && p.scope.projectId === p.projectId)) &&
+          (p.title === null || (typeof p.title === 'string' && p.title.length <= 500)) &&
+          isProjectCode(p.code)
       )
     )
   if (kind === 'commit')
@@ -1004,18 +1029,24 @@ export function isProjectResult<T>(
     v.ok === false &&
     exact(v, ['ok', 'requestId', 'error']) &&
     record(v.error) &&
-    exact(
-      v.error,
-      Object.hasOwn(v.error, 'space')
-        ? ['code', 'message', 'retryable', 'space']
-        : ['code', 'message', 'retryable']
-    ) &&
+    exact(v.error, [
+      'code',
+      'message',
+      'retryable',
+      ...(Object.hasOwn(v.error, 'space') ? ['space'] : []),
+      ...(Object.hasOwn(v.error, 'context') ? ['context'] : [])
+    ]) &&
     isProjectCode(v.error.code) &&
+    (!Object.hasOwn(v.error, 'context') || isProjectErrorContext(v.error.code, v.error.context)) &&
     (!Object.hasOwn(v.error, 'space') ||
       (['DISK_FULL', 'UNAVAILABLE', 'DESTINATION_UNAVAILABLE'].includes(v.error.code) &&
         isSpaceIssue(v.error.space))) &&
     v.error.message ===
-      (isSpaceIssue(v.error.space) ? spaceMessage(v.error.space) : projectMessages[v.error.code]) &&
+      (isSpaceIssue(v.error.space)
+        ? spaceMessage(v.error.space)
+        : isProjectErrorContext(v.error.code, v.error.context)
+          ? projectContextMessages[v.error.context]
+          : projectMessages[v.error.code]) &&
     typeof v.error.retryable === 'boolean'
   )
 }

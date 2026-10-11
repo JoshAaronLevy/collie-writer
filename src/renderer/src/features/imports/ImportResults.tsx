@@ -1,5 +1,5 @@
 import { CHATGPT_USAGE_URL } from '../../../../shared/import-recovery'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AppButton } from '../../components/ui/Controls'
 import type { ImportSummary } from '../../../../shared/import-review'
 import type { ImportCategory } from '../../../../shared/project-import'
@@ -36,7 +36,6 @@ export function ImportResults({
   onCheck: () => void
 }): React.JSX.Element {
   const [visible, setVisible] = useState(50)
-  const futureDescription = useId()
   const body = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     const region = body.current
@@ -159,12 +158,6 @@ export function ImportResults({
           <AppButton variant="default" disabled={busy} onClick={onCancel}>
             Cancel
           </AppButton>
-          <div className={styles.futureAction}>
-            <AppButton variant="default" disabled aria-describedby={futureDescription}>
-              Re-Analyze
-            </AppButton>
-            <small id={futureDescription}>Coming later</small>
-          </div>
           <AppButton
             disabled={blocked || needsRecovery || summary.outcome !== 'ready'}
             pending={busy}

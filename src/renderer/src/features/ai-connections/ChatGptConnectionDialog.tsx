@@ -219,8 +219,8 @@ function DialogContents(): React.JSX.Element {
           ) : null}
           {!session.available ? (
             <p>
-              Set up local storage in Settings → Data & recovery before connecting. You can close
-              this dialog to continue.
+              Set up local storage in Settings → Storage before connecting. You can close this
+              dialog to continue.
             </p>
           ) : null}
           {view.action === 'connect' ? (

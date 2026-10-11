@@ -31,7 +31,7 @@
   gap: var(--collie-space-3);
 }
 .recovery-version-list li,
-.reset-recovery-list li {
+.reset-recovery-list > li {
   border: 1px solid var(--collie-border);
   border-radius: var(--collie-radius-control);
   padding: var(--collie-space-4);
@@ -39,15 +39,9 @@
 .recovery-version-list li p {
   margin-block: var(--collie-space-2);
 }
-.reset-recovery-list li {
+.reset-recovery-list > li {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--collie-space-3);
-}
-.recovery-advanced {
-  margin-block: var(--collie-space-6);
-}
-.recovery-advanced summary {
-  cursor: pointer;
 }

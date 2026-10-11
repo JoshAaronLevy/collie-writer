@@ -12,33 +12,10 @@
 .ai-connection-panel h3 {
   margin: 0;
 }
-.ai-provider-heading {
-  display: flex;
-  align-items: center;
-  gap: var(--collie-space-4);
-}
-.ai-provider-heading h2 {
-  font-size: 1.2rem;
-}
-.ai-provider-symbol {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: var(--collie-radius-control);
-  color: var(--collie-accent);
-  background: var(--collie-selected);
-}
-.ai-provider-description,
 .ai-sharing-note {
   color: var(--collie-text-secondary);
 }
-.ai-connection-state {
-  font-weight: 600;
-}
-.ai-account-actions,
-.ai-status-actions {
+.ai-account-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -46,8 +23,7 @@
 }
 .ai-current-account,
 .ai-account-choice,
-.ai-saved-accounts,
-.ai-sign-in-progress {
+.ai-saved-accounts {
   display: grid;
   gap: var(--collie-space-2);
 }
@@ -60,10 +36,6 @@
   gap: var(--collie-space-2);
   padding-block: var(--collie-space-2);
   border-top: 1px solid var(--collie-border);
-}
-.ai-funding-note {
-  padding-inline-start: var(--collie-space-4);
-  border-inline-start: 3px solid var(--collie-border);
 }
 .ai-connection-details {
   border-top: 1px solid var(--collie-border);
@@ -146,15 +118,6 @@
   .chatgpt-status-dot[data-state='disconnected'] {
     background: #e45b5b;
   }
-}
-.ai-connection-panel[data-compact='true'] {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-.ai-connection-panel[data-compact='true'] .ai-provider-heading {
-  align-items: flex-start;
 }
 @media (max-width: 40rem) {
   .ai-connection-panel {

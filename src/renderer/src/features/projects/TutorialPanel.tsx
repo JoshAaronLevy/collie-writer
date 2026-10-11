@@ -19,8 +19,8 @@ export default function TutorialPanel({
 }): React.JSX.Element {
   const connections = useAiConnections()
   const [acknowledged, setAcknowledged] = useState(false)
-  const { navigate, workspace, research, project } = useWorkspaceSession()
-  function go(view: 'write' | 'details' | 'export'): void {
+  const { navigate, workspace, research, project, setProjectDetailsOpen } = useWorkspaceSession()
+  function go(view: 'write' | 'export'): void {
     const next = workspace(view)
     if (next) void navigate(next)
   }
@@ -142,19 +142,19 @@ export default function TutorialPanel({
         <li>
           <strong>Return with confidence.</strong>
           <p>
-            Projects lists local work; opening an eligible recent project restores its section.
-            Project actions holds details, import, history-related file controls, copies and
-            archive. Archive hides projects without freeing space. Settings → Data and recovery
-            shows working and selected-file locations and holds retained versions. Reset retains
-            local recovery rather than reclaiming space. Export never replaces a project backup.
+            Projects lists local work; opening an eligible recent project restores its section. The
+            project menu holds details, Save As, backups, duplicates and Archive. Save As changes
+            the save location while keeping the previous file. Archive keeps files and makes the
+            project available under Archived. Settings → Storage shows working and selected-file
+            locations and retained versions. Export never replaces a project backup.
           </p>
           <div className={styles['guide-actions']}>
             <AppButton
               variant="subtle"
               disabled={!project || disabled}
-              onClick={() => go('details')}
+              onClick={() => setProjectDetailsOpen(true)}
             >
-              Project actions
+              Project details
             </AppButton>
             <AppButton
               variant="subtle"
@@ -166,7 +166,7 @@ export default function TutorialPanel({
               variant="subtle"
               onClick={() => void navigate({ kind: 'settings', page: 'data' })}
             >
-              Data and recovery
+              Storage
             </AppButton>
           </div>
         </li>

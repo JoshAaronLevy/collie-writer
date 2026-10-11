@@ -1,22 +1,25 @@
 import { useState } from 'react'
 import { TextInput } from '@mantine/core'
-import { Archive, FolderOpen, MoreHorizontal, RotateCcw } from 'lucide-react'
+import { Archive, RotateCcw } from 'lucide-react'
 import { canEditProject, sameProject } from '../../../../shared/access'
 import { sameScope } from '../../../../shared/project-files'
-import { projectMessages, type ProjectSummary } from '../../../../shared/projects'
+import { type ProjectListing } from '../../../../shared/projects'
 import { projectTypes, templateForKind } from '../../../../domain/projects/templates'
-import { ActionMenu } from '../../components/ui/ActionMenu'
+import ProjectActionsMenu from '../projects/ProjectActionsMenu'
 import { AppButton } from '../../components/ui/Controls'
 import { StatusBanner } from '../../components/ui/Feedback'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { scopeOf } from '../workspace/useWorkspaceController'
 import styles from './ProjectLibrary.module.css'
+import { projectFilePresentation } from '../projects/project-file-presentation'
 
 const dates = new Intl.DateTimeFormat(undefined, {
   year: 'numeric',
   month: 'short',
   day: 'numeric'
 })
+const kindLabel = (item: ProjectListing): string =>
+  item.projectKind ? projectTypes[templateForKind(item.projectKind)].name : 'Project'
 
 export default function ProjectLibrary(): React.JSX.Element {
   const session = useWorkspaceSession()
@@ -38,10 +41,7 @@ export default function ProjectLibrary(): React.JSX.Element {
   const normalized = query.trim().toLocaleLowerCase()
   const visible = source.filter(
     (item) =>
-      !normalized ||
-      `${item.title} ${projectTypes[templateForKind(item.projectKind)].name}`
-        .toLocaleLowerCase()
-        .includes(normalized)
+      !normalized || `${item.title} ${kindLabel(item)}`.toLocaleLowerCase().includes(normalized)
   )
   const unavailable =
     !session.available ||
@@ -50,36 +50,10 @@ export default function ProjectLibrary(): React.JSX.Element {
     session.closing ||
     session.navigating ||
     startupPending
-  const recoveryAttentionCount =
-    (session.data?.resets.length ?? 0) + (session.data?.issues ?? 0) + list.issues.length
 
-  function status(item: ProjectSummary): string {
+  function status(item: ProjectListing): string {
     const typing = !!project && sameScope(project, item) && session.dirty
-    if (!item.destination)
-      return typing
-        ? 'New typing needs local protection · no project file yet'
-        : 'Protected on this device · no project file yet'
-    if (project && sameScope(project, item) && sameScope(files.scope, item)) {
-      if (files.state === 'checking')
-        return 'Checking the selected file · local work remains available'
-      if (files.state === 'external-change')
-        return 'Selected file differs · Save writes your local work'
-      if (files.state === 'unavailable')
-        return 'Selected file unavailable · local work remains available'
-      if (files.state === 'interrupted') return 'Interrupted file operation · review recovery'
-      if (files.state === 'pending')
-        return typing
-          ? 'Unsaved changes · new typing needs local protection'
-          : 'Unsaved changes · protected on this device'
-      if (files.state === 'saved')
-        return typing
-          ? 'New typing needs local protection · selected file contains the last Save'
-          : 'Saved to selected file on this device'
-    }
-    if (typing) return 'New typing needs local protection · selected-file status not yet confirmed'
-    return item.headCommitId === item.destination.headCommitId
-      ? 'Selected file recorded · availability checked when opened'
-      : 'Newer work protected locally · selected file is older'
+    return projectFilePresentation(item, files, typing, session.saveState).label
   }
 
   return (
@@ -120,23 +94,6 @@ export default function ProjectLibrary(): React.JSX.Element {
           {libraryIssue}
         </StatusBanner>
       ) : null}
-      {recoveryAttentionCount > 0 ? (
-        <StatusBanner tone="warning" title="Local recovery needs review">
-          <p>
-            Unreadable or interrupted entries, or projects retained from a local reset, are
-            available for review. Nothing was removed.
-          </p>
-          <AppButton
-            variant="default"
-            onClick={() => {
-              void session.navigate({ kind: 'settings', page: 'data' })
-            }}
-          >
-            Review recovery
-          </AppButton>
-        </StatusBanner>
-      ) : null}
-
       <div className={styles['project-library-controls']}>
         <div
           className={styles['project-library-view-options']}
@@ -186,8 +143,7 @@ export default function ProjectLibrary(): React.JSX.Element {
               >
                 <span className={styles['project-library-title']}>{item.title}</span>
                 <span className={styles['project-library-meta']}>
-                  {projectTypes[templateForKind(item.projectKind)].name} ·{' '}
-                  {dates.format(new Date(item.updatedAt))}
+                  {kindLabel(item)} · {dates.format(new Date(item.updatedAt))}
                   {sameProject(item, access?.sampleProject ?? null) ? ' · Tutorial sample' : ''}
                   {item.archived ? ' · Archived' : ''}
                   {access
@@ -199,27 +155,7 @@ export default function ProjectLibrary(): React.JSX.Element {
                 <span className={styles['project-library-file-state']}>{status(item)}</span>
               </button>
               <div className={styles['project-library-row-actions']}>
-                <ActionMenu
-                  label="Actions"
-                  accessibleLabel={`Actions for ${item.title}, ${projectTypes[templateForKind(item.projectKind)].name}`}
-                  actions={[
-                    {
-                      id: 'open',
-                      label: 'Open project',
-                      icon: <FolderOpen size={16} aria-hidden="true" />,
-                      disabled: unavailable,
-                      onSelect: () => session.run(() => session.chooseProject(scopeOf(item)))
-                    },
-                    {
-                      id: 'manage',
-                      label: 'Project actions',
-                      icon: <MoreHorizontal size={16} aria-hidden="true" />,
-                      disabled: unavailable,
-                      onSelect: () =>
-                        session.run(() => session.chooseProject(scopeOf(item), 'details'))
-                    }
-                  ]}
-                />
+                <ProjectActionsMenu project={item} library />
               </div>
             </li>
           ))}
@@ -253,34 +189,18 @@ export default function ProjectLibrary(): React.JSX.Element {
         </div>
       )}
 
-      {list.issues.length ? (
-        <div className={styles['project-library-issues']} role="alert">
-          <h2>Some local projects need attention</h2>
-          {list.issues.map((issue) => (
-            <p key={issue.projectId}>{projectMessages[issue.code]}</p>
-          ))}
-          <AppButton
-            variant="default"
-            onClick={() => {
-              void session.navigate({ kind: 'settings', page: 'data' })
-            }}
-          >
-            Open Data and recovery
-          </AppButton>
-        </div>
-      ) : null}
       <div className={styles['project-library-secondary-actions']}>
         <AppButton
           variant="subtle"
           disabled={unavailable}
           onClick={() => session.run(() => session.lifecycleFile('restore'))}
         >
-          Restore backup…
+          Open backup…
         </AppButton>
         <AppButton
           variant="subtle"
           disabled={unavailable}
-          onClick={() => session.run(session.refreshData)}
+          onClick={() => session.run(session.refresh)}
         >
           <RotateCcw size={16} aria-hidden="true" /> Refresh projects
         </AppButton>
@@ -290,7 +210,7 @@ export default function ProjectLibrary(): React.JSX.Element {
             void session.navigate({ kind: 'settings', page: 'data' })
           }}
         >
-          Data and recovery
+          Storage
         </AppButton>
       </div>
     </section>

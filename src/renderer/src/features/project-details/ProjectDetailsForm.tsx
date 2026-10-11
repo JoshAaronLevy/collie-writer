@@ -5,6 +5,8 @@ import type { ProjectDetails } from '../../../../domain/projects/details'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useDraftRegistry, useRetainedDraft } from '../workspace/DraftOwner'
 import { AppButton } from '../../components/ui/Controls'
+import { AppDialog } from '../../components/ui/AppDialog'
+import { writingDestination } from '../../app/navigation'
 import { ProjectDetailsFields } from './ProjectDetailsFields'
 import { detailsErrors } from './detailsErrors'
 import styles from './ProjectDetails.module.css'
@@ -30,7 +32,6 @@ export default function ProjectDetailsForm({
   const [value, setValue] = useState(() => fields(project)),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
-    [message, setMessage] = useState(''),
     [attempted, setAttempted] = useState(false)
   const state = useRef({
     value,
@@ -48,7 +49,6 @@ export default function ProjectDetailsForm({
   function change(next: ProjectDetails): void {
     state.current.value = next
     setValue(next)
-    setMessage('')
     registry.changed()
   }
   function adopt(next: OpenProject): void {
@@ -82,9 +82,12 @@ export default function ProjectDetailsForm({
       pendingOperation: state.current.pending,
       policy: 'explicit',
       issue: error || undefined,
-      target: { kind: 'workspace', scope, view: 'details' }
+      target: writingDestination(scope, project.documentId)
     }),
-    focus: () => panel.current?.focus()
+    focus: () => {
+      session.setProjectDetailsOpen(true)
+      panel.current?.focus()
+    }
   })
   async function save(): Promise<void> {
     setAttempted(true)
@@ -98,7 +101,6 @@ export default function ProjectDetailsForm({
     state.current.busy = true
     setBusy(true)
     setError('')
-    setMessage('')
     registry.changed()
     try {
       const saved = await session.flush(false, 'save', ['project-details'])
@@ -138,10 +140,9 @@ export default function ProjectDetailsForm({
       setPending(null)
       session.acceptProjectDetails(result.value)
       adopt(result.value)
-      setMessage(
-        'Project details are protected on this device. Save updates the selected project file.'
-      )
+      session.setNotice('Project details saved locally. Save updates the project file.')
       await session.refresh()
+      session.setProjectDetailsOpen(false)
     } catch {
       setError('The save result is unknown. Keep this form open and retry the same save.')
     } finally {
@@ -163,7 +164,6 @@ export default function ProjectDetailsForm({
       session.acceptProjectDetails(result.value)
       adopt(result.value)
       setError('')
-      setMessage('The form now shows the saved project details.')
     } catch {
       setError('Saved details are unavailable. The form was kept.')
     } finally {
@@ -172,58 +172,89 @@ export default function ProjectDetailsForm({
       registry.changed()
     }
   }
+  const composing = (): boolean =>
+    registry.states().some((s) => s.id === 'project-details' && s.composing)
+  function close(): void {
+    if (state.current.busy || state.current.pending || composing()) return
+    adopt(project)
+    setError('')
+    session.setProjectDetailsOpen(false)
+  }
   return (
     <PresentationBoundary
       label="Project details"
       render={() => (
-        <form
-          ref={panel}
-          tabIndex={-1}
-          {...binding}
-          className={styles['project-details-form']}
-          aria-labelledby="project-details-heading"
-          noValidate
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (!disabled && !readOnly && !busy) session.run(save)
-          }}
+        <AppDialog
+          opened={session.projectDetailsOpen}
+          onClose={close}
+          title="Project details"
+          dismissible={!busy && !pending && !composing()}
+          size="lg"
         >
-          <h2 id="project-details-heading">Project details</h2>
-          <ProjectDetailsFields
-            value={value}
-            onChange={change}
-            creating={false}
-            disabled={disabled || readOnly || busy || !!pending}
-            showErrors={attempted}
-            originalTitle={baseline.title}
-          />
-          <div className={styles['project-details-actions']}>
-            <AppButton
-              type="submit"
-              disabled={
-                disabled ||
-                readOnly ||
-                busy ||
-                (JSON.stringify(value) === JSON.stringify(baseline) && !pending)
-              }
-            >
-              {pending ? 'Retry details save' : 'Save project details'}
-            </AppButton>
-            <AppButton
-              variant="default"
-              disabled={disabled || busy || !!pending}
-              onClick={() => session.run(reload)}
-            >
-              Replace form with saved details
-            </AppButton>
-          </div>
-          <p className={styles['project-type-description']}>
-            The project title is independent of its filename. Subtitle, author and description stay
-            with this project, including its backups and independent copies.
-          </p>
-          {error ? <p role="alert">{error}</p> : null}
-          {message ? <p role="status">{message}</p> : null}
-        </form>
+          <form
+            ref={panel}
+            tabIndex={-1}
+            {...binding}
+            className={styles['project-details-form']}
+            aria-label="Project details"
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (!disabled && !readOnly && !busy) session.run(save)
+            }}
+          >
+            <div className={styles['project-details-body']}>
+              <ProjectDetailsFields
+                value={value}
+                onChange={change}
+                creating={false}
+                disabled={disabled || readOnly || busy || !!pending}
+                showErrors={attempted}
+                originalTitle={baseline.title}
+              />
+              <p className={styles['project-type-description']}>
+                Changing the title keeps the current filename.
+              </p>
+              {readOnly ? (
+                <p>
+                  This project is open for reading. Editing access is available in Collie access.
+                </p>
+              ) : null}
+              {error ? <p role="alert">{error}</p> : null}
+              {error && !pending ? (
+                <AppButton
+                  variant="subtle"
+                  disabled={disabled || busy}
+                  onClick={() => session.run(reload)}
+                >
+                  Discard changes and reload saved details
+                </AppButton>
+              ) : null}
+            </div>
+            <div className={styles['project-details-actions']}>
+              {!readOnly ? (
+                <AppButton
+                  type="submit"
+                  disabled={
+                    disabled ||
+                    readOnly ||
+                    busy ||
+                    (JSON.stringify(value) === JSON.stringify(baseline) && !pending)
+                  }
+                >
+                  {pending ? 'Retry Save' : 'Save details'}
+                </AppButton>
+              ) : null}
+              <AppButton
+                variant="subtle"
+                disabled={busy || !!pending || composing()}
+                onClick={close}
+              >
+                {dirty() ? 'Cancel changes' : 'Done'}
+              </AppButton>
+            </div>
+          </form>
+        </AppDialog>
       )}
     />
   )

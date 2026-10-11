@@ -9,7 +9,6 @@ import {
   isExportJob,
   type DestinationFingerprint,
   type ExportJob,
-  type WorkerExportStart,
   type WorkerExportBatchStart
 } from '../../shared/exports'
 import { ProjectError, projectError } from '../../domain/projects/errors'
@@ -96,78 +95,6 @@ export class ExportJobs {
   ) {}
   private async persist(running: Running): Promise<void> {
     await writeJson(join(running.folder, 'report.json'), { version: 1, ...running.job })
-  }
-  async start(
-    workspace: string,
-    input: WorkerExportStart,
-    prepared: PreparedExport
-  ): Promise<ExportJob> {
-    const { preview, model, images } = prepared
-    if (preview.headCommitId !== input.expectedHead || preview.digest !== input.previewDigest)
-      throw new ProjectError('STALE_REVISION')
-    if (
-      !model ||
-      preview.issues.some((i) => i.kind !== 'metadata') ||
-      (preview.issues.some((i) => i.kind === 'metadata') && !input.acknowledgeMetadata) ||
-      preview.losses.length
-    )
-      throw new ProjectError('VALIDATION')
-    const destination = input.destinationPath,
-      parent = dirname(destination)
-    if (!isAbsolute(destination) || !/\.docx$/i.test(destination) || destination.length > 4096)
-      throw new ProjectError('VALIDATION')
-    const resolvedParent = await realpath(parent),
-      resolvedRoot = await realpath(this.root),
-      rel = relative(resolvedRoot, resolvedParent)
-    if (!rel.startsWith('..') && !isAbsolute(rel)) throw new ProjectError('UNSAFE_DESTINATION')
-    const target = await fingerprint(destination)
-    if (!same(target, input.destinationFingerprint)) throw new ProjectError('EXTERNAL_CHANGE')
-    const id = randomUUID(),
-      folder = join(workspace, 'exports', id)
-    await mkdir(join(workspace, 'exports'), { recursive: true, mode: 0o700 })
-    await mkdir(folder, { mode: 0o700 })
-    const job: ExportJob = {
-      id,
-      state: 'rendering',
-      headCommitId: preview.headCommitId,
-      destinationPath: destination,
-      phase: 'Rendering DOCX from captured revision',
-      error: null,
-      reportPath: join(folder, 'report.json'),
-      counts: preview.counts,
-      losses: preview.losses
-    }
-    const running: Running = {
-      job,
-      controller: new AbortController(),
-      task: Promise.resolve(),
-      folder
-    }
-    await writeJson(join(folder, 'manifest.json'), {
-      version: 1,
-      capturedAt: new Date().toISOString(),
-      preview,
-      acknowledgedMetadata: input.acknowledgeMetadata,
-      compilationVersion: model.version,
-      metadata: model.metadata,
-      titlePage: model.titlePage,
-      sourceMap: model.sourceMap,
-      imageAssets: [...images].map(([assetId, image]) => ({
-        assetId,
-        bytes: image.bytes.length,
-        sha256: createHash('sha256').update(image.bytes).digest('hex')
-      }))
-    })
-    await this.persist(running)
-    this.jobs.set(id, running)
-    running.task = new Promise<void>((resolve) =>
-      setImmediate(() => {
-        void withSpaceBudget('Export DOCX', folder, () =>
-          this.render(running, input, model, images)
-        ).finally(resolve)
-      })
-    )
-    return { ...job }
   }
   async startBatch(
     workspace: string,
@@ -256,17 +183,22 @@ export class ExportJobs {
     )
     return { ...job }
   }
-  private async publishNew(
+  private async publish(
     destination: string,
     bytes: Buffer,
     signal: AbortSignal,
-    onLinked: () => void
-  ): Promise<void> {
+    onLinked: () => void,
+    expected: DestinationFingerprint | null = null,
+    retentionId?: string
+  ): Promise<string | null> {
     cancelled(signal)
-    if (await fingerprint(destination)) throw new ProjectError('DESTINATION_EXISTS')
+    const before = await fingerprint(destination)
+    if (!same(before, expected))
+      throw new ProjectError(before && !expected ? 'DESTINATION_EXISTS' : 'EXTERNAL_CHANGE')
     const parent = dirname(destination),
       temporary = join(parent, `.collie-export-${randomUUID()}.incoming`)
-    let ownsTemporary = false
+    let ownsTemporary = false,
+      previous: string | null = null
     try {
       await requireSpace(parent, bytes.length)
       const output = await open(
@@ -281,8 +213,20 @@ export class ExportJobs {
       } finally {
         await output.close()
       }
+      if (/\.docx$/i.test(destination)) await inspectDocx(temporary)
       cancelled(signal)
-      if (await fingerprint(destination)) throw new ProjectError('DESTINATION_EXISTS')
+      const after = await fingerprint(destination)
+      if (!same(after, expected))
+        throw new ProjectError(after && !expected ? 'DESTINATION_EXISTS' : 'EXTERNAL_CHANGE')
+      if (expected) {
+        if (!retentionId) throw new ProjectError('VALIDATION')
+        const retained = `${destination}.collie-export-${retentionId}.previous.docx`
+        if (await fingerprint(retained)) throw new ProjectError('DESTINATION_EXISTS')
+        await rename(destination, retained)
+        previous = retained
+        if (!same(await fingerprint(previous), expected)) throw new ProjectError('EXTERNAL_CHANGE')
+        await syncDirectory(parent)
+      }
       try {
         await link(temporary, destination)
       } catch (error) {
@@ -297,12 +241,28 @@ export class ExportJobs {
       await unlink(temporary)
       ownsTemporary = false
       await syncDirectory(parent)
+      if (/\.docx$/i.test(destination)) await inspectDocx(destination)
       const actual = await fileHash(destination, 512 * 1024 * 1024)
       if (
         actual.bytes !== bytes.length ||
         actual.sha256 !== createHash('sha256').update(bytes).digest('hex')
       )
         throw new ProjectError('UNAVAILABLE')
+      return previous
+    } catch (error) {
+      // Restore only into an absent destination. Never replace a concurrent file.
+      if (previous) {
+        try {
+          if (!(await fingerprint(destination))) {
+            await link(previous, destination)
+            await unlink(previous)
+            await syncDirectory(parent)
+          }
+        } catch {
+          /* Keep the previous file if safe restoration cannot finish. */
+        }
+      }
+      throw error
     } finally {
       if (ownsTemporary) await unlink(temporary).catch(() => {})
     }
@@ -315,7 +275,8 @@ export class ExportJobs {
   ): Promise<void> {
     const { job, controller, folder } = running,
       signal = controller.signal
-    let retainedPartialOutput = false
+    let retainedPartialOutput = false,
+      interruptedDocx = false
     for (let index = 0; index < input.destinations.length; index++) {
       const target = input.destinations[index],
         file = job.files![index]
@@ -336,7 +297,8 @@ export class ExportJobs {
         await this.persist(running)
         if (!same(await fingerprint(target.path), target.fingerprint))
           throw new ProjectError('EXTERNAL_CHANGE')
-        if (target.fingerprint) throw new ProjectError('DESTINATION_EXISTS')
+        if (target.fingerprint && (target.format !== 'docx' || input.formats.length !== 1))
+          throw new ProjectError('DESTINATION_EXISTS')
         let bytes: Buffer,
           pages: number | null = null,
           assets: { name: string; bytes: Buffer }[] = [],
@@ -393,7 +355,7 @@ export class ExportJobs {
             publication.sidecarCreated = true
             await syncDirectory(dirname(sidecarPath))
             for (const asset of assets) {
-              await this.publishNew(join(sidecarPath, asset.name), asset.bytes, signal, () => {
+              await this.publish(join(sidecarPath, asset.name), asset.bytes, signal, () => {
                 publication.assetsLinked++
               })
               publication.assetsVerified++
@@ -405,15 +367,24 @@ export class ExportJobs {
         job.state = 'publishing'
         job.phase = `Publishing ${target.format}`
         await this.persist(running)
-        await this.publishNew(target.path, bytes, signal, () => {
-          publication.outputLinked = true
-        })
-        if (target.format === 'docx') await inspectDocx(target.path)
+        const previous = await this.publish(
+          target.path,
+          bytes,
+          signal,
+          () => {
+            publication.outputLinked = true
+          },
+          target.fingerprint,
+          job.id
+        )
+        if (previous) losses.push(`The previous DOCX was kept at ${previous}.`)
         file.state = 'complete'
         file.bytes = bytes.length
         file.pages = pages
         file.losses = losses
       } catch (error) {
+        if (target.format === 'docx' && input.formats.length === 1 && job.state === 'publishing')
+          interruptedDocx = true
         const code = signal.aborted ? 'CANCELLED' : projectError(error)
         file.state = code === 'CANCELLED' ? 'cancelled' : 'failed'
         file.error = code
@@ -423,6 +394,12 @@ export class ExportJobs {
           file.losses.push(
             `Space check: ${space.required === null ? 'additional bytes unknown' : `${storageBytes(space.required)} additional including margin`}; working folder and destination both need space. Review Data and recovery before retrying with the retained result.`
           )
+        if (target.fingerprint && target.format === 'docx' && input.formats.length === 1) {
+          retainedPartialOutput = true
+          file.losses.push(
+            `Replacement checks did not finish. Inspect the destination and, if present, ${target.path}.collie-export-${job.id}.previous.docx before retrying.`
+          )
+        }
         if (publication.outputLinked) {
           retainedPartialOutput = true
           file.losses.push(
@@ -442,9 +419,11 @@ export class ExportJobs {
     }
     job.state = job.files!.every((f) => f.state === 'complete')
       ? 'complete'
-      : signal.aborted
-        ? 'cancelled'
-        : 'failed'
+      : interruptedDocx
+        ? 'interrupted'
+        : signal.aborted
+          ? 'cancelled'
+          : 'failed'
     job.error = job.state === 'complete' ? null : signal.aborted ? 'CANCELLED' : 'UNAVAILABLE'
     job.phase =
       job.state === 'complete'
@@ -495,107 +474,5 @@ export class ExportJobs {
   async stop(): Promise<void> {
     for (const job of this.jobs.values()) if (job.job.state === 'rendering') job.controller.abort()
     await Promise.all([...this.jobs.values()].map((j) => j.task))
-  }
-  private async render(
-    running: Running,
-    input: WorkerExportStart,
-    model: NonNullable<PreparedExport['model']>,
-    images: PreparedExport['images']
-  ): Promise<void> {
-    const { job, folder, controller } = running,
-      signal = controller.signal
-    const candidate = join(folder, 'candidate.docx'),
-      destination = input.destinationPath,
-      parent = dirname(destination)
-    let temporary: string | null = null,
-      previous: string | null = null
-    try {
-      cancelled(signal)
-      const bytes = await exportDocx(model, this.resources, async (assetId) => {
-        cancelled(signal)
-        const image = images.get(assetId)
-        if (!image) throw new ProjectError('NOT_FOUND')
-        return image
-      })
-      cancelled(signal)
-      if (bytes.length > 512 * 1024 * 1024) throw new ProjectError('LIMIT_EXCEEDED')
-      await requireSpace(folder, bytes.length * 2)
-      await requireSpace(parent, bytes.length)
-      const output = await open(candidate, 'wx', 0o600)
-      try {
-        await output.writeFile(bytes)
-        await output.sync()
-      } finally {
-        await output.close()
-      }
-      await inspectDocx(candidate)
-      cancelled(signal)
-      job.phase = 'Preparing guarded destination'
-      await this.persist(running)
-      if (!same(await fingerprint(destination), input.destinationFingerprint))
-        throw new ProjectError('EXTERNAL_CHANGE')
-      const suffix = `.collie-export-${job.id}`
-      temporary = join(parent, `.${job.id}.incoming.docx`)
-      const staging = await open(
-        temporary,
-        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
-        0o600
-      )
-      try {
-        await staging.writeFile(bytes)
-        await staging.sync()
-      } finally {
-        await staging.close()
-      }
-      await inspectDocx(temporary)
-      cancelled(signal)
-      if (!same(await fingerprint(destination), input.destinationFingerprint))
-        throw new ProjectError('EXTERNAL_CHANGE')
-      job.state = 'publishing'
-      job.phase = 'Replacing selected DOCX'
-      await this.persist(running)
-      if (input.destinationFingerprint) {
-        previous = join(parent, `${destination.split(/[\\/]/).pop()}${suffix}.previous.docx`)
-        if (await fingerprint(previous)) throw new ProjectError('DESTINATION_EXISTS')
-        await rename(destination, previous)
-        if (!same(await fingerprint(previous), input.destinationFingerprint)) {
-          if (!(await fingerprint(destination))) await rename(previous, destination).catch(() => {})
-          throw new ProjectError('EXTERNAL_CHANGE')
-        }
-      }
-      try {
-        await link(temporary, destination)
-        await unlink(temporary)
-        temporary = null
-        await syncDirectory(parent)
-        await inspectDocx(destination)
-        const actual = await fileHash(destination, 512 * 1024 * 1024)
-        if (
-          actual.sha256 !== createHash('sha256').update(bytes).digest('hex') ||
-          actual.bytes !== bytes.length
-        )
-          throw new ProjectError('UNAVAILABLE')
-      } catch (error) {
-        if (previous && !(await fingerprint(destination)))
-          await rename(previous, destination).catch(() => {})
-        throw error
-      }
-      job.state = 'complete'
-      job.phase = 'DOCX ready'
-      job.error = null
-      await this.persist(running)
-    } catch (error) {
-      const code = projectError(error)
-      job.state =
-        code === 'CANCELLED' ? 'cancelled' : job.state === 'publishing' ? 'interrupted' : 'failed'
-      job.phase = job.state === 'interrupted' ? 'Publication needs inspection' : 'Export stopped'
-      const space = errorSpace(error, 'Export DOCX', folder)
-      this.space(job, space)
-      job.error = code
-      await this.persist(running).catch(() => {})
-    } finally {
-      if (temporary) await unlink(temporary).catch(() => {})
-      this.jobs.delete(job.id)
-    }
   }
 }

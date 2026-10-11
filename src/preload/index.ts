@@ -176,7 +176,12 @@ const api: CollieAPI = {
   },
   previewDocx: (input) =>
     projectCall<ExportPreview>(PROJECT_CHANNELS.exportPreview, isExportPreview, input),
-  startDocx: (input) => projectCall<ExportJob>(PROJECT_CHANNELS.exportStart, isExportJob, input),
+  revealExport: (input) =>
+    projectCall<boolean>(
+      PROJECT_CHANNELS.exportReveal,
+      (value): value is boolean => typeof value === 'boolean',
+      input
+    ),
   docxStatus: (input) => projectCall<ExportJob>(PROJECT_CHANNELS.exportStatus, isExportJob, input),
   cancelDocx: (input) => projectCall<ExportJob>(PROJECT_CHANNELS.exportCancel, isExportJob, input),
   startCompilation: (input) =>
@@ -314,13 +319,10 @@ const api: CollieAPI = {
       input
     ),
   getDataLocations: () => projectCall<DataLocations>(PROJECT_CHANNELS.data, isDataLocations),
-  resetLocalWork: (input) =>
-    projectCall<DataLocations>(PROJECT_CHANNELS.reset, isDataLocations, input),
+  reviewRecovery: () => projectCall<DataLocations>(PROJECT_CHANNELS.recovery, isDataLocations),
   recoverReset: (id) =>
     projectCall<DataLocations>(PROJECT_CHANNELS.recoverReset, isDataLocations, id),
-  clearPickerHistory: () => projectCall<DataLocations>(PROJECT_CHANNELS.cleanup, isDataLocations),
   backupProject: (input) => projectCall<FileStatus>(FILE_CHANNELS.backup, isFileStatus, input),
-  moveProject: (input) => projectCall<FileStatus>(FILE_CHANNELS.move, isFileStatus, input),
   restoreProject: (input) => projectCall<FileStatus>(FILE_CHANNELS.restore, isFileStatus, input),
   duplicateProject: (input) =>
     projectCall<FileStatus>(FILE_CHANNELS.duplicate, isFileStatus, input),

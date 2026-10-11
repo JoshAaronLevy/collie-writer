@@ -95,8 +95,17 @@ export class ProjectFileIpc {
         if (owner && !owner.isDestroyed()) owner.send(FILE_CHANGED, status)
       },
       (id, challenge) => {
-        if (this.status.job?.id === id && this.status.job.state === 'awaiting-consent')
+        if (
+          this.status.job?.id === id &&
+          this.status.job.state === 'awaiting-consent' &&
+          this.challenges.get(id) !== challenge
+        ) {
           this.challenges.set(id, challenge)
+          // The explicit Save As already selected this file; present its exact replacement choice.
+          void this.consent(randomUUID(), id).catch(() => {
+            // Keep the pending choice available through the existing consent action.
+          })
+        }
       }
     )
     for (const [kind, channel] of Object.entries(FILE_CHANNELS))
@@ -183,7 +192,7 @@ export class ProjectFileIpc {
             input.recheck === true
           )
             command = { kind: 'status', scope: input.scope, recheck: true }
-          else if ((kind === 'save' || kind === 'backup' || kind === 'move') && isSaveInput(input))
+          else if ((kind === 'save' || kind === 'backup') && isSaveInput(input))
             command = {
               kind,
               input,
@@ -298,7 +307,7 @@ export class ProjectFileIpc {
       }
       const filters = [{ name: 'Collie Writer project', extensions: ['collie'] }]
       let path: string | undefined
-      if (['save', 'backup', 'move'].includes(input.purpose)) {
+      if (['save', 'backup'].includes(input.purpose)) {
         const assigned = sameScope(input.scope, this.status.scope)
           ? this.status.destination?.path
           : null
@@ -318,19 +327,15 @@ export class ProjectFileIpc {
         const directory = assigned ? dirname(assigned) : hint
         const result = await dialog.showSaveDialog(window, {
           title:
-            input.purpose === 'backup'
-              ? 'Back up to a new file'
-              : input.purpose === 'move'
-                ? 'Move to a new file (keep original)'
-                : 'Save Collie Writer project',
+            input.purpose === 'backup' ? 'Back up to a new file' : 'Save Collie Writer project',
           defaultPath: directory ? join(directory, filename) : filename,
           filters,
           properties: ['createDirectory', 'showOverwriteConfirmation'],
           message:
             input.purpose === 'backup'
               ? 'Choose a new filename. Backup does not change the project’s save location.'
-              : input.purpose === 'move'
-                ? 'Choose a new filename. The old file will be retained after the move.'
+              : assigned
+                ? 'Choosing another location keeps the current file. Future Save uses your chosen location. Cloud upload is managed by your storage provider.'
                 : 'Choose this project’s location. Cloud upload is managed by your storage provider.'
         })
         if (!result.canceled) path = result.filePath

@@ -655,7 +655,7 @@ export default function OnboardingWizard(): React.JSX.Element {
                     void session.navigate({ kind: 'settings', page: 'data' })
                   }}
                 >
-                  Open Data and recovery
+                  Open Storage
                 </AppButton>
               </StatusBanner>
             ) : null}

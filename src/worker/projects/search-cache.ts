@@ -224,9 +224,7 @@ export class SearchCache {
             name === family
               ? 'Current verified search projection; rebuilt from committed project content.'
               : 'Managed by the verified search connection; SQLite closes these sidecars before file removal.'
-        } else
-          file.view.reason =
-            'Current cache could not be proven through its search owner. Open Search to load it, then review again; uncertain files stay retained.'
+        } else file.view.reason = 'Current search data could not be verified; it stays retained.'
       } else if (
         name === family &&
         !files.some((f) => f.view.name !== name && base(f.view.name) === family) &&

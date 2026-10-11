@@ -89,11 +89,11 @@ export default function AboutPanel({
           <summary>Where your data lives</summary>
           <p>
             Working projects, unsaved recovery and retained file operations stay in the local
-            working folder shown under Settings → Data and recovery. Search indexes are rebuildable;
-            cache clearing is not available yet. Source originals, excerpts, backups and recovery
-            are not disposable caches. A project file contains saved writing, research, citations,
-            managed original files and saved AI conversations. A new project has no selected file
-            until Save; a backup is another chosen file.
+            working folder shown under Settings → Storage. Search cache can be cleared there and
+            rebuilds when needed. Source originals, excerpts, backups and recovery are not
+            disposable caches. A project file contains saved writing, research, citations, managed
+            original files and saved AI conversations. A new project has no selected file until
+            Save; a backup is another chosen file.
           </p>
           <p>
             Display choices, orientation dismissal, writing layout, the last-section hint, an
@@ -110,10 +110,9 @@ export default function AboutPanel({
             finishes.
           </p>
           <p>
-            Clear picker history only forgets a folder hint; it removes no project data or search
-            cache. Archive changes library visibility, and Reset local work retains a recovery
-            batch. Neither frees storage space. Deleting app data outside Collie Writer can remove
-            the only local copy. Save or back up each project before any reset.
+            Archive changes library visibility and frees no space. Deleting app data outside Collie
+            Writer can remove the only local copy of unsaved work. Save or back up projects before
+            removing local data.
           </p>
           <AppButton
             variant="default"
@@ -121,7 +120,7 @@ export default function AboutPanel({
               void navigate({ kind: 'settings', page: 'data' })
             }}
           >
-            Open Data Locations and recovery
+            Open Storage
           </AppButton>
         </details>
         <div className={styles['support-section']}>

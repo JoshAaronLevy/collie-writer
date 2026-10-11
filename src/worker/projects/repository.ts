@@ -1,3 +1,4 @@
+import { readDiscoveryHint, recoveryTitle } from './project-discovery'
 import { importAnalysisCommand, interruptUnboundImportAnalysis } from './import-analysis'
 import type { AnalysisWorkerInput, AnalysisValue } from '../../shared/import-analysis'
 import { templateItemKind } from '../../domain/projects/templates'
@@ -9,7 +10,7 @@ import {
 import type { ImportWorkerInput, ImportValue } from '../../shared/project-import'
 import { isEditableKind } from '../../shared/outline'
 import { retiredWorkspace } from './working-copy-records'
-import { boundedJson, namedStamp, parentStamp } from './retention-files'
+import { boundedJson, namedStamp, parentStamp, retentionNames } from './retention-files'
 import type { RetentionContext } from './retained-versions'
 import { SearchCache } from './search-cache'
 import type { SearchCacheInput, SearchCacheView } from '../../shared/search-cache'
@@ -62,7 +63,6 @@ import type {
   OpenInput,
   OpenProject,
   ProjectList,
-  ProjectSummary,
   SectionInput,
   SectionMetaInput,
   WorkerImageImport,
@@ -130,7 +130,6 @@ import type {
   ExportPreview,
   ExportJob,
   ExportJobInput,
-  WorkerExportStart,
   WorkerExportBatchStart
 } from '../../shared/exports'
 import type {
@@ -335,14 +334,6 @@ export class ProjectRepository {
         .preview
     })
   }
-  exportStart(input: WorkerExportStart): Promise<ExportJob> {
-    return this.serial(async () => {
-      this.fileContext(input)
-      const owned = this.active!,
-        prepared = await prepareExport(owned.db, owned.workspace, this.resources, input)
-      return this.exports.start(owned.workspace, input, prepared)
-    })
-  }
   exportBatchStart(input: WorkerExportBatchStart): Promise<ExportJob> {
     return this.serial(async () => {
       this.fileContext(input)
@@ -423,6 +414,8 @@ export class ProjectRepository {
       if (input.kind === 'status') return this.cache.status(input.scope, input.id)
       const owned = this.searchOwner(input.scope)
       if (this.fileBusy || owned.snapshots?.busy()) throw new ProjectError('PROJECT_LOCKED')
+      if (input.kind === 'preview' && namedStamp(join(owned.workspace, 'search.sqlite')))
+        await this.availableSearch(owned, true)
       const owner = {
         workspace: owned.workspace,
         db: owned.db,
@@ -446,11 +439,15 @@ export class ProjectRepository {
       throw new ProjectError('DENIED')
     return owned
   }
-  private async availableSearch(owned: Owned): Promise<LocalSearch> {
+  private async availableSearch(owned: Owned, verifyExisting = false): Promise<LocalSearch> {
     if (!owned.search) {
       await this.safeDatabase(join(owned.workspace, 'search.sqlite'))
       try {
-        owned.search = new LocalSearch(join(owned.workspace, 'search.sqlite'), this.nativeBinding)
+        owned.search = new LocalSearch(
+          join(owned.workspace, 'search.sqlite'),
+          this.nativeBinding,
+          verifyExisting ? owned.operations : undefined
+        )
       } catch {
         throw new ProjectError('UNAVAILABLE')
       }
@@ -900,8 +897,9 @@ export class ProjectRepository {
     })
   }
   private async liveWorkspaces(projectId: string): Promise<string[]> {
-    const names = (await readdir(join(this.root, 'workspaces', projectId))).filter(isId)
-    if (names.length > 1024) throw new ProjectError('LIMIT_EXCEEDED')
+    const names = (await retentionNames(join(this.root, 'workspaces', projectId), 1024)).filter(
+      isId
+    )
     return names.filter((workspaceId) => !retiredWorkspace(this.root, { projectId, workspaceId }))
   }
   holdFiles(value: boolean): void {
@@ -914,12 +912,40 @@ export class ProjectRepository {
   } {
     const owned = this.active
     if (!owned || owned.projectId !== input.projectId || owned.workspaceId !== input.workspaceId)
-      throw new ProjectError('DENIED')
+      throw new ProjectError('DENIED', 'owner-missing')
     return {
       workspace: owned.workspace,
       destination: owned.destination,
       head: this.read(owned).headCommitId
     }
+  }
+  /** Reconcile one admitted project without changing the active editor/project owner. */
+  withRecoveryProject<T>(
+    scope: OpenInput,
+    work: (
+      destination: SavedLocation | null,
+      acknowledge: (next: SavedLocation) => Promise<void>
+    ) => Promise<T>
+  ): Promise<T> {
+    return this.serial(async () => {
+      if (this.fileBusy || this.exports.busy() || this.active?.snapshots?.hasWork())
+        throw new ProjectError('PROJECT_LOCKED', 'file-busy')
+      const active =
+        this.active?.projectId === scope.projectId && this.active.workspaceId === scope.workspaceId
+      if (!active && this.active?.projectId === scope.projectId)
+        throw new ProjectError('OPERATION_CONFLICT')
+      const owned = active ? this.active! : await this.acquire(scope)
+      this.fileBusy = true
+      try {
+        return await work(owned.destination, async (next) => {
+          await writeDestination(owned.workspace, next)
+          owned.destination = next
+        })
+      } finally {
+        this.fileBusy = false
+        if (!active) this.release(owned)
+      }
+    })
   }
   acknowledgeFile(input: OpenInput, destination: SavedLocation): Promise<void> {
     return this.serial(async () => {
@@ -1028,28 +1054,6 @@ export class ProjectRepository {
       return this.read(owned)
     })
   }
-  resetWorkspaces(expected: string): Promise<void> {
-    return this.serial(async () => {
-      if (this.fileBusy || this.active?.snapshots?.hasWork())
-        throw new ProjectError('PROJECT_LOCKED')
-      const list = await this.listUnlocked()
-      if (list.issues.length || requestDigest(list) !== expected)
-        throw new ProjectError('STALE_REVISION')
-      const parent = join(this.root, 'reset-recovery')
-      await directory(this.root, parent)
-      const batch = join(parent, randomUUID())
-      await directory(this.root, batch)
-      // One same-volume rename retains every SQLite file and sidecar together. No deletion.
-      if (this.active) {
-        this.release(this.active)
-        this.active = undefined
-      }
-      await rename(join(this.root, 'workspaces'), join(batch, 'workspaces'))
-      await syncDirectory(batch)
-      await syncDirectory(this.root)
-      await directory(this.root, join(this.root, 'workspaces'))
-    })
-  }
   recoverReset(id: string): Promise<void> {
     return this.serial(async () => {
       if (!isId(id) || this.fileBusy || this.active?.snapshots?.hasWork())
@@ -1139,6 +1143,8 @@ export class ProjectRepository {
       return lock
     } catch (error) {
       lock.close()
+      if (projectError(error) === 'PROJECT_LOCKED')
+        throw new ProjectError('PROJECT_LOCKED', 'project-in-use')
       throw error
     }
   }
@@ -1239,11 +1245,12 @@ export class ProjectRepository {
     const p = this.read(owned)
     // Derived discovery is never a mutation acknowledgment. A failed refresh is repairable on reopen.
     await writeJson(join(owned.workspace, 'recovery.json'), {
-      version: 1,
+      version: 2,
       projectId: p.projectId,
       workspaceId: p.workspaceId,
       headCommitId: p.headCommitId,
       title: p.title,
+      projectKind: p.projectKind,
       updatedAt: p.updatedAt
     }).catch(() => {})
   }
@@ -1321,38 +1328,36 @@ export class ProjectRepository {
   }
   private async listUnlocked(): Promise<ProjectList> {
     const result: ProjectList = { projects: [], issues: [] }
-    const folders = await readdir(join(this.root, 'workspaces'))
-    if (folders.length > 10000) throw new ProjectError('UNAVAILABLE')
+    const folders = await retentionNames(join(this.root, 'workspaces'), 10000)
     for (const projectId of folders.filter(isId)) {
+      let scope: OpenInput | null = null
+      let title: string | null = null
       try {
         const project = join(this.root, 'workspaces', projectId)
         await contained(this.root, project, true)
         const workspaces = await this.liveWorkspaces(projectId)
         if (!workspaces.length) continue
         if (workspaces.length !== 1) throw new ProjectError('CORRUPT_PROJECT')
-        let owned: Owned
+        scope = { projectId, workspaceId: workspaces[0] }
+        const workspace = join(project, scope.workspaceId)
+        await contained(this.root, workspace, true)
         const active =
           this.active?.projectId === projectId && this.active.workspaceId === workspaces[0]
-        if (active) owned = this.active!
-        else owned = await this.acquire({ projectId, workspaceId: workspaces[0] })
-        try {
-          const p = this.read(owned)
-          const summary: ProjectSummary = {
-            projectId,
-            workspaceId: p.workspaceId,
-            title: p.title,
-            projectKind: p.projectKind,
-            headCommitId: p.headCommitId,
-            updatedAt: p.updatedAt,
-            archived: p.archived,
-            destination: p.destination
-          }
-          result.projects.push(summary)
-        } finally {
-          if (!active) this.release(owned)
-        }
+        const hint = active ? this.read(this.active!) : await readDiscoveryHint(this.root, scope)
+        title = hint.title
+        result.projects.push({
+          ...scope,
+          title,
+          projectKind: hint.projectKind ?? null,
+          updatedAt: hint.updatedAt,
+          archived: active ? this.active!.archived : await this.readArchived(workspace),
+          destination: destinationView(
+            active ? this.active!.destination : await readDestination(this.root, workspace)
+          )
+        })
       } catch (error) {
-        result.issues.push({ projectId, code: projectError(error) })
+        if (scope && !title) title = await recoveryTitle(this.root, scope)
+        result.issues.push({ projectId, scope, title, code: projectError(error) })
       }
     }
     result.projects.sort(

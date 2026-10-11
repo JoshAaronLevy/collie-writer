@@ -119,7 +119,7 @@ export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
   'secure-storage-unavailable':
     'Protected account storage is unavailable on this device. Writing remains available.',
   'storage-unavailable':
-    'Local account storage needs attention. Keep this window open and review Data & recovery.',
+    'Local account storage needs attention. Keep this window open and review Storage.',
   'signed-out': 'Sign in with your own account when the connection becomes available.',
   'session-expired': 'This account needs to be reconnected before new AI work can start.',
   'consent-required':

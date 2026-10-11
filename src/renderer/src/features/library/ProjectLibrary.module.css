@@ -104,20 +104,17 @@
   align-items: center;
   padding: var(--collie-space-3);
 }
-.project-library-empty,
-.project-library-issues {
+.project-library-empty {
   border: 1px solid var(--collie-border);
   border-radius: var(--collie-radius-surface);
   background: var(--collie-surface);
   padding: var(--collie-space-8);
 }
-.project-library-empty h2,
-.project-library-issues h2 {
+.project-library-empty h2 {
   font-size: 1.125rem;
   margin: var(--collie-space-3) 0;
 }
-.project-library-empty p,
-.project-library-issues p {
+.project-library-empty p {
   color: var(--collie-text-secondary);
 }
 .project-library-secondary-actions {

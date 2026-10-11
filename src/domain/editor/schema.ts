@@ -270,29 +270,3 @@ export function readDocument(input: unknown): DocumentPayload {
   }
   return structuredClone(input) as DocumentPayload
 }
-
-/** Copy duplicates the owned note bodies too; move uses the original payload unchanged. */
-export function copyDocument(input: DocumentPayload, newId: () => string): DocumentPayload {
-  const payload = readDocument(input)
-  const mapping = new Map<string, string>()
-  const remap = (id: string): string => {
-    if (!mapping.has(id)) mapping.set(id, newId())
-    return mapping.get(id)!
-  }
-  const visit = (n: EditorNode): void => {
-    if ('attrs' in n) {
-      if ('blockId' in n.attrs) n.attrs.blockId = remap(n.attrs.blockId)
-      if ('citationId' in n.attrs) n.attrs.citationId = remap(n.attrs.citationId)
-      if ('footnoteId' in n.attrs) n.attrs.footnoteId = remap(n.attrs.footnoteId)
-    }
-    if ('content' in n) n.content?.forEach(visit)
-  }
-  payload.ast.content.forEach(visit)
-  payload.footnotesById = Object.fromEntries(
-    Object.entries(payload.footnotesById).map(([id, body]) => {
-      body.content.forEach(visit)
-      return [remap(id), body]
-    })
-  )
-  return readDocument(payload)
-}

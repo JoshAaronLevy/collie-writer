@@ -23,7 +23,7 @@ export function WorkspaceNavigation(): React.JSX.Element {
                   }
                 }}
               >
-                {view === 'details' ? 'Project actions' : view[0].toUpperCase() + view.slice(1)}
+                {view === 'details' ? 'Import' : view[0].toUpperCase() + view.slice(1)}
               </AppButton>
             )
           )}
@@ -84,7 +84,7 @@ export function WorkspaceNavigation(): React.JSX.Element {
                   appearance: 'Appearance & accessibility',
                   ai: 'ChatGPT',
                   access: 'Collie access',
-                  data: 'Data & recovery',
+                  data: 'Storage',
                   updates: 'Updates'
                 }[page]
               }

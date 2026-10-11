@@ -1,4 +1,5 @@
 import { retiredWorkspace } from './working-copy-records'
+import { isDiscoveryHint } from './project-discovery'
 import { intentionallyRemovedPrevious } from './retention-receipts'
 import { constants, type BigIntStats } from 'node:fs'
 import { lstat, open, opendir, realpath, statfs } from 'node:fs/promises'
@@ -323,18 +324,7 @@ export class StorageInventory {
     scan.workspaces.set(path, hint)
     try {
       const v = await this.json(scan, this.working, join(path, 'recovery.json'))
-      if (
-        !record(v) ||
-        !exact(v, ['version', 'projectId', 'workspaceId', 'headCommitId', 'title', 'updatedAt']) ||
-        v.version !== 1 ||
-        v.projectId !== scope.projectId ||
-        v.workspaceId !== scope.workspaceId ||
-        !isId(v.headCommitId) ||
-        typeof v.title !== 'string' ||
-        v.title.length > 500 ||
-        typeof v.updatedAt !== 'string'
-      )
-        throw new Error('metadata')
+      if (!isDiscoveryHint(v, scope)) throw new Error('metadata')
       hint.title = v.title
       group.title = v.title
     } catch {

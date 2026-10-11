@@ -1,7 +1,4 @@
 import { ImportButton } from '../imports/ImportButton'
-import { ReviewOptionsDialog, type ReviewOptionsTarget } from './ReviewOptionsDialog'
-import { captureSelection } from '../../editor/selection'
-import { isEditableKind, effectiveState } from '../../../../shared/outline'
 import {
   IconBook,
   IconSearch,
@@ -80,14 +77,6 @@ export default function WritingWorkspace(): React.JSX.Element {
   const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 78rem)').matches)
   const [mobilePane, setMobilePane] = useState<'editor' | 'outline' | 'panel'>('editor')
   const [metadataOpen, setMetadataOpen] = useState(false)
-  const [reviewOptionsOpen, setReviewOptionsOpen] = useState(false)
-  const [reviewOptionsTarget, setReviewOptionsTarget] = useState<ReviewOptionsTarget | null>(null)
-  const optionsContextKey = `${project?.projectId}:${project?.workspaceId}:${project?.documentId}:${session.destination.kind}:${session.destination.kind === 'workspace' ? session.destination.view : ''}`
-  const [lastOptionsContext, setLastOptionsContext] = useState(optionsContextKey)
-  if (lastOptionsContext !== optionsContextKey) {
-    setLastOptionsContext(optionsContextKey)
-    setReviewOptionsOpen(false)
-  }
   const handledReveal = useRef(0)
   const editorPane = useRef<HTMLElement>(null),
     outlinePane = useRef<HTMLElement>(null),
@@ -522,33 +511,6 @@ export default function WritingWorkspace(): React.JSX.Element {
               accessTransition ||
               storage.state !== 'ready'
             }
-            onReviewOptions={() => {
-              if (
-                blocked ||
-                !visible ||
-                session.composition.current ||
-                document.querySelector('[role="dialog"], [role="alertdialog"]')
-              )
-                return
-              const doc = project.documents.find((d) => d.id === project.documentId)
-              if (
-                !doc ||
-                !isEditableKind(doc.kind) ||
-                effectiveState(doc, project.documents) !== 'active'
-              )
-                return
-              // Selection positions only; no serialization or AI context capture.
-              setReviewOptionsTarget({
-                scope: { projectId: project.projectId, workspaceId: project.workspaceId },
-                documentId: doc.id,
-                title: doc.title,
-                kind: doc.kind,
-                selection: captureSelection(editorRef.current),
-                opener:
-                  document.activeElement instanceof HTMLElement ? document.activeElement : null
-              })
-              setReviewOptionsOpen(true)
-            }}
             onReady={editorReady}
             onChange={changed}
             onIssue={setError}
@@ -622,11 +584,6 @@ export default function WritingWorkspace(): React.JSX.Element {
           />
         </aside>
       </div>
-      <ReviewOptionsDialog
-        opened={reviewOptionsOpen}
-        target={reviewOptionsTarget}
-        close={() => setReviewOptionsOpen(false)}
-      />
     </section>
   )
 }

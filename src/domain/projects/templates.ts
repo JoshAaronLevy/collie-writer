@@ -49,9 +49,6 @@ export const templateSections = Object.fromEntries(
     projectTypes[id].sections
   ])
 ) as Record<ProjectTemplate, readonly string[]>
-export const templateNames = Object.fromEntries(
-  projectTemplates.map((id) => [id, projectTypes[id].name])
-) as Record<ProjectTemplate, string>
 export function isProjectTemplate(value: unknown): value is ProjectTemplate {
   return typeof value === 'string' && Object.hasOwn(projectTypes, value)
 }

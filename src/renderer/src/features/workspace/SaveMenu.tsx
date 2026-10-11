@@ -1,12 +1,8 @@
-import {
-  IconDeviceFloppy,
-  IconChevronDown,
-  IconHourglass,
-  IconAlertTriangle
-} from '@tabler/icons-react'
+import { IconDeviceFloppy, IconHourglass, IconAlertTriangle } from '@tabler/icons-react'
 import { IconButton } from '../../components/ui/IconButton'
-import { ActionMenu } from '../../components/ui/ActionMenu'
+import ProjectActionsMenu from '../projects/ProjectActionsMenu'
 import { sameScope } from '../../../../shared/project-files'
+import { projectFilePresentation } from '../projects/project-file-presentation'
 import { useWorkspaceSession } from './workspaceContext'
 import styles from './SaveMenu.module.css'
 
@@ -21,12 +17,9 @@ export default function SaveMenu(): React.JSX.Element {
     navigating,
     fileActive,
     saveState,
+    dirty,
     run,
-    save,
-    openFile,
-    lifecycleFile,
-    workspace,
-    navigate
+    save
   } = useWorkspaceSession()
   const disabled =
     !project ||
@@ -39,6 +32,7 @@ export default function SaveMenu(): React.JSX.Element {
     fileActive
   const saving = saveState === 'saving'
   const unconfirmed = saveState === 'unconfirmed'
+  const presentation = projectFilePresentation(project, files, dirty, saveState)
   return (
     <div className={styles['save-menu']} role="group" aria-label="Save project">
       <IconButton
@@ -46,14 +40,8 @@ export default function SaveMenu(): React.JSX.Element {
         variant="default"
         pending={saving}
         disabled={disabled}
-        label={unconfirmed ? 'Retry pending Save' : saving ? 'Saving project' : 'Save'}
-        description={
-          saving
-            ? 'Saving project. Open Save options for progress and available cancellation.'
-            : unconfirmed
-              ? 'Retry pending Save. Check the same request before saving newer edits.'
-              : 'Save the project to its selected file, or choose a file on first Save.'
-        }
+        label={presentation.saveLabel}
+        description={`${presentation.label}. ${presentation.detail}`}
         onClick={() => run(() => save(false))}
       >
         <IconDeviceFloppy aria-hidden="true" />
@@ -63,43 +51,7 @@ export default function SaveMenu(): React.JSX.Element {
           </span>
         ) : null}
       </IconButton>
-      <ActionMenu
-        label="Save options"
-        icon={<IconChevronDown aria-hidden="true" />}
-        triggerClassName={styles['save-options']}
-        actions={[
-          {
-            id: 'save-as',
-            label: 'Save As…',
-            disabled: disabled || unconfirmed,
-            onSelect: () => run(() => save(true))
-          },
-          {
-            id: 'backup',
-            label: 'Make a separate backup…',
-            disabled: disabled || unconfirmed,
-            onSelect: () => run(() => lifecycleFile('backup'))
-          },
-          {
-            id: 'locate',
-            label: 'Locate moved file…',
-            disabled: disabled || unconfirmed || !files.destination,
-            onSelect: () => run(() => openFile(false, true))
-          },
-          {
-            id: 'details',
-            label:
-              fileActive || saving
-                ? 'View file progress and actions'
-                : 'File details and project actions',
-            disabled: !project || closing || navigating,
-            onSelect: () => {
-              const next = workspace('details')
-              if (next) void navigate(next)
-            }
-          }
-        ]}
-      />
+      {project ? <ProjectActionsMenu project={project} className={styles['save-options']} /> : null}
     </div>
   )
 }

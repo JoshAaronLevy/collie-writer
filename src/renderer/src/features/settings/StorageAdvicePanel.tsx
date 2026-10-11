@@ -1,7 +1,6 @@
 import { AppButton } from '../../components/ui/Controls'
 import { storageBytes } from '../../../../shared/storage-space'
 import { useStorageNotices } from './storageNoticeContext'
-import { STORAGE_ADVICE } from '../../../../shared/storage-advice'
 import styles from './StorageInventoryPanel.module.css'
 
 export default function StorageAdvicePanel({ disabled }: { disabled: boolean }): React.JSX.Element {
@@ -10,15 +9,6 @@ export default function StorageAdvicePanel({ disabled }: { disabled: boolean }):
   return (
     <section aria-labelledby="storage-advice-heading">
       <h3 id="storage-advice-heading">Storage notices</h3>
-      <p>
-        Notices use your last finished or partial inventory, across all pages. Refresh to measure
-        again. These are product defaults, not limits on your project or permission to delete data:
-        search cache {storageBytes(STORAGE_ADVICE.projectCache)} per project /{' '}
-        {storageBytes(STORAGE_ADVICE.appCache)} overall, local project data{' '}
-        {storageBytes(STORAGE_ADVICE.project)}, available volume space below the greater of{' '}
-        {storageBytes(STORAGE_ADVICE.volumeFloor)} or{' '}
-        {Math.round(STORAGE_ADVICE.volumeFraction * 100)}%.
-      </p>
       {issue ? <p role="status">{issue}</p> : null}
       {visible.length ? (
         visible.map((c) => (
@@ -27,29 +17,26 @@ export default function StorageAdvicePanel({ disabled }: { disabled: boolean }):
               {c.kind === 'volume'
                 ? 'Low available space'
                 : c.kind === 'cache'
-                  ? 'Review search cache growth'
-                  : 'Review local project size'}{' '}
+                  ? 'Large search cache'
+                  : 'Large local project'}{' '}
               · {c.title}
             </h4>
             <p>
               {c.bytes === null
                 ? 'Current size or capacity is unknown.'
-                : `${c.kind === 'volume' ? 'Available space' : 'Measured file lengths'}: ${storageBytes(c.bytes)}. Notice threshold: ${storageBytes(c.threshold)}.`}{' '}
-              {c.signal !== 'high'
-                ? 'This earlier condition remains active until a complete measurement shows sufficient recovery.'
-                : ''}
+                : `${c.kind === 'volume' ? 'Available space' : 'Measured size'}: ${storageBytes(c.bytes)}.`}{' '}
+              {c.signal !== 'high' ? 'Refresh to check this earlier notice.' : ''}
             </p>
             <p>
               {c.kind === 'cache'
-                ? 'Open the affected project, then use Clear search cache in Data to review verified search files. '
-                : ''}
-              Review the breakdown and relevant volume. Existing Project file actions offer Backup
-              and Save As; another destination still needs local working-folder space. Recovery
-              material and unknown files remain retained.
+                ? 'Open this project to clear its search cache below.'
+                : c.kind === 'volume'
+                  ? 'Save needs space both here and in the local working folder.'
+                  : 'Project content and recovery are kept. Local-copy removal is available from Projects when safe.'}
             </p>
             <div className={styles['storage-inventory-actions']}>
               <AppButton variant="default" disabled={disabled} onClick={() => select(c)}>
-                Review {c.kind === 'volume' ? 'volume' : 'breakdown'}
+                Show {c.kind === 'volume' ? 'disk space' : 'project size'}
               </AppButton>
               <AppButton variant="subtle" disabled={disabled} onClick={() => dismiss(c.key, true)}>
                 Snooze for 24 hours
@@ -67,22 +54,14 @@ export default function StorageAdvicePanel({ disabled }: { disabled: boolean }):
         </p>
       )}
       {hidden ? <p>{hidden} active condition(s) dismissed or snoozed.</p> : null}
-      <AppButton variant="subtle" disabled={disabled || !hidden} onClick={restore}>
-        Show dismissed and snoozed notices
-      </AppButton>
-      {report?.omitted ? (
-        <p>
-          {report.omitted} additional condition readings did not fit this bounded summary. Review
-          the project pages; omission does not clear earlier notices.
-        </p>
+      {hidden ? (
+        <AppButton variant="subtle" disabled={disabled} onClick={restore}>
+          Show dismissed and snoozed notices
+        </AppButton>
       ) : null}
-      <p>
-        Dismissals are remembered for up to 30 days between measurements; snoozes last 24 hours.{' '}
-        Size notices clear below {Math.round(STORAGE_ADVICE.sizeResetFraction * 100)}% of their
-        threshold; low-space notices clear at {Math.round(STORAGE_ADVICE.volumeResetFactor * 100)}%
-        of theirs. Dismissal and snooze affect advice only. File operations recheck space
-        independently, and close still requires protection of pending work.
-      </p>
+      {report?.omitted ? (
+        <p>Some additional readings are omitted. Earlier notices stay retained.</p>
+      ) : null}
     </section>
   )
 }

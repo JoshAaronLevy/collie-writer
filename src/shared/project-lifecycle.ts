@@ -1,4 +1,5 @@
 import { hasControlCharacters } from './control-characters'
+import { isRecoveryIssue, type RecoveryIssue } from './recovery'
 import { isId } from '../domain/editor/schema'
 import {
   exact,
@@ -26,7 +27,7 @@ export type RecoveryItem = {
   head: string | null
   status: string
 }
-export type ResetCopy = { id: string; projects: number }
+export type ResetCopy = { id: string; projects: number; titles: string[] }
 export type DataLocations = {
   root: string
   bytes: number
@@ -34,17 +35,16 @@ export type DataLocations = {
   projects: ProjectList
   items: RecoveryItem[]
   issues: number
+  recovery: RecoveryIssue[]
   resets: ResetCopy[]
   review: string
 }
-export type ResetInput = { review: string; confirmation: 'RESET LOCAL WORK' }
 export type LifecycleAPI = {
   renameProject: (input: RenameInput) => Promise<ProjectResult<OpenProject>>
   archiveProject: (input: ArchiveInput) => Promise<ProjectResult<OpenProject>>
   getDataLocations: () => Promise<ProjectResult<DataLocations>>
-  resetLocalWork: (input: ResetInput) => Promise<ProjectResult<DataLocations>>
+  reviewRecovery: () => Promise<ProjectResult<DataLocations>>
   recoverReset: (id: string) => Promise<ProjectResult<DataLocations>>
-  clearPickerHistory: () => Promise<ProjectResult<DataLocations>>
 }
 export function isRenameInput(v: unknown): v is RenameInput {
   return (
@@ -68,14 +68,6 @@ export function isArchiveInput(v: unknown): v is ArchiveInput {
     typeof v.archived === 'boolean'
   )
 }
-export function isResetInput(v: unknown): v is ResetInput {
-  return (
-    record(v) &&
-    exact(v, ['review', 'confirmation']) &&
-    isId(v.review) &&
-    v.confirmation === 'RESET LOCAL WORK'
-  )
-}
 export function isDataLocations(v: unknown): v is DataLocations {
   if (
     !record(v) ||
@@ -86,6 +78,7 @@ export function isDataLocations(v: unknown): v is DataLocations {
       'projects',
       'items',
       'issues',
+      'recovery',
       'resets',
       'review'
     ]) ||
@@ -101,6 +94,11 @@ export function isDataLocations(v: unknown): v is DataLocations {
   )
     return false
   return (
+    Array.isArray(v.recovery) &&
+    v.recovery.length <= 10000 &&
+    v.recovery.every(isRecoveryIssue) &&
+    new Set(v.recovery.map((i) => i.id)).size === v.recovery.length &&
+    v.issues === v.recovery.filter((i) => i.outcome === 'unresolved').length &&
     Array.isArray(v.items) &&
     v.items.length <= 10000 &&
     v.items.every(
@@ -121,10 +119,14 @@ export function isDataLocations(v: unknown): v is DataLocations {
     v.resets.every(
       (r) =>
         record(r) &&
-        exact(r, ['id', 'projects']) &&
+        exact(r, ['id', 'projects', 'titles']) &&
         isId(r.id) &&
         Number.isSafeInteger(r.projects) &&
-        Number(r.projects) >= 0
+        Number(r.projects) >= 0 &&
+        Array.isArray(r.titles) &&
+        r.titles.length === r.projects &&
+        r.titles.length <= 10000 &&
+        r.titles.every((t) => typeof t === 'string' && t.length <= 500)
     )
   )
 }

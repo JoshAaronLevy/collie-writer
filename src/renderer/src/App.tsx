@@ -16,7 +16,7 @@ import { AiConnectionsProvider } from './features/ai-connections/AiConnectionsPr
 import { AiConnectionNotice } from './features/ai-connections/AiConnectionNotice'
 import { AiWorkNotice } from './features/ai/AiWorkNotice'
 import { AiProviderIndicator } from './features/ai-connections/AiProviderIndicator'
-import Projects from './features/projects/Projects'
+import WorkspaceViews from './features/workspace/WorkspaceViews'
 import { WorkspaceSessionProvider } from './features/workspace/WorkspaceSession'
 import { useWorkspaceSession } from './features/workspace/workspaceContext'
 import { WorkspaceStatus } from './features/workspace/WorkspaceStatus'
@@ -173,7 +173,7 @@ function AppShell({
               },
               {
                 id: 'data',
-                label: 'Data Locations and recovery',
+                label: 'Storage',
                 icon: <FolderOpen size={18} aria-hidden="true" />,
                 onSelect: () => {
                   void navigate({ kind: 'settings', page: 'data' })
@@ -192,14 +192,6 @@ function AppShell({
         </nav>
       </header>
       <main ref={content} id="workspace" tabIndex={-1} className={styles['workspace-content']}>
-        {/* <aside
-          className={styles['citation-attribution']}
-          aria-label="Citation software attribution"
-        >
-          <p>citeproc-js implements the Citation Style Language</p>
-          <p>© Frank Bennett · https://citationstyles.org/</p>
-          <p>Source and licenses are available in Help → Third-party licenses.</p>
-        </aside> */}
         {persistenceIssue ? (
           <div className={styles['app-notice']}>
             <StatusBanner tone="warning" title="Display preferences">
@@ -220,21 +212,18 @@ function AppShell({
         <ConversationNotice />
         <ProofreadingNotice />
         <Orientation />
-        <Projects />
+        <WorkspaceViews />
         <RetainedRegion name="help-about" label="About and help">
           <AboutPanel info={info} storage={storageStatus} />
         </RetainedRegion>
       </main>
-      <footer className={styles['app-footer']}>
-        <p role="status">
-          {failed
-            ? 'Application information could not be loaded.'
-            : info
-              ? `Collie Writer ${info.version} · ${channel} build`
-              : 'Starting Collie Writer…'}
-        </p>
-        <span>Ad-free, always.</span>
-      </footer>
+      {failed || !info ? (
+        <footer className={styles['app-footer']}>
+          <p role={failed ? 'alert' : 'status'}>
+            {failed ? 'Application information could not be loaded.' : 'Starting Collie Writer…'}
+          </p>
+        </footer>
+      ) : null}
     </div>
   )
 }

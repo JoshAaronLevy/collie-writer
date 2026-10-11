@@ -55,7 +55,6 @@ export function commandCapability(command: ProjectCommand): Capability {
         ? 'read'
         : 'edit'
     case 'exportPreview':
-    case 'exportStart':
     case 'exportStatus':
     case 'exportCancel':
     case 'recipes':
@@ -84,8 +83,7 @@ export function commandCapability(command: ProjectCommand): Capability {
     case 'readImage':
     case 'archive':
     case 'data':
-    case 'cleanup':
-    case 'reset':
+    case 'recovery': // Exact local file acknowledgment; no new publication or inference.
     case 'recoverReset':
       return 'read'
   }

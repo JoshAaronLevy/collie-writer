@@ -56,7 +56,9 @@
   align-items: center;
   gap: var(--collie-space-3);
 }
-.file-summary p {
+.file-summary > div:first-child {
   flex: 1 1 18rem;
+}
+.file-summary p {
   color: var(--collie-text-secondary);
 }

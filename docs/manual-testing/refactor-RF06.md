@@ -1,0 +1,14 @@
+# RF06 — Unused code and nonfunctional UI
+
+Implementation complete — awaiting user testing. Use a disposable project or copy for writing, duplication and import observations. These are user-owned checks; code checks and source inspection do not establish runtime acceptance.
+
+Stage RF06 complete. As a user:
+
+1. **Launch normally** (for development, run `npm run dev` with the pinned toolchain). Once application information loads, the redundant version/build and Ad-free footer disappears. Development/beta identity remains in the header, and About still shows version information. If loading fails naturally, its error remains visible, including in focused writing; do not inject failures to create this condition.
+2. **Open a disposable project and edit its writing.** The toolbar no longer offers the inert AI review-options wand/dialog. Formatting, undo/redo, citations and footnotes still work. Navigate away and back, then close/reopen normally: locally retained writing remains available, with explicit Save still separate.
+3. **Open the AI companion and an existing saved proofreading review or conversation, when available.** Saved responses, findings and correction safeguards remain accessible. ChatGPT settings still opens the shared account dialog with the current account/model and useful connection errors. No Grok choice or new provider setup is introduced. Opening saved content sends no inference request.
+4. **Import supported files into a disposable project with blank instructions.** The summary footer has Cancel and Accept, with no disabled Re-Analyze or Coming later block. Cancel returns to populated setup; unchanged Submit reopens the retained summary locally. Accept creates the findings once in the normal destinations. If unfinished analysis/recovery already exists, its contextual Continue/Check/Cancel actions remain; their existing explicit authority is unchanged.
+5. **Create a disposable project using a normal template, then duplicate it from the project menu.** Template names and initial sections remain correct. Actual duplication keeps the original and opens a separate project; its first Save asks for a location. Existing citation/footnote identities and retained imported content still use the production copy owners.
+6. **Open About/help and Third-party licenses.** Version information and bundled license/notices remain available. At increased zoom or narrow width, use the keyboard through the writing toolbar, ChatGPT settings and import summary: working controls remain reachable, and no empty placeholder occupies the footer.
+
+No active proofreading implementation or general reanalysis feature was added. Historical Codex/direct ChatGPT operation readers, protected outcomes and account boundaries remain unchanged. Provider/native/content/accessibility observations and release gates remain pending; report any behavior that differs from these expectations before continuing.

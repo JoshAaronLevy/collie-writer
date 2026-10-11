@@ -8,7 +8,7 @@ import {
   type ProjectResult
 } from '../shared/projects'
 import { isId } from '../domain/editor/schema'
-import { projectError } from '../domain/projects/errors'
+import { ProjectError, projectError } from '../domain/projects/errors'
 import { isAbsolute } from 'node:path'
 import { isFileCommand } from '../shared/file-worker'
 import { ProjectFiles } from './projects/project-files'
@@ -106,7 +106,8 @@ async function receive(message: unknown): Promise<void> {
         result: projectFailure(
           message.requestId,
           projectError(error),
-          errorSpace(error, 'Project file operation', workingRoot) ?? undefined
+          errorSpace(error, 'Project file operation', workingRoot) ?? undefined,
+          error instanceof ProjectError ? error.context : undefined
         )
       })
     }
@@ -147,9 +148,6 @@ async function receive(message: unknown): Promise<void> {
           break
         case 'exportPreview':
           value = await repository.exportPreview(command.input)
-          break
-        case 'exportStart':
-          value = await repository.exportStart(command.input)
           break
         case 'exportBatchStart':
           value = await repository.exportBatchStart(command.input)
@@ -291,17 +289,13 @@ async function receive(message: unknown): Promise<void> {
         case 'archive':
           value = await repository.archive(command.input)
           break
+        case 'recovery':
+          if (!files) throw new Error('UNAVAILABLE')
+          value = await files.reviewRecovery()
+          break
         case 'data':
           if (!files) throw new Error('UNAVAILABLE')
           value = await files.overview()
-          break
-        case 'cleanup':
-          if (!files) throw new Error('UNAVAILABLE')
-          value = await files.cleanup()
-          break
-        case 'reset':
-          if (!files) throw new Error('UNAVAILABLE')
-          value = await files.reset(command.input.review)
           break
         case 'recoverReset':
           if (!files) throw new Error('UNAVAILABLE')
@@ -313,7 +307,8 @@ async function receive(message: unknown): Promise<void> {
       result = projectFailure(
         message.requestId,
         projectError(error),
-        errorSpace(error, `Local project ${message.command.kind}`, workingRoot) ?? undefined
+        errorSpace(error, `Local project ${message.command.kind}`, workingRoot) ?? undefined,
+        error instanceof ProjectError ? error.context : undefined
       )
     }
     parent.postMessage({ kind: 'project-result', result })

@@ -1,0 +1,55 @@
+.recovery-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 2rem);
+  overflow: hidden;
+}
+.recovery-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.recovery-content {
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.recovery-issue {
+  padding-block: var(--collie-space-4);
+  border-bottom: 1px solid var(--collie-border);
+}
+.recovery-issue h2 {
+  font-size: var(--mantine-font-size-md);
+  margin: 0;
+}
+.recovery-actions,
+.recovery-footer,
+.recovery-versions li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--collie-space-3);
+}
+.recovery-footer {
+  flex-shrink: 0;
+  justify-content: flex-end;
+  padding-top: var(--collie-space-4);
+}
+.recovery-versions {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: var(--collie-space-3);
+}
+.recovery-issue summary {
+  cursor: pointer;
+  margin-block: var(--collie-space-3);
+}
+.recovery-actions button,
+.recovery-footer button,
+.recovery-versions button {
+  max-width: 100%;
+  height: auto;
+  min-height: var(--control-height);
+}

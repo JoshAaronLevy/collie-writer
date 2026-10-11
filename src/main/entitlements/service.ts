@@ -282,7 +282,6 @@ export class AccessService {
       this.transition &&
       (command.kind === 'create' ||
         (command.kind === 'open' && !sameProject(scope, this.transition.scope)) ||
-        command.kind === 'reset' ||
         command.kind === 'recoverReset')
     )
       throw new ProjectError('ACCESS_TRANSITION')
@@ -380,7 +379,11 @@ export class AccessService {
       const old = this.settings.sampleProject
       const listed = await this.storage.request(randomUUID(), { kind: 'list' })
       if (!listed.ok) throw new ProjectError(listed.error.code)
-      const exists = old && (listed.value as ProjectList).projects.some((p) => sameProject(p, old))
+      const library = listed.value as ProjectList
+      const exists =
+        old &&
+        (library.projects.some((p) => sameProject(p, old)) ||
+          library.issues.some((p) => p.projectId === old.projectId))
       let scope: OpenInput
       if (old && exists && !reset) scope = old
       else {
@@ -428,10 +431,11 @@ export class AccessService {
     this.requireSettled(keepActive)
     if (this.settingsBroken) throw new ProjectError('ACCESS_SETTINGS')
     if (revision !== this.settings.revision) throw new ProjectError('STALE_REVISION')
-    const listed = await this.storage.request(randomUUID(), { kind: 'list' })
-    if (!listed.ok) throw new ProjectError(listed.error.code)
-    if (!(listed.value as ProjectList).projects.some((p) => sameProject(p, scope) && !p.archived))
-      throw new ProjectError('NOT_FOUND')
+    // Display hints cannot grant editing access. Setup and ordinary editing both open first.
+    if (!sameProject(this.active, scope)) throw new ProjectError('DENIED', 'owner-missing')
+    const opened = await this.storage.request(randomUUID(), { kind: 'open', input: scope })
+    if (!opened.ok) throw new ProjectError(opened.error.code)
+    if ((opened.value as OpenProject).archived) throw new ProjectError('NOT_FOUND')
     if (sameProject(scope, this.settings.sampleProject)) throw new ProjectError('VALIDATION')
     this.requireSettled(keepActive)
     if (revision !== this.settings.revision) throw new ProjectError('STALE_REVISION')

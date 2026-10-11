@@ -6,8 +6,8 @@ import { hasControlCharacters } from '../shared/control-characters'
 import { isCitationStyleInput } from '../shared/citations'
 import { isOutlineInput, isHistoryInput } from '../shared/outline'
 import { isNoteChangeInput } from '../shared/notes'
-import { isRenameInput, isArchiveInput, isResetInput } from '../shared/project-lifecycle'
-import { BrowserWindow, clipboard, dialog, ipcMain, type WebContents } from 'electron'
+import { isRenameInput, isArchiveInput } from '../shared/project-lifecycle'
+import { BrowserWindow, clipboard, dialog, ipcMain, shell, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { basename, join } from 'node:path'
 import { exportFingerprint } from '../domain/projects/export-path'
@@ -54,9 +54,10 @@ import { isSearchInput, isSearchActionInput } from '../shared/search'
 import { isProjectValue } from '../shared/projects'
 import {
   isExportOptions,
-  isExportStart,
   isExportBatchStart,
-  isExportJobInput
+  isExportJobInput,
+  isExportRevealInput,
+  isExportJob
 } from '../shared/exports'
 import { isRecipeChange, isImportPreviewInput, isImportCommitInput } from '../shared/interchange'
 import type { ImportPreviewInput, ImportCommitInput } from '../shared/interchange'
@@ -73,8 +74,6 @@ export function registerProjectIpc(
   devOrigin?: string,
   sourceAssets?: SourceAssets
 ): void {
-  let hasUnprotectedChanges = false
-  let resetting = false
   const imageGrants = new Map<
     string,
     {
@@ -123,7 +122,6 @@ export function registerProjectIpc(
     isTrustedSender(event, owner(), devOrigin) && record(payload) && isId(payload.requestId)
   ipcMain.on(DIRTY_CHANGED, (event, payload: unknown) => {
     if (isTrustedSender(event, owner(), devOrigin) && typeof payload === 'boolean') {
-      hasUnprotectedChanges = payload
       dirty(payload)
     }
   })
@@ -171,52 +169,6 @@ export function registerProjectIpc(
           return result
         } catch {
           return projectFailure(requestId, 'UNAVAILABLE')
-        }
-      }
-      if (kind === 'exportStart') {
-        if (!exact(value, ['requestId', 'input']) || !isExportStart(value.input))
-          return projectFailure(requestId, 'VALIDATION')
-        const window = BrowserWindow.fromWebContents(event.sender)
-        if (!window) return projectFailure(requestId, 'DENIED')
-        const input = value.input
-        try {
-          const answer = await dialog.showSaveDialog(window, {
-            title: 'Export manuscript as DOCX',
-            defaultPath: 'Collie Writer manuscript.docx',
-            filters: [{ name: 'Word document', extensions: ['docx'] }],
-            properties: ['createDirectory', 'showOverwriteConfirmation', 'dontAddToRecent']
-          })
-          if (answer.canceled || !answer.filePath) return projectFailure(requestId, 'CANCELLED')
-          if (window.isDestroyed() || !isTrustedSender(event, owner(), devOrigin))
-            return projectFailure(requestId, 'DENIED')
-          const destinationPath = answer.filePath
-          if (destinationPath.length > 4096 || !/\.docx$/i.test(destinationPath))
-            return projectFailure(requestId, 'VALIDATION')
-          const before = await exportFingerprint(destinationPath)
-          if (before) {
-            const decision = await dialog.showMessageBox(window, {
-              type: 'warning',
-              title: 'Replace DOCX?',
-              message: 'Replace the selected DOCX?',
-              detail: `${destinationPath}\n\nCollie Writer will retain the previous file beside it.`,
-              buttons: ['Cancel', 'Replace inspected DOCX'],
-              defaultId: 0,
-              cancelId: 0,
-              noLink: true
-            })
-            if (decision.response !== 1) return projectFailure(requestId, 'CANCELLED')
-          }
-          if (window.isDestroyed() || !isTrustedSender(event, owner(), devOrigin))
-            return projectFailure(requestId, 'DENIED')
-          const after = await exportFingerprint(destinationPath)
-          if (JSON.stringify(before) !== JSON.stringify(after))
-            return projectFailure(requestId, 'EXTERNAL_CHANGE')
-          return storage.request(requestId, {
-            kind: 'exportStart',
-            input: { ...input, destinationPath, destinationFingerprint: after }
-          })
-        } catch (error) {
-          return projectFailure(requestId, projectError(error))
         }
       }
       if (kind === 'exportBatchStart') {
@@ -278,12 +230,20 @@ export function registerProjectIpc(
             return projectFailure(requestId, 'DENIED')
           const collisions = destinations.filter((d) => d.fingerprint)
           if (collisions.length) {
+            const replacingDocx = destinations.length === 1 && destinations[0].format === 'docx'
             const answer = await dialog.showMessageBox(window, {
               type: 'warning',
-              title: 'Existing export files',
-              message: 'Some selected names already exist.',
-              detail: `${collisions.map((d) => basename(d.path)).join(', ')}\n\nThese files will be skipped and kept. Choose a different name or folder to export those formats.`,
-              buttons: ['Cancel', 'Continue and skip existing files'],
+              title: replacingDocx ? 'Replace DOCX?' : 'Existing export files',
+              message: replacingDocx
+                ? 'Replace the selected DOCX?'
+                : 'Some selected names already exist.',
+              detail: replacingDocx
+                ? `${destinations[0].path}\n\nCollie Writer will retain the previous file beside it.`
+                : `${collisions.map((d) => basename(d.path)).join(', ')}\n\nThese files will be skipped and kept. Choose a different name or folder to export those formats.`,
+              buttons: [
+                'Cancel',
+                replacingDocx ? 'Replace inspected DOCX' : 'Continue and skip existing files'
+              ],
               defaultId: 0,
               cancelId: 0,
               noLink: true
@@ -302,6 +262,30 @@ export function registerProjectIpc(
             kind: 'exportBatchStart',
             input: { ...input, destinations }
           })
+        } catch (error) {
+          return projectFailure(requestId, projectError(error))
+        }
+      }
+      if (kind === 'exportReveal') {
+        if (!exact(value, ['requestId', 'input']) || !isExportRevealInput(value.input))
+          return projectFailure(requestId, 'VALIDATION')
+        const { format, ...input } = value.input
+        try {
+          const result = await storage.request(requestId, { kind: 'exportStatus', input })
+          if (!result.ok) return result
+          if (!isExportJob(result.value)) return projectFailure(requestId, 'VALIDATION')
+          const job = result.value
+          const path = job.files
+            ? job.files.find((file) => file.format === format && file.state === 'complete')?.path
+            : format === 'docx' && job.state === 'complete'
+              ? job.destinationPath
+              : null
+          if (!path || !(await exportFingerprint(path)))
+            return projectFailure(requestId, 'NOT_FOUND')
+          if (!isTrustedSender(event, owner(), devOrigin))
+            return projectFailure(requestId, 'DENIED')
+          shell.showItemInFolder(path)
+          return { ok: true, requestId, value: true }
         } catch (error) {
           return projectFailure(requestId, projectError(error))
         }
@@ -567,7 +551,7 @@ export function registerProjectIpc(
         return projectFailure(requestId, 'VALIDATION')
       }
       let command: ProjectCommand
-      if ((kind === 'list' || kind === 'data' || kind === 'cleanup') && isInfoRequest(value))
+      if ((kind === 'list' || kind === 'data' || kind === 'recovery') && isInfoRequest(value))
         command = { kind }
       else if (
         exact(value, ['requestId', 'input']) &&
@@ -855,35 +839,7 @@ export function registerProjectIpc(
         command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'recoverReset' && isId(value.input))
         command = { kind, input: value.input }
-      else if (
-        exact(value, ['requestId', 'input']) &&
-        kind === 'reset' &&
-        isResetInput(value.input)
-      ) {
-        const window = BrowserWindow.fromWebContents(event.sender)
-        if (!window || hasUnprotectedChanges || resetting)
-          return projectFailure(requestId, 'DENIED')
-        resetting = true
-        try {
-          const answer = await dialog.showMessageBox(window, {
-            type: 'warning',
-            title: 'Reset local work?',
-            message: 'Remove the reviewed projects from the active list?',
-            detail:
-              'Use Save or Backup for anything you need outside this computer before continuing. All reviewed local work will be retained in Reset recovery, with no automatic expiry. Chosen project and backup files will not be removed. Deleting app data or using an uninstaller that removes it can still destroy local recovery.',
-            buttons: ['Cancel', 'Reset and retain recovery'],
-            defaultId: 0,
-            cancelId: 0,
-            noLink: true
-          })
-          if (answer.response !== 1) return projectFailure(requestId, 'CANCELLED')
-          if (hasUnprotectedChanges || !isTrustedSender(event, owner(), devOrigin))
-            return projectFailure(requestId, 'DENIED')
-          return await storage.request(requestId, { kind, input: value.input })
-        } finally {
-          resetting = false
-        }
-      } else return projectFailure(requestId, 'VALIDATION')
+      else return projectFailure(requestId, 'VALIDATION')
       const result = await storage.request(requestId, command)
       if (kind === 'inspectionAsset') {
         if (!result.ok || !isProjectValue('inspectionAsset', result.value) || !sourceAssets)

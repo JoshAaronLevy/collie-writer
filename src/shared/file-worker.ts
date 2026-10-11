@@ -6,14 +6,14 @@ import { isSaveInput, type FileChoice, type SaveInput } from './project-files'
 export type FileGrant = {
   id: string
   path: string
-  purpose: 'save' | 'open' | 'locate' | 'backup' | 'move' | 'restore'
+  purpose: 'save' | 'open' | 'locate' | 'backup' | 'restore'
   scope: OpenInput | null
 }
 export type FileCommand =
   | { kind: 'duplicate'; operationId: string; scope: OpenInput; expectedHead: string }
   | { kind: 'recover'; operationId: string; artifactId: string }
   | { kind: 'status'; scope: OpenInput | null; recheck: boolean }
-  | { kind: 'save' | 'backup' | 'move'; input: SaveInput; grant: FileGrant | null }
+  | { kind: 'save' | 'backup'; input: SaveInput; grant: FileGrant | null }
   | { kind: 'open' | 'restore'; operationId: string; grant: FileGrant }
   | { kind: 'locate'; operationId: string; scope: OpenInput; grant: FileGrant }
   | { kind: 'inspect'; operationId: string; scope: OpenInput }
@@ -28,7 +28,7 @@ export function isFileGrant(v: unknown): v is FileGrant {
     v.path.length > 0 &&
     v.path.length <= 4096 &&
     (v.path.startsWith('/') || /^[a-z]:[\\/]/i.test(v.path)) &&
-    ['save', 'open', 'locate', 'backup', 'move', 'restore'].includes(String(v.purpose)) &&
+    ['save', 'open', 'locate', 'backup', 'restore'].includes(String(v.purpose)) &&
     (['open', 'restore'].includes(String(v.purpose)) ? v.scope === null : isOpenInput(v.scope))
   )
 }
@@ -53,7 +53,6 @@ export function isFileCommand(v: unknown): v is FileCommand {
         typeof v.recheck === 'boolean'
       )
     case 'backup':
-    case 'move':
     case 'save':
       return (
         exact(v, ['kind', 'input', 'grant']) &&
@@ -82,7 +81,7 @@ export function isFileCommand(v: unknown): v is FileCommand {
       return (
         exact(v, ['kind', 'id', 'choice', 'challenge']) &&
         isId(v.id) &&
-        ['cancel', 'overwrite', 'import', 'use-local', 'open-copy'].includes(String(v.choice)) &&
+        ['cancel', 'overwrite', 'use-local', 'open-copy'].includes(String(v.choice)) &&
         (v.challenge === null || isId(v.challenge))
       )
     default:

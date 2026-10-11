@@ -1,11 +1,13 @@
+import { RecoveryNotice } from '../recovery/RecoveryNotice'
+import { useRecovery } from '../recovery/recoveryContext'
 import { useProjectImport } from '../imports/importContext'
 import type { ExportOperation } from './useExportOperations'
 import { useWorkspaceSession } from './workspaceContext'
 import SaveMenu from './SaveMenu'
-import ProjectFileActions from '../projects/ProjectFileActions'
+import FileOperation from '../projects/FileOperation'
 import {
   projectFileNeedsAttention,
-  projectFileStatusMessage
+  projectFilePresentation
 } from '../projects/project-file-presentation'
 import { sameScope } from '../../../../shared/project-files'
 import { AppButton } from '../../components/ui/Controls'
@@ -14,6 +16,7 @@ import styles from './WorkspaceNavigation.module.css'
 import { useStorageNotices } from '../settings/storageNoticeContext'
 
 export function WorkspaceStatus(): React.JSX.Element {
+  const recovery = useRecovery()
   const storageAdvice = useStorageNotices()
   const projectImport = useProjectImport()
   const {
@@ -50,7 +53,8 @@ export function WorkspaceStatus(): React.JSX.Element {
     refresh,
     exports,
     chooseProject,
-    trackExport
+    trackExport,
+    setLocalCopyTarget
   } = useWorkspaceSession()
   const writing = destination.kind === 'workspace' && destination.view === 'write'
   const operations = drafts
@@ -63,6 +67,7 @@ export function WorkspaceStatus(): React.JSX.Element {
   const fileStateReady = !!project && sameScope(project, files.scope)
   const fileNeedsAttention =
     projectFileNeedsAttention(files, project) || saveState === 'unconfirmed'
+  const filePresentation = projectFilePresentation(project, files, dirty, saveState)
   function exportNotice(operation: ExportOperation): React.JSX.Element {
     return (
       <div
@@ -148,18 +153,22 @@ export function WorkspaceStatus(): React.JSX.Element {
               void navigate({ kind: 'settings', page: 'data' })
             }}
           >
-            Open Data and recovery
+            Open Storage
           </AppButton>
         </StatusBanner>
       ) : null}
-      {error ? (
+      <RecoveryNotice />
+      {error && !recovery.opened ? (
         <StatusBanner tone="error" title="Your attention is needed">
           {error}
         </StatusBanner>
       ) : null}
       {project && retry && !committing ? (
-        <StatusBanner tone="error" title="Local protection needs retry">
-          <p>Your current writing is retained. Retry keeps the same local operation.</p>
+        <StatusBanner tone="error" title="Recent changes may be unsaved">
+          <p>
+            Collie could not confirm saving recent changes on this computer. Keep this window open.
+            Retry saving your visible writing, or copy it elsewhere if saving remains unavailable.
+          </p>
           <AppButton
             disabled={!available || busy || acting || closing || navigating}
             onClick={() =>
@@ -232,7 +241,8 @@ export function WorkspaceStatus(): React.JSX.Element {
             variant="subtle"
             disabled={closing || navigating}
             onClick={(event) => {
-              if (
+              if (operation.kind === 'working-copy-removal') setLocalCopyTarget(operation.scope)
+              else if (
                 operation.kind.startsWith('project-import') &&
                 sameScope(current.current, operation.scope)
               )
@@ -262,37 +272,18 @@ export function WorkspaceStatus(): React.JSX.Element {
       ) : null}
       {project &&
       destination.kind === 'workspace' &&
-      destination.view !== 'details' &&
-      !writing &&
       fileStateReady &&
-      !fileNeedsAttention ? (
-        <div className={styles['file-summary']}>
-          <p>{projectFileStatusMessage(files, dirty)}</p>
+      !recovery.opened &&
+      (!writing || fileNeedsAttention) ? (
+        <div className={styles['file-summary']} role={fileNeedsAttention ? 'alert' : 'status'}>
+          <div>
+            <p>{filePresentation.label}</p>
+            {fileNeedsAttention ? <p>{filePresentation.detail}</p> : null}
+          </div>
           <SaveMenu />
-          <AppButton
-            variant="subtle"
-            onClick={() => {
-              void navigate({
-                kind: 'workspace',
-                scope: { projectId: project.projectId, workspaceId: project.workspaceId },
-                view: 'details'
-              })
-            }}
-          >
-            Project file actions
-          </AppButton>
         </div>
       ) : null}
-      {(project || files.job) && (!writing || fileNeedsAttention) ? (
-        <details open={fileNeedsAttention || undefined}>
-          <summary>
-            {fileNeedsAttention
-              ? 'Project file needs attention'
-              : 'Project file status and progress'}
-          </summary>
-          <ProjectFileActions />
-        </details>
-      ) : null}
+      {!recovery.opened ? <FileOperation /> : null}
       {project && dirty && !writing ? (
         <AppButton
           variant="default"

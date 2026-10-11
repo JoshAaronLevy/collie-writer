@@ -18,11 +18,9 @@ import SourceInspector from '../projects/SourceInspector'
 import EvidencePanel from '../projects/EvidencePanel'
 import SearchPanel from '../projects/SearchPanel'
 import CitationsPanel from '../projects/CitationsPanel'
-import DocxExportPanel from '../projects/DocxExportPanel'
+import ExportPanel from '../projects/ExportPanel'
 import InterchangeImportPanel from '../projects/InterchangeImportPanel'
-import { ProjectManagement, RecoveryPanel } from '../projects/LifecyclePanel'
-import ProjectFileActions from '../projects/ProjectFileActions'
-import { projectFileNeedsAttention } from '../projects/project-file-presentation'
+import { RecoveryPanel } from '../projects/LifecyclePanel'
 import AccessPanel from '../projects/AccessPanel'
 import TutorialPanel from '../projects/TutorialPanel'
 import SettingsPanel from '../settings/SettingsPanel'
@@ -48,7 +46,6 @@ export default function WorkspaceViews(): React.JSX.Element {
     closing,
     committing,
     setError,
-    setNotice,
     history,
     annotationCapture,
     noteDirty,
@@ -61,6 +58,7 @@ export default function WorkspaceViews(): React.JSX.Element {
     current,
     dirty,
     files,
+    saveState,
     fileActive,
     accessReadOnly,
     accessTransition,
@@ -74,14 +72,10 @@ export default function WorkspaceViews(): React.JSX.Element {
     performOutline,
     flush,
     run,
-    waitActive,
     lifecycleFile,
-    manage,
-    resetLocal,
     afterNoteCommit,
     changeAccess,
     openTutorial,
-    chooseProject,
     research,
     navigating,
     setData,
@@ -91,6 +85,16 @@ export default function WorkspaceViews(): React.JSX.Element {
   } = useWorkspaceSession()
   return (
     <>
+      {project ? (
+        <ProjectDetailsForm
+          key={`${project.projectId}:${project.workspaceId}`}
+          project={project}
+          disabled={
+            busy || acting || closing || navigating || fileActive || storage.state !== 'ready'
+          }
+          readOnly={accessReadOnly || accessTransition}
+        />
+      ) : null}
       <RetainedRegion name="setup" label="New project">
         {startupPending && storage.state !== 'unavailable' && location?.state !== 'required' ? (
           <p role="status">Opening local projects…</p>
@@ -292,9 +296,9 @@ export default function WorkspaceViews(): React.JSX.Element {
         >
           <RetainedRegion name="export" label="Export">
             {project ? (
-              <DocxExportPanel
+              <ExportPanel
                 paid={access?.paid ?? false}
-                key={project.projectId}
+                key={`${project.projectId}:${project.workspaceId}`}
                 project={project}
                 disabled={busy || closing || acting || fileActive || storage.state !== 'ready'}
                 flush={flush}
@@ -322,41 +326,12 @@ export default function WorkspaceViews(): React.JSX.Element {
             </details>
           </RetainedRegion>
 
-          <RetainedRegion name="details" label="Project actions">
+          <RetainedRegion name="details" label="Document import">
             {project ? (
               <>
-                <h1>Project actions</h1>
+                <h1>Document import</h1>
                 <ImportButton />
-                <p>
-                  Manage details, the selected project file, separate copies, and local organization
-                  for “{project.title}”.
-                </p>
               </>
-            ) : null}
-            {project ? (
-              <ProjectDetailsForm
-                key={project.projectId}
-                project={project}
-                disabled={busy || acting || closing || fileActive || storage.state !== 'ready'}
-                readOnly={accessReadOnly || accessTransition}
-              />
-            ) : null}
-            {project &&
-            sameScope(project, files.scope) &&
-            !projectFileNeedsAttention(files, project) ? (
-              <ProjectFileActions />
-            ) : null}
-            {project ? (
-              <ProjectManagement
-                key={`${project.projectId}-${project.title}`}
-                project={project}
-                disabled={!available || acting || fileActive || closing}
-                archive={() => run(() => manage())}
-                backup={() => run(() => lifecycleFile('backup'))}
-                move={() => run(() => lifecycleFile('move'))}
-                duplicate={() => run(() => lifecycleFile('duplicate'))}
-                restore={() => run(() => lifecycleFile('restore'))}
-              />
             ) : null}
             {project ? (
               <InterchangeImportPanel
@@ -396,19 +371,14 @@ export default function WorkspaceViews(): React.JSX.Element {
               importGrant={() => run(() => changeAccess('import'))}
             />
           </RetainedRegion>
-          <RetainedRegion name="settings-data" label="Data and recovery">
-            <h1>Data and recovery</h1>
-            <p>
-              Local protection, selected project files and separate backups are different copies.
-              Recovery material stays retained. Clearing picker history removes no content; Archive
-              and Reset organize or retain local work and do not free storage space.
-            </p>
+          <RetainedRegion name="settings-data" label="Storage">
+            <h1>Storage</h1>
             {!location ? (
               <p role="status">Finding the local working folder…</p>
             ) : (
-              <details className={styles['working-location']} open={location.state === 'required'}>
-                <summary>Working-data location</summary>
-                <p>{location.message}</p>
+              <section className={styles['working-location']}>
+                <h2>Local working folder</h2>
+                {location.state === 'required' ? <p role="status">{location.message}</p> : null}
                 {location.path ? (
                   <>
                     <p className={styles['location-path']}>{location.path}</p>
@@ -441,22 +411,16 @@ export default function WorkspaceViews(): React.JSX.Element {
                   </AppButton>
                 )}
                 <p>
-                  This folder holds local working copies for your projects, including writing,
-                  research, citations and saved conversations. It also retains recovery and
-                  rebuildable search indexes. It is separate from each project&apos;s selected
-                  .collie file.
+                  Unsaved writing and recovery stay here. Keep this folder outside cloud sync; save
+                  .collie files to your chosen location.
                 </p>
-                <p>
-                  Keep this folder outside sync or mirroring tools. Portable .collie files can go in
-                  your chosen local cloud folders. Normal close keeps unsaved writing here; deleting
-                  this folder can remove the only copy of that work.
-                </p>
-              </details>
+              </section>
             )}
             <ProjectStorageSummary
               project={project}
               status={project && sameScope(project, files.scope) ? files : null}
               dirty={dirty}
+              saveState={saveState}
               disabled={!available || acting || fileActive || closing}
               reveal={() =>
                 run(async () => {
@@ -489,13 +453,6 @@ export default function WorkspaceViews(): React.JSX.Element {
             />
             <RecoveryPanel
               data={data}
-              openProject={(scope) =>
-                run(async () => {
-                  await chooseProject(scope)
-                  await waitActive()
-                  await refreshData()
-                })
-              }
               disabled={!available || acting || fileActive || closing}
               refresh={() => run(refreshData)}
               reveal={() =>
@@ -505,7 +462,6 @@ export default function WorkspaceViews(): React.JSX.Element {
                 })
               }
               inspect={(id) => run(() => lifecycleFile('recover', id))}
-              reset={(review) => run(() => resetLocal(review))}
               recoverReset={(id) =>
                 run(async () => {
                   setBusy(true)
@@ -517,23 +473,14 @@ export default function WorkspaceViews(): React.JSX.Element {
                   } else setError(result.error.message)
                 })
               }
-              cleanup={() =>
-                run(async () => {
-                  const result = await window.collie.clearPickerHistory()
-                  if (result.ok) {
-                    setData(result.value)
-                    setList(result.value.projects)
-                    setNotice('Picker history cleared. All work and retained recovery were kept.')
-                  } else setError(result.error.message)
-                })
-              }
             />
           </RetainedRegion>
           <RetainedRegion name="help-tutorial" label="Tutorial">
             <TutorialPanel
               ready={
                 !!access?.sampleProject &&
-                list.projects.some((p) => sameProject(p, access?.sampleProject ?? null))
+                (list.projects.some((p) => sameProject(p, access?.sampleProject ?? null)) ||
+                  list.issues.some((p) => p.projectId === access.sampleProject?.projectId))
               }
               active={!!project && sameProject(project, access?.sampleProject ?? null)}
               disabled={!available || busy || acting || fileActive || closing}

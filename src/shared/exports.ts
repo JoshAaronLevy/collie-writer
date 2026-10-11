@@ -43,10 +43,6 @@ export type DestinationFingerprint = {
   mtimeMs: number
   sha256: string
 }
-export type WorkerExportStart = ExportStartInput & {
-  destinationPath: string
-  destinationFingerprint: DestinationFingerprint | null
-}
 export type ExportFormat = 'docx' | 'pdf' | 'markdown' | 'text'
 export type ExportFile = {
   format: ExportFormat
@@ -75,6 +71,7 @@ export type ExportJob = {
   space?: SpaceIssue[]
 }
 export type ExportJobInput = OpenInput & { jobId: string }
+export type ExportRevealInput = ExportJobInput & { format: ExportFormat }
 
 const object = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v)
@@ -136,6 +133,14 @@ export function isExportJobInput(v: unknown): v is ExportJobInput {
     object(v) &&
     keys(v, ['projectId', 'workspaceId', 'jobId']) &&
     [v.projectId, v.workspaceId, v.jobId].every(isId)
+  )
+}
+export function isExportRevealInput(v: unknown): v is ExportRevealInput {
+  return (
+    object(v) &&
+    keys(v, ['projectId', 'workspaceId', 'jobId', 'format']) &&
+    isExportJobInput({ projectId: v.projectId, workspaceId: v.workspaceId, jobId: v.jobId }) &&
+    isExportFormat(v.format)
   )
 }
 export function isExportFormat(v: unknown): v is ExportFormat {
@@ -232,53 +237,10 @@ export function isWorkerExportBatchStart(v: unknown): v is WorkerExportBatchStar
       typeof d.path === 'string' &&
       d.path.length > 0 &&
       d.path.length <= 4096 &&
-      isWorkerExportStart({
-        projectId: v.projectId,
-        workspaceId: v.workspaceId,
-        documentIds: v.documentIds,
-        paper: v.paper,
-        titlePage: v.titlePage,
-        includeDescription: v.includeDescription,
-        expectedHead: v.expectedHead,
-        previewDigest: v.previewDigest,
-        acknowledgeMetadata: v.acknowledgeMetadata,
-        destinationPath: d.path,
-        destinationFingerprint: d.fingerprint
-      })
+      isDestinationFingerprint(d.fingerprint)
   )
 }
-export function isWorkerExportStart(v: unknown): v is WorkerExportStart {
-  if (
-    !object(v) ||
-    !keys(v, [
-      'projectId',
-      'workspaceId',
-      'documentIds',
-      'paper',
-      'titlePage',
-      'includeDescription',
-      'expectedHead',
-      'previewDigest',
-      'acknowledgeMetadata',
-      'destinationPath',
-      'destinationFingerprint'
-    ]) ||
-    !isExportStart({
-      projectId: v.projectId,
-      workspaceId: v.workspaceId,
-      documentIds: v.documentIds,
-      paper: v.paper,
-      titlePage: v.titlePage,
-      includeDescription: v.includeDescription,
-      expectedHead: v.expectedHead,
-      previewDigest: v.previewDigest,
-      acknowledgeMetadata: v.acknowledgeMetadata
-    }) ||
-    typeof v.destinationPath !== 'string' ||
-    v.destinationPath.length > 4096
-  )
-    return false
-  const f = v.destinationFingerprint
+function isDestinationFingerprint(f: unknown): f is DestinationFingerprint | null {
   return (
     f === null ||
     (object(f) &&

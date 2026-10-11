@@ -1,7 +1,10 @@
 import { ContentError } from '../editor/schema'
-import { isProjectCode, type ProjectCode } from '../../shared/projects'
+import { isProjectCode, type ProjectErrorContext, type ProjectCode } from '../../shared/projects'
 export class ProjectError extends Error {
-  constructor(readonly code: ProjectCode) {
+  constructor(
+    readonly code: ProjectCode,
+    readonly context?: ProjectErrorContext
+  ) {
     super(code)
   }
 }

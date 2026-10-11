@@ -1,5 +1,4 @@
 import {
-  IconWand,
   IconBold,
   IconItalic,
   IconUnderline,
@@ -45,7 +44,6 @@ const newCell = (type: TableCellJson['type']): TableCellJson => ({
 })
 
 type Props = {
-  onReviewOptions?: () => void
   noteMode?: boolean
   references?: ReferenceContext
   payload: DocumentPayload
@@ -60,7 +58,6 @@ type Props = {
 
 export default function RichDraft({
   payload,
-  onReviewOptions,
   disabled,
   onReady,
   onChange,
@@ -683,17 +680,6 @@ export default function RichDraft({
                   }
                 ]}
               />
-              {!noteMode && onReviewOptions ? (
-                <IconButton
-                  label="AI review options"
-                  variant="subtle"
-                  disabled={!current || editorIsComposing(current)}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={onReviewOptions}
-                >
-                  <IconWand aria-hidden="true" />
-                </IconButton>
-              ) : null}
             </div>
             {tableSelected && !noteMode ? (
               <div className="editor-context-tools" role="group" aria-label="Table actions">

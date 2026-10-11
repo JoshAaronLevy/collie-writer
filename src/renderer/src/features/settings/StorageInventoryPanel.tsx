@@ -1,11 +1,9 @@
-import WorkingCopyPanel from './WorkingCopyPanel'
 import RetentionReviewPanel from './RetentionReviewPanel'
 import SearchCachePanel from './SearchCachePanel'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { AppButton } from '../../components/ui/Controls'
 import {
   INVENTORY_PAGE_SIZE,
-  STORAGE_CATEGORIES,
   type InventoryCount,
   type InventoryReport,
   type InventoryCommand
@@ -16,24 +14,9 @@ import StorageAdvicePanel from './StorageAdvicePanel'
 import { storageBytes } from '../../../../shared/storage-space'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
 
-const regions = {
-  working: 'Local working data',
-  application: 'Shared application storage',
-  external: 'Known external files'
-}
 function size(count: InventoryCount, partial: boolean): string {
-  if (!count.files && count.unknown) return 'Unknown'
-  if (!count.files && partial) return 'Not yet fully measured'
-  const bytes = count.bytes
-  const label =
-    bytes >= 1024 ** 3
-      ? `${(bytes / 1024 ** 3).toFixed(2)} GiB`
-      : bytes >= 1024 ** 2
-        ? `${(bytes / 1024 ** 2).toFixed(1)} MiB`
-        : bytes >= 1024
-          ? `${(bytes / 1024).toFixed(1)} KiB`
-          : `${bytes} B`
-  return `${label}${partial || count.unknown ? ' measured · incomplete' : ''}`
+  if (!count.files && (count.unknown || partial)) return 'Unknown'
+  return `${storageBytes(count.bytes)}${partial || count.unknown ? ' measured · incomplete' : ''}`
 }
 export default function StorageInventoryPanel({
   active,
@@ -42,17 +25,24 @@ export default function StorageInventoryPanel({
   active: boolean
   disabled: boolean
 }): React.JSX.Element {
-  const { publish, review } = useStorageNotices()
-  const { composition, refreshData } = useWorkspaceSession()
-  const [report, setReport] = useState<InventoryReport | null>(null)
+  const { publish, review, report: retainedReport } = useStorageNotices()
+  const {
+    composition,
+    refreshData,
+    busy: workspaceBusy,
+    acting,
+    fileActive
+  } = useWorkspaceSession()
+  const maintenanceDisabled = disabled || workspaceBusy || acting || fileActive
+  const [report, setReport] = useState<InventoryReport | null>(retainedReport)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [uncertain, setUncertain] = useState(false)
   const [recoveryRefreshRequested, setRecoveryRefreshRequested] = useState(false)
   const [refreshRequested, setRefreshRequested] = useState(false)
-  const [offset, setOffset] = useState(0)
+  const offset = report?.offset ?? 0
   const generation = useRef(0)
-  const scanId = useRef<string | null>(null)
+  const scanId = useRef<string | null>(retainedReport?.id ?? null)
   async function request(command: InventoryCommand): Promise<void> {
     const token = ++generation.current
     if (command.kind === 'start') scanId.current = command.id
@@ -69,9 +59,13 @@ export default function StorageInventoryPanel({
       if (result.ok) {
         publish(result.value)
         setReport(result.value)
-        setOffset(result.value.offset)
       } else {
         setError(result.error.message)
+        setUncertain(true)
+      }
+    } catch {
+      if (generation.current === token) {
+        setError('Storage measurements are unavailable. Refresh to try again.')
         setUncertain(true)
       }
     } finally {
@@ -92,6 +86,11 @@ export default function StorageInventoryPanel({
     void request({ kind: 'start', id: crypto.randomUUID() })
   })
   useEffect(() => {
+    if (!active || disabled || scanId.current) return
+    const frame = requestAnimationFrame(() => refreshAfterClearing())
+    return () => cancelAnimationFrame(frame)
+  }, [active, disabled])
+  useEffect(() => {
     if (!active || disabled || !refreshRequested) return
     const frame = requestAnimationFrame(() => refreshAfterClearing())
     return () => cancelAnimationFrame(frame)
@@ -106,7 +105,6 @@ export default function StorageInventoryPanel({
       if (result.ok) {
         publish(result.value)
         setReport(result.value)
-        setOffset(result.value.offset)
         setUncertain(false)
       } else {
         setError('The last inventory could not be refreshed. Its measurements may be incomplete.')
@@ -187,14 +185,8 @@ export default function StorageInventoryPanel({
       )
         return false
       reviewed.current = review.id
-      if (element instanceof HTMLDetailsElement) element.open = true
-      const category =
-        review.condition.kind === 'cache'
-          ? element.querySelector<HTMLElement>('[data-storage-category="search"]')
-          : null
-      const focusTarget = category ?? element
-      focusTarget.focus({ preventScroll: true })
-      focusTarget.scrollIntoView({ block: 'nearest' })
+      element.focus({ preventScroll: true })
+      element.scrollIntoView({ block: 'nearest' })
       return true
     }
     if (focus()) return
@@ -218,269 +210,134 @@ export default function StorageInventoryPanel({
       document.removeEventListener('compositionend', retryFocus)
     }
   }, [active, disabled, busy, review, report, composition])
-  const stateLabels = {
-    running: 'Measuring storage…',
-    complete: 'Metadata scan finished',
-    cancelled: 'Cancelled · partial measurements retained',
-    limited: 'Scan limit reached · partial measurements retained',
-    failed: 'Scan interrupted · partial measurements retained'
+  const refreshMaintenance = (): void => {
+    setRefreshRequested(true)
+    setRecoveryRefreshRequested(true)
   }
   return (
     <section
       className={styles['storage-inventory-panel']}
       aria-labelledby="storage-inventory-heading"
     >
-      <h2 id="storage-inventory-heading">Storage inventory</h2>
+      <h2 id="storage-inventory-heading">Space on this computer</h2>
+      {error ? <p role="alert">{error}</p> : null}
+      <dl className={styles['storage-inventory-totals']}>
+        <div>
+          <dt>Local project data</dt>
+          <dd>{report ? size(report.totals.working, partial) : 'Not measured yet'}</dd>
+        </div>
+        <div>
+          <dt>Application data</dt>
+          <dd>{report ? size(report.totals.application, partial) : 'Not measured yet'}</dd>
+        </div>
+        {report?.volumes.map((v) => (
+          <div key={v.key} id={`storage-volume-${v.label.replace(' ', '-')}`} tabIndex={-1}>
+            <dt>Free disk space · {v.label}</dt>
+            <dd>{v.available === null ? 'Unknown' : storageBytes(v.available)}</dd>
+            <dd className={styles['storage-inventory-path']}>{v.path}</dd>
+          </div>
+        ))}
+      </dl>
+      {!report?.volumes.length ? <p>Free disk space: unknown.</p> : null}
+      <p role="status">
+        {report?.state === 'running'
+          ? 'Measuring storage…'
+          : report
+            ? `Measured ${new Date(report.asOf).toLocaleString()}.${partial ? ' Measurements are incomplete.' : ''}`
+            : 'Preparing measurements…'}
+      </p>
       <p>
-        Measure project files, search data and retained copies without opening or changing projects.
-        Sizes are file lengths, not allocated disk space. This is a read-only report; categories do
-        not make data eligible for deletion. Use the separate search cache review below to clear
-        verified files.
+        Sizes are measured file lengths; free disk space can change. Unknown space is not a
+        guarantee that Save will fit.
       </p>
       <div className={styles['storage-inventory-actions']}>
         <AppButton
-          variant="default"
+          variant="subtle"
           disabled={disabled || busy}
           onClick={() => void request({ kind: 'start', id: crypto.randomUUID() })}
         >
-          {report ? 'Refresh storage inventory' : 'Measure storage'}
+          Refresh space information
         </AppButton>
-        {report?.state === 'running' || busy || uncertain ? (
+        {report?.state === 'running' ? (
           <AppButton
             variant="subtle"
             disabled={disabled}
-            onClick={() => {
-              if (scanId.current) void request({ kind: 'cancel', id: scanId.current })
-            }}
+            onClick={() => scanId.current && void request({ kind: 'cancel', id: scanId.current })}
           >
-            Cancel inventory
+            Stop measuring
           </AppButton>
         ) : null}
       </div>
-      {error ? <p role="alert">{error}</p> : null}
-      <SearchCachePanel
-        active={active}
-        disabled={disabled}
-        refresh={() => setRefreshRequested(true)}
-      />
-      <RetentionReviewPanel
-        kind="previous"
-        active={active}
-        disabled={disabled}
-        refresh={() => {
-          setRefreshRequested(true)
-          setRecoveryRefreshRequested(true)
-        }}
-      />
-      <RetentionReviewPanel
-        kind="local"
-        active={active}
-        disabled={disabled}
-        refresh={() => {
-          setRefreshRequested(true)
-          setRecoveryRefreshRequested(true)
-        }}
-      />
-      <WorkingCopyPanel
-        active={active}
-        disabled={disabled}
-        refresh={() => {
-          setRefreshRequested(true)
-          setRecoveryRefreshRequested(true)
-        }}
-      />
       <StorageAdvicePanel disabled={disabled || busy || report?.state === 'running'} />
-      {report ? (
+      {report && report.groups.some((g) => g.scope && g.region === 'working') ? (
         <>
-          <p role="status">
-            {uncertain
-              ? 'Inventory status unavailable · retained measurements may be incomplete'
-              : stateLabels[report.state]}
-          </p>
-          <p>
-            Started {new Date(report.startedAt).toLocaleString()} · measured through{' '}
-            {new Date(report.asOf).toLocaleString()}. Files may change during the scan; this is not
-            a synchronized snapshot. Titles use the last available local discovery record.
-          </p>
-          <dl className={styles['storage-inventory-totals']}>
-            {(['working', 'application', 'external'] as const).map((region) => (
-              <div key={region}>
-                <dt>{regions[region]}</dt>
-                <dd>{size(report.totals[region], partial)}</dd>
-                <dd>
-                  {report.totals[region].files} measured files · {report.totals[region].unknown}{' '}
-                  unknown entries
-                </dd>
-              </div>
-            ))}
-          </dl>
-          <p>
-            The working total includes shared AI storage and local recovery. Application storage is
-            outside that working total; known external files are additional. Duplicate file
-            identities are counted once ({report.duplicates} repeated references skipped). Unknown
-            entries and incomplete scans are not zero-byte estimates.
-          </p>
-          <p>
-            Writing, research, citations, saved conversations and history share the project
-            database. These are physical file totals, including database sidecars; separate logical
-            content sizes have not been estimated. Managed originals and images share their asset
-            category. Volume labels identify distinct filesystem devices within this scan. AI
-            operation files use already validated ownership in memory where available; other
-            encrypted records remain shared/unattributed. Measuring storage does not decrypt
-            history.
-          </p>
-          <p id="storage-cache-breakdown" tabIndex={-1}>
-            Overall measured search cache:{' '}
-            {report.conditions.find((c) => c.key === 'cache:app')?.bytes === undefined
-              ? 'not in this bounded summary'
-              : storageBytes(report.conditions.find((c) => c.key === 'cache:app')!.bytes!)}
-            {partial ? ' · incomplete' : ''}. Search categories below identify its project locations
-            and volumes. Unknown files remain outside the cache classification.
-          </p>
-          <section aria-labelledby="storage-volumes-heading">
-            <h3 id="storage-volumes-heading">Available volume space</h3>
-            <p>
-              Capacity is a separate filesystem estimate taken during this scan, not file-size
-              arithmetic or reserved space. It can change immediately. Unknown capacity is never
-              enough-space confirmation; external cloud files were not opened or hydrated.
-            </p>
-            {report.volumes.length ? (
-              report.volumes.map((v) => (
-                <div
-                  key={v.key}
-                  id={`storage-volume-${v.label.replace(' ', '-')}`}
-                  tabIndex={-1}
-                  className={styles['storage-advice-notice']}
-                >
-                  <h4>{v.label}</h4>
-                  <p className={styles['storage-inventory-path']}>{v.path}</p>
-                  <p>
-                    {v.available === null || v.total === null
-                      ? 'Available and total capacity: unknown'
-                      : `${storageBytes(v.available)} available of ${storageBytes(v.total)}`}
-                    . Measured {new Date(v.asOf).toLocaleString()}.
-                  </p>
-                  <p>
-                    Categories on this volume retain their own locations below. A Save or Backup to
-                    another volume still needs space in local working data.
-                  </p>
-                </div>
-              ))
-            ) : (
-              <p>Volume capacity has not been measured.</p>
-            )}
-          </section>
-          <div className={styles['storage-inventory-groups']}>
-            {report.groups.map((group) => (
-              <details
+          <h3>Local project sizes</h3>
+          {report.groups
+            .filter((g) => g.scope && g.region === 'working')
+            .map((group) => (
+              <div
                 key={group.id}
                 id={`storage-group-${group.id}`}
                 tabIndex={-1}
                 className={styles['storage-inventory-group']}
               >
-                <summary>
-                  {group.title} · {regions[group.region]} ·{' '}
+                <strong>{group.title}</strong>
+                <span>
                   {size(
                     group.categories.reduce(
-                      (sum, c) => ({
-                        bytes: sum.bytes + c.bytes,
-                        files: sum.files + c.files,
-                        unknown: sum.unknown + c.unknown
+                      (n, c) => ({
+                        bytes: n.bytes + c.bytes,
+                        files: n.files + c.files,
+                        unknown: n.unknown + c.unknown
                       }),
                       { bytes: 0, files: 0, unknown: 0 }
                     ),
-                    partial || report.totals[group.region].unknown > 0
+                    partial
                   )}
-                </summary>
-                <p className={styles['storage-inventory-path']}>{group.path}</p>
-                {group.note === 'shared-ai' ? (
-                  <p>
-                    Encrypted records are not decrypted for this report. Project ownership is
-                    unavailable from filename metadata, so these bytes remain shared/unattributed.
-                  </p>
-                ) : group.note === 'known-ai' ? (
-                  <p>
-                    Ownership comes from already validated AI operation metadata in memory, captured
-                    at scan start. Files are measured without decrypting them again; their current
-                    contents remain unverified. Other encrypted records stay shared/unattributed.
-                  </p>
-                ) : group.note === 'recorded-location' ? (
-                  <p>
-                    This is a recorded location. Only file metadata was inspected; current archive
-                    content, ownership and cloud upload/download status are unverified.
-                  </p>
-                ) : group.note === 'metadata-unavailable' ? (
-                  <p>
-                    Some project discovery, active-database or destination metadata is unavailable.
-                    The folder remains retained; classifications may be incomplete.
-                  </p>
-                ) : null}
-                <div className={styles['storage-inventory-table-container']}>
-                  <table>
-                    <caption>Measured storage categories</caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">Category</th>
-                        <th scope="col">Volume</th>
-                        <th scope="col">Location</th>
-                        <th scope="col">File size</th>
-                        <th scope="col">Files / unknown</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.categories.map((c) => (
-                        <tr
-                          key={`${c.kind}:${c.volume}:${c.path}`}
-                          data-storage-category={c.kind}
-                          tabIndex={-1}
-                        >
-                          <th scope="row">{STORAGE_CATEGORIES[c.kind]}</th>
-                          <td>{c.volume ?? 'Unknown'}</td>
-                          <td className={styles['storage-inventory-path']}>{c.path}</td>
-                          <td>{size(c, partial || report.totals[group.region].unknown > 0)}</td>
-                          <td>
-                            {c.files} / {c.unknown}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {!group.categories.length ? (
-                  <p>No files measured in this working copy yet.</p>
-                ) : null}
-              </details>
+                </span>
+              </div>
             ))}
-          </div>
-          <div className={styles['storage-inventory-actions']}>
-            <AppButton
-              variant="subtle"
-              disabled={busy || offset === 0 || disabled}
-              onClick={() =>
-                void request({ kind: 'page', id: report.id, offset: offset - INVENTORY_PAGE_SIZE })
-              }
-            >
-              Previous page
-            </AppButton>
-            <p>
-              {report.totalGroups
-                ? `${offset + 1}–${Math.min(offset + INVENTORY_PAGE_SIZE, report.totalGroups)} of ${report.totalGroups} storage groups`
-                : 'No storage groups measured yet'}
-            </p>
-            <AppButton
-              variant="subtle"
-              disabled={busy || disabled || offset + INVENTORY_PAGE_SIZE >= report.totalGroups}
-              onClick={() =>
-                void request({ kind: 'page', id: report.id, offset: offset + INVENTORY_PAGE_SIZE })
-              }
-            >
-              Next page
-            </AppButton>
-          </div>
         </>
-      ) : (
-        <p>Choose Measure storage to start. Leaving Data and recovery cancels the scan.</p>
-      )}
+      ) : null}
+      {report && report.totalGroups > INVENTORY_PAGE_SIZE ? (
+        <div className={styles['storage-inventory-actions']}>
+          <AppButton
+            variant="subtle"
+            disabled={busy || disabled || offset === 0}
+            onClick={() =>
+              void request({ kind: 'page', id: report.id, offset: offset - INVENTORY_PAGE_SIZE })
+            }
+          >
+            Previous projects
+          </AppButton>
+          <AppButton
+            variant="subtle"
+            disabled={busy || disabled || offset + INVENTORY_PAGE_SIZE >= report.totalGroups}
+            onClick={() =>
+              void request({ kind: 'page', id: report.id, offset: offset + INVENTORY_PAGE_SIZE })
+            }
+          >
+            More projects
+          </AppButton>
+        </div>
+      ) : null}
+      <SearchCachePanel
+        active={active}
+        disabled={maintenanceDisabled}
+        refresh={() => setRefreshRequested(true)}
+      />
+      <RetentionReviewPanel
+        kind="previous"
+        active={active}
+        disabled={maintenanceDisabled}
+        refresh={refreshMaintenance}
+      />
+      <RetentionReviewPanel
+        kind="local"
+        active={active}
+        disabled={maintenanceDisabled}
+        refresh={refreshMaintenance}
+      />
     </section>
   )
 }

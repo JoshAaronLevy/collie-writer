@@ -3,6 +3,3 @@
   padding-block: var(--collie-space-3);
   border-block: 1px solid var(--collie-border);
 }
-.search-cache-path {
-  overflow-wrap: anywhere;
-}

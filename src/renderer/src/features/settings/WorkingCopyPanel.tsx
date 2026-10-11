@@ -1,5 +1,5 @@
-import { Checkbox, NativeSelect } from '@mantine/core'
-import { useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
+import { AppDialog } from '../../components/ui/AppDialog'
 import { AppButton } from '../../components/ui/Controls'
 import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { useRetainedDraft } from '../workspace/DraftOwner'
@@ -51,139 +51,103 @@ function Protection({
       busy: read().busy,
       pendingOperation: read().pending,
       policy: 'operation',
-      target: { kind: 'settings', page: 'data' }
+      target: { kind: 'library' }
     })
   })
   return null
 }
-function Outcome({ view }: { view: WorkingCopyView }): React.JSX.Element {
-  return (
-    <div className={styles['working-copy-outcome']}>
-      <p>
-        <strong>{view.title ?? 'Local working copy'}</strong>
-        {view.retired ? ' · retired from local library' : ''}
-      </p>
-      <p>{view.reason}</p>
-      {view.savedPath ? (
-        <p>
-          Saved project: <span className={styles['working-copy-path']}>{view.savedPath}</span>
-        </p>
-      ) : null}
-      {view.workspace ? (
-        <p>
-          Original working folder:{' '}
-          <span className={styles['working-copy-path']}>{view.workspace}</span>
-        </p>
-      ) : null}
-      {view.phase === 'preview' && view.eligible ? (
-        <p>
-          Remove {view.files} verified files ({storageBytes(view.bytes!)}): local project database,
-          managed originals, citation files and any verified search cache. Keep{' '}
-          {storageBytes(view.retainedBytes!)} of original metadata and operation records, plus
-          removal receipts and empty folders.
-        </p>
-      ) : null}
-      {view.phase === 'complete' || view.phase === 'interrupted' ? (
-        <p>
-          Confirmed removed: {view.removedFiles} of {view.files} files (
-          {storageBytes(view.removedBytes)}). These are file lengths; physical space reclaimed may
-          differ.
-        </p>
-      ) : null}
-    </div>
-  )
-}
-export default function WorkingCopyPanel({
-  active,
-  disabled,
-  refresh
-}: {
-  active: boolean
-  disabled: boolean
-  refresh: () => void
-}): React.JSX.Element {
+export default function WorkingCopyPanel(): React.JSX.Element {
   const session = useWorkspaceSession()
   const [initial] = useState(saved)
   const [pendingValue, setPending, pending] = useSynchronousState<Pending | null>(initial.pending)
   const [busyValue, setBusy, busy] = useSynchronousState(false)
-  const [selected, setSelected] = useState('')
   const [view, setView] = useState<WorkingCopyView | null>(null)
-  const [confirmed, setConfirmed] = useState(false)
   const [error, setError] = useState(initial.issue)
-  const [history, setHistory] = useState<WorkingCopyView[]>([])
-  const [historyOffset, setHistoryOffset] = useState(0)
-  const [more, setMore] = useState(false)
-  const [historyRead, setHistoryRead] = useState(false)
-  const choices = session.list.projects.filter(
-    (p) => !session.project || p.projectId !== session.project.projectId
-  )
-  const chosen = choices.find((p) => p.workspaceId === selected)
-  const scope = chosen ? { projectId: chosen.projectId, workspaceId: chosen.workspaceId } : null
-  const owner = pendingValue?.scope ?? scope
-  const blocked = disabled || !active || busyValue || !!initial.issue
-  const current = !!scope && !!view && sameScope(scope, view.scope)
+  const [visible, setVisible] = useState(!!initial.pending)
+  const scope = session.localCopyTarget
+  const owner = pendingValue?.scope ?? scope ?? view?.scope
+  const current = !!owner && !!view && sameScope(owner, view.scope)
+  const anotherBusy = (): boolean =>
+    session.drafts.states().some((d) => d.id !== 'working-copy-removal' && d.busy)
+  const blocked =
+    anotherBusy() ||
+    !session.available ||
+    session.busy ||
+    session.acting ||
+    session.fileActive ||
+    session.closing ||
+    session.navigating ||
+    busyValue ||
+    !!initial.issue
   function targetProtected(target: OpenInput): boolean {
-    return session.drafts
-      .states()
-      .some(
-        (d) =>
-          d.id !== 'working-copy-removal' &&
-          sameScope(d.scope, target) &&
-          (d.dirty || d.composing || d.busy || d.pendingOperation !== null)
-      )
+    return (
+      (!!session.project && sameScope(session.project, target)) ||
+      session.drafts
+        .states()
+        .some(
+          (d) =>
+            d.id !== 'working-copy-removal' &&
+            sameScope(d.scope, target) &&
+            (d.dirty || d.composing || d.busy || d.pendingOperation !== null)
+        )
+    )
   }
-  async function send(input: WorkingCopyInput): Promise<void> {
-    if (busy.current) return
-    if ((input.kind === 'preview' || input.kind === 'remove') && targetProtected(input.scope)) {
+  async function send(input: Exclude<WorkingCopyInput, { kind: 'history' }>): Promise<void> {
+    if (blocked || busy.current || anotherBusy()) return
+    if (input.kind !== 'status' && targetProtected(input.scope)) {
+      setView(null)
       setError(
-        'This project still has a retained draft or operation. Resolve it before removing local work.'
+        session.project && sameScope(session.project, input.scope)
+          ? 'Open another project before removing this local copy.'
+          : 'This project has unfinished work. Resolve it before removing the local copy.'
       )
       return
     }
     setBusy(true)
     session.drafts.changed()
     setError('')
-    setConfirmed(false)
     try {
       const result = await window.collie.workingCopy(input)
-      if (!result.ok) {
-        setError(
-          `${result.error.message}${pending.current ? ' Check outcome before reviewing again.' : ''}`
-        )
-        if (input.kind === 'remove') setView(null)
-        return
+      if (!result.ok) throw new Error(result.error.message)
+      const next = result.value.view
+      if (!next || !sameScope(next.scope, input.scope)) throw new Error('The project changed.')
+      setView(next)
+      if (input.kind !== 'preview') {
+        localStorage.removeItem(key)
+        setPending(null)
       }
-      if (input.kind === 'history') {
-        setHistoryRead(true)
-        setHistory(result.value.history)
-        setHistoryOffset(input.offset)
-        setMore(result.value.more)
-      } else {
-        if (!result.value.view || !sameScope(result.value.view.scope, input.scope))
-          throw new Error('scope')
-        setView(result.value.view)
-        if (input.kind !== 'preview') {
-          localStorage.removeItem(key)
-          setPending(null)
-          refresh()
-        }
-      }
-    } catch {
+    } catch (error) {
       setError(
-        pending.current
-          ? 'The outcome is unconfirmed. Check outcome reads the original record and never repeats deletion.'
-          : 'The review is unavailable. Files remain retained; try again when storage is available.'
+        `${error instanceof Error ? error.message : 'Local-copy removal is unavailable.'}${pending.current ? ' Check the original outcome before trying again.' : ' No further removal was requested.'}`
       )
+      if (input.kind === 'remove') setView(null)
     } finally {
       setBusy(false)
       session.drafts.changed()
+      if (input.kind !== 'preview' && !pending.current) void session.refreshData()
     }
+  }
+  const load = useEffectEvent(() => {
+    setVisible(true)
+    if (scope && !pending.current) {
+      setView(null)
+      void send({ kind: 'preview', scope, id: crypto.randomUUID() })
+    }
+  })
+  useEffect(() => {
+    if (!scope) return
+    const frame = requestAnimationFrame(() => load())
+    return () => cancelAnimationFrame(frame)
+  }, [scope])
+  function close(): void {
+    setVisible(false)
+    setView(null)
+    session.setLocalCopyTarget(null)
   }
   function remove(): void {
     if (
       blocked ||
       pending.current ||
-      !confirmed ||
       !current ||
       !view?.eligible ||
       !view.reviewId ||
@@ -199,147 +163,87 @@ export default function WorkingCopyPanel({
     try {
       localStorage.setItem(key, JSON.stringify(input))
     } catch {
-      setError('The exact removal request could not be protected. No removal was requested.')
+      setError('The removal request could not be protected. The local copy was kept.')
       return
     }
     setPending(input)
     session.drafts.changed()
     void send(input)
   }
+  const title = owner
+    ? (session.list.projects.find((p) => sameScope(p, owner))?.title ?? view?.title ?? 'Project')
+    : 'Project'
   return (
-    <section className={styles['working-copy-panel']} aria-labelledby="working-copy-heading">
+    <>
       {owner ? (
         <Protection scope={owner} read={() => ({ busy: busy.current, pending: pending.current })} />
       ) : null}
-      <h3 id="working-copy-heading">Remove local working copy</h3>
-      <p>
-        Permanently remove eligible local content after checking its saved .collie file. Switch to
-        another project first. AI-linked work, migration originals and independent recovery copies
-        stay protected. This is separate from cache clearing and Archive.
-      </p>
-      <NativeSelect
-        label="Inactive local project"
-        value={chosen ? selected : ''}
-        disabled={blocked || !!pendingValue}
-        data={[
-          { value: '', label: 'Choose a project' },
-          ...choices.map((p) => ({
-            value: p.workspaceId,
-            label: `${p.title}${p.archived ? ' (archived)' : ''}`
-          }))
-        ]}
-        onChange={(event) => {
-          setSelected(event.currentTarget.value)
-          setView(null)
-          setConfirmed(false)
-        }}
-      />
-      {!choices.length ? (
-        <p>No inactive projects are available. Open another project, then return here.</p>
-      ) : null}
-      <div className={maintenanceStyles['storage-maintenance-actions']}>
-        <AppButton
-          disabled={blocked || !!pendingValue || !scope}
-          onClick={() => scope && void send({ kind: 'preview', scope, id: crypto.randomUUID() })}
-        >
-          Review local copy
-        </AppButton>
-        {view?.phase === 'preview' && !pendingValue ? (
-          <AppButton
-            variant="subtle"
-            disabled={blocked}
-            onClick={() => {
-              setView(null)
-              setConfirmed(false)
-            }}
-          >
-            Cancel review
-          </AppButton>
-        ) : null}
-        {pendingValue ? (
-          <AppButton
-            disabled={blocked}
-            onClick={() =>
-              void send({ kind: 'status', scope: pendingValue.scope, id: pendingValue.id })
-            }
-          >
-            Check outcome
-          </AppButton>
-        ) : null}
-      </div>
-      {error ? <p role="alert">{error}</p> : null}
-      {busyValue ? <p role="status">Reading or protecting the removal outcome…</p> : null}
-      {view ? (
-        <div role="status">
-          <Outcome view={view} />
-        </div>
-      ) : null}
-      {current && view?.eligible && !pendingValue ? (
-        <>
-          <Checkbox
-            checked={confirmed}
-            disabled={blocked}
-            onChange={(event) => setConfirmed(event.currentTarget.checked)}
-            label="I understand this removes local project content. I will need the saved file to reopen this project."
-          />
-          <AppButton color="red" disabled={blocked || !confirmed} onClick={remove}>
-            Remove local working copy
-          </AppButton>
-        </>
-      ) : null}
-      <div className={maintenanceStyles['storage-maintenance-actions']}>
-        <AppButton
-          variant="default"
-          disabled={blocked || !!pendingValue}
-          onClick={() => void send({ kind: 'history', id: crypto.randomUUID(), offset: 0 })}
-        >
-          Show removal history
-        </AppButton>
-        <AppButton
-          variant="default"
-          disabled={blocked || !!pendingValue}
-          onClick={() => session.run(() => session.openFile())}
-        >
-          Open project file…
-        </AppButton>
-      </div>
-      {historyRead && !history.length ? <p>No recorded removals on this page.</p> : null}
-      {history.length ? (
-        <details open>
-          <summary>Recorded removals</summary>
-          <p>
-            Locations are reminders, not file access grants. Open project file asks you to select
-            and validate the file. Reset may have moved the original folder into reset recovery.
+      <AppDialog
+        opened={visible}
+        title={`Remove local copy — ${title}`}
+        dismissible={!busyValue}
+        onClose={close}
+      >
+        {busyValue ? (
+          <p role="status">
+            {pendingValue ? 'Removing the local copy…' : 'Checking the saved project file…'}
           </p>
-          {history.map((item) => (
-            <Outcome key={item.id} view={item} />
-          ))}
-          <div className={maintenanceStyles['storage-maintenance-actions']}>
+        ) : null}
+        {error ? <p role="alert">{error}</p> : null}
+        {current && view ? (
+          <>
+            {view.savedPath ? (
+              <p className={styles['working-copy-path']}>Saved project: {view.savedPath}</p>
+            ) : null}
+            {view.phase === 'preview' && view.eligible ? (
+              <p>
+                Remove this project from this computer and delete {storageBytes(view.bytes!)} of
+                verified local files? You will need the saved .collie file to reopen it. That file
+                is kept. Removal cannot be undone; small local records are retained.
+              </p>
+            ) : (
+              <p role="status">{view.reason}</p>
+            )}
+            {view.phase !== 'preview' && view.phase !== 'not-started' ? (
+              <p role="status">
+                {view.removedFiles} of {view.files ?? 'an unknown number of'} local files confirmed
+                removed ({storageBytes(view.removedBytes)}).
+              </p>
+            ) : null}
+          </>
+        ) : null}
+        <div className={maintenanceStyles['storage-maintenance-actions']}>
+          <AppButton variant="default" disabled={busyValue} onClick={close}>
+            {pendingValue
+              ? 'Close'
+              : view?.phase === 'preview' && view.eligible
+                ? 'Cancel'
+                : 'Done'}
+          </AppButton>
+          {pendingValue ? (
             <AppButton
-              variant="subtle"
-              disabled={blocked || historyOffset === 0 || !!pendingValue}
+              disabled={blocked}
               onClick={() =>
-                void send({
-                  kind: 'history',
-                  id: crypto.randomUUID(),
-                  offset: Math.max(0, historyOffset - 8)
-                })
+                void send({ kind: 'status', scope: pendingValue.scope, id: pendingValue.id })
               }
             >
-              Previous page
+              Check removal outcome
             </AppButton>
+          ) : current && view?.phase === 'preview' && view.eligible ? (
+            <AppButton disabled={blocked} onClick={remove}>
+              Remove local copy
+            </AppButton>
+          ) : scope && !view && !busyValue ? (
             <AppButton
               variant="subtle"
-              disabled={blocked || !more || !!pendingValue}
-              onClick={() =>
-                void send({ kind: 'history', id: crypto.randomUUID(), offset: historyOffset + 8 })
-              }
+              disabled={blocked}
+              onClick={() => void send({ kind: 'preview', scope, id: crypto.randomUUID() })}
             >
-              Next page
+              Check again
             </AppButton>
-          </div>
-        </details>
-      ) : null}
-    </section>
+          ) : null}
+        </div>
+      </AppDialog>
+    </>
   )
 }

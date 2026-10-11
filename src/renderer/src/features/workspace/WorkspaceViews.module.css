@@ -10,8 +10,7 @@
   border-radius: var(--collie-radius-control);
   background: var(--collie-surface);
 }
-.working-location summary {
-  cursor: pointer;
+.working-location h2 {
   min-height: var(--collie-control-height);
   align-content: center;
 }

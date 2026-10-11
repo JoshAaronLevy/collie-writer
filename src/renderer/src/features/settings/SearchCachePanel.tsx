@@ -10,7 +10,6 @@ import {
 } from '../../../../shared/search-cache'
 import { sameScope } from '../../../../shared/project-files'
 import type { OpenInput } from '../../../../shared/projects'
-import { storageBytes } from '../../../../shared/storage-space'
 import styles from './SearchCachePanel.module.css'
 import maintenanceStyles from './StorageMaintenance.module.css'
 
@@ -72,188 +71,109 @@ export default function SearchCachePanel({
   const [error, setError] = useState(initial.issue)
   const scope = project ? { projectId: project.projectId, workspaceId: project.workspaceId } : null
   const owner = pendingValue?.scope ?? scope
-  const eligible = view?.files.filter((f) => f.status === 'eligible') ?? []
-  const current = !!scope && !!view && sameScope(scope, view.scope)
-  const blocked = disabled || !active || busyValue || !!initial.issue
-  async function send(input: SearchCacheInput): Promise<void> {
-    if (busy.current) return
+  const anotherBusy = (): boolean =>
+    drafts.states().some((d) => d.id !== 'search-cache-action' && d.busy)
+  const blocked = anotherBusy() || disabled || !active || busyValue || !!initial.issue
+  async function send(input: SearchCacheInput): Promise<SearchCacheView> {
+    const result = await window.collie.searchCache(input)
+    if (!result.ok) throw new Error(result.error.message)
+    if (!sameScope(input.scope, result.value.scope)) throw new Error('The project changed.')
+    setView(result.value)
+    if (input.kind !== 'preview' && result.value.phase !== 'preview') {
+      localStorage.removeItem(KEY)
+      setPending(null)
+      refresh()
+    }
+    return result.value
+  }
+  async function clear(): Promise<void> {
+    if (blocked || busy.current || anotherBusy() || pending.current || !scope) return
     setBusy(true)
     drafts.changed()
     setError('')
     try {
-      const result = await window.collie.searchCache(input)
-      if (!result.ok) {
-        setError(
-          `${result.error.message}${pending.current ? ' Check the outcome before starting another review.' : ''}`
-        )
-        if (input.kind === 'clear') setView(null)
-        return
+      const preview = await send({ kind: 'preview', scope, id: crypto.randomUUID() })
+      if (!preview.reviewId || !preview.files.some((f) => f.status === 'eligible')) return
+      const input: Pending = {
+        kind: 'clear',
+        scope,
+        id: preview.id,
+        reviewId: preview.reviewId
       }
-      setView(result.value)
-      if (input.kind !== 'preview') {
-        // A status response runs behind the serialized owner; it never repeats removal.
-        if (result.value.phase !== 'preview') {
-          localStorage.removeItem(KEY)
-          setPending(null)
-          refresh()
-        }
-      }
-    } catch {
+      localStorage.setItem(KEY, JSON.stringify(input))
+      setPending(input)
+      drafts.changed()
+      await send(input)
+    } catch (error) {
       setError(
-        pending.current
-          ? 'The outcome is unconfirmed. Check outcome to read the original receipt; deletion will not be repeated.'
-          : 'The search cache review is unavailable. Try again when storage is available.'
+        `${error instanceof Error ? error.message : 'Search cache clearing is unavailable.'}${pending.current ? ' Check the outcome before trying again.' : ' No further clearing was requested.'}`
       )
     } finally {
       setBusy(false)
       drafts.changed()
     }
   }
-  function confirm(): void {
-    if (blocked || pending.current || !current || !view?.reviewId || !eligible.length) return
-    const input: Pending = {
-      kind: 'clear',
-      scope: view.scope,
-      id: view.id,
-      reviewId: view.reviewId
-    }
-    try {
-      localStorage.setItem(KEY, JSON.stringify(input))
-    } catch {
-      setError('The exact action could not be protected locally. No clearing was requested.')
-      return
-    }
-    setPending(input)
+  async function check(): Promise<void> {
+    if (blocked || busy.current || anotherBusy() || !pending.current) return
+    setBusy(true)
     drafts.changed()
-    void send(input)
+    setError('')
+    try {
+      await send({ kind: 'status', scope: pending.current.scope, id: pending.current.id })
+    } catch {
+      setError(
+        'The outcome is still unavailable. The original request stays retained; checking never repeats deletion.'
+      )
+    } finally {
+      setBusy(false)
+      drafts.changed()
+    }
   }
+  const removed = view?.files.filter((f) => f.status === 'removed').length ?? 0
+  const unresolved = view?.files.some((f) => f.status === 'unknown')
   return (
-    <section className={styles['search-cache-panel']} aria-labelledby="search-cache-heading">
+    <section
+      className={styles['search-cache-panel']}
+      aria-labelledby="search-cache-heading"
+      id="storage-cache-breakdown"
+      tabIndex={-1}
+    >
       {owner ? (
         <Protection scope={owner} read={() => ({ busy: busy.current, pending: pending.current })} />
       ) : null}
-      <h3 id="search-cache-heading">Clear search cache</h3>
+      <h3 id="search-cache-heading">Search cache</h3>
       <p>
-        {project
-          ? `Current project: ${project.title}. `
-          : 'Open a project to review its search cache. '}
-        This removes verified search data. Writing, research, citations, saved chats and history
-        stay in the project. Search recreates its index when you next open it.
-      </p>
-      <p>
-        Open another project first to review its cache. Unverified files stay retained. If the
-        current cache has not been loaded this session, open Search first, then return here.
+        {project ? `For ${project.title}. ` : 'Open a project to clear its search cache. '}Search
+        data rebuilds when needed. Your project content and history are kept.
       </p>
       <div className={maintenanceStyles['storage-maintenance-actions']}>
-        <AppButton
-          variant="default"
-          disabled={blocked || !scope || !!pendingValue}
-          onClick={() => {
-            if (scope) {
-              setView(null)
-              void send({ kind: 'preview', scope, id: crypto.randomUUID() })
-            }
-          }}
-        >
-          Review search cache
-        </AppButton>
         {pendingValue ? (
-          <AppButton
-            disabled={blocked}
-            onClick={() =>
-              void send({ kind: 'status', scope: pendingValue.scope, id: pendingValue.id })
-            }
-          >
-            Check outcome
+          <AppButton disabled={blocked} onClick={() => void check()}>
+            Check clearing outcome
           </AppButton>
-        ) : null}
+        ) : (
+          <AppButton variant="default" disabled={blocked || !scope} onClick={() => void clear()}>
+            Clear search cache
+          </AppButton>
+        )}
       </div>
       {busyValue ? (
-        <p role="status">
-          {pendingValue ? 'Settling the reviewed cache action…' : 'Reviewing search files…'}
-        </p>
+        <p role="status">{pendingValue ? 'Clearing search cache…' : 'Checking search data…'}</p>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
-      {pendingValue && !busyValue ? (
+      {!busyValue && view && !!owner && sameScope(owner, view.scope) ? (
         <p role="status">
-          A cache action still needs its outcome checked. Its original project and operation are
-          retained.
+          {view.phase === 'preview'
+            ? view.files.length
+              ? 'No verified search cache can be cleared. Unverified files are kept.'
+              : 'There is no search cache to clear.'
+            : view.phase === 'not-started'
+              ? 'No clearing was recorded. You can try again.'
+              : view.phase === 'interrupted' || unresolved
+                ? 'Clearing could not be fully confirmed. Unverified files are kept.'
+                : `${removed} search file${removed === 1 ? '' : 's'} cleared. Project content was kept.`}
+          {view.limited ? ' Some files could not be checked.' : ''}
         </p>
-      ) : null}
-      {view ? (
-        <>
-          <p className={styles['search-cache-path']}>Reviewed location: {view.path}</p>
-          <p role="status">
-            {view.phase === 'preview'
-              ? `${eligible.length} eligible file(s), ${storageBytes(eligible.reduce((n, f) => n + (f.bytes ?? 0), 0))} in reviewed file lengths.`
-              : view.phase === 'not-started'
-                ? 'No durable clearing receipt was found for this action at this location. No removal can be confirmed; start a new review to inspect remaining files.'
-                : view.phase === 'interrupted'
-                  ? 'The earlier action was interrupted. Unknown outcomes remain unconfirmed; this receipt never repeats deletion.'
-                  : `${view.files.filter((f) => f.status === 'removed').length} file(s) confirmed removed. Review retained, absent and unknown items below.`}
-          </p>
-          <p>
-            Estimates are file lengths, including any listed SQLite sidecars. Closing SQLite can
-            change those lengths or remove sidecars itself. Physical disk space reclaimed is not
-            guaranteed.
-          </p>
-          {view.limited ? (
-            <p>
-              The review reached its limit. Files stay retained; this is not a complete directory
-              listing.
-            </p>
-          ) : null}
-          {view.files.length ? (
-            <div className={maintenanceStyles['storage-maintenance-table']}>
-              <table>
-                <caption>Exact reviewed search files</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">File</th>
-                    <th scope="col">Size</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Reason</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {view.files.map((f) => (
-                    <tr key={f.name}>
-                      <th scope="row">{f.name}</th>
-                      <td>{f.bytes === null ? 'Unknown' : storageBytes(f.bytes)}</td>
-                      <td>{f.status}</td>
-                      <td>{f.reason}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p>No search files in this result.</p>
-          )}
-          {view.phase === 'preview' && !pendingValue ? (
-            <div className={maintenanceStyles['storage-maintenance-actions']}>
-              <AppButton disabled={blocked || !current || !eligible.length} onClick={confirm}>
-                Clear reviewed search cache
-              </AppButton>
-              <AppButton
-                variant="subtle"
-                disabled={busyValue}
-                onClick={() => {
-                  setView(null)
-                  setError('')
-                }}
-              >
-                Cancel review
-              </AppButton>
-            </div>
-          ) : null}
-          {view.phase === 'preview' && !current ? (
-            <p>
-              This review belongs to a different project. Review the currently opened project before
-              clearing.
-            </p>
-          ) : null}
-        </>
       ) : null}
     </section>
   )

@@ -33,8 +33,7 @@ import type { AiSelectModelInput } from '../../shared/ai-catalog'
 import type { OpenInput } from '../../shared/projects'
 import type { AccessService } from '../entitlements/service'
 import { RELEASE } from '../release'
-import { codexExecutable, type CodexRuntime } from './codex-runtime'
-import { PROVIDER_RUNTIMES } from './registry'
+import { codexExecutable, CodexRuntime } from './codex-runtime'
 import type { CodexTextUpdate } from './codex-text-turn'
 import type { AiDispatchSession } from './dispatch-session'
 import {
@@ -1134,7 +1133,7 @@ export class AiService {
     const account = this.requireSession(id)
     // Catalog access sends no prompt. Isolation must still be established before launching a child.
     requireTextOnlyRuntime()
-    const runtime = PROVIDER_RUNTIMES[AI_PROVIDER].create(this.storage)
+    const runtime = new CodexRuntime(this.storage)
     this.busy = true
     try {
       await runtime.open(account.tokens!.access)
@@ -1256,7 +1255,7 @@ export class AiService {
       },
       execute: async (input, _execution, authorize, update) => {
         const account = this.requireSession(input.connectionId)
-        runtime = PROVIDER_RUNTIMES[AI_PROVIDER].create(this.storage)
+        runtime = new CodexRuntime(this.storage)
         try {
           await authorize()
           await runtime.open(account.tokens!.access)

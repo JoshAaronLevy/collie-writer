@@ -64,7 +64,7 @@ export function AiCapacity(): React.JSX.Element | null {
                   ) : (
                     <span>
                       An original project is unavailable in this library. Keep its local working
-                      files and use Settings → Data & recovery.
+                      files and use Settings → Storage.
                     </span>
                   )}
                 </li>

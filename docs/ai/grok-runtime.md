@@ -1,4 +1,6 @@
-# I14 Grok Build integration runbook
+# Historical I14 Grok Build integration research
+
+**RF06, October 11, 2026:** the dormant Grok transport, launch refusal and constructor registry were removed. Grok has no active Collie route. The dated protocol research and missing-engineering requirements below are historical, not instructions to use removed source files. See the [RF06 record](../validation/refactor-RF06.md).
 
 October 2, 2026. **Engineering partial — transport component delivered; no connectable second provider.** Commercial approval alone is not a prerequisite for engineering. This record separates implemented protocol handling from missing protected authentication, funding, isolation, account integration and distribution. No runtime was installed, launched or used; no account was accessed.
 
@@ -16,7 +18,7 @@ The [enterprise guide](https://docs.x.ai/build/enterprise) distinguishes OAuth/i
 
 The [usage FAQ](https://docs.x.ai/grok/faq#usage--limits) documents that purchased Extra Usage Credits can fund work after the included allowance and Auto Top Up can replenish credits. No binding included-only selector was established in the reviewed material. Disabling API-key auth does not exclude subscription-account credit fallback. No settings screenshot, zero balance, spending cap or successful sign-in substitutes for that control.
 
-## Delivered code
+## Code delivered at the historical I14 checkpoint
 
 | Owner                            | Implemented responsibility                                                                                                                                                                                               |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

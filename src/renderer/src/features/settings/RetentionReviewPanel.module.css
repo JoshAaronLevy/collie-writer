@@ -3,12 +3,22 @@
   padding-block: var(--collie-space-3);
   border-bottom: 1px solid var(--collie-border);
 }
-.retention-file-path {
-  display: block;
+.retention-review-path {
   overflow-wrap: anywhere;
-  margin-block: var(--collie-space-2);
 }
-.retention-review-panel details p {
-  overflow-wrap: anywhere;
-  max-width: 20rem;
+.retention-version-list {
+  list-style: none;
+  padding: 0;
+}
+.retention-version-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--collie-space-3);
+  padding-block: var(--collie-space-3);
+  border-bottom: 1px solid var(--collie-border);
+}
+.retention-version-list p {
+  margin-block: var(--collie-space-2);
 }

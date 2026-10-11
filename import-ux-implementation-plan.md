@@ -4,6 +4,8 @@
 
 ## Status and purpose
 
+**RF06 update, October 11, 2026:** the disabled Re-Analyze placeholder and its copy/styles are removed. Current results offers Cancel and Accept. Earlier placeholder specifications and dated manual steps below are historical; retained setup/results, explicit recovery and atomic acceptance are unchanged.
+
 **Architecture follow-up, October 10, 2026:** the approved [hybrid import plan](import-hybrid-implementation-plan.md) now governs the next extraction revision. Its IH01–IH07 stages are not started. It replaces mandatory AI recognition with local parsing, bounded AI structure mapping and targeted interpretation, while retaining this plan's simple form/summary/Accept UX. Earlier stage records remain historical implementation evidence, not acceptance of the new architecture.
 
 October 10, 2026 — **IU01–IU05 implementation complete — awaiting user testing.** Josh's first reported import walkthrough exposed an unacceptable experience: too many steps, technical controls, long explanations and individual decisions, with no obvious way to finish. The seven supplied screenshots and his description are user acceptance evidence of that UX failure. They do not establish the cause of the unsuccessful analysis shown in the screenshots, or prove that an import committed successfully.
