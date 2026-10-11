@@ -1,3 +1,11 @@
+import {
+  isLocalImportEvidence,
+  isMappedImportEvidence,
+  isSemanticImportEvidence,
+  type SemanticImportEvidence,
+  type MappedImportEvidence,
+  type LocalImportEvidence
+} from './import-normalization'
 import { isId } from '../domain/editor/schema'
 import { exact, record, isOpenInput, type OpenInput } from './projects'
 import { importHash, importTime } from './project-import'
@@ -18,9 +26,14 @@ export type ReviewChoice = {
   acknowledged: boolean
   automatic?: { version: 1; sourceItemId: string | null }
 }
-export type ImportReview = ({ version: 1 } | { version: 2; legacyAttemptId: string }) & {
+export type ImportReview = (
+  | { version: 1; planId: string }
+  | { version: 2; planId: string; legacyAttemptId: string }
+  | { version: 3; planId: null; evidence: LocalImportEvidence }
+  | { version: 4; planId: null; evidence: MappedImportEvidence }
+  | { version: 5; planId: null; evidence: SemanticImportEvidence }
+) & {
   id: string
-  planId: string
   batchId: string
   graphId: string
   graphDigest: string
@@ -63,11 +76,11 @@ export type ConfirmationEntry = {
   labels: Array<ReviewLabel & { id: string; revisionId: string | null; action: 'create' | 'reuse' }>
 }
 export type ConfirmationManifest = {
-  version: 1 | 2
+  version: 1 | 2 | 3 | 4 | 5
   id: string
   reviewId: string
   revisionId: string
-  planId: string
+  planId: string | null
   batchId: string
   graphId: string
   graphDigest: string
@@ -145,6 +158,7 @@ export type ReviewRequest = OpenInput &
         fromReviewId: string
         fromRevisionId: string
       }
+    | { action: 'review-local'; batchId: string; graphId: string; expectedRevision: string }
     | { action: 'review-open'; planId: string; proposalId: string | null }
     | { action: 'review-find'; batchId: string; graphId: string }
     | { action: 'review-legacy'; planId: string; attemptId: string }
@@ -201,6 +215,7 @@ export type ReviewValue =
       reviewId: string | null
       manifestId: string | null
       legacyAttemptId: string | null
+      local: boolean
     }
   | {
       type: 'review-state'
@@ -277,7 +292,8 @@ export function isImportReview(v: unknown): v is ImportReview {
       'graphDigest',
       'proposalId',
       'results',
-      ...(v.version === 2 ? ['legacyAttemptId'] : [])
+      ...(v.version === 2 ? ['legacyAttemptId'] : []),
+      ...(v.version === 3 || v.version === 4 || v.version === 5 ? ['evidence'] : [])
     ]) &&
     (v.version === 1 ||
       (v.version === 2 &&
@@ -285,8 +301,27 @@ export function isImportReview(v: unknown): v is ImportReview {
         v.proposalId === null &&
         Array.isArray(v.results) &&
         v.results.length === 1 &&
-        v.results[0]?.attemptId === v.legacyAttemptId)) &&
-    [v.id, v.planId, v.batchId, v.graphId].every(isId) &&
+        v.results[0]?.attemptId === v.legacyAttemptId) ||
+      (v.version === 3 &&
+        v.planId === null &&
+        v.proposalId === null &&
+        Array.isArray(v.results) &&
+        v.results.length === 0 &&
+        isLocalImportEvidence(v.evidence)) ||
+      (v.version === 5 &&
+        v.planId === null &&
+        v.proposalId === null &&
+        Array.isArray(v.results) &&
+        v.results.length === 0 &&
+        isSemanticImportEvidence(v.evidence)) ||
+      (v.version === 4 &&
+        v.planId === null &&
+        v.proposalId === null &&
+        Array.isArray(v.results) &&
+        v.results.length === 0 &&
+        isMappedImportEvidence(v.evidence))) &&
+    [v.id, v.batchId, v.graphId].every(isId) &&
+    (v.version === 3 || v.version === 4 || v.version === 5 ? v.planId === null : isId(v.planId)) &&
     importHash(v.graphDigest) &&
     nullableId(v.proposalId) &&
     Array.isArray(v.results) &&
@@ -352,17 +387,13 @@ export function isConfirmationManifest(v: unknown): v is ConfirmationManifest {
       'counts',
       'createdAt'
     ]) &&
-    (v.version === 1 || v.version === 2) &&
-    [
-      v.id,
-      v.reviewId,
-      v.revisionId,
-      v.planId,
-      v.batchId,
-      v.graphId,
-      v.expectedHead,
-      v.receiptId
-    ].every(isId) &&
+    (v.version === 1 || v.version === 2 || v.version === 3 || v.version === 4 || v.version === 5) &&
+    [v.id, v.reviewId, v.revisionId, v.batchId, v.graphId, v.expectedHead, v.receiptId].every(
+      isId
+    ) &&
+    (v.version === 3 || v.version === 4 || v.version === 5
+      ? v.planId === null && v.proposalId === null
+      : isId(v.planId)) &&
     [v.graphDigest, v.resultsDigest, v.choicesDigest, v.entriesDigest].every(importHash) &&
     nullableId(v.proposalId) &&
     Array.isArray(v.artifacts) &&
@@ -463,6 +494,11 @@ export function isReviewRequest(v: unknown): v is ReviewRequest {
         [v.reviewId, v.operationId, v.fromReviewId, v.fromRevisionId].every(isId) &&
         v.expectedRevision === null
       )
+    case 'review-local':
+      return (
+        exact(v, [...k, 'batchId', 'graphId', 'expectedRevision']) &&
+        [v.batchId, v.graphId, v.expectedRevision].every(isId)
+      )
     case 'review-open':
       return exact(v, [...k, 'planId', 'proposalId']) && isId(v.planId) && nullableId(v.proposalId)
     case 'review-find':
@@ -546,9 +582,11 @@ export function isReviewValue(v: unknown): v is ReviewValue {
     return exact(v, ['type', 'reviewId', 'operationId']) && isId(v.reviewId) && isId(v.operationId)
   if (v.type === 'review-found')
     return (
-      exact(v, ['type', 'reviewId', 'manifestId', 'legacyAttemptId']) &&
+      exact(v, ['type', 'reviewId', 'manifestId', 'legacyAttemptId', 'local']) &&
       [v.reviewId, v.manifestId, v.legacyAttemptId].every(nullableId) &&
-      (!v.manifestId || !!v.reviewId)
+      (!v.manifestId || !!v.reviewId) &&
+      typeof v.local === 'boolean' &&
+      (!v.local || (!!v.reviewId && !v.legacyAttemptId))
     )
   return (
     v.type === 'review-state' &&

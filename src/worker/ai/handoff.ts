@@ -97,9 +97,15 @@ export function localBinding(
     if (
       saved.kind !==
         (purpose === 'import'
-          ? bindingVersion(binding) === 8
-            ? 'ai-handoff-v3'
-            : 'ai-handoff-v2'
+          ? bindingVersion(binding) === 12
+            ? 'ai-handoff-v7'
+            : bindingVersion(binding) === 11
+              ? 'ai-handoff-v6'
+              : bindingVersion(binding) === 10
+                ? 'ai-handoff-v5'
+                : bindingVersion(binding) === 8
+                  ? 'ai-handoff-v3'
+                  : 'ai-handoff-v2'
           : bindingVersion(binding) === 9
             ? 'ai-handoff-v4'
             : 'ai-handoff-v1') ||
@@ -152,9 +158,15 @@ export function protectHandoff(
   const receipt: AiHandoffReceipt = {
     version:
       purpose === 'import'
-        ? bindingVersion(binding) === 8
-          ? 3
-          : 2
+        ? bindingVersion(binding) === 12
+          ? 7
+          : bindingVersion(binding) === 11
+            ? 6
+            : bindingVersion(binding) === 10
+              ? 5
+              : bindingVersion(binding) === 8
+                ? 3
+                : 2
         : bindingVersion(binding) === 9
           ? 4
           : 1,
@@ -194,9 +206,15 @@ export function protectHandoff(
         receipt.operationId,
         receipt.operationId,
         purpose === 'import'
-          ? bindingVersion(binding) === 8
-            ? 'ai-handoff-v3'
-            : 'ai-handoff-v2'
+          ? bindingVersion(binding) === 12
+            ? 'ai-handoff-v7'
+            : bindingVersion(binding) === 11
+              ? 'ai-handoff-v6'
+              : bindingVersion(binding) === 10
+                ? 'ai-handoff-v5'
+                : bindingVersion(binding) === 8
+                  ? 'ai-handoff-v3'
+                  : 'ai-handoff-v2'
           : bindingVersion(binding) === 9
             ? 'ai-handoff-v4'
             : 'ai-handoff-v1',

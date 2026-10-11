@@ -1,5 +1,7 @@
 # Project import implementation plan
 
+> Historical stage plan. The [hybrid plan](import-hybrid-implementation-plan.md) and [IH07 integrated guide](docs/manual-testing/import-IH07.md) own current import routing and acceptance handoff. Storage, original-retention, atomic receipt and historical recovery obligations remain; new imports no longer require per-record AI recognition or manual message decisions.
+
 > **October 10, 2026 — UX direction superseded.** Josh's first reported walkthrough found the implemented import flow confusing and too complex to complete confidently. Use [Import UX revision implementation plan](import-ux-implementation-plan.md) for future import work: compact setup with model choice, one Submit, automatic preparation, a short summary and one Accept. Its product decisions replace the manual review/acknowledgment and multi-step presentation requirements below. IM01–IM12 remain historical implementation/storage records; their code-check results do not establish UX acceptance. IU01–IU05 are implementation complete — awaiting user testing. The [final guide](docs/manual-testing/import-IU05.md) and [acceptance record](docs/validation/import-IU05.md) cover the complete revised flow, older-import recovery and completed cleanup. Visual/runtime acceptance remains pending.
 
 ## Status and purpose

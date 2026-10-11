@@ -1,23 +1,20 @@
 import { importBatchAccepted } from './import-identities'
 import { ProjectError } from '../../domain/projects/errors'
 import { requestDigest } from '../storage/digest'
-import { captureDigest } from '../ai/capture'
 import { graphId, textBoundary, textDigest } from './import-readers/graph'
-import { readGraph, readImportBlob, parseGraphPage } from './import-graphs'
+import { readGraph, readImportBlob, parseGraphPage, currentImport } from './import-graphs'
 import { OriginalTranscriptText } from './conversation-transcript'
-import { IMPORT_LIMITS, type ImportFile, type ImportRevision } from '../../shared/project-import'
+import { IMPORT_LIMITS, type ImportFile } from '../../shared/project-import'
 import type { GraphRecord, GraphRelation } from '../../shared/import-graph'
 import { isMultiProposal } from '../../shared/import-analysis'
 import {
+  IMPORT_ANALYSIS_REQUEST_LIMIT,
   isAnalysisPlan,
   isMultiPacket,
-  MULTIPART_PROMPT,
   MULTIPART_INSTRUCTIONS,
   type AnalysisPlan,
   type MultiPacket,
   type MultiFragment,
-  type MultiCapture,
-  type MultiReview,
   type MultiProposal
 } from '../../shared/import-multipart'
 import { parseInputJson } from './import-readers/json'
@@ -56,7 +53,7 @@ export function packetFits(p: MultiPacket): boolean {
     Buffer.byteLength(wire) <= 320000
   )
 }
-export async function analysisGraph(
+async function analysisGraph(
   ctx: AnalysisContext,
   graphId: string
 ): Promise<{ records: GraphRecord[]; relations: GraphRelation[] }> {
@@ -70,16 +67,7 @@ export async function analysisGraph(
   }
   return { records, relations }
 }
-export function currentImport(ctx: AnalysisContext, batchId: string): ImportRevision {
-  const row = ctx.db
-    .prepare(
-      'SELECT r.body FROM import_batches b JOIN import_batch_revisions r ON r.project_id=b.project_id AND r.id=b.current_revision_id WHERE b.project_id=? AND b.id=?'
-    )
-    .get(ctx.projectId, batchId) as { body: string } | undefined
-  if (!row) throw new ProjectError('NOT_FOUND')
-  return JSON.parse(row.body) as ImportRevision
-}
-export const metadataText = (r: GraphRecord): string =>
+const metadataText = (r: GraphRecord): string =>
   JSON.stringify({
     ...r,
     texts: r.texts.map(({ fragments: _, ...t }) => {
@@ -87,7 +75,7 @@ export const metadataText = (r: GraphRecord): string =>
       return t
     })
   })
-export function fragmentsFor(
+function fragmentsFor(
   r: GraphRecord,
   text: string,
   kind: MultiFragment['kind'],
@@ -122,7 +110,8 @@ export function fragmentsFor(
   }
   return result
 }
-export async function partition(
+/** Local compatibility adapter for a valid IM07 result; never a new inference plan. */
+export async function partitionLegacyResult(
   ctx: AnalysisContext,
   batchId: string,
   graph: string
@@ -176,7 +165,8 @@ export async function partition(
     if (!packetFits(current)) throw new ProjectError('LIMIT_EXCEEDED')
     packets.push(current)
     current = null
-    if (packets.length > 1024) throw new ProjectError('LIMIT_EXCEEDED')
+    if (packets.length > IMPORT_ANALYSIS_REQUEST_LIMIT)
+      throw new ProjectError('IMPORT_ANALYSIS_TOO_LARGE')
   }
   const add = (f: MultiFragment, relation?: GraphRelation): void => {
     const draft = current ?? next(),
@@ -260,54 +250,6 @@ export async function partition(
   plan.digest = planDigest(plan, packets)
   if (!isAnalysisPlan(plan)) throw new ProjectError('LIMIT_EXCEEDED')
   return { plan, packets }
-}
-export function multiCapture(
-  ctx: AnalysisContext,
-  input: MultiReview,
-  packet: MultiPacket
-): MultiCapture {
-  const revision = currentImport(ctx, input.batchId)
-  if (
-    revision.id !== input.expectedRevision ||
-    importBatchAccepted(ctx.db, ctx.projectId, input.batchId) ||
-    revision.phase !== 'preparing' ||
-    revision.graphId !== input.graphId ||
-    packet.planId !== input.planId ||
-    packet.partId !== input.partId ||
-    packet.batchId !== input.batchId ||
-    packet.graphId !== input.graphId
-  )
-    throw new ProjectError('STALE_REVISION')
-  const { manifest } = readGraph(ctx.db, ctx.projectId, input.graphId)
-  const head = (
-    ctx.db
-      .prepare(
-        'SELECT head_commit_id AS id FROM import_batch_revisions WHERE project_id=? AND id=?'
-      )
-      .get(ctx.projectId, manifest.revisionId) as { id: string }
-  ).id
-  const c: MultiCapture = {
-    version: 2,
-    id: input.captureId,
-    createdAt: input.createdAt,
-    head,
-    prompt: MULTIPART_PROMPT,
-    source: { kind: 'none' },
-    context: [
-      {
-        kind: 'note',
-        id: input.captureId,
-        revision: input.graphId,
-        label: 'Selected import part',
-        text: JSON.stringify(packet)
-      }
-    ],
-    digest: '',
-    template: 'project-import-analysis-v2',
-    packet
-  }
-  c.digest = captureDigest(c)
-  return c
 }
 export function validateMultiProposal(output: string, p: MultiPacket): MultiProposal | null {
   try {

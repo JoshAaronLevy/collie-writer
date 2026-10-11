@@ -1,8 +1,14 @@
+import {
+  CHATGPT_USAGE_URL,
+  retryableImportTask,
+  processedImportTasks
+} from '../../../../shared/import-recovery'
 import { useImportFlow } from './useImportFlow'
 import { ImportResults } from './ImportResults'
+import { ImportProgress } from './ImportProgress'
 import { importAvailability } from './import-availability'
 import type { ReviewCounts } from '../../../../shared/import-review'
-import { Loader, VisuallyHidden } from '@mantine/core'
+import { VisuallyHidden } from '@mantine/core'
 import { IconX } from '@tabler/icons-react'
 import { IconButton } from '../../components/ui/IconButton'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
@@ -344,7 +350,7 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
         owned.current.uncertainPicker ||
         multipart.pendingCommit ||
         multipart.pendingAutomatic ||
-        multipart.pendingStart ||
+        multipart.pendingLocal ||
         multipart.busy
       )
         return
@@ -356,7 +362,7 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
       !owned.current.uncertainPicker &&
       !multipart.pendingCommit &&
       !multipart.pendingAutomatic &&
-      !multipart.pendingStart &&
+      !multipart.pendingLocal &&
       !multipart.busy &&
       ((multipart.phase === 'complete' &&
         sameScope(multipart.scope, captured) &&
@@ -380,7 +386,7 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
     void run(async () => {
       await recover()
       const batches = await loadList()
-      if (attemptId && !owned.current.pending && !dirty(owned.current)) {
+      if (attemptId && !owned.current.pending && !multipart.pendingLocal && !dirty(owned.current)) {
         const attempt = await window.collie.importAnalysis({
           ...captured,
           action: 'attempt',
@@ -548,10 +554,11 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
       await loadList()
     })
   }
-  async function submit(continueAnalysis = false): Promise<void> {
+  async function submit(continueAnalysis = false, viewAvailable = false): Promise<void> {
     const current = owned.current,
       status = connections.status,
-      catalog = status?.catalog
+      catalog = status?.catalog,
+      availability = importAvailability(connections)
     if (
       current.busy ||
       current.pending ||
@@ -562,31 +569,77 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
       !current.revision ||
       !current.selected.length ||
       !current.settings.categories.length ||
-      !importAvailability(connections).ready ||
-      !status?.activeConnectionId ||
-      catalog?.state !== 'loaded' ||
-      !catalog.selectedModelId
+      (continueAnalysis && !availability.ready)
     )
       return
     const capturedScope = scope(),
-      binding = {
-        connectionId: status.activeConnectionId,
-        model: catalog.selectedModelId,
-        catalogRevision: catalog.revision,
-        reviewRevision: status.reviewRevision
-      }
+      binding =
+        availability.ready &&
+        status?.activeConnectionId &&
+        catalog?.state === 'loaded' &&
+        catalog.selectedModelId
+          ? {
+              connectionId: status.activeConnectionId,
+              model: catalog.selectedModelId,
+              catalogRevision: catalog.revision,
+              reviewRevision: status.reviewRevision
+            }
+          : undefined
     await multipart.submit({
       scope: capturedScope,
       binding,
+      readinessMessage: availability.message,
       intent: formIntent(),
       continueAnalysis,
-      prepare: async (fresh) => {
+      viewAvailable,
+      interpreted: async (revision, semantic, sourceGraphId) => {
+        if (!sameScope(capturedScope, scope()) || owned.current.revision?.id !== revision.id)
+          throw new Error('Import selection changed. Reopen its saved findings.')
+        const ok = await run(() =>
+          write({
+            version: 6,
+            sourceGraphId,
+            action: 'prepare-semantic',
+            operationId: crypto.randomUUID(),
+            batchId: revision.batchId,
+            expectedRevision: revision.id,
+            semantic
+          })
+        )
+        if (!ok)
+          throw new Error(
+            owned.current.issue || 'The interpreted findings could not be saved. Check status.'
+          )
+        return owned.current.revision!
+      },
+      mapped: async (revision, mappings, sourceGraphId) => {
+        if (!sameScope(capturedScope, scope()) || owned.current.revision?.id !== revision.id)
+          throw new Error('Import selection changed. Reopen its saved findings.')
+        const ok = await run(() =>
+          write({
+            version: 7,
+            sourceGraphId,
+            action: 'prepare-mapped',
+            operationId: crypto.randomUUID(),
+            batchId: revision.batchId,
+            expectedRevision: revision.id,
+            mappings
+          })
+        )
+        if (!ok)
+          throw new Error(
+            owned.current.issue || 'The extracted findings could not be saved. Check status.'
+          )
+        return owned.current.revision!
+      },
+      prepare: async (isCancelled) => {
         if (!(await protect()))
           throw new Error('Your import choices could not be saved. Try saving again.')
         const saved = owned.current.revision
         if (!saved || !sameScope(capturedScope, scope()))
           throw new Error('Reopen the original project to continue.')
-        if (!saved.graphId || fresh) {
+        if (isCancelled()) return saved
+        if (!saved.graphId) {
           const ok = await run(() =>
             write({
               version: 2,
@@ -601,6 +654,23 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
         return owned.current.revision!
       }
     })
+  }
+  async function transitionHybrid(): Promise<void> {
+    if (blocked || !multipart.canEdit() || !owned.current.revision || dirty(owned.current)) return
+    const saved = owned.current.revision
+    const ok = await run(() =>
+      write({
+        version: 5,
+        action: 'transition-hybrid',
+        operationId: crypto.randomUUID(),
+        batchId: saved.batchId,
+        expectedRevision: saved.id
+      })
+    )
+    if (ok) {
+      multipart.reset()
+      await submit()
+    }
   }
   async function resolve(decision: 'retry' | 'abandon'): Promise<void> {
     await run(async () => {
@@ -679,11 +749,15 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
   const sameFindings =
     multipart.intent === JSON.stringify([state.scope, state.selected, state.settings])
   const needsFindingsRecovery =
-    !!multipart.pendingStart ||
+    !!multipart.pendingDiscovery ||
+    !!multipart.pendingLocal ||
     !!multipart.pendingAutomatic ||
     !!multipart.pendingCommit ||
     !!(multipart.summary && !multipart.summary.current) ||
     !!(multipart.summary && multipart.conversations.length !== multipart.summary.total)
+  const retainedImportWork = !!connections.status?.work.some(
+    (work) => work.feature === 'import' && sameScope(work.scope, multipart.scope)
+  )
   const catalog = connections.status?.catalog,
     selectedFiles = state.files.filter((f) => state.selected.includes(f.id)),
     modelId = catalog?.state === 'loaded' ? catalog.selectedModelId : null,
@@ -697,10 +771,16 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
         : multipart.phase === 'checking'
           ? 'Checking import status…'
           : multipart.phase === 'analyzing'
-            ? 'Analyzing with ChatGPT…'
-            : multipart.phase === 'saving'
-              ? 'Preparing your import…'
-              : 'Preparing files…'
+            ? multipart.discovery
+              ? multipart.discovery.type === 'semantic'
+                ? 'Interpreting selected content…'
+                : 'Understanding file structure…'
+              : 'Analyzing with ChatGPT…'
+            : multipart.phase === 'extracting'
+              ? 'Extracting content locally…'
+              : multipart.phase === 'saving'
+                ? 'Preparing summary…'
+                : 'Reading files…'
   const resultStatus =
     multipart.phase === 'checking'
       ? 'Checking import status…'
@@ -708,24 +788,29 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
         ? 'Refreshing your summary…'
         : 'Importing…'
   const savedChoices = !dirty(state) && sameFindings,
-    checkFindings = multipart.phase === 'paused' || needsFindingsRecovery || !!notice,
+    checkFindings =
+      needsFindingsRecovery ||
+      retainedImportWork ||
+      (multipart.phase === 'paused' &&
+        !!(multipart.discovery || multipart.page || multipart.legacyAttemptId)),
     viewFindings =
       savedChoices &&
-      (multipart.phase !== 'ready' || needsFindingsRecovery || !ready) &&
-      !!(multipart.summary || multipart.page?.completed || multipart.legacyValid),
+      (multipart.phase !== 'ready' || needsFindingsRecovery) &&
+      !!(
+        multipart.summary ||
+        multipart.localReviewId ||
+        multipart.page?.completed ||
+        multipart.legacyValid ||
+        (multipart.discovery && !multipart.discovery.tasks.some((t) => t.state === 'pending'))
+      ),
     continueFindings =
       savedChoices &&
-      multipart.phase === 'ready' &&
-      !!multipart.page?.remaining &&
-      !multipart.legacyAttemptId,
+      ['ready', 'paused'].includes(multipart.phase) &&
+      !!multipart.discovery?.tasks.some(retryableImportTask),
     startNewVisible =
       savedChoices &&
       (multipart.phase === 'paused' || multipart.summary?.outcome !== 'ready') &&
-      !!(
-        multipart.legacyAttemptId ||
-        !multipart.page?.remaining ||
-        multipart.summary?.outcome !== 'ready'
-      ),
+      !!(multipart.discovery || multipart.legacyAttemptId || multipart.page || multipart.summary),
     retainedOutcome = !!connections.status?.work.some(
       (work) =>
         work.feature === 'import' &&
@@ -748,6 +833,17 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
         startNewVisible ||
         retainedOutcome ||
         localProtection)
+  const legacyTransition =
+    savedChoices && !!(multipart.page || multipart.legacyAttemptId) && multipart.phase === 'paused'
+  const analysisIncomplete = !!(
+    multipart.discovery?.tasks.some((t) =>
+      multipart.discovery?.type === 'semantic' ? t.state !== 'valid' : !t.normalizationId
+    ) ||
+    multipart.discovery?.omitted ||
+    multipart.page?.failed ||
+    multipart.page?.remaining ||
+    (multipart.legacyAttemptId && !multipart.legacyValid)
+  )
   const announcement = !state.opened
     ? ''
     : state.screen === 'results' && multipart.summary
@@ -756,7 +852,11 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
         : multipart.summary.outcome === 'already-present'
           ? 'This content is already in your project. Nothing new to import.'
           : multipart.summary.outcome === 'empty'
-            ? 'No importable content was found for your selection.'
+            ? multipart.summary.manifest.version >= 3 && multipart.summary.manifest.partial
+              ? 'No usable findings are ready. Some selected content could not be fully interpreted.'
+              : analysisIncomplete
+                ? 'Analysis could not produce usable findings. Your original files are kept.'
+                : 'No importable content was found for your selection.'
             : `Ready to import. ${state.settings.categories
                 .map((category) => {
                   const count = multipart.summary!.manifest.counts[category]
@@ -770,7 +870,11 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
                 })
                 .join(', ')}.`
       : multipart.busy
-        ? processingText
+        ? `${processingText}${
+            multipart.phase === 'analyzing' && multipart.discovery
+              ? ` ${processedImportTasks(multipart.discovery.tasks)} of ${multipart.discovery.tasks.length} ${multipart.discovery.type === 'semantic' ? 'content' : 'structure'} tasks processed.`
+              : ''
+          }`
         : state.busy
           ? 'Updating your selection…'
           : ''
@@ -833,7 +937,13 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
         </div>
       ) : null}
       <AppDialog
-        title={state.screen === 'results' ? 'Ready to import' : 'Import into project'}
+        title={
+          state.screen === 'results'
+            ? multipart.summary?.outcome === 'ready'
+              ? 'Ready to import'
+              : 'Import summary'
+            : 'Import into project'
+        }
         opened={state.opened}
         size="38rem"
         classNames={{
@@ -875,6 +985,7 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
           {state.screen === 'results' && multipart.summary ? (
             <ImportResults
               key={multipart.summary.manifest.id}
+              retainedAttempts={multipart.retainedAttempts}
               summary={multipart.summary}
               conversations={multipart.conversations}
               categories={state.settings.categories}
@@ -883,6 +994,7 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
               status={resultStatus}
               blocked={!writable}
               needsRecovery={needsFindingsRecovery}
+              analysisIncomplete={analysisIncomplete}
               onCancel={() => {
                 if (multipart.canDismiss()) patch({ screen: 'setup' })
               }}
@@ -904,15 +1016,16 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
               <div className={styles.body}>
                 <p className={styles.subtitle}>{state.title}</p>
                 {multipart.busy ? (
-                  <div
-                    className={styles.processing}
-                    tabIndex={-1}
-                    data-import-focus
-                    aria-label={processingText}
-                  >
-                    {reducedMotion ? null : <Loader size="sm" aria-hidden="true" />}
-                    <p>{processingText}</p>
-                  </div>
+                  <ImportProgress
+                    label={processingText}
+                    stopping={multipart.phase === 'stopping'}
+                    discovery={
+                      ['analyzing', 'stopping'].includes(multipart.phase)
+                        ? multipart.discovery
+                        : null
+                    }
+                    reducedMotion={reducedMotion}
+                  />
                 ) : (
                   <>
                     <section aria-label="Files">
@@ -1021,6 +1134,7 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
                     />
                     <SelectField
                       label="Model"
+                      description="Used only when ChatGPT interpretation is needed. Supported files do not need a connection or model."
                       value={modelId ?? ''}
                       disabled={
                         formBlocked ||
@@ -1032,7 +1146,9 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
                         {
                           value: '',
                           label:
-                            catalog?.state === 'loading' ? 'Loading models…' : 'Choose a model',
+                            catalog?.state === 'loading'
+                              ? 'Loading models…'
+                              : 'Not needed for local import',
                           disabled: true
                         },
                         ...(catalog?.state === 'loaded'
@@ -1059,7 +1175,7 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
                           )
                       }}
                     />
-                    {availability.message ? (
+                    {continueFindings && availability.message ? (
                       <div className={styles.connection}>
                         <p className={styles.helper} role="status">
                           {availability.message}
@@ -1095,6 +1211,10 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
                     ) : null}
                     {showFindingsRecovery ? (
                       <div className={styles.recovery}>
+                        <p className={styles.helper}>
+                          Nothing is added to Chats, Sources or Notes until you Accept a summary.
+                          Project Save keeps your files and findings; it does not finish the import.
+                        </p>
                         {checkFindings ? (
                           <AppButton
                             variant="light"
@@ -1110,7 +1230,11 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
                             variant="light"
                             size="sm"
                             disabled={state.busy || !multipart.canEdit()}
-                            onClick={() => void multipart.viewResults()}
+                            onClick={() =>
+                              void (multipart.discovery
+                                ? submit(false, true)
+                                : multipart.viewResults())
+                            }
                           >
                             View available results
                           </AppButton>
@@ -1123,6 +1247,24 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
                             onClick={() => void submit(true)}
                           >
                             Continue analysis
+                          </AppButton>
+                        ) : null}
+                        {legacyTransition ? (
+                          <p className={styles.helper}>
+                            Use new importer reads these retained files again. Your earlier review
+                            and original files stay saved.
+                          </p>
+                        ) : null}
+                        {legacyTransition ? (
+                          <AppButton
+                            variant="light"
+                            size="sm"
+                            disabled={
+                              blocked || !multipart.canEdit() || localProtection || retainedOutcome
+                            }
+                            onClick={() => void transitionHybrid()}
+                          >
+                            Use new importer
                           </AppButton>
                         ) : null}
                         {startNewVisible ? (
@@ -1191,9 +1333,19 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
                         ) : null}
                       </div>
                     ) : null}
+                    <AppButton
+                      variant="subtle"
+                      size="sm"
+                      onClick={() =>
+                        void window.collie.conversationPresentation('open-link', CHATGPT_USAGE_URL)
+                      }
+                    >
+                      Manage usage
+                    </AppButton>
                     <p className={styles.helper}>
-                      Submit sends the selected file content and your instructions to your connected
-                      ChatGPT account. Large selections may use several requests.
+                      Collie reads supported data locally. Submit sends content needing
+                      interpretation and your instructions to your selected ChatGPT account and
+                      model.
                     </p>
                   </>
                 )}
@@ -1222,28 +1374,11 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
                   {!multipart.busy ? (
                     <AppButton
                       disabled={
-                        formBlocked ||
-                        !ready ||
-                        !selectedFiles.length ||
-                        !state.settings.categories.length
+                        formBlocked || !selectedFiles.length || !state.settings.categories.length
                       }
-                      onClick={() =>
-                        void submit(
-                          !dirty(state) &&
-                            sameFindings &&
-                            !multipart.legacyAttemptId &&
-                            !!multipart.page?.remaining &&
-                            multipart.phase === 'paused'
-                        )
-                      }
+                      onClick={() => void submit()}
                     >
-                      {!dirty(state) &&
-                      sameFindings &&
-                      !multipart.legacyAttemptId &&
-                      multipart.page?.remaining &&
-                      multipart.phase === 'paused'
-                        ? 'Continue analysis'
-                        : 'Submit'}
+                      Submit
                     </AppButton>
                   ) : null}
                 </div>

@@ -1,6 +1,7 @@
+import { operationDigestV12 } from './direct-import-recovery'
+import { semanticFits } from './direct-import-semantic'
+import { mappingFits } from './direct-import-mapping'
 import { importedConversationFits, operationDigestV9 } from './direct-imported-conversation'
-import { multipartFits, operationDigestV8 } from './direct-import-multipart'
-import { importFits, operationDigestV7 } from './direct-import'
 import { operationDigestV6, researchFits } from './direct-research'
 import { conversationFits, operationDigestV5 } from './direct-conversation'
 import type { WorkspaceAiEvidence } from '../../shared/working-copy'
@@ -340,8 +341,8 @@ export class AiService {
     if (action === 'import')
       return (
         selectAiRoute().kind === 'local-chatgpt-plan' &&
-        ((template === 'project-import-analysis-v1' && importFits(input)) ||
-          (template === 'project-import-analysis-v2' && multipartFits(input)))
+        ((template === 'project-import-mapping-v1' && mappingFits(input)) ||
+          (template === 'project-import-semantic-v1' && semanticFits(input)))
       )
     return selectAiRoute().kind === 'local-chatgpt-plan' && action === 'conversation'
       ? template === 'conversation-imported-v1' || template === 'conversation-imported-research-v1'
@@ -1292,6 +1293,11 @@ export class AiService {
       content &&
       ((content.template !== templateFor(input.action) &&
         !(
+          input.action === 'import' &&
+          (content.template === 'project-import-mapping-v1' ||
+            content.template === 'project-import-semantic-v1')
+        ) &&
+        !(
           input.action === 'conversation' &&
           (content.template === 'conversation-v2' ||
             content.template === 'conversation-research-v1' ||
@@ -1301,6 +1307,12 @@ export class AiService {
         content.reviewStamp !== this.currentReviewStamp(input.action))
     )
       throw new AiError('context-changed')
+    // Frozen recognition executions can be recovered, but cannot be prepared again.
+    if (
+      content?.template === 'project-import-analysis-v1' ||
+      content?.template === 'project-import-analysis-v2'
+    )
+      throw new AiError('invalid-request')
     const route = selectAiRoute()
     if (input.action === 'import' && route.kind !== 'local-chatgpt-plan')
       throw new AiError('invalid-request')
@@ -1323,8 +1335,8 @@ export class AiService {
         content.template === 'conversation-research-v1' ||
         content.template === 'conversation-imported-v1' ||
         content.template === 'conversation-imported-research-v1' ||
-        content.template === 'project-import-analysis-v1' ||
-        content.template === 'project-import-analysis-v2'
+        content.template === 'project-import-mapping-v1' ||
+        content.template === 'project-import-semantic-v1'
       )
         throw new AiError('invalid-request')
       execution = localExecution(
@@ -1355,12 +1367,12 @@ export class AiService {
       operationId: input.operationId,
       digest: execution
         ? execution.route === 'local-chatgpt-plan'
-          ? execution.framingVersion === 6
-            ? operationDigestV9(input, execution)
-            : execution.template === 'project-import-analysis-v2'
-              ? operationDigestV8(input, execution)
-              : execution.template === 'project-import-analysis-v1'
-                ? operationDigestV7(input, execution)
+          ? execution.template === 'project-import-semantic-v1'
+            ? operationDigestV12(input, execution)
+            : execution.template === 'project-import-mapping-v1'
+              ? operationDigestV12(input, execution)
+              : execution.framingVersion === 6
+                ? operationDigestV9(input, execution)
                 : execution.template === 'conversation-research-v1'
                   ? operationDigestV6(input, execution)
                   : execution.template === 'conversation-v2'
@@ -1381,18 +1393,23 @@ export class AiService {
     })
     return { ...receipt }
   }
-  preparedVersion(authorizationId: string): 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 {
+  preparedVersion(authorizationId: string): 1 | 2 | 3 | 4 | 5 | 6 | 9 | 12 {
     const prepared = this.prepared.get(authorizationId)
     if (!prepared) throw new AiError('context-changed')
+    if (
+      prepared.execution?.template === 'project-import-analysis-v1' ||
+      prepared.execution?.template === 'project-import-analysis-v2'
+    )
+      throw new AiError('invalid-request')
     return prepared.execution
       ? prepared.execution.route === 'local-chatgpt-plan'
-        ? prepared.execution.template === 'conversation-imported-v1' ||
-          prepared.execution.template === 'conversation-imported-research-v1'
-          ? 9
-          : prepared.execution.template === 'project-import-analysis-v2'
-            ? 8
-            : prepared.execution.template === 'project-import-analysis-v1'
-              ? 7
+        ? prepared.execution.template === 'project-import-semantic-v1'
+          ? 12
+          : prepared.execution.template === 'project-import-mapping-v1'
+            ? 12
+            : prepared.execution.template === 'conversation-imported-v1' ||
+                prepared.execution.template === 'conversation-imported-research-v1'
+              ? 9
               : prepared.execution.template === 'conversation-research-v1'
                 ? 6
                 : prepared.execution.template === 'conversation-v2'
@@ -1446,33 +1463,39 @@ export class AiService {
       finishedAt: null
     }
     const execution = prepared.execution
+    if (
+      execution?.template === 'project-import-analysis-v1' ||
+      execution?.template === 'project-import-analysis-v2'
+    )
+      throw new AiError('invalid-request')
+
     const item: RetainedOperation = execution
       ? execution.route === 'local-chatgpt-plan'
-        ? execution.framingVersion === 6
+        ? execution.template === 'project-import-semantic-v1'
           ? {
-              version: 9,
-              input: prepared.input,
-              execution,
-              view:
-                execution.outputContract === 'responses-research-v1'
-                  ? { ...view, research: null }
-                  : view,
+              version: 12,
+              input: structuredClone(prepared.input),
+              execution: structuredClone(execution),
+              view: { ...view, importRefusal: null },
               output: { commentary: '', finalText: null }
             }
-          : execution.template === 'project-import-analysis-v2'
+          : execution.template === 'project-import-mapping-v1'
             ? {
-                version: 8,
-                input: prepared.input,
-                execution,
-                view,
+                version: 12,
+                input: structuredClone(prepared.input),
+                execution: structuredClone(execution),
+                view: { ...view, importRefusal: null },
                 output: { commentary: '', finalText: null }
               }
-            : execution.template === 'project-import-analysis-v1'
+            : execution.framingVersion === 6
               ? {
-                  version: 7,
+                  version: 9,
                   input: prepared.input,
                   execution,
-                  view,
+                  view:
+                    execution.outputContract === 'responses-research-v1'
+                      ? { ...view, research: null }
+                      : view,
                   output: { commentary: '', finalText: null }
                 }
               : execution.template === 'conversation-research-v1'
@@ -1596,6 +1619,9 @@ export class AiService {
       item.view = {
         ...item.view,
         text: value.text,
+        ...(item.version === 12
+          ? { importRefusal: value.state === 'failed' ? (value.importRefusal ?? null) : null }
+          : {}),
         ...(item.version === 6 ||
         (item.version === 9 && item.execution.outputContract === 'responses-research-v1')
           ? { research: value.state === 'completed' ? (value.research ?? null) : null }
@@ -1729,14 +1755,14 @@ export class AiService {
   }
   protectedContentOperation(
     operationId: string,
-    version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+    version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12
   ): AiOperation | null {
     const item = this.protectedRecords.get(operationId)
     return item?.version === version ? contentOperation(item) : null
   }
   protectedContentState(
     operationId: string,
-    version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+    version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12
   ): AiOperation['state'] | null {
     const item = this.protectedRecords.get(operationId)
     return item?.version === version ? contentState(item) : null

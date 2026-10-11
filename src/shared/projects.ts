@@ -255,6 +255,7 @@ export type ProjectCode =
   | 'JOB_INTERRUPTED'
   | 'INVALID_ARCHIVE'
   | 'LIMIT_EXCEEDED'
+  | 'IMPORT_ANALYSIS_TOO_LARGE'
   | 'DESTINATION_EXISTS'
   | 'READ_ONLY_PROJECT'
   | 'PAID_CAPABILITY'
@@ -313,6 +314,8 @@ export const projectMessages: Record<ProjectCode, string> = {
     'This file is not a supported, intact Collie Writer project. The original has been kept.',
   DESTINATION_EXISTS:
     'Backup and Move need a new, unused filename. The existing file and current save location have been kept.',
+  IMPORT_ANALYSIS_TOO_LARGE:
+    'Collie automatically divides files for analysis, but this selection needs more than 1,024 requests. The amount of conversation text, source metadata and links determines this limit, not file size alone. No analysis was sent. Select fewer files or export smaller sets of complete conversations with their sources. For a single long conversation, export ordered message groups with their associated sources as valid files; do not cut JSON at arbitrary byte positions. Originals are kept.',
   LIMIT_EXCEEDED:
     'This file exceeds the supported size or resource limits. The original and local work have been kept.'
 }

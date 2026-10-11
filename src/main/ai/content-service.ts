@@ -118,6 +118,15 @@ export class AiContentService {
       this.protecting.size > 0
     )
   }
+  /** Read only the protected operation bound to this exact retained attempt. */
+  protected attemptOperation(scope: OpenInput, attemptId: string): AiOperation | null {
+    const owner = [...this.bound.values()].find(
+      (item) => same(item.scope, scope) && item.binding.attemptId === attemptId
+    )
+    return owner
+      ? this.ai.protectedContentOperation(owner.binding.operationId, bindingVersion(owner.binding))
+      : null
+  }
   workItems(): AiContentWork[] {
     const items = new Map<string, AiContentWork>()
     const put = (scope: OpenInput, attemptId: string, state: AiContentWork['state']): void => {
@@ -344,9 +353,14 @@ export class AiContentService {
           owner.binding.operationId,
           bindingVersion(owner.binding)
         )
-        if (operation?.state === 'completed')
+        if (
+          operation?.state === 'completed' ||
+          (operation?.state === 'failed' &&
+            operation.importRefusal &&
+            bindingVersion(owner.binding) === 12)
+        )
           try {
-            await this.transfer(owner, operation, false)
+            await this.transfer(owner, operation, operation.state !== 'completed')
           } catch {
             /* Exact local transfer remains retained for Retry protection. */
           }
@@ -527,7 +541,14 @@ export class AiContentService {
           this.live.set(binding.operationId, { scope, binding })
         else this.live.delete(binding.operationId)
         const local = await this.readBinding(scope, binding.attemptId)
-        await this.transfer({ scope, binding }, operation, local.receipt?.acknowledged ?? false)
+        await this.transfer(
+          { scope, binding },
+          operation,
+          local.receipt?.acknowledged ??
+            (bindingVersion(binding) === 12 &&
+              operation.state === 'failed' &&
+              !!operation.importRefusal)
+        )
       } else
         await this.protect(
           {
@@ -568,7 +589,11 @@ export class AiContentService {
         review.reviewDigest !== requestDigest(input.review) ||
         review.captureDigest !== input.digest ||
         (review.template !== templateFor(action) &&
-          !(action === 'import' && review.template === 'project-import-analysis-v2') &&
+          !(
+            action === 'import' &&
+            (review.template === 'project-import-mapping-v1' ||
+              review.template === 'project-import-semantic-v1')
+          ) &&
           !(
             action === 'conversation' &&
             (review.template === 'conversation-v2' ||
@@ -764,7 +789,12 @@ export class AiContentService {
         if (
           result.type !== 'review' ||
           (result.capture.template !== templateFor(action) &&
-            !(action === 'import' && result.capture.template === 'project-import-analysis-v2') &&
+            !(
+              action === 'import' &&
+              (result.capture.template === 'project-import-analysis-v2' ||
+                result.capture.template === 'project-import-mapping-v1' ||
+                result.capture.template === 'project-import-semantic-v1')
+            ) &&
             !(
               action === 'conversation' &&
               (result.capture.template === 'conversation-v2' ||

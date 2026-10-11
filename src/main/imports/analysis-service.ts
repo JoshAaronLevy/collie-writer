@@ -1,3 +1,12 @@
+import { retryableImportTask } from '../../shared/import-recovery'
+import {
+  isSemanticRequest,
+  SEMANTIC_GRANT_LIMIT,
+  type SemanticRequest,
+  type SemanticValue
+} from '../../shared/import-semantic'
+import { isDiscoveryRequest, type DiscoveryValue } from '../../shared/import-discovery'
+import { importAnalysisProblem, importFailureReason } from '../../shared/import-analysis-problem'
 import { isCommitRequest } from '../../shared/import-commit'
 import { randomUUID } from 'node:crypto'
 import { isReviewRequest } from '../../shared/import-review'
@@ -12,27 +21,25 @@ import {
   type AnalysisWorkerInput,
   type AnalysisValue
 } from '../../shared/import-analysis'
-import {
-  isMultiRequest,
-  type PlanReview,
-  type AnalysisPlan,
-  type BatchExecution
-} from '../../shared/import-multipart'
-import type { OpenInput } from '../../shared/projects'
+import { isMultiRequest, type BatchExecution } from '../../shared/import-multipart'
+import { projectMessages, type OpenInput } from '../../shared/projects'
 import { sameScope } from '../../shared/project-files'
 import { requestDigest } from '../../worker/storage/digest'
-type Review = {
-  scope: OpenInput
-  plan: AnalysisPlan
-  value: PlanReview
-  stamp: string
-  expires: number
-}
-type Grant = Review & { execution: BatchExecution; intent: string; next: number }
 /** Durable parts are data. Only this main-memory grant permits serial dispatch. */
 export class ImportAnalysisService extends AiContentService {
-  private offers = new Map<string, Review>()
-  private grant: Grant | null = null
+  private discovery: {
+    kind: 'mapping' | 'semantic'
+    scope: OpenInput
+    graphId: string
+    batchId: string
+    revisionId: string
+    stamp: string
+    submission: import('../../shared/import-multipart').ImportSubmitBinding
+    intent: string
+    execution: BatchExecution
+    taskIds: string[]
+    next: number
+  } | null = null
   private batchTimer: ReturnType<typeof setTimeout> | null = null
   private advancing = false
   private planWrites = 0
@@ -42,29 +49,33 @@ export class ImportAnalysisService extends AiContentService {
   ) {
     super(storage, provider, 'import')
     provider.subscribe(() => {
-      const g = this.grant
-      if (g?.execution.phase === 'running' && !provider.contentReviewCurrent(g.stamp))
-        this.pause('Account, model or session changed. Review remaining work to continue.')
+      if (
+        this.discovery?.execution.phase === 'running' &&
+        !provider.contentReviewCurrent(this.discovery.stamp)
+      )
+        this.pause(
+          'The ChatGPT account or model changed. Check the connection, then explicitly continue.'
+        )
       this.schedule()
     })
   }
   override hasPendingWork(): boolean {
     return (
+      this.discovery?.execution.phase === 'running' ||
       this.planWrites > 0 ||
       this.advancing ||
-      this.grant?.execution.phase === 'running' ||
       super.hasPendingWork()
     )
   }
   private changed(): void {
-    const g = this.grant
-    if (g) this.publish(g.scope, g.execution.activeAttemptId)
+    if (this.discovery) this.publish(this.discovery.scope, this.discovery.execution.activeAttemptId)
     this.provider.contentWorkChanged()
   }
   pause(reason = 'Analysis paused. Completed parts are retained.'): void {
-    if (this.grant?.execution.phase !== 'running') return
-    this.grant.execution.phase = 'paused'
-    this.grant.execution.reason = reason
+    if (this.discovery?.execution.phase === 'running') {
+      this.discovery.execution.phase = 'paused'
+      this.discovery.execution.reason = reason
+    }
     if (this.batchTimer) {
       clearTimeout(this.batchTimer)
       this.batchTimer = null
@@ -75,137 +86,330 @@ export class ImportAnalysisService extends AiContentService {
     this.pause('Analysis paused for closing. Review remaining work after reopening.')
     return super.settleForClose()
   }
-  private guard(g: Grant): void {
+  private schedule(): void {
+    if (!this.batchTimer && !this.advancing && this.discovery?.execution.phase === 'running')
+      this.batchTimer = setTimeout(() => {
+        this.batchTimer = null
+        void this.advanceDiscovery()
+      }, 300)
+  }
+  private discoveryGuard(d: NonNullable<ImportAnalysisService['discovery']>): void {
     if (
-      this.grant !== g ||
-      g.execution.phase !== 'running' ||
-      !this.provider.contentReviewCurrent(g.stamp) ||
-      !this.provider.isContentScopeOpen(g.scope)
+      this.discovery !== d ||
+      d.execution.phase !== 'running' ||
+      !this.provider.contentReviewCurrent(d.stamp) ||
+      !this.provider.isContentScopeOpen(d.scope)
     )
       throw new AiError('cancelled')
   }
-  private schedule(): void {
-    if (!this.batchTimer && !this.advancing && this.grant?.execution.phase === 'running')
-      this.batchTimer = setTimeout(() => {
-        this.batchTimer = null
-        void this.advance()
-      }, 300)
-  }
-  private async advance(): Promise<void> {
-    const g = this.grant
-    if (!g || this.advancing || g.execution.phase !== 'running') return
+  private async advanceDiscovery(): Promise<void> {
+    const d = this.discovery
+    if (!d || this.advancing || d.execution.phase !== 'running') return
     this.advancing = true
     try {
-      this.guard(g)
-      const id = g.execution.activeAttemptId
-      if (id) {
-        const value = await this.worker({ ...g.scope, action: 'get', attemptId: id })
-        this.guard(g)
-        if (value.type !== 'turn') throw new ProjectError('UNAVAILABLE')
+      this.discoveryGuard(d)
+      const attemptId = d.execution.activeAttemptId
+      if (attemptId) {
+        const value = await this.worker({ ...d.scope, action: 'get', attemptId })
+        this.discoveryGuard(d)
+        if (value.type !== 'turn' || value.turn.attempt.version !== (d.kind === 'semantic' ? 4 : 3))
+          throw new ProjectError('UNAVAILABLE')
         if (value.turn.attempt.validation === 'pending') {
           if (
             this.workItems().some(
               (w) =>
-                w.attemptId === id &&
+                w.attemptId === attemptId &&
                 ['protection-required', 'record-unavailable'].includes(w.state)
             )
           )
-            this.pause('Local output protection needs attention. Nothing else will be sent.')
+            this.pause(
+              'The response needs local protection. Check status or try saving again; no next request was sent.'
+            )
+          return
+        }
+        const binding = await this.worker({ ...d.scope, action: 'binding', attemptId })
+        this.discoveryGuard(d)
+        if (binding.type !== 'binding' || !binding.retired) {
+          if (value.turn.attempt.validation !== 'valid')
+            this.pause(importAnalysisProblem(value.turn.attempt))
           return
         }
         if (value.turn.attempt.validation !== 'valid') {
           this.pause(
-            'A part did not produce a complete valid result. Review it before choosing reanalysis.'
+            value.turn.attempt.validation === 'invalid'
+              ? d.kind === 'semantic'
+                ? 'ChatGPT returned invalid original span references. The response and independent local findings are kept.'
+                : 'ChatGPT returned an invalid structural mapping. The response and independent local findings are kept.'
+              : importAnalysisProblem(value.turn.attempt)
           )
           return
         }
-        if (this.workItems().some((w) => w.attemptId === id)) {
-          if (this.workItems().some((w) => w.attemptId === id && w.state === 'protection-required'))
-            this.pause('Finish local output protection before continuing.')
-          return
+        if (d.kind === 'mapping') {
+          const applied = await this.worker({
+            ...d.scope,
+            action: 'discovery-apply',
+            graphId: d.graphId,
+            attemptId
+          })
+          this.discoveryGuard(d)
+          if (
+            applied.type !== 'discovery' ||
+            !applied.tasks.some((t) => t.attemptId === attemptId && t.normalizationId)
+          ) {
+            this.pause(
+              applied.type === 'discovery'
+                ? applied.tasks.find((t) => t.attemptId === attemptId)?.reason ||
+                    'The mapping could not be safely applied. Local findings are kept.'
+                : 'Local extraction needs attention.'
+            )
+            return
+          }
         }
-        const binding = await this.worker({ ...g.scope, action: 'binding', attemptId: id })
-        this.guard(g)
-        if (binding.type !== 'binding' || !binding.retired) {
-          this.pause('The completed part still needs its local handoff.')
-          return
-        }
-        g.execution.activeAttemptId = null
+        d.execution.activeAttemptId = null
       }
-      if (g.next >= g.value.partIds.length) {
-        this.pause('Analysis is complete. Saved findings are ready.')
-        return
-      }
-      if (super.hasPendingWork() || this.provider.hasPendingWork() || this.otherPending()) {
-        this.pause('Other AI or local protection work needs attention. No remaining part was sent.')
-        return
-      }
-      const partId = g.value.partIds[g.next],
-        page = await this.worker({ ...g.scope, action: 'plan-read', planId: g.plan.id, offset: 0 })
-      this.guard(g)
-      if (page.type !== 'plan' || !page.current || page.plan.digest !== g.value.planDigest)
-        throw new ProjectError('STALE_REVISION')
-      // Recheck this exact part. A restored attempt is never fresh dispatch authority.
-      const selected = await this.worker({
-        ...g.scope,
-        action: 'plan-select',
-        planId: g.plan.id,
-        proposalId: page.proposalId,
-        mode: g.value.mode,
-        partId: null,
-        limit: 64
-      })
-      this.guard(g)
-      if (selected.type !== 'plan-selection' || !selected.partIds.includes(partId))
-        throw new ProjectError('STALE_REVISION')
-      const review = {
-        ...g.scope,
-        action: 'review' as const,
-        version: 2 as const,
-        planId: g.plan.id,
-        partId,
-        batchId: g.plan.batchId,
-        graphId: g.plan.graphId,
-        expectedRevision: g.plan.revisionId,
-        captureId: randomUUID(),
-        createdAt: new Date().toISOString()
-      }
-      const prepared = await super.command(review)
-      this.guard(g)
-      if (prepared.type !== 'review') throw new ProjectError('UNAVAILABLE')
-      const attemptId = randomUUID()
-      // Reserve the finite slot before append/prepare/bind or any possible HTTP send.
-      g.next++
-      g.execution.used++
-      g.execution.activeAttemptId = attemptId
-      this.changed()
-      await super.submit(
-        {
-          ...g.scope,
-          action: 'submit',
-          attemptId,
-          review,
-          digest: prepared.capture.digest,
-          send: true,
-          connectionId: g.value.connectionId,
-          model: g.value.model
-        },
-        () => this.guard(g)
-      )
-    } catch (error) {
-      if (error instanceof ProjectError && error.code === 'LIMIT_EXCEEDED') {
+      if (d.next >= d.taskIds.length) {
         this.pause(
-          'The batch or retained-operation capacity limit was reached. Completed work is retained; nothing else was sent.'
+          d.kind === 'semantic'
+            ? 'This interpretation portion finished. Continue explicitly if unread passages remain; each continuation allows at most 32 requests.'
+            : 'Structure discovery is complete. Preparing the summary.'
         )
         return
       }
+      if (super.hasPendingWork() || this.provider.hasPendingWork() || this.otherPending()) {
+        this.pause(
+          'Other AI or local protection work needs attention. Completed findings are kept.'
+        )
+        return
+      }
+      const value = await this.worker({
+        ...d.scope,
+        action: d.kind === 'semantic' ? 'semantic-read' : 'discovery-read',
+        graphId: d.graphId
+      })
+      this.discoveryGuard(d)
+      const task =
+        value.type === 'discovery' || value.type === 'semantic'
+          ? value.tasks.find((t) => t.id === d.taskIds[d.next])
+          : null
+      if (!task || !retryableImportTask(task)) throw new ProjectError('STALE_REVISION')
+      const review = {
+        ...d.scope,
+        action: 'review' as const,
+        version: d.kind === 'semantic' ? (4 as const) : (3 as const),
+        captureId: randomUUID(),
+        createdAt: new Date().toISOString(),
+        batchId: d.batchId,
+        graphId: d.graphId,
+        expectedRevision: d.revisionId,
+        partId: task.id
+      }
+      let prepared: AnalysisValue
+      try {
+        const result = await super.command(review)
+        if (!isAnalysisValue(result)) throw new ProjectError('UNAVAILABLE')
+        prepared = result
+      } catch (error) {
+        if (error instanceof ProjectError && error.code === 'ACCESS_BUSY' && task.reason) {
+          this.pause(task.reason)
+          return
+        }
+        throw error
+      }
+      this.discoveryGuard(d)
+      if (
+        prepared.type !== 'review' ||
+        prepared.capture.version !== (d.kind === 'semantic' ? 4 : 3)
+      )
+        throw new ProjectError('UNAVAILABLE')
+      const id = randomUUID()
+      d.next++
+      d.execution.used++
+      d.execution.activeAttemptId = id
+      this.changed()
+      await super.submit(
+        {
+          ...d.scope,
+          action: 'submit',
+          attemptId: id,
+          review,
+          digest: prepared.capture.digest,
+          send: true,
+          connectionId: d.submission.connectionId,
+          model: d.submission.model
+        },
+        () => this.discoveryGuard(d)
+      )
+    } catch (error) {
       this.pause(
-        'Analysis paused after an interruption or capacity refusal. Check saved progress; no request will be retried automatically.'
+        error instanceof AiError
+          ? importFailureReason(error.reason)
+          : error instanceof ProjectError
+            ? projectMessages[error.code]
+            : 'Structure discovery stopped. Check saved status before continuing.'
       )
     } finally {
       this.advancing = false
       this.changed()
       this.schedule()
+    }
+  }
+  private async discoveryCommand(
+    input: import('../../shared/import-discovery').DiscoveryRequest | SemanticRequest
+  ): Promise<AnalysisValue> {
+    const scope = { projectId: input.projectId, workspaceId: input.workspaceId },
+      d = this.discovery,
+      semantic = input.action.startsWith('semantic-')
+    if (input.action === 'discovery-stop' || input.action === 'semantic-stop') {
+      if (
+        d &&
+        d.kind === (semantic ? 'semantic' : 'mapping') &&
+        sameScope(scope, d.scope) &&
+        d.graphId === input.graphId
+      ) {
+        this.pause('Stopped by you. Completed mappings and local findings are kept.')
+        if (d.execution.activeAttemptId)
+          await super.command({
+            ...scope,
+            action: 'cancel',
+            attemptId: d.execution.activeAttemptId
+          })
+      }
+      return this.discoveryCommand({
+        ...scope,
+        action: semantic ? 'semantic-read' : 'discovery-read',
+        graphId: input.graphId
+      })
+    }
+    if (input.action === 'discovery-start' || input.action === 'semantic-start') {
+      const intent = requestDigest(input)
+      if (d?.execution.id === input.operationId) {
+        if (d.intent !== intent) throw new ProjectError('OPERATION_CONFLICT')
+        return this.discoveryCommand({
+          ...scope,
+          action: semantic ? 'semantic-read' : 'discovery-read',
+          graphId: input.graphId
+        })
+      }
+      if (
+        this.hasPendingWork() ||
+        this.provider.hasPendingWork() ||
+        this.otherPending() ||
+        this.provider.isSettling()
+      )
+        throw new ProjectError('ACCESS_BUSY')
+      const stamp = await this.provider.reviewStamp('import'),
+        status = await this.provider.readStatus(),
+        s = input.submission
+      if (
+        status.activeConnectionId !== s.connectionId ||
+        status.catalog?.state !== 'loaded' ||
+        status.catalog.selectedModelId !== s.model ||
+        status.catalog.revision !== s.catalogRevision ||
+        status.reviewRevision !== s.reviewRevision
+      )
+        throw new ProjectError('STALE_REVISION')
+      const value = await this.worker({
+        ...scope,
+        action: semantic ? 'semantic-read' : 'discovery-read',
+        graphId: input.graphId
+      })
+      if (
+        (value.type !== 'discovery' && value.type !== 'semantic') ||
+        !this.provider.contentReviewCurrent(stamp)
+      )
+        throw new ProjectError('STALE_REVISION')
+      const tasks = value.tasks
+        .filter(retryableImportTask)
+        .slice(0, semantic ? SEMANTIC_GRANT_LIMIT : 8)
+      if (!tasks.length) return value
+      this.discovery = {
+        kind: semantic ? 'semantic' : 'mapping',
+        scope,
+        graphId: input.graphId,
+        batchId: value.batchId,
+        revisionId: value.revisionId,
+        stamp,
+        submission: s,
+        intent,
+        next: 0,
+        taskIds: tasks.map((t) => t.id),
+        execution: {
+          id: input.operationId,
+          phase: 'running',
+          used: 0,
+          ceiling: tasks.length,
+          activeAttemptId: null,
+          reason: '',
+          progress: null
+        }
+      }
+      this.changed()
+      this.schedule()
+      return this.discoveryCommand({
+        ...scope,
+        action: semantic ? 'semantic-read' : 'discovery-read',
+        graphId: input.graphId
+      })
+    }
+    const mutation =
+      input.action === 'discovery-prepare' ||
+      input.action === 'discovery-apply' ||
+      input.action === 'semantic-prepare'
+    if (
+      mutation &&
+      (this.hasPendingWork() ||
+        this.provider.hasPendingWork() ||
+        this.otherPending() ||
+        this.provider.isSettling())
+    )
+      throw new ProjectError('ACCESS_BUSY')
+    if (mutation) {
+      this.planWrites++
+      this.provider.contentWorkChanged()
+    }
+    try {
+      const value = await this.worker(input)
+      if (value.type !== 'discovery' && value.type !== 'semantic')
+        throw new ProjectError('UNAVAILABLE')
+      if (
+        d &&
+        d.kind === (semantic ? 'semantic' : 'mapping') &&
+        sameScope(scope, d.scope) &&
+        d.graphId === input.graphId
+      ) {
+        const op = d.execution.activeAttemptId
+          ? this.attemptOperation(scope, d.execution.activeAttemptId)
+          : null
+        return {
+          ...value,
+          execution: {
+            ...d.execution,
+            ...(d.execution.phase !== 'running' &&
+            value.tasks.some((t) =>
+              ['quota-paused', 'rate-limited', 'retry-exhausted'].includes(t.state)
+            )
+              ? {
+                  reason: value.tasks.find((t) =>
+                    ['quota-paused', 'rate-limited', 'retry-exhausted'].includes(t.state)
+                  )!.reason
+                }
+              : {}),
+            progress: op
+              ? {
+                  state: op.state,
+                  elapsedMs: Math.max(0, (op.finishedAt ?? Date.now()) - op.startedAt),
+                  responseCharacters: op.text.length
+                }
+              : null
+          }
+        } satisfies DiscoveryValue | SemanticValue
+      }
+      return value
+    } finally {
+      if (mutation) {
+        this.planWrites--
+        this.provider.contentWorkChanged()
+      }
     }
   }
   override async worker(input: AnalysisWorkerInput): Promise<AnalysisValue> {
@@ -214,9 +418,12 @@ export class ImportAnalysisService extends AiContentService {
     return value
   }
   override async command(input: AnalysisRequest): Promise<AnalysisValue> {
+    if (isSemanticRequest(input)) return this.discoveryCommand(input)
+    if (isDiscoveryRequest(input)) return this.discoveryCommand(input)
     if (isCommitRequest(input) || isReviewRequest(input)) {
       const mutation = [
         'review-open',
+        'review-local',
         'review-automatic',
         'review-legacy',
         'import-commit'
@@ -251,131 +458,7 @@ export class ImportAnalysisService extends AiContentService {
       if (!isAnalysisValue(value)) throw new ProjectError('UNAVAILABLE')
       return value
     }
-    const scope = { projectId: input.projectId, workspaceId: input.workspaceId }
-    if (input.action === 'plan-stop') {
-      const g = this.grant
-      if (!g || !sameScope(scope, g.scope) || g.plan.id !== input.planId)
-        throw new ProjectError('NOT_FOUND')
-      this.pause('Stopped by you. Completed parts are retained; unfinished attempts need review.')
-      if (g.execution.activeAttemptId)
-        try {
-          await super.command({
-            ...scope,
-            action: 'cancel',
-            attemptId: g.execution.activeAttemptId
-          })
-        } catch (error) {
-          if (!(error instanceof ProjectError) || error.code !== 'NOT_FOUND') throw error
-        }
-      return { type: 'batch-execution', execution: { ...g.execution } }
-    }
-    if (input.action === 'plan-start') {
-      const digest = requestDigest(input),
-        prior = this.grant
-      if (prior?.execution.id === input.operationId) {
-        if (prior.intent !== digest) throw new ProjectError('OPERATION_CONFLICT')
-        return { type: 'batch-execution', execution: { ...prior.execution } }
-      }
-      if (
-        this.hasPendingWork() ||
-        this.provider.hasPendingWork() ||
-        this.otherPending() ||
-        this.provider.isSettling()
-      )
-        throw new ProjectError('ACCESS_BUSY')
-      const offer = this.offers.get(input.reviewId)
-      if (
-        !offer ||
-        !sameScope(scope, offer.scope) ||
-        offer.expires < Date.now() ||
-        !this.provider.contentReviewCurrent(offer.stamp)
-      )
-        throw new ProjectError('STALE_REVISION')
-      const selection = await this.worker({
-        ...scope,
-        action: 'plan-select',
-        planId: offer.plan.id,
-        proposalId: offer.value.proposalId,
-        mode: offer.value.mode,
-        partId: null,
-        limit: offer.value.partIds.length
-      })
-      if (
-        this.hasPendingWork() ||
-        this.provider.hasPendingWork() ||
-        this.otherPending() ||
-        !this.provider.contentReviewCurrent(offer.stamp) ||
-        selection.type !== 'plan-selection' ||
-        requestDigest(selection.partIds) !== requestDigest(offer.value.partIds)
-      )
-        throw new ProjectError('STALE_REVISION')
-      this.offers.delete(input.reviewId)
-      this.grant = {
-        ...offer,
-        intent: digest,
-        next: 0,
-        execution: {
-          id: input.operationId,
-          phase: 'running',
-          used: 0,
-          ceiling: offer.value.partIds.length,
-          activeAttemptId: null,
-          reason: ''
-        }
-      }
-      this.changed()
-      this.schedule()
-      return { type: 'batch-execution', execution: { ...this.grant.execution } }
-    }
-    if (input.action === 'plan-review') {
-      if (this.hasPendingWork() || this.provider.isSettling()) throw new ProjectError('ACCESS_BUSY')
-      const stamp = await this.provider.reviewStamp('import'),
-        status = await this.provider.readStatus()
-      if (
-        !status.activeConnectionId ||
-        status.catalog?.state !== 'loaded' ||
-        !status.catalog.selectedModelId
-      )
-        throw new ProjectError('UNAVAILABLE')
-      if (
-        input.submission &&
-        (input.submission.connectionId !== status.activeConnectionId ||
-          input.submission.model !== status.catalog.selectedModelId ||
-          input.submission.catalogRevision !== status.catalog.revision ||
-          input.submission.reviewRevision !== status.reviewRevision)
-      )
-        throw new ProjectError('STALE_REVISION')
-      const { submission: _, ...selectionInput } = input
-      void _
-      const selection = await this.worker({ ...selectionInput, action: 'plan-select' })
-      if (selection.type !== 'plan-selection' || !this.provider.contentReviewCurrent(stamp))
-        throw new ProjectError('STALE_REVISION')
-      // One Submit covers the entire supported plan; never silently trim a larger selection.
-      if (input.submission && selection.plan.parts.length > 64)
-        throw new ProjectError('LIMIT_EXCEEDED')
-      const value: PlanReview = {
-        type: 'plan-review',
-        reviewId: randomUUID(),
-        planId: selection.plan.id,
-        planDigest: selection.plan.digest,
-        proposalId: selection.proposalId,
-        partIds: selection.partIds,
-        connectionId: status.activeConnectionId,
-        model: status.catalog.selectedModelId,
-        units: selection.units,
-        bytes: selection.bytes,
-        mode: input.mode
-      }
-      if (this.offers.size >= 8) this.offers.delete(this.offers.keys().next().value!)
-      this.offers.set(value.reviewId, {
-        scope,
-        plan: selection.plan,
-        value,
-        stamp,
-        expires: Date.now() + 300000
-      })
-      return value
-    }
+    // Old finite grants lived only in main memory. Saved plans/outcomes are read-only.
     if (input.action === 'plan-prepare' && (this.hasPendingWork() || this.provider.isSettling()))
       throw new ProjectError('ACCESS_BUSY')
     if (input.action === 'plan-prepare') {
@@ -384,12 +467,6 @@ export class ImportAnalysisService extends AiContentService {
     }
     try {
       const value = await this.worker(input)
-      if (
-        value.type === 'plan' &&
-        this.grant?.plan.id === value.plan.id &&
-        sameScope(scope, this.grant.scope)
-      )
-        return { ...value, execution: { ...this.grant.execution } }
       return value
     } finally {
       if (input.action === 'plan-prepare') {

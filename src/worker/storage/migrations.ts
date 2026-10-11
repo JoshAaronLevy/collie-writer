@@ -1,3 +1,4 @@
+import { importRefusalTable } from './schema'
 import { importPlanTables, importReviewTables, importCommitTables } from './schema'
 import { validatePortableProofreading } from '../projects/proofreading'
 import { validatePortableImports, validateImportArtifactFiles } from '../projects/import-sessions'
@@ -12,6 +13,7 @@ import { readFile } from 'node:fs/promises'
 import { backupStorageDatabase, inWriteTransaction, openStorageDatabase } from './driver'
 import {
   PROJECT_SCHEMA_VERSION,
+  importReviewTableV33,
   assetTable,
   outlineTables,
   noteTables,
@@ -467,6 +469,80 @@ const migrations: readonly Migration[] = [
     },
     apply: (db) => {
       db.prepare('UPDATE format SET schema_version=32,minimum_reader=32').run()
+    }
+  },
+  {
+    from: 32,
+    to: 33,
+    validateSource: (db) => {
+      validateProjectSchema(db, 32)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, r.id)
+    },
+    apply: (db) => {
+      // Rebuild only in the retained migration candidate. Child references are checked
+      // at transaction commit after the exact same parent rows have been restored.
+      db.pragma('defer_foreign_keys = ON')
+      db.exec(
+        'CREATE TEMP TABLE retained_import_reviews AS SELECT rowid AS retained_rowid,* FROM import_reviews'
+      )
+      db.exec('DROP TABLE import_reviews')
+      db.exec(importReviewTableV33)
+      db.exec(
+        'INSERT INTO import_reviews (rowid,project_id,id,plan_id,proposal_id,body) SELECT * FROM retained_import_reviews'
+      )
+      db.exec('DROP TABLE retained_import_reviews')
+      db.prepare('UPDATE format SET schema_version=33,minimum_reader=33').run()
+    }
+  },
+  {
+    from: 33,
+    to: 34,
+    validateSource: (db) => {
+      validateProjectSchema(db, 33)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, r.id)
+    },
+    apply: (db) => {
+      // Retained-copy migration; all historical rows and artifact bytes stay intact.
+      db.prepare('UPDATE format SET schema_version=34,minimum_reader=34').run()
+    }
+  },
+  {
+    from: 34,
+    to: 35,
+    validateSource: (db) => {
+      validateProjectSchema(db, 34)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, r.id)
+    },
+    apply: (db) => {
+      db.prepare('UPDATE format SET schema_version=35,minimum_reader=35').run()
+    }
+  },
+  {
+    from: 35,
+    to: 36,
+    validateSource: (db) => {
+      validateProjectSchema(db, 35)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, r.id)
+    },
+    apply: (db) => {
+      db.prepare('UPDATE format SET schema_version=36,minimum_reader=36').run()
+    }
+  },
+  {
+    from: 36,
+    to: 37,
+    validateSource: (db) => {
+      validateProjectSchema(db, 36)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, r.id)
+    },
+    apply: (db) => {
+      db.exec(importRefusalTable)
+      db.prepare('UPDATE format SET schema_version=37,minimum_reader=37').run()
     }
   }
 ]

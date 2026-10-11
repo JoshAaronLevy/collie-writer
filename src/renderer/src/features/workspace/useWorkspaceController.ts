@@ -1264,7 +1264,11 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       let token: string | null = null
       const destination = fileState.current.destination
       if ((as || !destination) && !retained) {
-        const choice = await window.collie.pickProjectFile({ purpose: 'save', scope: scopeOf(p) })
+        const choice = await window.collie.pickProjectFile({
+          purpose: 'save',
+          scope: scopeOf(p),
+          suggestedName: p.title
+        })
         if (!choice.ok || !choice.value) {
           if (!choice.ok) setError(choice.error.message)
           return false
@@ -1288,6 +1292,8 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
         // Reconcile the old request before capturing newer edits from this explicit Save.
         if (retained && fileState.current.destination?.headCommitId !== p.headCommitId)
           return await save(false)
+        await refreshConversationHead(scopeOf(p))
+        await refreshFiles()
         await refresh()
         return true
       }
@@ -1367,7 +1373,11 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     else if (p && (kind === 'backup' || kind === 'move')) {
       await refreshFiles()
       if (!(await waitActive())) return
-      const selection = await window.collie.pickProjectFile({ purpose: kind, scope: scopeOf(p) })
+      const selection = await window.collie.pickProjectFile({
+        purpose: kind,
+        scope: scopeOf(p),
+        suggestedName: p.title
+      })
       if (!selection.ok || !selection.value) {
         if (!selection.ok) setError(selection.error.message)
         return

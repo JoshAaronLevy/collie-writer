@@ -1,8 +1,9 @@
+import { semanticFits } from './direct-import-semantic'
+import { SEMANTIC_INSTRUCTIONS } from '../../shared/import-semantic'
+import { mappingFits } from './direct-import-mapping'
+import { DISCOVERY_INSTRUCTIONS } from '../../shared/import-discovery'
 import { importedConversationFits, importedInstructions } from './direct-imported-conversation'
-import { multipartFits } from './direct-import-multipart'
-import { MULTIPART_INSTRUCTIONS } from '../../shared/import-multipart'
-import { importFrame, importFits } from './direct-import'
-import { IMPORT_ANALYSIS_INSTRUCTIONS } from '../../shared/import-analysis'
+import { importFrame } from './direct-import'
 import { RESEARCH_INSTRUCTIONS, RESEARCH_POLICY, researchFits } from './direct-research'
 import {
   conversationFits,
@@ -627,21 +628,23 @@ export class DirectPlanSession {
       | 'conversation-imported-v1'
       | 'conversation-imported-research-v1'
       | 'conversation-research-v1'
-      | 'project-import-analysis-v1'
-      | 'project-import-analysis-v2' = 'conversation-v1'
-  ): DirectTextExecution {
+      | 'project-import-mapping-v1'
+      | 'project-import-semantic-v1' = 'conversation-v1'
+  ): Exclude<
+    DirectTextExecution,
+    { template: 'project-import-analysis-v1' | 'project-import-analysis-v2' }
+  > {
     this.requireIdle()
     const a = this.requireAccount(input.connectionId),
       catalog = this.catalog
     const contractIssue = this.healthIssues.requestContractIssue(a.id)
     if (contractIssue) throw new DirectError(contractIssue)
     if (
-      input.action !==
-        (template.startsWith('project-import-analysis-') ? 'import' : 'conversation') ||
-      !(template === 'project-import-analysis-v2'
-        ? multipartFits(input, input.model)
-        : template === 'project-import-analysis-v1'
-          ? importFits(input, input.model)
+      input.action !== (template.startsWith('project-import-') ? 'import' : 'conversation') ||
+      !(template === 'project-import-semantic-v1'
+        ? semanticFits(input, input.model)
+        : template === 'project-import-mapping-v1'
+          ? mappingFits(input, input.model)
           : template === 'conversation-research-v1'
             ? researchFits(input)
             : template === 'conversation-imported-v1' ||
@@ -654,11 +657,11 @@ export class DirectPlanSession {
       throw new AiError('invalid-request')
     if (catalog.state !== 'loaded' || catalog.selectedModelId !== input.model)
       throw new AiError('model-unavailable')
-    if (template === 'project-import-analysis-v2')
+    if (template === 'project-import-semantic-v1')
       return {
         route: 'local-chatgpt-plan',
         policyRevision: 1,
-        framingVersion: 5,
+        framingVersion: 9,
         template,
         outputContract: 'responses-text-v1',
         accountFingerprint: directAccountIdentity(a.clientId, a.subject!),
@@ -666,13 +669,13 @@ export class DirectPlanSession {
         catalogRevision: catalog.revision,
         captureDigest,
         framedText: importFrame(input),
-        instructions: MULTIPART_INSTRUCTIONS
+        instructions: SEMANTIC_INSTRUCTIONS
       }
-    if (template === 'project-import-analysis-v1')
+    if (template === 'project-import-mapping-v1')
       return {
         route: 'local-chatgpt-plan',
         policyRevision: 1,
-        framingVersion: 4,
+        framingVersion: 8,
         template,
         outputContract: 'responses-text-v1',
         accountFingerprint: directAccountIdentity(a.clientId, a.subject!),
@@ -680,7 +683,7 @@ export class DirectPlanSession {
         catalogRevision: catalog.revision,
         captureDigest,
         framedText: importFrame(input),
-        instructions: IMPORT_ANALYSIS_INSTRUCTIONS
+        instructions: DISCOVERY_INSTRUCTIONS
       }
     if (template === 'conversation-research-v1')
       return {
@@ -750,6 +753,11 @@ export class DirectPlanSession {
     const authorize: AiDispatchSession['authorize'] = (input, execution) => {
       if (!execution || execution.route !== 'local-chatgpt-plan')
         throw new AiError('context-changed')
+      if (
+        execution.template === 'project-import-analysis-v1' ||
+        execution.template === 'project-import-analysis-v2'
+      )
+        throw new AiError('invalid-request')
       const current = this.execution(input, execution.captureDigest, execution.template)
       if (JSON.stringify(current) !== JSON.stringify(execution))
         throw new AiError('context-changed')
@@ -871,7 +879,13 @@ export class DirectPlanSession {
             commentary: '',
             finalText: null,
             state: uncertain ? 'unknown' : issue.reason === 'cancelled' ? 'cancelled' : 'failed',
-            reason: uncertain ? 'outcome-unknown' : issue.reason
+            reason: uncertain ? 'outcome-unknown' : issue.reason,
+            ...(input.action === 'import'
+              ? {
+                  importRefusal:
+                    !uncertain && error instanceof DirectError ? error.importRefusal : null
+                }
+              : {})
           })
           this.changed(false)
         }

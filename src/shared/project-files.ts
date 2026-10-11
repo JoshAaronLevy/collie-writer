@@ -43,6 +43,7 @@ export type FileChoice = 'cancel' | 'open-copy' | 'use-local' | 'import'
 export type PickInput = {
   purpose: 'save' | 'open' | 'locate' | 'backup' | 'move' | 'restore'
   scope: OpenInput | null
+  suggestedName?: string
 }
 export type FileSelection = { token: string; path: string }
 export type SaveInput = {
@@ -129,7 +130,15 @@ export type FileAPI = {
 export function isPickInput(v: unknown): v is PickInput {
   return (
     record(v) &&
-    exact(v, ['purpose', 'scope']) &&
+    exact(v, [
+      'purpose',
+      'scope',
+      ...(Object.hasOwn(v, 'suggestedName') ? ['suggestedName'] : [])
+    ]) &&
+    (!Object.hasOwn(v, 'suggestedName') ||
+      (['save', 'backup', 'move'].includes(String(v.purpose)) &&
+        typeof v.suggestedName === 'string' &&
+        v.suggestedName.length <= 2000)) &&
     (['open', 'restore'].includes(String(v.purpose))
       ? v.scope === null
       : ['save', 'locate', 'backup', 'move'].includes(String(v.purpose)) && isOpenInput(v.scope))

@@ -1,3 +1,4 @@
+import { CHATGPT_USAGE_URL } from '../../../../shared/import-recovery'
 import { useEffect, useId, useRef, useState } from 'react'
 import { AppButton } from '../../components/ui/Controls'
 import type { ImportSummary } from '../../../../shared/import-review'
@@ -9,23 +10,27 @@ export function ImportResults({
   summary,
   conversations,
   categories,
+  retainedAttempts,
   issue,
   busy,
   status,
   blocked,
   needsRecovery,
+  analysisIncomplete,
   onCancel,
   onAccept,
   onCheck
 }: {
   summary: ImportSummary
   conversations: ImportSummary['conversations']
+  retainedAttempts: number | null
   categories: ImportCategory[]
   issue: string
   busy: boolean
   status: string
   blocked: boolean
   needsRecovery: boolean
+  analysisIncomplete: boolean
   onCancel: () => void
   onAccept: () => void
   onCheck: () => void
@@ -48,6 +53,9 @@ export function ImportResults({
     return () => resize.disconnect()
   }, [visible, conversations.length])
   const counts = summary.manifest.counts
+  const semantic = summary.manifest.version === 5,
+    mapped = summary.manifest.version === 4,
+    local = summary.manifest.version >= 3
   const label = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
   return (
     <div className={styles.intake}>
@@ -64,6 +72,17 @@ export function ImportResults({
             setVisible((n) => Math.min(n + 50, conversations.length))
         }}
       >
+        {local && retainedAttempts === 0 ? (
+          <p className={styles.helper}>Processed locally; no ChatGPT requests.</p>
+        ) : retainedAttempts !== null && retainedAttempts > 0 ? (
+          <p className={styles.helper}>
+            {label(retainedAttempts, 'saved ChatGPT attempt')}. Original content preserved.
+          </p>
+        ) : semantic || mapped ? (
+          <p className={styles.helper}>
+            Original content preserved; unresolved content is left out.
+          </p>
+        ) : null}
         {categories.includes('chats') ? (
           <section aria-label="AI conversations" className={styles.resultGroup}>
             <h2>{label(counts.chats, 'conversation')}</h2>
@@ -95,10 +114,18 @@ export function ImportResults({
         {summary.outcome === 'already-present' ? (
           <p>This content is already in your project. Nothing new to import.</p>
         ) : summary.outcome === 'empty' ? (
-          <p>No importable content was found for your selection.</p>
-        ) : summary.omitted ? (
+          <p>
+            {local && summary.manifest.partial
+              ? 'Some requested work remains unresolved, so no usable findings are ready. Your originals and saved responses are kept; the reason appears below.'
+              : analysisIncomplete
+                ? 'Analysis could not produce usable findings. This does not mean your files contain no conversations or sources.'
+                : 'No importable content was found for your selection.'}
+          </p>
+        ) : summary.manifest.partial || summary.omitted || analysisIncomplete ? (
           <p className={styles.helper}>
-            Some requested content couldn&apos;t be imported and was left out.
+            {local
+              ? 'Some requested content was left out. Accept imports these findings and finishes this selection; omitted material then needs a new import. To continue unfinished analysis later, Cancel and keep this selection paused.'
+              : 'Some requested content could not be imported and was left out.'}
           </p>
         ) : null}
         {busy ? <p>{status}</p> : null}
@@ -106,6 +133,17 @@ export function ImportResults({
           <p role="alert" className={styles.issue}>
             {issue}
           </p>
+        ) : null}
+        {issue && /usage limit|limited requests/.test(issue) ? (
+          <AppButton
+            variant="subtle"
+            size="sm"
+            onClick={() =>
+              void window.collie.conversationPresentation('open-link', CHATGPT_USAGE_URL)
+            }
+          >
+            Manage usage
+          </AppButton>
         ) : null}
         {blocked ? (
           <p className={styles.helper}>Open a writable project to accept these findings.</p>

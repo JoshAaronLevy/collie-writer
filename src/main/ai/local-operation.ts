@@ -1,4 +1,19 @@
 import {
+  isDirectHybridExecution,
+  operationDigestV12,
+  type DirectHybridExecution
+} from './direct-import-recovery'
+import {
+  isDirectSemanticExecution,
+  operationDigestV11,
+  type DirectSemanticExecution
+} from './direct-import-semantic'
+import {
+  isDirectMappingExecution,
+  operationDigestV10,
+  type DirectMappingExecution
+} from './direct-import-mapping'
+import {
   isDirectImportedConversationExecution,
   operationDigestV9,
   type DirectImportedConversationExecution
@@ -56,6 +71,8 @@ export const LOCAL_DISPATCH_V2 = {
 export type ContentTemplate =
   | 'project-import-analysis-v1'
   | 'project-import-analysis-v2'
+  | 'project-import-mapping-v1'
+  | 'project-import-semantic-v1'
   | 'conversation-v1'
   | 'conversation-v2'
   | 'conversation-research-v1'
@@ -83,10 +100,19 @@ export type LocalExecutionV2 = LocalSessionIdentity & {
     | 'conversation-imported-research-v1'
     | 'project-import-analysis-v1'
     | 'project-import-analysis-v2'
+    | 'project-import-mapping-v1'
+    | 'project-import-semantic-v1'
   >
   outputContract: 'conversation-text-v1' | 'mechanics-final-json-v1'
   captureDigest: string
   framedText: string
+}
+export type RetainedOperationV12 = {
+  version: 12
+  input: AiPrepareInput
+  execution: DirectHybridExecution
+  view: AiOperation
+  output: { commentary: string; finalText: string | null }
 }
 export type RetainedOperationV1 = { version: 1; input: AiPrepareInput; view: AiOperation }
 export type RetainedOperationV2 = {
@@ -111,6 +137,8 @@ export type DispatchExecution =
   | DirectImportExecution
   | DirectMultiImportExecution
   | DirectImportedConversationExecution
+  | DirectMappingExecution
+  | DirectSemanticExecution
 export type RetainedOperationV3 = {
   version: 3
   input: AiPrepareInput
@@ -145,7 +173,18 @@ export type RetainedOperationV9 = Omit<RetainedOperationV4, 'version' | 'executi
   version: 9
   execution: DirectImportedConversationExecution
 }
+export type RetainedOperationV11 = Omit<RetainedOperationV4, 'version' | 'execution'> & {
+  version: 11
+  execution: DirectSemanticExecution
+}
+export type RetainedOperationV10 = Omit<RetainedOperationV4, 'version' | 'execution'> & {
+  version: 10
+  execution: DirectMappingExecution
+}
 export type RetainedOperation =
+  | RetainedOperationV12
+  | RetainedOperationV10
+  | RetainedOperationV11
   | RetainedOperationV9
   | RetainedOperationV1
   | RetainedOperationV2
@@ -169,6 +208,8 @@ export function templateFor(
   | 'conversation-imported-v1'
   | 'conversation-imported-research-v1'
   | 'project-import-analysis-v2'
+  | 'project-import-mapping-v1'
+  | 'project-import-semantic-v1'
 > {
   if (action === 'import') return 'project-import-analysis-v1'
   return action === 'conversation' ? 'conversation-v1' : 'mechanics-v1'
@@ -217,6 +258,8 @@ export function localExecution(
     | 'conversation-imported-research-v1'
     | 'project-import-analysis-v1'
     | 'project-import-analysis-v2'
+    | 'project-import-mapping-v1'
+    | 'project-import-semantic-v1'
   >,
   captureDigest: string
 ): LocalExecution {
@@ -347,7 +390,13 @@ function isExecutionV3(v: unknown, input: AiPrepareInput): v is LocalExecutionV3
 }
 export function isRetainedOperation(v: unknown): v is RetainedOperation {
   if (!record(v) || !isAiPrepare(v.input) || !isAiOperation(v.view)) return false
-  if ((v.input.action === 'import') !== (v.version === 7 || v.version === 8)) return false
+  if (
+    (v.input.action === 'import') !==
+    (v.version === 7 || v.version === 8 || v.version === 10 || v.version === 11 || v.version === 12)
+  )
+    return false
+  const hasImportRefusal = 'importRefusal' in v.view
+  if (hasImportRefusal !== (v.version === 12)) return false
   const researchResult = 'research' in v.view
   if (
     (v.version === 6 ||
@@ -371,15 +420,24 @@ export function isRetainedOperation(v: unknown): v is RetainedOperation {
     return exact(v, ['version', 'input', 'view']) && operationDigestV1(input) === view.digest
   return (
     exact(v, ['version', 'input', 'execution', 'view', 'output']) &&
-    ((v.version === 2 &&
-      isExecution(v.execution, input) &&
-      operationDigestV2(input, v.execution) === view.digest) ||
+    ((v.version === 12 &&
+      isDirectHybridExecution(v.execution, input) &&
+      operationDigestV12(input, v.execution) === view.digest) ||
+      (v.version === 2 &&
+        isExecution(v.execution, input) &&
+        operationDigestV2(input, v.execution) === view.digest) ||
       (v.version === 3 &&
         isExecutionV3(v.execution, input) &&
         operationDigestV3(input, v.execution) === view.digest) ||
       (v.version === 4 &&
         isDirectExecution(v.execution, input) &&
         operationDigestV4(input, v.execution) === view.digest) ||
+      (v.version === 11 &&
+        isDirectSemanticExecution(v.execution, input) &&
+        operationDigestV11(input, v.execution) === view.digest) ||
+      (v.version === 10 &&
+        isDirectMappingExecution(v.execution, input) &&
+        operationDigestV10(input, v.execution) === view.digest) ||
       (v.version === 9 &&
         isDirectImportedConversationExecution(v.execution, input) &&
         operationDigestV9(input, v.execution) === view.digest) ||
@@ -395,7 +453,7 @@ export function isRetainedOperation(v: unknown): v is RetainedOperation {
       (v.version === 8 &&
         isDirectMultiImportExecution(v.execution, input) &&
         operationDigestV8(input, v.execution) === view.digest)) &&
-    (v.version !== 8 || view.text.length <= 32000) &&
+    (![8, 10, 11, 12].includes(Number(v.version)) || view.text.length <= 32000) &&
     record(v.output) &&
     exact(v.output, ['commentary', 'finalText']) &&
     aiText(v.output.commentary, AI_LIMITS.output) &&
@@ -408,7 +466,10 @@ export function isRetainedOperation(v: unknown): v is RetainedOperation {
       v.version !== 6 &&
       v.version !== 7 &&
       v.version !== 8 &&
-      v.version !== 9) ||
+      v.version !== 9 &&
+      v.version !== 10 &&
+      v.version !== 11 &&
+      v.version !== 12) ||
       (v.output.commentary === '' &&
         (view.state === 'completed'
           ? v.output.finalText === view.text && view.text.trim().length > 0

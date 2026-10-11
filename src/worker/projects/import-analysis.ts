@@ -1,11 +1,29 @@
+import { readGraph } from './import-graphs'
+import { saveImportRefusal, retainedImportRefusal } from './import-refusals'
+import { isSemanticRequest } from '../../shared/import-semantic'
+import {
+  semanticCapture,
+  semanticCommand,
+  semanticPacketDigest,
+  validateSemanticOutput,
+  validatePortableSemanticCapture
+} from './import-semantic'
+import { isDiscoveryRequest } from '../../shared/import-discovery'
+import {
+  discoveryCommand,
+  discoveryCapture,
+  discoveryPacketDigest,
+  validateDiscoveryOutput,
+  validatePortableDiscoveryCapture
+} from './import-discovery'
 import { isCommitRequest } from '../../shared/import-commit'
 import { importCommitCommand } from './import-commit'
 import { bindingVersion } from '../../shared/conversations'
 import { importPlanCommand, readPart, consolidatePart, validatePortablePlans } from './import-plans'
 import { isReviewRequest } from '../../shared/import-review'
 import { importReviewCommand, validatePortableReviews } from './import-review'
-import { multiCapture, multiPacketDigest, validateMultiProposal } from './import-partition'
-import { isMultiWorker } from '../../shared/import-multipart'
+import { multiPacketDigest, validateMultiProposal } from './import-partition'
+import { isMultiRequest } from '../../shared/import-multipart'
 import type Database from 'better-sqlite3'
 import { ANALYSIS_RESERVE, analysisReservedBytes } from './import-analysis-budget'
 import { IMPORT_LIMITS } from '../../shared/project-import'
@@ -95,7 +113,7 @@ function write(db: Database.Database, p: string, r: AnalysisRun): void {
   advance(db, p)
 }
 /** Reserve final raw output + proposal and SQLite/descriptor growth before dispatch. */
-function capacity(db: Database.Database, p: string, batchId: string, version = 1): void {
+function capacity(db: Database.Database, p: string, batchId: string): void {
   const count = (
     db
       .prepare(
@@ -123,7 +141,7 @@ function capacity(db: Database.Database, p: string, batchId: string, version = 1
     graphBytes +
       intakeBytes +
       analysisReservedBytes(db, p, batchId) +
-      (version === 2 ? 1024 ** 2 : ANALYSIS_RESERVE) +
+      ANALYSIS_RESERVE +
       IMPORT_LIMITS.artifactBytes >
       IMPORT_LIMITS.derivedBytes
   )
@@ -131,15 +149,55 @@ function capacity(db: Database.Database, p: string, batchId: string, version = 1
 }
 async function prepare(ctx: AnalysisContext, review: AnalysisReview): Promise<AnalysisCapture> {
   if (!('version' in review)) throw new ProjectError('DENIED')
-  return multiCapture(ctx, review, readPart(ctx.db, ctx.projectId, review.planId, review.partId))
+  if (review.version === 4) return semanticCapture(ctx, review)
+  if (review.version === 3) return discoveryCapture(ctx, review)
+  // Older captures remain readable/settleable; no new recognition attempts can be authored.
+  throw new ProjectError('DENIED')
 }
 export async function importAnalysisCommand(
   ctx: AnalysisContext,
   input: AnalysisWorkerInput
 ): Promise<AnalysisValue> {
+  if (input.action === 'hybrid-progress') {
+    let id: string | null = input.graphId
+    const seen = new Set<string>()
+    while (id && seen.size < 1000 && !seen.has(id)) {
+      seen.add(id)
+      const g: import('../../shared/import-graph').ImportGraph = readGraph(
+        ctx.db,
+        ctx.projectId,
+        id
+      ).manifest
+      try {
+        const progress = await semanticCommand(ctx, {
+          ...input,
+          action: 'semantic-read',
+          graphId: id
+        })
+        return { type: 'hybrid-progress', progress }
+      } catch (error) {
+        if (!(error instanceof ProjectError && error.code === 'NOT_FOUND')) throw error
+      }
+      if (
+        ctx.db
+          .prepare(
+            "SELECT 1 FROM import_artifacts WHERE project_id=? AND graph_id=? AND json_extract(body,'$.kind')='mapping-v1' LIMIT 1"
+          )
+          .get(ctx.projectId, id)
+      )
+        return {
+          type: 'hybrid-progress',
+          progress: await discoveryCommand(ctx, { ...input, action: 'discovery-read', graphId: id })
+        }
+      id = g.version === 1 ? null : g.sourceGraphId
+    }
+    return { type: 'hybrid-progress', progress: null }
+  }
+  if (isSemanticRequest(input)) return semanticCommand(ctx, input)
+  if (isDiscoveryRequest(input)) return discoveryCommand(ctx, input)
   if (isCommitRequest(input)) return importCommitCommand(ctx, input)
   if (isReviewRequest(input)) return importReviewCommand(ctx, input)
-  if (isMultiWorker(input)) return importPlanCommand(ctx, input)
+  if (isMultiRequest(input)) return importPlanCommand(ctx, input)
   const { db, operations, projectId: p } = ctx
   const result = (id: string, fresh = false): AnalysisValue => ({
     type: 'turn',
@@ -149,7 +207,7 @@ export async function importAnalysisCommand(
   })
   switch (input.action) {
     case 'review':
-      capacity(db, p, input.batchId, 'version' in input ? input.version : 1)
+      capacity(db, p, input.batchId)
       return { type: 'review', capture: await prepare(ctx, input) }
     case 'get':
       return result(input.attemptId)
@@ -191,7 +249,7 @@ export async function importAnalysisCommand(
           throw new ProjectError('OPERATION_CONFLICT')
         return result(s.attemptId)
       }
-      capacity(db, p, s.review.batchId, 'version' in s.review ? s.review.version : 1)
+      capacity(db, p, s.review.batchId)
       if (activeBindings(operations, 'import').length >= AI_LIMITS.jobs)
         throw new ProjectError('LIMIT_EXCEEDED')
       const capture = await prepare(ctx, s.review)
@@ -245,7 +303,16 @@ export async function importAnalysisCommand(
         owned = localBinding(ctx, 'import', input.binding.attemptId)
       if (
         b.capture.digest !== input.binding.captureDigest ||
-        bindingVersion(input.binding) !== (b.capture.version === 1 ? 7 : 8) ||
+        (bindingVersion(input.binding) === 12 && ![3, 4].includes(b.capture.version)) ||
+        (bindingVersion(input.binding) !== 12 &&
+          bindingVersion(input.binding) !==
+            (b.capture.version === 4
+              ? 11
+              : b.capture.version === 1
+                ? 7
+                : b.capture.version === 3
+                  ? 10
+                  : 8)) ||
         (b.attempt.state !== 'not-sent' && !owned.binding) ||
         (owned.binding && requestDigest(owned.binding) !== requestDigest(input.binding))
       )
@@ -299,7 +366,8 @@ export async function importAnalysisCommand(
             op.digest !== binding.digest ||
             op.connectionId !== binding.connectionId ||
             op.model !== binding.model ||
-            op.action !== 'import'
+            op.action !== 'import' ||
+            'importRefusal' in op !== (bindingVersion(binding) === 12)
           )
             throw new ProjectError('DENIED')
           if (op.sequence + 1 <= r.sequence || ['valid', 'invalid'].includes(r.validation))
@@ -320,7 +388,11 @@ export async function importAnalysisCommand(
             ? 'pending'
             : 'not-completed'
           if (op.state === 'completed') {
-            if (r.version === 2 && b.capture.version === 2)
+            if (r.version === 4 && b.capture.version === 4)
+              r.proposal = validateSemanticOutput(op.text, b.capture.packet)
+            else if (r.version === 3 && b.capture.version === 3)
+              r.proposal = validateDiscoveryOutput(op.text, b.capture.packet)
+            else if (r.version === 2 && b.capture.version === 2)
               r.proposal = validateMultiProposal(op.text, b.capture.packet)
             else if (r.version === 1 && b.capture.version === 1)
               r.proposal = validateProposal(op.text, b.capture.packet)
@@ -338,7 +410,8 @@ export async function importAnalysisCommand(
           r.finishedAt = new Date().toISOString()
         } else return result(r.id)
         write(db, p, r)
-        if (r.validation === 'valid') consolidatePart(ctx, r.id)
+        if (op?.importRefusal) saveImportRefusal(db, p, r, b.capture, op)
+        if (r.validation === 'valid' && r.version !== 3) consolidatePart(ctx, r.id)
         return result(r.id)
       })
     case 'handoff': {
@@ -346,8 +419,22 @@ export async function importAnalysisCommand(
         r = b.attempt,
         op = input.operation
       if (
+        requestDigest(retainedImportRefusal(db, p, r, b.capture)) !==
+        requestDigest(op.importRefusal ?? null)
+      )
+        throw new ProjectError('OPERATION_CONFLICT')
+      if (
         b.capture.digest !== input.binding.captureDigest ||
-        bindingVersion(input.binding) !== (b.capture.version === 1 ? 7 : 8) ||
+        (bindingVersion(input.binding) === 12 && ![3, 4].includes(b.capture.version)) ||
+        (bindingVersion(input.binding) !== 12 &&
+          bindingVersion(input.binding) !==
+            (b.capture.version === 4
+              ? 11
+              : b.capture.version === 1
+                ? 7
+                : b.capture.version === 3
+                  ? 10
+                  : 8)) ||
         r.sequence !== op.sequence + 1 ||
         r.state !== op.state ||
         r.model !== op.model ||
@@ -416,6 +503,16 @@ export function validatePortableImportAnalysis(db: Database.Database, p: string)
       .v < 26
   )
     return
+  if ((db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v >= 37) {
+    let n = 0
+    for (const row of db
+      .prepare('SELECT project_id,attempt_id FROM import_analysis_refusals')
+      .iterate() as Iterable<{ project_id: string; attempt_id: string }>) {
+      if (row.project_id !== p || ++n > 100000) return corrupt()
+      const b = bundle(db, p, row.attempt_id)
+      if (!retainedImportRefusal(db, p, b.attempt, b.capture)) return corrupt()
+    }
+  }
   validatePortablePlans(db, p)
   validatePortableReviews(db, p)
   for (const table of ['import_analysis_captures', 'import_analysis_runs'])
@@ -437,6 +534,10 @@ export function validatePortableImportAnalysis(db: Database.Database, p: string)
       .prepare('SELECT head_commit_id,body FROM import_batch_revisions WHERE project_id=? AND id=?')
       .get(p, graph.revisionId) as { head_commit_id: string; body: string } | undefined
     if (
+      (c.version === 4 &&
+        (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 36) ||
+      (c.version === 3 &&
+        (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 35) ||
       c.id !== row.id ||
       c.packet.graphId !== row.graph_id ||
       c.packet.batchId !== row.batch_id ||
@@ -444,24 +545,43 @@ export function validatePortableImportAnalysis(db: Database.Database, p: string)
       c.packet.graphDigest !== graph.digest ||
       c.digest !== captureDigest(c) ||
       c.packet.captureDigest !==
-        (c.version === 1 ? packetDigest(c.packet) : multiPacketDigest(c.packet)) ||
+        (c.version === 1
+          ? packetDigest(c.packet)
+          : c.version === 4
+            ? semanticPacketDigest(c.packet)
+            : c.version === 3
+              ? discoveryPacketDigest(c.packet)
+              : multiPacketDigest(c.packet)) ||
       !revision ||
       c.head !== revision.head_commit_id ||
       requestDigest(c.packet.settings) !== requestDigest(JSON.parse(revision.body).settings) ||
-      requestDigest(c.packet.files.map((f) => ({ fileId: f.id, sha256: f.sha256 }))) !==
-        requestDigest(graph.files.map((f) => ({ fileId: f.fileId, sha256: f.sha256 })))
+      (c.version !== 3 &&
+        c.version !== 4 &&
+        requestDigest(c.packet.files.map((f) => ({ fileId: f.id, sha256: f.sha256 }))) !==
+          requestDigest(graph.files.map((f) => ({ fileId: f.fileId, sha256: f.sha256 }))))
     )
       return corrupt()
     if (
       (c.version === 1 && c.packet.partId !== c.id) ||
-      c.packet.files.some((f) => {
-        const row = db
-          .prepare('SELECT body FROM import_files WHERE project_id=? AND batch_id=? AND id=?')
-          .get(p, c.packet.batchId, f.id) as { body: string } | undefined
-        return !row || JSON.parse(row.body).originalName !== f.name
-      })
+      (c.version !== 4 &&
+        c.packet.files.some((f) => {
+          const row = db
+            .prepare('SELECT body FROM import_files WHERE project_id=? AND batch_id=? AND id=?')
+            .get(p, c.packet.batchId, f.id) as { body: string } | undefined
+          return !row || JSON.parse(row.body).originalName !== f.name
+        }))
     )
       return corrupt()
+    if (c.version === 4) validatePortableSemanticCapture(db, p, c)
+    if (c.version === 3) {
+      validatePortableDiscoveryCapture({ db, projectId: p }, c)
+      if (
+        c.packet.files.some(
+          (f) => !graph.files.some((x) => x.fileId === f.id && x.sha256 === f.sha256)
+        )
+      )
+        return corrupt()
+    }
     if (
       c.version === 2 &&
       requestDigest(c.packet) !== requestDigest(readPart(db, p, c.packet.planId, c.packet.partId))
@@ -480,7 +600,11 @@ export function validatePortableImportAnalysis(db: Database.Database, p: string)
       requestDigest(
         c.version === 1
           ? validateProposal(r.output, c.packet)
-          : validateMultiProposal(r.output, c.packet)
+          : c.version === 4
+            ? validateSemanticOutput(r.output, c.packet)
+            : c.version === 3
+              ? validateDiscoveryOutput(r.output, c.packet)
+              : validateMultiProposal(r.output, c.packet)
       ) !== requestDigest(r.proposal)
     )
       return corrupt()

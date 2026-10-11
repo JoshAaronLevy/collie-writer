@@ -263,7 +263,7 @@ type ConversationBindingFields = {
  * keep v3 mechanics-only and v4/v5/v6 conversation-only. No binding confers authority. */
 export type ConversationBinding =
   | ConversationBindingFields
-  | (ConversationBindingFields & { version: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 })
+  | (ConversationBindingFields & { version: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 })
 export type ConversationWorkerInput =
   | Exclude<
       ConversationRequest,
@@ -1048,7 +1048,10 @@ export function isContentBinding(v: unknown): v is ConversationBinding {
         v.version === 6 ||
         v.version === 7 ||
         v.version === 8 ||
-        v.version === 9) &&
+        v.version === 9 ||
+        v.version === 10 ||
+        v.version === 11 ||
+        v.version === 12) &&
         exact(v, [
           'version',
           'attemptId',
@@ -1069,7 +1072,10 @@ export function isConversationBinding(v: unknown): v is ConversationBinding {
     isContentBinding(v) &&
     bindingVersion(v) !== 3 &&
     bindingVersion(v) !== 7 &&
-    bindingVersion(v) !== 8
+    bindingVersion(v) !== 8 &&
+    bindingVersion(v) !== 10 &&
+    bindingVersion(v) !== 11 &&
+    bindingVersion(v) !== 12
   )
 }
 export function isProofreadingBinding(v: unknown): v is ConversationBinding {
@@ -1080,10 +1086,15 @@ export function isProofreadingBinding(v: unknown): v is ConversationBinding {
     bindingVersion(v) !== 6 &&
     bindingVersion(v) !== 7 &&
     bindingVersion(v) !== 8 &&
-    bindingVersion(v) !== 9
+    bindingVersion(v) !== 9 &&
+    bindingVersion(v) !== 10 &&
+    bindingVersion(v) !== 11 &&
+    bindingVersion(v) !== 12
   )
 }
-export function bindingVersion(binding: ConversationBinding): 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 {
+export function bindingVersion(
+  binding: ConversationBinding
+): 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 {
   return 'version' in binding ? binding.version : 1
 }
 export function isConversationWorkerInput(v: unknown): v is ConversationWorkerInput {

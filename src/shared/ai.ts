@@ -1,3 +1,4 @@
+import { isImportRefusal } from './import-recovery'
 import { isWebResearch, type WebResearch } from './conversation-research'
 import { isId } from '../domain/editor/schema'
 import {
@@ -212,6 +213,7 @@ export type AiStartInput = {
 }
 export type AiOperationInput = { scope: OpenInput; operationId: string }
 export type AiOperation = {
+  importRefusal?: import('./import-recovery').ImportRefusal | null
   /** Present only for the v6 research contract, including null before completion. */
   research?: WebResearch | null
   operationId: string
@@ -370,8 +372,18 @@ export function isAiOperation(v: unknown): v is AiOperation {
       'reason',
       'startedAt',
       'finishedAt',
-      ...('research' in v ? ['research'] : [])
+      ...('research' in v ? ['research'] : []),
+      ...('importRefusal' in v ? ['importRefusal'] : [])
     ]) &&
+    (!('importRefusal' in v) ||
+      (v.action === 'import' &&
+        (v.importRefusal === null ||
+          (v.state === 'failed' &&
+            isImportRefusal(v.importRefusal) &&
+            v.reason ===
+              (v.importRefusal.kind === 'usage-limit'
+                ? 'quota-exhausted'
+                : 'provider-failed'))))) &&
     isId(v.operationId) &&
     isOpenInput(v.scope) &&
     isId(v.connectionId) &&

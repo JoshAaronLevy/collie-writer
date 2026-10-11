@@ -1,3 +1,8 @@
+import { evidenceAncestor } from './import-recovery'
+import { readGraph } from './import-graphs'
+import { activeBindings } from '../ai/handoff'
+import { validatePortableImportSemantics, validateSemanticArtifactBytes } from './import-semantic'
+import { validateHybridGraphBytes } from './import-hybrid-graph'
 import { importBatchAccepted } from './import-identities'
 import { validatePortableImportCommits } from './import-commit'
 import { validatePortableImportAnalysis } from './import-analysis'
@@ -40,11 +45,17 @@ import { contained } from '../storage/files'
 import { stageBlob } from './blobs'
 import { requireSpace } from './streams'
 import { analysisReservedBytes } from './import-analysis-budget'
+import { validatePortableImportMappings, validateMappingArtifactBytes } from './import-mappings'
 import { LIMITS, type BlobRef } from './manifest'
 
 export const IMPORT_ORIGINAL_MEDIA = 'application/octet-stream'
 export const IMPORT_ARTIFACT_MEDIA = 'application/vnd.collie.import+json'
-type Context = OpenInput & { db: Database.Database; root: string; workspace: string }
+type Context = OpenInput & {
+  operations: Database.Database
+  db: Database.Database
+  root: string
+  workspace: string
+}
 type RevisionRow = {
   project_id: string
   id: string
@@ -304,6 +315,39 @@ export async function importSessionCommand(
   const previous = stored
     ? revision(ctx.db, ctx.projectId, mutation.batchId, stored.current_revision_id)
     : null
+  if (mutation.action === 'transition-hybrid') {
+    const pending = ctx.db
+      .prepare(
+        "SELECT 1 FROM import_analysis_runs r JOIN import_analysis_captures c ON c.project_id=r.project_id AND c.id=r.capture_id WHERE c.project_id=? AND c.batch_id=? AND json_extract(r.body,'$.validation')='pending' LIMIT 1"
+      )
+      .get(ctx.projectId, mutation.batchId)
+    if (
+      pending ||
+      activeBindings(ctx.operations, 'import').some((b) =>
+        ctx.db
+          .prepare(
+            'SELECT 1 FROM import_analysis_captures c JOIN import_analysis_runs r ON r.project_id=c.project_id AND r.capture_id=c.id WHERE c.project_id=? AND c.batch_id=? AND r.id=?'
+          )
+          .get(ctx.projectId, mutation.batchId, b.attemptId)
+      )
+    )
+      throw new ProjectError('ACCESS_BUSY')
+    if (
+      !ctx.db
+        .prepare(
+          "SELECT 1 FROM import_analysis_captures WHERE project_id=? AND batch_id=? AND json_extract(body,'$.version') IN (1,2) LIMIT 1"
+        )
+        .get(ctx.projectId, mutation.batchId)
+    )
+      throw new ProjectError('VALIDATION')
+  }
+  let graphSource = previous
+  if (mutation.version === 6 || mutation.version === 7) {
+    if (!previous || !evidenceAncestor(ctx.db, ctx.projectId, previous, mutation.sourceGraphId))
+      throw new ProjectError('STALE_REVISION')
+    const source = readGraph(ctx.db, ctx.projectId, mutation.sourceGraphId).manifest
+    graphSource = revision(ctx.db, ctx.projectId, mutation.batchId, source.revisionId)
+  }
   const content = nextContent(mutation, previous),
     retained = stored ? files(ctx.db, ctx.projectId, mutation.batchId) : []
   const active = ctx.db
@@ -370,11 +414,22 @@ export async function importSessionCommand(
     throw new ProjectError('VALIDATION')
   const revisionId = randomUUID()
   const graph =
-    mutation.action === 'prepare-graph'
-      ? await prepareImportGraph(ctx, previous!, revisionId, time, retained, content.settings)
+    mutation.action === 'prepare-graph' ||
+    mutation.action === 'prepare-mapped' ||
+    mutation.action === 'prepare-semantic'
+      ? await prepareImportGraph(
+          ctx,
+          graphSource!,
+          revisionId,
+          time,
+          retained,
+          content.settings,
+          mutation.action === 'prepare-mapped' ? mutation.mappings : undefined,
+          mutation.action === 'prepare-semantic' ? mutation.semantic : undefined
+        )
       : null
   const value: ImportRevision = {
-    version: graph ? 2 : 1,
+    version: graph?.manifest.version === 3 ? 4 : graph?.manifest.version === 2 ? 3 : graph ? 2 : 1,
     id: revisionId,
     batchId: mutation.batchId,
     parentRevisionId: previous?.id ?? null,
@@ -595,7 +650,12 @@ export function validatePortableImports(
         mutation = parse(stored.request, isImportMutation)
       if (
         (value.version === 2 && version < 23) ||
+        (value.version === 3 && version < 35) ||
+        (value.version === 4 && version < 36) ||
+        (mutation.version >= 5 && version < 37) ||
+        (value.version === 4) !== (mutation.action === 'prepare-semantic') ||
         (value.version === 2) !== (mutation.action === 'prepare-graph') ||
+        (value.version === 3) !== (mutation.action === 'prepare-mapped') ||
         mutation.batchId !== row.id ||
         mutation.operationId !== stored.operation_id ||
         value.parentRevisionId !== stored.parent_id ||
@@ -695,15 +755,18 @@ export function validatePortableImports(
         `import-${file.id}.bin`
       )
   }
+  const semantics = validatePortableImportSemantics(db, projectId, version)
+  const mappings = validatePortableImportMappings(db, projectId, version)
   for (const [table, expected] of [
     ['import_batch_revisions', revisionCount],
     ['import_files', fileCount],
-    ['import_artifacts', revisionCount]
+    ['import_artifacts', revisionCount + mappings.length + semantics.length]
   ] as const) {
     const actual = (db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n
     if (actual !== expected) return corrupt()
   }
   if (version >= 23) artifactRefs.push(...validatePortableImportGraphs(db, projectId))
+  artifactRefs.push(...mappings, ...semantics)
   return artifactRefs
 }
 function validateAsset(
@@ -734,11 +797,15 @@ export async function validateImportArtifactBytes(
   const graphs = new GraphArtifactValidator()
   for (const ref of refs) {
     if (ref.bytes > IMPORT_LIMITS.artifactBytes) return corrupt()
+    if (ref.mapping || ref.semantic) continue
     const bytes = await read(ref)
     if (bytes.length !== ref.bytes || hash(bytes) !== ref.sha256) return corrupt()
     graphs.add(ref, bytes)
   }
   graphs.finish()
+  await validateMappingArtifactBytes(refs, read)
+  await validateHybridGraphBytes(refs, read)
+  await validateSemanticArtifactBytes(refs, read)
 }
 export async function validateImportArtifactFiles(
   root: string,
@@ -746,6 +813,6 @@ export async function validateImportArtifactFiles(
   refs: ImportArtifactRef[]
 ): Promise<void> {
   await validateImportArtifactBytes(refs, (ref) =>
-    readImportBlob({ root, workspace }, ref, IMPORT_LIMITS.artifactBytes)
+    readImportBlob({ root, workspace }, ref, IMPORT_LIMITS.fileBytes)
   )
 }

@@ -1,3 +1,15 @@
+import { hasHybridTransition } from './import-recovery'
+import {
+  localCandidate,
+  localHasOmissions,
+  localCoverage,
+  localGraphSettings,
+  localRecordEvidence,
+  validateLocalReview,
+  validateLocalRecords
+} from './import-normalization'
+import { GraphArtifactValidator, readGraph, readImportBlob, currentImport } from './import-graphs'
+import type { ImportFile } from '../../shared/project-import'
 import {
   automaticChoices,
   compatibleSourceMetadata,
@@ -43,7 +55,6 @@ import { requestDigest } from '../storage/digest'
 import { inWriteTransaction } from '../storage/driver'
 import { graphId } from './import-readers/graph'
 import { readPlan, readPart, attempts, selections } from './import-plans'
-import { currentImport } from './import-partition'
 import { prepareImportContent, type PreparedContent } from './import-content'
 import { normalizeMetadata } from './sources'
 import { analysisReservedBytes } from './import-analysis-budget'
@@ -203,6 +214,10 @@ function reviewResults(
   p: string,
   review: ImportReview
 ): ImportReview['results'] {
+  if (review.version === 3 || review.version === 4 || review.version === 5) {
+    validateLocalReview(db, p, review)
+    return []
+  }
   if (review.version === 1) return results(db, p, review.planId, review.proposalId)
   const entry = legacyResult(db, p, review.legacyAttemptId)
   if (
@@ -220,11 +235,22 @@ function reviewAttempts(
   p: string,
   review: ImportReview
 ): Array<{ capture: AnalysisCapture; run: AnalysisRun }> {
+  if (review.version === 3 || review.version === 4 || review.version === 5) return []
   return review.version === 2
     ? [legacyResult(db, p, review.legacyAttemptId)]
     : attempts(db, p, review.planId)
 }
 function reviewIdentity(review: ImportReview): string {
+  if (review.version === 3 || review.version === 4 || review.version === 5)
+    return graphId([
+      review.version === 5
+        ? 'import-review-semantic-v5'
+        : review.version === 4
+          ? 'import-review-mapped-v4'
+          : 'import-review-local-v3',
+      review.graphId,
+      review.evidence
+    ])
   return graphId(
     review.version === 2
       ? ['import-review-legacy-v2', review.planId, review.legacyAttemptId]
@@ -247,7 +273,7 @@ function current(ctx: AnalysisContext, review: ImportReview): boolean {
     !importBatchAccepted(ctx.db, ctx.projectId, review.batchId) &&
     rev.phase === 'preparing' &&
     rev.graphId === review.graphId &&
-    (review.version === 2 ||
+    (review.version !== 1 ||
       selections(ctx.db, ctx.projectId, review.planId).id === review.proposalId)
   )
 }
@@ -297,6 +323,7 @@ function identifiedRecords(
   review: ImportReview,
   automatic = false
 ): string[] {
+  if (review.version === 3 || review.version === 4 || review.version === 5) return [] // Resolved from graph pages by prepareImportReview/validateReviewGraph.
   if (review.version === 2) {
     const { capture, run } = legacyResult(db, p, review.legacyAttemptId)
     if (capture.version !== 1 || run.version !== 1 || !run.proposal) return corrupt()
@@ -342,11 +369,12 @@ function blockedPartRecords(
   review: ImportReview,
   automatic = false
 ): string[] {
+  if (review.version === 3 || review.version === 4 || review.version === 5) return []
   const runs = new Map(reviewAttempts(db, p, review).map((a) => [a.run.id, a.run])),
     blocked = new Set<string>()
   for (const result of review.results) {
     const run = runs.get(result.attemptId)
-    if (!run?.proposal) return corrupt()
+    if (!run?.proposal || run.version === 3 || run.version === 4) return corrupt()
     if (automatic)
       for (const issue of run.proposal.issues)
         if (issue.blocking && !['missing-metadata', 'conversion-loss'].includes(issue.code))
@@ -454,14 +482,20 @@ export async function prepareImportReview(
     contentRows = new Map(content.rows.map((c) => [c.recordId, c])),
     records = new Map(content.records.map((r) => [r.id, r])),
     selection = reviewChoices(ctx.db, ctx.projectId, review.id),
-    identified = new Set(identifiedRecords(ctx.db, ctx.projectId, review)),
+    identified = new Set(
+      review.version === 3 || review.version === 4 || review.version === 5
+        ? content.records.filter(localCandidate).map((r) => r.id)
+        : identifiedRecords(ctx.db, ctx.projectId, review)
+    ),
     issues = new Map<string, string[]>()
+  if (review.version === 3 || review.version === 4 || review.version === 5)
+    validateLocalRecords(review, content.records, content.relations)
   if (requestDigest(review.results) !== requestDigest(reviewResults(ctx.db, ctx.projectId, review)))
     return corrupt()
   const runMap = new Map(reviewAttempts(ctx.db, ctx.projectId, review).map((a) => [a.run.id, a]))
   for (const result of review.results) {
     const entry = runMap.get(result.attemptId)!
-    if (!entry.run.proposal) return corrupt()
+    if (!entry.run.proposal || entry.run.version === 3 || entry.run.version === 4) return corrupt()
     const proposal = entry.run.proposal
     for (const i of proposal.issues) {
       const text = `${i.blocking ? 'Needs resolution' : 'Notice'}: ${i.code}: ${i.explanation}`
@@ -485,7 +519,10 @@ export async function prepareImportReview(
       children: new Map(),
       contentRows,
       identified,
-      recognized: new Set(identifiedRecords(ctx.db, ctx.projectId, review, true)),
+      recognized:
+        review.version === 3 || review.version === 4 || review.version === 5
+          ? identified
+          : new Set(identifiedRecords(ctx.db, ctx.projectId, review, true)),
       automaticBlocked: new Set(blockedPartRecords(ctx.db, ctx.projectId, review, true)),
       blockedRecords: new Set(blockedPartRecords(ctx.db, ctx.projectId, review)),
       revisionId: selection.revisionId,
@@ -1060,7 +1097,12 @@ async function prepareManifest(
       })
       .sort((a, b) => a.id.localeCompare(b.id)),
     manifest: ConfirmationManifest = {
-      version: automatic || entries.some((e) => e.version === 2) ? 2 : 1,
+      version:
+        review.version === 3 || review.version === 4 || review.version === 5
+          ? review.version
+          : automatic || entries.some((e) => e.version === 2)
+            ? 2
+            : 1,
       id: input.operationId,
       reviewId: review.id,
       revisionId: automatic?.command.operationId ?? p.revisionId!,
@@ -1069,7 +1111,7 @@ async function prepareManifest(
       graphId: review.graphId,
       graphDigest: review.graphDigest,
       proposalId: review.proposalId,
-      resultsDigest: requestDigest(review.results),
+      resultsDigest: reviewEvidenceDigest(review),
       choicesDigest: requestDigest(entries.map((e) => e.choice)),
       entriesDigest: requestDigest(entries),
       artifacts,
@@ -1078,7 +1120,9 @@ async function prepareManifest(
       destinationTitle: projectHead(ctx).title,
       partial:
         automatic || entries.some((e) => e.version === 2)
-          ? entries.some(isMaterialOmission)
+          ? entries.some(isMaterialOmission) ||
+            ((review.version === 3 || review.version === 4 || review.version === 5) &&
+              localHasOmissions(review.evidence))
           : p.partial || p.counts.excluded > 0,
       counts: p.counts,
       createdAt: new Date().toISOString()
@@ -1160,7 +1204,9 @@ function importSummary(
     current,
     outcome: entries.some((e) => e.action !== 'exclude')
       ? 'ready'
-      : entries.some((e) => e.choice.reason === alreadyImportedReason) && omitted === 0
+      : entries.some((e) => e.choice.reason === alreadyImportedReason) &&
+          omitted === 0 &&
+          (manifest.version < 3 || !manifest.partial)
         ? 'already-present'
         : 'empty',
     omitted,
@@ -1169,11 +1215,174 @@ function importSummary(
     total: chats.length
   }
 }
+/** Local evidence is distinct from the frozen provider-result digest. */
+function reviewEvidenceDigest(review: ImportReview): string {
+  return review.version === 3 || review.version === 4 || review.version === 5
+    ? requestDigest({
+        contract:
+          review.version === 5
+            ? 'import-semantic-evidence-v1'
+            : review.version === 4
+              ? 'import-mapped-evidence-v1'
+              : 'import-local-evidence-v1',
+        graphId: review.graphId,
+        graphDigest: review.graphDigest,
+        evidence: review.evidence
+      })
+    : requestDigest(review.results)
+}
+
+/** Exact local evidence feeds the same automatic summary and atomic acceptance owner. */
+async function prepareLocalImportReview(
+  ctx: AnalysisContext,
+  input: Extract<ReviewRequest, { action: 'review-local' }>
+): Promise<ReviewValue> {
+  const { db, projectId } = ctx,
+    revision = currentImport(ctx, input.batchId)
+  if (
+    revision.id !== input.expectedRevision ||
+    revision.graphId !== input.graphId ||
+    revision.phase !== 'preparing' ||
+    importBatchAccepted(db, projectId, input.batchId)
+  )
+    throw new ProjectError('STALE_REVISION')
+  // Instructions require an interpreted graph; local parsing alone cannot apply their meaning.
+  if (
+    (revision.settings.instructions.trim() &&
+      readGraph(db, projectId, input.graphId).manifest.version !== 3) ||
+    !revision.settings.categories.length
+  )
+    throw new ProjectError('VALIDATION')
+  const content = await prepareImportContent(ctx, input.batchId, input.graphId),
+    { manifest: graph, pages } = readGraph(db, projectId, input.graphId),
+    evidence = {
+      version: 1 as const,
+      ...(graph.version === 3
+        ? {
+            kind: 'ai-interpretation' as const,
+            readerVersion: 3 as const,
+            sourceGraphId: graph.sourceGraphId,
+            semantic: graph.semantic,
+            unresolvedTasks: graph.unresolvedTasks
+          }
+        : graph.version === 2
+          ? {
+              kind: 'mapping-applied' as const,
+              readerVersion: 2 as const,
+              sourceGraphId: graph.sourceGraphId,
+              mappings: graph.mappings
+            }
+          : { kind: 'local-reader' as const, readerVersion: 1 as const }),
+      revisionId: graph.revisionId,
+      settings: localGraphSettings(db, projectId, graph),
+      pagesDigest: requestDigest(pages),
+      ...localRecordEvidence(content.records, content.relations),
+      coverage: localCoverage(graph, content.records, revision.settings)
+    },
+    review: ImportReview = {
+      ...(graph.version === 3
+        ? {
+            version: 5 as const,
+            evidence: evidence as import('../../shared/import-normalization').SemanticImportEvidence
+          }
+        : graph.version === 2
+          ? {
+              version: 4 as const,
+              evidence: evidence as import('../../shared/import-normalization').MappedImportEvidence
+            }
+          : {
+              version: 3 as const,
+              evidence: evidence as import('../../shared/import-normalization').LocalImportEvidence
+            }),
+      id: graphId([
+        graph.version === 3
+          ? 'import-review-semantic-v5'
+          : graph.version === 2
+            ? 'import-review-mapped-v4'
+            : 'import-review-local-v3',
+        graph.id,
+        evidence
+      ]),
+      planId: null,
+      batchId: graph.batchId,
+      graphId: graph.id,
+      graphDigest: graph.digest,
+      proposalId: null,
+      results: []
+    }
+  if (!isImportReview(review)) throw new ProjectError('LIMIT_EXCEEDED')
+  const previous = db
+    .prepare('SELECT body FROM import_reviews WHERE project_id=? AND id=?')
+    .get(projectId, review.id) as { body: string } | undefined
+  if (previous) {
+    if (previous.body !== JSON.stringify(review)) return corrupt()
+    return page(await prepareImportReview(ctx, review))
+  }
+  if (
+    !hasHybridTransition(db, projectId, revision.id) &&
+    (db
+      .prepare(
+        "SELECT 1 FROM import_reviews WHERE project_id=? AND json_extract(body,'$.batchId')=? AND json_extract(body,'$.version') NOT IN (3,4,5) LIMIT 1"
+      )
+      .get(projectId, input.batchId) ||
+      db
+        .prepare(
+          "SELECT 1 FROM import_analysis_captures WHERE project_id=? AND batch_id=? AND json_extract(body,'$.version') NOT IN (3,4) LIMIT 1"
+        )
+        .get(projectId, input.batchId))
+  )
+    throw new ProjectError('ACCESS_BUSY') // Historical choices stay retained; the transition revision permits a new evidence review.
+  const files = graph.files.map((f) => {
+      const row = db
+        .prepare('SELECT body FROM import_files WHERE project_id=? AND batch_id=? AND id=?')
+        .get(projectId, graph.batchId, f.fileId) as { body: string } | undefined
+      if (!row) return corrupt()
+      const file = JSON.parse(row.body) as ImportFile
+      if (file.sha256 !== f.sha256) return corrupt()
+      return file
+    }),
+    admission = new GraphArtifactValidator()
+  for (const file of files) await readImportBlob(ctx, file, IMPORT_LIMITS.fileBytes)
+  for (const descriptor of pages)
+    admission.add(
+      {
+        sha256: descriptor.sha256,
+        bytes: descriptor.bytes,
+        graph: { manifest: graph, page: descriptor, files }
+      },
+      await readImportBlob(ctx, descriptor, IMPORT_LIMITS.artifactBytes)
+    )
+  admission.finish()
+  const originals = new OriginalTranscriptText(ctx, graph.batchId)
+  for (const r of content.records)
+    if (localCandidate(r) && ['message', 'note'].includes(r.kind)) await originals.read(r)
+  await importReviewCapacity(ctx, graph.batchId, Buffer.byteLength(JSON.stringify(review)) + 32768)
+  inWriteTransaction(db, () => {
+    if (
+      currentImport(ctx, input.batchId).id !== input.expectedRevision ||
+      !current(ctx, review) ||
+      projectHead(ctx).id !== content.head
+    )
+      throw new ProjectError('STALE_REVISION')
+    db.prepare('INSERT INTO import_reviews VALUES (?,?,?,?,?)').run(
+      projectId,
+      review.id,
+      null,
+      null,
+      JSON.stringify(review)
+    )
+    db.prepare('INSERT INTO import_review_state VALUES (?,?,NULL,NULL)').run(projectId, review.id)
+    advance(ctx)
+  })
+  return page(await prepareImportReview(ctx, review))
+}
+
 export async function importReviewCommand(
   ctx: AnalysisContext,
   input: ReviewRequest
 ): Promise<ReviewValue> {
   const { db, projectId: id } = ctx
+  if (input.action === 'review-local') return prepareLocalImportReview(ctx, input)
   if (input.action === 'review-find') {
     const planRow = db
       .prepare(
@@ -1194,6 +1403,12 @@ export async function importReviewCommand(
       reviewId =
         found?.id ?? (selections(db, id, planRow.id).selected.size ? null : (legacy?.id ?? null))
     }
+    const local = db
+      .prepare(
+        "SELECT id FROM import_reviews WHERE project_id=? AND json_extract(body,'$.batchId')=? AND json_extract(body,'$.graphId')=? AND json_extract(body,'$.version') IN (3,4,5) ORDER BY rowid DESC LIMIT 1"
+      )
+      .get(id, input.batchId, input.graphId) as { id: string } | undefined
+    reviewId = local?.id ?? reviewId
     const selector = reviewId
         ? (db
             .prepare(
@@ -1212,7 +1427,8 @@ export async function importReviewCommand(
       type: 'review-found',
       reviewId,
       manifestId: selector?.id ?? null,
-      legacyAttemptId: usable?.id ?? rows[0]?.id ?? null
+      legacyAttemptId: local ? null : (usable?.id ?? rows[0]?.id ?? null),
+      local: !!local
     }
   }
   if (input.action === 'review-reconcile') {
@@ -1428,7 +1644,7 @@ export async function importReviewCommand(
         if (db.prepare(`SELECT 1 FROM ${table} WHERE project_id=? AND ${key}=?`).get(id, operation))
           throw new ProjectError('OPERATION_CONFLICT')
       }
-    if (!review.results.length) throw new ProjectError('VALIDATION')
+    if (review.version < 3 && !review.results.length) throw new ProjectError('VALIDATION')
     const initial = await prepareImportReview(ctx, review)
     if (!initial.current || initial.revisionId !== input.expectedRevision)
       throw new ProjectError('STALE_REVISION')
@@ -1547,21 +1763,39 @@ export function validatePortableReviews(db: Database.Database, p: string): void 
     .prepare(
       'SELECT id,plan_id,proposal_id,substr(body,1,256001) AS body FROM import_reviews WHERE project_id=? LIMIT 100001'
     )
-    .all(p) as { id: string; plan_id: string; proposal_id: string | null; body: string }[]
+    .all(p) as { id: string; plan_id: string | null; proposal_id: string | null; body: string }[]
   if (rows.length > 100000) return corrupt()
   for (const row of rows) {
     const review = decode(row, isImportReview),
-      plan = readPlan(db, p, review.planId)
+      plan =
+        review.version === 3 || review.version === 4 || review.version === 5
+          ? null
+          : readPlan(db, p, review.planId)
     if (
+      review.version === 4 &&
+      (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 35
+    )
+      return corrupt()
+    if (
+      review.version === 5 &&
+      (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 36
+    )
+      return corrupt()
+    if (review.version === 3 || review.version === 4 || review.version === 5)
+      validateLocalReview(db, p, review)
+    if (
+      ((review.version === 3 || review.version === 4 || review.version === 5) &&
+        (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 33) ||
       (review.version === 2 &&
         (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 32) ||
       review.id !== row.id ||
       review.id !== reviewIdentity(review) ||
       review.planId !== row.plan_id ||
       review.proposalId !== row.proposal_id ||
-      review.batchId !== plan.batchId ||
-      review.graphId !== plan.graphId ||
-      review.graphDigest !== plan.graphDigest ||
+      (plan !== null &&
+        (review.batchId !== plan.batchId ||
+          review.graphId !== plan.graphId ||
+          review.graphDigest !== plan.graphDigest)) ||
       requestDigest(review.results) !== requestDigest(reviewResults(db, p, review))
     )
       return corrupt()
@@ -1684,7 +1918,10 @@ export function validatePortableReviews(db: Database.Database, p: string): void 
           automaticManifestId(rev.id)
         )
         if (
-          saved.manifest.version !== 2 ||
+          saved.manifest.version !==
+            (review.version === 3 || review.version === 4 || review.version === 5
+              ? review.version
+              : 2) ||
           saved.manifest.reviewId !== review.id ||
           saved.manifest.revisionId !== rev.id
         )
@@ -1716,6 +1953,10 @@ export function validatePortableReviews(db: Database.Database, p: string): void 
       if (
         ((m.version === 2 || saved.entries.some((e) => e.version === 2 || e.choice.automatic)) &&
           (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 31) ||
+        (m.version === 3 || m.version === 4 || m.version === 5) !==
+          (review.version === 3 || review.version === 4 || review.version === 5) ||
+        (review.version === 4 && m.version !== 4) ||
+        (review.version === 5 && m.version !== 5) ||
         m.id !== row.id ||
         m.revisionId !== row.revision_id ||
         m.reviewId !== review.id ||
@@ -1724,7 +1965,7 @@ export function validatePortableReviews(db: Database.Database, p: string): void 
         m.graphId !== review.graphId ||
         m.graphDigest !== review.graphDigest ||
         m.proposalId !== review.proposalId ||
-        m.resultsDigest !== requestDigest(review.results) ||
+        m.resultsDigest !== reviewEvidenceDigest(review) ||
         m.choicesDigest !== requestDigest(saved.entries.map((e) => e.choice)) ||
         !db.prepare('SELECT 1 FROM commits WHERE project_id=? AND id=?').get(p, m.expectedHead)
       )
@@ -1817,8 +2058,14 @@ export function validateReviewGraph(
     else if (!members.has(l.from)) members.set(l.from, l)
   }
   for (const e of evidence) {
-    const identified = new Set(e.identified),
-      recognized = new Set(e.recognized),
+    if (e.review.version === 3 || e.review.version === 4 || e.review.version === 5)
+      validateLocalRecords(e.review, records, relations)
+    const local =
+        e.review.version === 3 || e.review.version === 4 || e.review.version === 5
+          ? records.filter(localCandidate).map((r) => r.id)
+          : null,
+      identified = new Set(local ?? e.identified),
+      recognized = new Set(local ?? e.recognized),
       automaticBlocked = new Set(e.automaticBlocked),
       blocked = new Set(e.blockedRecords)
     for (const c of e.choices)
@@ -1855,7 +2102,7 @@ export function validateReviewGraph(
             )
         )
           return corrupt()
-        if (entry.version > m.version || (entry.choice.automatic && m.version !== 2))
+        if (entry.version > m.version || (entry.choice.automatic && m.version === 1))
           return corrupt()
         const eligible = g.records.some((r) => r.eligible && r.disposition === 'candidate')
         counts.retained +=
@@ -1961,7 +2208,11 @@ export function validateReviewGraph(
         return corrupt()
       if (
         requestDigest(counts) !== requestDigest(m.counts) ||
-        (m.version === 2 && m.partial !== entries.some(isMaterialOmission))
+        (m.version >= 2 &&
+          m.partial !==
+            (entries.some(isMaterialOmission) ||
+              ((e.review.version === 3 || e.review.version === 4 || e.review.version === 5) &&
+                localHasOmissions(e.review.evidence))))
       )
         return corrupt()
     }

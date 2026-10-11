@@ -88,21 +88,24 @@ function responseFailure(
     .split(';')[0]
     .trim()
     .toLowerCase()
-  return new DirectError({
-    ...issue,
-    httpStatus: issue.httpStatus ?? response.statusCode ?? null,
-    requestId: issue.requestId ?? (id && /^[A-Za-z0-9_.:-]{1,128}$/.test(id) ? id : null),
-    responseType:
-      mediaType === 'text/event-stream'
-        ? 'event-stream'
-        : mediaType === 'application/json' || mediaType.endsWith('+json')
-          ? 'json'
-          : mediaType === 'text/html'
-            ? 'html'
-            : mediaType
-              ? 'other'
-              : 'missing'
-  })
+  return new DirectError(
+    {
+      ...issue,
+      httpStatus: issue.httpStatus ?? response.statusCode ?? null,
+      requestId: issue.requestId ?? (id && /^[A-Za-z0-9_.:-]{1,128}$/.test(id) ? id : null),
+      responseType:
+        mediaType === 'text/event-stream'
+          ? 'event-stream'
+          : mediaType === 'application/json' || mediaType.endsWith('+json')
+            ? 'json'
+            : mediaType === 'text/html'
+              ? 'html'
+              : mediaType
+                ? 'other'
+                : 'missing'
+    },
+    error instanceof DirectError ? error.importRefusal : null
+  )
 }
 export async function planModels(access: string, signal: AbortSignal): Promise<AiCatalogModel[]> {
   const { response, close } = await open('/models', access, signal)
@@ -184,7 +187,12 @@ export async function planResponse(
   update: (value: CodexTextUpdate) => void,
   onStreaming: () => void
 ): Promise<void> {
-  const limit = execution.template === 'project-import-analysis-v2' ? 32000 : AI_LIMITS.output
+  const limit =
+    execution.template === 'project-import-analysis-v2' ||
+    execution.template === 'project-import-mapping-v1' ||
+    execution.template === 'project-import-semantic-v1'
+      ? 32000
+      : AI_LIMITS.output
   const research =
     execution.template === 'conversation-research-v1' ||
     execution.template === 'conversation-imported-research-v1'
@@ -214,7 +222,8 @@ export async function planResponse(
         'inference-http',
         response.statusCode ?? 502,
         await jsonBody(response, 'inference-http'),
-        requestId(response)
+        requestId(response),
+        typeof response.headers['retry-after'] === 'string' ? response.headers['retry-after'] : null
       )
     // Like the official SDK, parse a requested stream by its events, not its
     // Content-Type header. Completion still requires response.completed and a

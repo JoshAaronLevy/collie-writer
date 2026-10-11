@@ -1,3 +1,4 @@
+import { isSemanticSelection, SEMANTIC_TASK_LIMIT } from './import-semantic'
 import { isId } from '../domain/editor/schema'
 import { exact, record } from './projects'
 import { importHash, importTime, IMPORT_LIMITS } from './project-import'
@@ -76,7 +77,7 @@ export type GraphFileCoverage = {
   records: number
   issues: string[]
 }
-export type ImportGraph = {
+export type ImportGraphV1 = {
   version: 1
   id: string
   batchId: string
@@ -98,6 +99,22 @@ export type ImportGraph = {
   pages: number
   digest: string
 }
+export type MappingSelection = { normalizationId: string; attemptId: string }
+export type ImportGraph =
+  | ImportGraphV1
+  | (Omit<ImportGraphV1, 'version' | 'readerVersion'> & {
+      version: 2
+      readerVersion: 2
+      sourceGraphId: string
+      mappings: MappingSelection[]
+    })
+  | (Omit<ImportGraphV1, 'version' | 'readerVersion'> & {
+      version: 3
+      readerVersion: 3
+      sourceGraphId: string
+      semantic: import('./import-semantic').SemanticSelection
+      unresolvedTasks: number
+    })
 export type GraphPage = {
   version: 1
   graphId: string
@@ -250,6 +267,40 @@ export function isGraphRelation(v: unknown): v is GraphRelation {
   )
 }
 export function isImportGraph(v: unknown): v is ImportGraph {
+  if (record(v) && v.version === 3) {
+    if (
+      !isId(v.sourceGraphId) ||
+      !isSemanticSelection(v.semantic) ||
+      !uint(v.unresolvedTasks, SEMANTIC_TASK_LIMIT + 1)
+    )
+      return false
+    const { sourceGraphId: _, semantic: __, unresolvedTasks: ___, ...base } = v
+    void _
+    void __
+    void ___
+    return isImportGraph({ ...base, version: 1, readerVersion: 1 }) && v.readerVersion === 3
+  }
+
+  if (record(v) && v.version === 2) {
+    const { sourceGraphId, mappings, ...base } = v
+    return (
+      isId(sourceGraphId) &&
+      Array.isArray(mappings) &&
+      mappings.length > 0 &&
+      mappings.length <= 8 &&
+      mappings.every(
+        (m) =>
+          record(m) &&
+          exact(m, ['normalizationId', 'attemptId']) &&
+          isId(m.normalizationId) &&
+          isId(m.attemptId)
+      ) &&
+      new Set(mappings.map((m) => m.normalizationId)).size === mappings.length &&
+      v.readerVersion === 2 &&
+      isImportGraph({ ...base, version: 1, readerVersion: 1 })
+    )
+  }
+
   return (
     record(v) &&
     exact(v, [

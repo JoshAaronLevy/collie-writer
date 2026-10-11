@@ -12,7 +12,10 @@ const terminal = new Set([
   'refresh_token_reused'
 ])
 export class DirectError extends AiError {
-  constructor(readonly issue: DirectIssue) {
+  constructor(
+    readonly issue: DirectIssue,
+    readonly importRefusal: import('../../shared/import-recovery').ImportRefusal | null = null
+  ) {
     super(issue.reason)
   }
 }
@@ -46,7 +49,8 @@ export function httpFailure(
   stage: DirectStage,
   status: number,
   value: unknown,
-  requestId?: string
+  requestId?: string,
+  retryAfter?: string | null
 ): DirectError {
   const error = record(value) && record(value.error) ? value.error : null
   const supplied =
@@ -71,25 +75,47 @@ export function httpFailure(
           ? parameter === 'model'
             ? 'model-unavailable'
             : 'invalid-request'
-          : status === 429 || code === 'subscription_sharing_usage_limit_exceeded'
+          : code === 'subscription_sharing_usage_limit_exceeded'
             ? 'quota-exhausted'
             : status >= 500
               ? 'offline'
               : 'provider-failed'
-  return new DirectError({
-    ...directIssue(stage, reason),
-    httpStatus: status,
-    code,
-    parameter,
-    requestId: requestId && /^[A-Za-z0-9_.:-]{1,128}$/.test(requestId) ? requestId : null,
-    bodyKind: error
-      ? 'structured'
-      : record(value) && typeof value.error === 'string'
-        ? 'oauth'
-        : record(value) && typeof value.detail === 'string'
-          ? 'detail'
-          : 'other'
-  })
+  let retryNotBefore: number | null = null
+  if (retryAfter && retryAfter.length <= 128) {
+    const seconds = /^\d+(?:\.\d+)?$/.test(retryAfter) ? Number(retryAfter) : NaN
+    const deadline = Number.isFinite(seconds)
+      ? Date.now() + Math.ceil(seconds * 1000)
+      : Date.parse(retryAfter)
+    if (Number.isSafeInteger(deadline) && deadline > Date.now() && deadline <= 8640000000000000)
+      retryNotBefore = deadline
+  }
+  const refusal: import('../../shared/import-recovery').ImportRefusal | null =
+    ['inference-http', 'inference-stream'].includes(stage) &&
+    [200, 429].includes(status) &&
+    ['quota-exhausted', 'provider-failed'].includes(reason)
+      ? code === 'subscription_sharing_usage_limit_exceeded'
+        ? { version: 1, kind: 'usage-limit', code, httpStatus: status, retryNotBefore: null }
+        : status === 429 || code === 'rate_limit_exceeded' || code === 'slow_down'
+          ? { version: 1, kind: 'temporary-rate-limit', code, httpStatus: status, retryNotBefore }
+          : null
+      : null
+  return new DirectError(
+    {
+      ...directIssue(stage, reason),
+      httpStatus: status,
+      code,
+      parameter,
+      requestId: requestId && /^[A-Za-z0-9_.:-]{1,128}$/.test(requestId) ? requestId : null,
+      bodyKind: error
+        ? 'structured'
+        : record(value) && typeof value.error === 'string'
+          ? 'oauth'
+          : record(value) && typeof value.detail === 'string'
+            ? 'detail'
+            : 'other'
+    },
+    refusal
+  )
 }
 export function terminalRefresh(error: unknown): boolean {
   return error instanceof DirectError && terminal.has(error.issue.code ?? '')

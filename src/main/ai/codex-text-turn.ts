@@ -7,6 +7,7 @@ import { AiError } from './errors'
 // Main-only output. CD04 binds/protects these distinct channels before feature
 // settlement. No opaque provider IDs or hidden reasoning leave here.
 export type CodexTextUpdate = {
+  importRefusal?: import('../../shared/import-recovery').ImportRefusal | null
   research?: WebResearch
   text: string
   commentary: string

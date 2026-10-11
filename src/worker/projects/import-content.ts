@@ -1,9 +1,10 @@
+import { originalSourceMetadata } from './import-source-metadata'
 import type Database from 'better-sqlite3'
 import type { DocumentPayload } from '../../domain/editor/schema'
 import { ProjectError } from '../../domain/projects/errors'
-import { record, type OpenInput } from '../../shared/projects'
+import { exact, record, type OpenInput } from '../../shared/projects'
 import { noteBody } from '../../shared/notes'
-import { SOURCE_TYPES, type SourceMetadata } from '../../shared/sources'
+import { type SourceMetadata } from '../../shared/sources'
 import { IMPORT_LIMITS, type ImportFile, type ImportRevision } from '../../shared/project-import'
 import type { GraphRecord, GraphRelation, ImportGraph } from '../../shared/import-graph'
 import type {
@@ -13,7 +14,7 @@ import type {
 } from '../../shared/import-content'
 import { hasControlCharacters } from '../../shared/control-characters'
 import { requestDigest } from '../storage/digest'
-import { candidateRows, fromCsl, normalizeMetadata, parseBibliographyRows } from './sources'
+import { candidateRows, normalizeMetadata, parseBibliographyRows } from './sources'
 import { readGraph, readImportBlob, parseGraphPage } from './import-graphs'
 import { parseInputJson, valueAt } from './import-readers/json'
 import { graphId } from './import-readers/graph'
@@ -39,6 +40,79 @@ class OriginalFields {
     private ctx: ContentContext,
     private batchId: string
   ) {}
+  async mapped(r: GraphRecord): Promise<Record<string, unknown>> {
+    await this.read(r)
+    const result: Record<string, unknown> = {}
+    for (const f of r.facts)
+      if (f.name.startsWith('mapped.original.')) {
+        if (f.locator.fileId !== r.locator.fileId || f.locator.sha256 !== r.locator.sha256)
+          return corrupt()
+        const name = f.name.slice('mapped.original.'.length)
+        if (
+          [
+            'type',
+            'title',
+            'author',
+            'issued',
+            'container-title',
+            'publisher',
+            'edition',
+            'volume',
+            'issue',
+            'page',
+            'DOI',
+            'URL',
+            'ISBN',
+            'ISSN',
+            'tags',
+            'categories',
+            'authorship'
+          ].includes(name)
+        )
+          result[name] = valueAt(this.cached!.value, f.locator.pointer)
+      }
+    return result
+  }
+  async semantic(r: GraphRecord): Promise<Record<string, unknown>> {
+    await this.read(r)
+    const result: Record<string, unknown> = {}
+    for (const f of r.facts)
+      if (f.name.startsWith('semantic.original.')) {
+        const key = f.name.slice('semantic.original.'.length),
+          ref = r.facts.find((x) => x.name === `semantic.span.${key}`),
+          field = valueAt(this.cached!.value, f.locator.pointer)
+        if (
+          !ref ||
+          typeof field !== 'string' ||
+          f.locator.fileId !== r.locator.fileId ||
+          f.locator.sha256 !== r.locator.sha256 ||
+          requestDigest(ref.locator) !== requestDigest(f.locator)
+        )
+          return corrupt()
+        const span: unknown = JSON.parse(ref.value)
+        if (
+          !record(span) ||
+          !exact(span, ['start', 'end']) ||
+          typeof span.start !== 'number' ||
+          typeof span.end !== 'number' ||
+          !Number.isSafeInteger(span.start) ||
+          !Number.isSafeInteger(span.end) ||
+          span.start < 0 ||
+          span.end <= span.start ||
+          span.end > field.length ||
+          !r.texts.some(
+            (t) =>
+              requestDigest(t.locator) === requestDigest(f.locator) &&
+              Number(span.start) >= t.start &&
+              Number(span.end) <= t.end
+          ) ||
+          field.slice(span.start, span.end) !== f.value
+        )
+          return corrupt()
+        result[key] = f.value
+      }
+    return result
+  }
   async read(r: GraphRecord): Promise<{ value: unknown; file: ImportFile }> {
     if (this.cached?.file.id !== r.locator.fileId) {
       const row = this.ctx.db
@@ -124,33 +198,6 @@ function matches(
   }
   return [...found.values()]
 }
-function metadata(value: unknown, losses: string[]): SourceMetadata | null {
-  if (!record(value)) return null
-  // CSL has structured creators and dates. Curated references may have literal authors and URLs.
-  const c: Record<string, unknown> = { ...value }
-  if (!SOURCE_TYPES.includes(c.type as SourceMetadata['type'])) {
-    if (c.type !== undefined)
-      losses.push('Original work type needs review; webpage is only a proposed mapping.')
-    else losses.push('Work type was not supplied; webpage is only a proposed mapping.')
-    c.type = 'webpage'
-  }
-  c.URL = c.URL ?? c.url
-  if (typeof c.author === 'string') c.author = [{ literal: c.author }]
-  if (typeof c.issued === 'string') c.issued = { literal: c.issued }
-  if (c.issued === undefined && typeof c.pub_date === 'string') c.issued = { literal: c.pub_date }
-  if (c.attribution && !c.author)
-    losses.push('Attribution is retained as metadata, not inferred to be an author.')
-  try {
-    const converted = fromCsl(c)
-    losses.push(...converted.losses)
-    return converted.metadata
-  } catch {
-    losses.push(
-      'Incomplete or unsupported bibliography fields need review before a source can be proposed.'
-    )
-    return null
-  }
-}
 /** Worker-only preparation. Read-only and reproducible; no acceptance or provider dispatch. */
 export async function prepareImportContent(
   ctx: ContentContext,
@@ -203,7 +250,15 @@ export async function prepareImportContent(
       // Internal/unsupported records are not interpreted as usable sources.
       if (r.disposition !== 'internal' && r.disposition !== 'unsupported') {
         const { value, file } = await original.read(r)
-        if (file.mediaType === 'application/json') row.metadata = metadata(value, losses)
+        if (r.contentType === 'semantic-original-v1')
+          row.metadata = originalSourceMetadata(await original.semantic(r), losses)
+        else if (file.mediaType === 'application/json')
+          row.metadata = originalSourceMetadata(
+            r.originNamespace === 'unknown' && r.facts.some((f) => f.name === 'mapping.rule')
+              ? await original.mapped(r)
+              : value,
+            losses
+          )
         else {
           const raw = await texts.read(r)
           const format = file.mediaType === 'application/x-bibtex' ? 'bibtex' : 'ris'
@@ -240,7 +295,13 @@ export async function prepareImportContent(
       if (r.disposition === 'candidate' && r.texts.reduce((n, t) => n + t.units, 0) <= 1000000) {
         const text = await texts.read(r),
           body = importedNoteBody(r, text),
-          { value } = await original.read(r)
+          originalValue = await original.read(r),
+          value =
+            r.contentType === 'semantic-original-v1'
+              ? await original.semantic(r)
+              : r.originNamespace === 'unknown' && r.facts.some((f) => f.name === 'mapping.rule')
+                ? await original.mapped(r)
+                : originalValue.value
         losses.push(
           'Imported text is preserved literally. Markdown, HTML, tables, images and embedded citations are not converted to rich structures or fetched.'
         )

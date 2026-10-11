@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 
 export const PROJECT_APPLICATION_ID = 1129270359
-export const PROJECT_SCHEMA_VERSION = 32
+export const PROJECT_SCHEMA_VERSION = 37
 // Persisted schema is app-owned; never execute DDL or migrations supplied by a project.
 export const projectTablesV1 = [
   `CREATE TABLE format (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, minimum_reader INTEGER NOT NULL, editor_version INTEGER NOT NULL) STRICT`,
@@ -154,7 +154,21 @@ export const projectTablesV29 = [...projectTablesV28, ...importCommitTables]
 export const projectTablesV30 = [...projectTablesV29]
 export const projectTablesV31 = [...projectTablesV30]
 // IU04 retains v1 analysis as review v2; DDL stays frozen.
-export const projectTables = [...projectTablesV31]
+export const projectTablesV32 = [...projectTablesV31]
+// Local reviews have no analysis plan. Earlier DDL remains frozen.
+export const importReviewTableV33 = importReviewTables[0].replace(
+  'plan_id TEXT NOT NULL',
+  'plan_id TEXT'
+)
+export const projectTablesV33 = projectTablesV32.map((sql) =>
+  sql === importReviewTables[0] ? importReviewTableV33 : sql
+)
+// IH03 adds strictly admitted mapping-v1 artifacts to the existing managed owner.
+export const projectTablesV34 = [...projectTablesV33]
+export const projectTablesV35 = [...projectTablesV34]
+export const projectTablesV36 = [...projectTablesV35]
+export const importRefusalTable = `CREATE TABLE import_analysis_refusals (project_id TEXT NOT NULL, attempt_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,attempt_id), FOREIGN KEY(project_id,attempt_id) REFERENCES import_analysis_runs(project_id,id)) STRICT`
+export const projectTables = [...projectTablesV36, importRefusalTable]
 const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export function createProjectSchema(db: Database.Database): void {
@@ -242,7 +256,17 @@ export function validateProjectSchema(
                                                           ? projectTablesV30
                                                           : expectedVersion === 31
                                                             ? projectTablesV31
-                                                            : projectTables
+                                                            : expectedVersion === 32
+                                                              ? projectTablesV32
+                                                              : expectedVersion === 33
+                                                                ? projectTablesV33
+                                                                : expectedVersion === 36
+                                                                  ? projectTablesV36
+                                                                  : expectedVersion === 35
+                                                                    ? projectTablesV35
+                                                                    : expectedVersion === 34
+                                                                      ? projectTablesV34
+                                                                      : projectTables
     ).map(sqlKey)
   )
   if (

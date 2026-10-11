@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { dirname, isAbsolute, join } from 'node:path'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 import { lstat, readFile } from 'node:fs/promises'
 import { isId } from '../domain/editor/schema'
 import { ProjectError, projectError } from '../domain/projects/errors'
@@ -299,7 +299,23 @@ export class ProjectFileIpc {
       const filters = [{ name: 'Collie Writer project', extensions: ['collie'] }]
       let path: string | undefined
       if (['save', 'backup', 'move'].includes(input.purpose)) {
-        const filename = `Untitled-${input.scope!.projectId.slice(0, 8)}${input.purpose === 'backup' ? '-backup' : ''}.collie`
+        const assigned = sameScope(input.scope, this.status.scope)
+          ? this.status.destination?.path
+          : null
+        const title = assigned ? basename(assigned).replace(/\.collie$/i, '') : input.suggestedName
+        const cleaned = Array.from(title ?? '')
+          .filter((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127)
+          .join('')
+          .replace(/[<>:"/\\|?*]/g, '-')
+          .replace(/^[. ]+|[. ]+$/g, '')
+        const stem =
+          Array.from(cleaned).slice(0, 100).join('') ||
+          `Untitled-${input.scope!.projectId.slice(0, 8)}`
+        const safeStem = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(stem)
+          ? `Project-${stem}`
+          : stem
+        const filename = `${safeStem}${input.purpose === 'backup' ? '-backup' : ''}.collie`
+        const directory = assigned ? dirname(assigned) : hint
         const result = await dialog.showSaveDialog(window, {
           title:
             input.purpose === 'backup'
@@ -307,7 +323,7 @@ export class ProjectFileIpc {
               : input.purpose === 'move'
                 ? 'Move to a new file (keep original)'
                 : 'Save Collie Writer project',
-          defaultPath: hint ? join(hint, filename) : filename,
+          defaultPath: directory ? join(directory, filename) : filename,
           filters,
           properties: ['createDirectory', 'showOverwriteConfirmation'],
           message:

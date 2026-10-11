@@ -1,3 +1,5 @@
+import { currentImport } from './import-graphs'
+import { importAnalysisProblem } from '../../shared/import-analysis-problem'
 import { importBatchAccepted } from './import-identities'
 import { requestDigest } from '../storage/digest'
 import { graphId } from './import-readers/graph'
@@ -10,7 +12,7 @@ import {
   isProposalRevision,
   type AnalysisPlan,
   type MultiPacket,
-  type MultiWorker,
+  type MultiRequest,
   type MultiValue,
   type ProposalRevision
 } from '../../shared/import-multipart'
@@ -23,9 +25,8 @@ import {
 import { IMPORT_LIMITS } from '../../shared/project-import'
 import type { AnalysisContext } from './import-analysis-capture'
 import {
-  currentImport,
   multiPacketDigest,
-  partition,
+  partitionLegacyResult,
   planDigest,
   packetFits
 } from './import-partition'
@@ -189,7 +190,7 @@ export function consolidatePart(ctx: AnalysisContext, attemptId: string): void {
 }
 export async function importPlanCommand(
   ctx: AnalysisContext,
-  input: MultiWorker
+  input: MultiRequest
 ): Promise<MultiValue> {
   const { db, projectId: p } = ctx
   if (input.action === 'plan-find') {
@@ -214,7 +215,15 @@ export async function importPlanCommand(
         planId: existing.id,
         offset: 0
       })
-    const { plan, packets } = await partition(ctx, input.batchId, input.graphId),
+    // IM07's valid single-response result needs a local plan only for its legacy review adapter.
+    // This cannot partition a new selection or authorize any inference.
+    const legacy = db
+      .prepare(
+        "SELECT 1 FROM import_analysis_captures c JOIN import_analysis_runs r ON r.project_id=c.project_id AND r.capture_id=c.id WHERE c.project_id=? AND c.batch_id=? AND c.graph_id=? AND json_extract(c.body,'$.version')=1 AND json_extract(r.body,'$.validation')='valid' LIMIT 1"
+      )
+      .get(p, input.batchId, input.graphId)
+    if (!legacy) throw new ProjectError('DENIED')
+    const { plan, packets } = await partitionLegacyResult(ctx, input.batchId, input.graphId),
       bytes =
         Buffer.byteLength(JSON.stringify(plan)) +
         packets.reduce((n, v) => n + Buffer.byteLength(JSON.stringify(v)), 0) +
@@ -278,39 +287,17 @@ export async function importPlanCommand(
   const entries = attempts(db, p, plan.id),
     latest = new Map(entries.map((e) => [e.capture.packet.partId, e])),
     choice = selections(db, p, plan.id)
-  if (input.action === 'plan-select') {
-    if (!current || input.proposalId !== choice.id) throw new ProjectError('STALE_REVISION')
-    const partIds = plan.parts.filter((id) => !latest.has(id)).slice(0, input.limit)
-    if (!partIds.length) throw new ProjectError('VALIDATION')
-    if (
-      (
-        db
-          .prepare(
-            'SELECT count(*) AS n FROM import_analysis_captures WHERE project_id=? AND batch_id=?'
-          )
-          .get(p, plan.batchId) as { n: number }
-      ).n +
-        partIds.length >
-      1024
-    )
-      throw new ProjectError('LIMIT_EXCEEDED')
-    const packets = partIds.map((id) => readPart(db, p, plan.id, id))
-    return {
-      type: 'plan-selection',
-      plan,
-      proposalId: choice.id,
-      partIds,
-      units: packets.reduce((n, v) => n + JSON.stringify(v).length, 0),
-      bytes: packets.reduce((n, v) => n + Buffer.byteLength(JSON.stringify(v)), 0)
-    }
-  }
   const fileCoverage = new Map(
     plan.files.map((f) => [f.id, { fileId: f.id, identified: 0, unresolved: 0 }])
   )
   let identified = 0,
     unresolved = 0
   for (const e of entries)
-    if (choice.selected.get(e.capture.packet.partId) === e.run.id)
+    if (
+      e.run.version !== 3 &&
+      e.run.version !== 4 &&
+      choice.selected.get(e.capture.packet.partId) === e.run.id
+    )
       for (const c of e.run.proposal?.coverage ?? []) {
         c.outcome === 'identified' ? identified++ : unresolved++
         if (e.capture.version === 2) {
@@ -320,6 +307,9 @@ export async function importPlanCommand(
           c.outcome === 'identified' ? coverage.identified++ : coverage.unresolved++
         }
       }
+  const failure = [...latest.values()]
+    .reverse()
+    .find((entry) => !['pending', 'valid'].includes(entry.run.validation))
   const value: Extract<MultiValue, { type: 'plan' }> = {
     type: 'plan',
     plan,
@@ -327,6 +317,7 @@ export async function importPlanCommand(
     proposalId: choice.id,
     total: plan.parts.length,
     completed: choice.selected.size,
+    problem: failure ? importAnalysisProblem(failure.run) : '',
     fileCoverage: [...fileCoverage.values()],
     identified,
     unresolved,
@@ -335,7 +326,6 @@ export async function importPlanCommand(
       (e) => e.run.validation !== 'pending' && e.run.validation !== 'valid'
     ).length,
     offset: input.offset,
-    execution: null,
     rows: plan.parts.slice(input.offset, input.offset + 50).map((id, i) => {
       const packet = readPart(db, p, plan.id, id),
         e = latest.get(id)

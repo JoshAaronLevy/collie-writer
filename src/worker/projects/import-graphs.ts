@@ -1,3 +1,6 @@
+import { partialGraphParent } from './import-recovery'
+import { semanticBuiltGraph, semanticUnresolved, validateSemanticGraphSql } from './import-semantic'
+import { hybridBuiltGraph, validateHybridGraphSql } from './import-hybrid-graph'
 import { planEvidence } from './import-plans'
 import { reviewGraphEvidence, validateReviewGraph } from './import-review'
 import { validatePlanEvidence } from './import-partition'
@@ -42,9 +45,25 @@ import { requireSpace } from './streams'
 import { LIMITS, type BlobRef } from './manifest'
 import { GraphBuilder, type BuiltGraph } from './import-readers/graph'
 import { InputError } from './import-readers/json'
+import type { MappingEvidenceRef } from './import-mappings'
+
+export function currentImport(
+  ctx: Pick<Context, 'db' | 'projectId'>,
+  batchId: string
+): ImportRevision {
+  const row = ctx.db
+    .prepare(
+      'SELECT r.body FROM import_batches b JOIN import_batch_revisions r ON r.project_id=b.project_id AND r.id=b.current_revision_id WHERE b.project_id=? AND b.id=?'
+    )
+    .get(ctx.projectId, batchId) as { body: string } | undefined
+  if (!row) throw new ProjectError('NOT_FOUND')
+  return JSON.parse(row.body) as ImportRevision
+}
 
 export const IMPORT_GRAPH_MEDIA = 'application/vnd.collie.import-graph+json'
 export type ImportArtifactRef = BlobRef & {
+  semantic?: import('./import-semantic').SemanticEvidenceRef
+  mapping?: MappingEvidenceRef
   graph?: {
     manifest: ImportGraph
     page: GraphPageDescriptor
@@ -54,6 +73,7 @@ export type ImportArtifactRef = BlobRef & {
     analysis?: AnalysisCapture[]
     plans?: ReturnType<typeof planEvidence>
     reviews?: ReturnType<typeof reviewGraphEvidence>
+    mappingRuns?: ReturnType<typeof validateHybridGraphSql>
   }
 }
 type Context = OpenInput & { db: Database.Database; root: string; workspace: string }
@@ -108,7 +128,7 @@ export async function readImportBlob(
     await file.close()
   }
 }
-function totals(
+export function graphTotals(
   records: GraphRecord[],
   relations: GraphRelation[]
 ): Pick<
@@ -168,9 +188,18 @@ function totals(
 export function graphDigest(manifest: ImportGraph, pages: GraphPageDescriptor[]): string {
   const value: Partial<ImportGraph> = { ...manifest }
   delete value.digest
-  return requestDigest({ contract: 'import-graph-v1', manifest: value, pages })
+  return requestDigest({
+    contract:
+      manifest.version === 3
+        ? 'import-graph-v3'
+        : manifest.version === 2
+          ? 'import-graph-v2'
+          : 'import-graph-v1',
+    manifest: value,
+    pages
+  })
 }
-function makePages(
+export function makeImportGraphPages(
   id: string,
   built: BuiltGraph
 ): Array<{ descriptor: GraphPageDescriptor; bytes: Buffer }> {
@@ -227,40 +256,93 @@ function makePages(
   }
   return pages
 }
+/** Shared structural admission, without installing a graph or granting review/acceptance authority. */
+export function validateBuiltImportGraph(
+  source: ImportGraph,
+  id: string,
+  built: BuiltGraph,
+  pages: PreparedGraph['pages'],
+  files: ImportFile[]
+): void {
+  const manifest: ImportGraph = {
+    ...source,
+    id,
+    files: built.files,
+    ...graphTotals(built.records, built.relations),
+    pages: pages.length,
+    digest: ''
+  }
+  manifest.digest = graphDigest(
+    manifest,
+    pages.map((p) => p.descriptor)
+  )
+  if (!isImportGraph(manifest)) throw new ProjectError('LIMIT_EXCEEDED')
+  const admission = new GraphArtifactValidator()
+  for (const page of pages)
+    admission.add(
+      {
+        sha256: page.descriptor.sha256,
+        bytes: page.descriptor.bytes,
+        graph: { manifest, page: page.descriptor, files }
+      },
+      page.bytes
+    )
+  admission.finish()
+}
 export async function prepareImportGraph(
   ctx: Context,
   previous: ImportRevision,
   revisionId: string,
   createdAt: string,
   files: ImportFile[],
-  settings: ImportSettings
+  settings: ImportSettings,
+  mappings?: import('../../shared/import-graph').MappingSelection[],
+  semantic?: import('../../shared/import-semantic').SemanticSelection
 ): Promise<PreparedGraph> {
   if (!previous.selectedFileIds.length) throw new ProjectError('VALIDATION')
   const builder = new GraphBuilder(settings)
-  for (const id of previous.selectedFileIds) {
+  for (const id of mappings || semantic ? [] : previous.selectedFileIds) {
     const file = files.find((f) => f.id === id)
     if (!file) return corrupt()
     await builder.fileInput(file, () => readImportBlob(ctx, file, IMPORT_LIMITS.fileBytes))
   }
   let built: BuiltGraph
   try {
-    built = builder.finish()
+    built = semantic
+      ? await semanticBuiltGraph(ctx, previous.graphId!, semantic)
+      : mappings
+        ? await hybridBuiltGraph(ctx, previous.graphId!, mappings)
+        : builder.finish()
   } catch (error) {
     if (error instanceof InputError) throw new ProjectError('LIMIT_EXCEEDED')
     throw error
   }
   const id = randomUUID(),
-    pages = makePages(id, built)
+    pages = makeImportGraphPages(id, built)
   const manifest: ImportGraph = {
-    version: 1,
+    ...(semantic
+      ? {
+          version: 3 as const,
+          readerVersion: 3 as const,
+          sourceGraphId: previous.graphId!,
+          semantic,
+          unresolvedTasks: await semanticUnresolved(ctx, previous.graphId!, semantic)
+        }
+      : mappings
+        ? {
+            version: 2 as const,
+            readerVersion: 2 as const,
+            sourceGraphId: previous.graphId!,
+            mappings
+          }
+        : { version: 1 as const, readerVersion: 1 as const }),
     id,
     batchId: previous.batchId,
     sourceRevisionId: previous.id,
     revisionId,
     createdAt,
-    readerVersion: 1,
     files: built.files,
-    ...totals(built.records, built.relations),
+    ...graphTotals(built.records, built.relations),
     pages: pages.length,
     digest: ''
   }
@@ -418,7 +500,7 @@ export function validatePortableImportGraphs(
       m = graph.manifest
     const revision = db
       .prepare(
-        'SELECT body,parent_id FROM import_batch_revisions WHERE project_id=? AND batch_id=? AND id=?'
+        'SELECT body,parent_id,request FROM import_batch_revisions WHERE project_id=? AND batch_id=? AND id=?'
       )
       .get(projectId, m.batchId, m.revisionId)
     const source = db
@@ -428,15 +510,27 @@ export function validatePortableImportGraphs(
     const r = JSON.parse(String(revision.body)) as ImportRevision,
       s = JSON.parse(String(source.body)) as ImportRevision
     if (
-      r.version !== 2 ||
+      r.version !== (m.version === 3 ? 4 : m.version === 2 ? 3 : 2) ||
       r.graphId !== m.id ||
       r.createdAt !== m.createdAt ||
-      revision.parent_id !== m.sourceRevisionId ||
+      (revision.parent_id !== m.sourceRevisionId &&
+        !partialGraphParent(db, projectId, revision.parent_id, revision.request, m)) ||
       requestDigest(r.selectedFileIds) !== requestDigest(m.files.map((f) => f.fileId)) ||
       requestDigest(r.selectedFileIds) !== requestDigest(s.selectedFileIds) ||
       requestDigest(r.settings) !== requestDigest(s.settings)
     )
       return corrupt()
+    if (
+      m.version === 2 &&
+      (db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 35
+    )
+      return corrupt()
+    if (m.version === 3) {
+      if ((db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 36)
+        return corrupt()
+      validateSemanticGraphSql(db, projectId, m)
+    }
+    const mappingRuns = m.version === 2 ? validateHybridGraphSql(db, projectId, m) : undefined
     const files = m.files.map((coverage) => {
       const row = db
         .prepare('SELECT body FROM import_files WHERE project_id=? AND batch_id=? AND id=?')
@@ -475,15 +569,27 @@ export function validatePortableImportGraphs(
         content.length ||
         analysis.length ||
         plans.length ||
-        reviews.length)
+        reviews.some((r) => r.review.version < 3))
     )
       return corrupt()
+    // Zero-record local results still need evidence/manifest admission even without blob pages.
+    if (!graph.pages.length) validateReviewGraph([], [], reviews)
     for (const page of graph.pages) {
       if (++pages >= LIMITS.entries) return corrupt()
       refs.push({
         sha256: page.sha256,
         bytes: page.bytes,
-        graph: { manifest: m, page, files, external, content, analysis, plans, reviews }
+        graph: {
+          manifest: m,
+          page,
+          files,
+          external,
+          content,
+          analysis,
+          plans,
+          reviews,
+          mappingRuns
+        }
       })
     }
   }
@@ -493,7 +599,7 @@ export function validatePortableImportGraphs(
     (
       db
         .prepare(
-          "SELECT count(*) AS n FROM import_batch_revisions WHERE json_extract(body,'$.version')=2"
+          "SELECT count(*) AS n FROM import_batch_revisions WHERE json_extract(body,'$.version') IN (2,3,4)"
         )
         .get() as { n: number }
     ).n !== graphs
@@ -659,7 +765,7 @@ export class GraphArtifactValidator {
     }
     for (const r of this.records)
       if (r.conversationIdentityId && !members.has(r.id)) return corrupt()
-    const total = totals(this.records, this.relations)
+    const total = graphTotals(this.records, this.relations)
     if (
       Object.entries(total).some(
         ([key, value]) => this.current![key as keyof ImportGraph] !== value

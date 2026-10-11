@@ -1,4 +1,26 @@
 import {
+  isSemanticCapture,
+  isSemanticOutput,
+  isSemanticRequest,
+  isSemanticValue,
+  type SemanticCapture,
+  type SemanticOutput,
+  type SemanticReview,
+  type SemanticRequest,
+  type SemanticValue
+} from './import-semantic'
+import {
+  isDiscoveryCapture,
+  isDiscoveryOutput,
+  isDiscoveryRequest,
+  isDiscoveryValue,
+  type DiscoveryCapture,
+  type DiscoveryOutput,
+  type DiscoveryReview,
+  type DiscoveryRequest,
+  type DiscoveryValue
+} from './import-discovery'
+import {
   isCommitRequest,
   isCommitValue,
   type CommitRequest,
@@ -14,13 +36,11 @@ import {
 import {
   isMultiCapture,
   isMultiRequest,
-  isMultiWorker,
   isMultiValue,
   type MultiCapture,
   type MultiProposal,
   type MultiReview,
   type MultiRequest,
-  type MultiWorker,
   type MultiValue
 } from './import-multipart'
 import { isId } from '../domain/editor/schema'
@@ -97,11 +117,13 @@ export type AnalysisRunV1 = AiAttemptFields & {
   validation: 'pending' | 'valid' | 'invalid' | 'not-completed'
   proposal: AnalysisProposal | null
 }
-export type AnalysisCapture = AnalysisCaptureV1 | MultiCapture
+export type AnalysisCapture = AnalysisCaptureV1 | MultiCapture | DiscoveryCapture | SemanticCapture
 export type AnalysisRun =
+  | (Omit<AnalysisRunV1, 'version' | 'proposal'> & { version: 4; proposal: SemanticOutput | null })
+  | (Omit<AnalysisRunV1, 'version' | 'proposal'> & { version: 3; proposal: DiscoveryOutput | null })
   | AnalysisRunV1
   | (Omit<AnalysisRunV1, 'version' | 'proposal'> & { version: 2; proposal: MultiProposal | null })
-export type AnalysisReview = AnalysisReviewV1 | MultiReview
+export type AnalysisReview = AnalysisReviewV1 | MultiReview | DiscoveryReview | SemanticReview
 export type AnalysisBundle = {
   attempt: AnalysisRun
   capture: AnalysisCapture
@@ -125,6 +147,9 @@ export type AnalysisSubmit = OpenInput & {
   model: string
 }
 export type AnalysisRequest =
+  | (OpenInput & { action: 'hybrid-progress'; graphId: string })
+  | DiscoveryRequest
+  | SemanticRequest
   | CommitRequest
   | ReviewRequest
   | MultiRequest
@@ -134,9 +159,12 @@ export type AnalysisRequest =
   | (OpenInput & { action: 'attempt' | 'cancel' | 'protect' | 'acknowledge'; attemptId: string })
   | (OpenInput & { action: 'reconcile' })
 export type AnalysisWorkerInput =
+  | (OpenInput & { action: 'hybrid-progress'; graphId: string })
+  | DiscoveryRequest
+  | SemanticRequest
   | CommitRequest
   | ReviewRequest
-  | MultiWorker
+  | MultiRequest
   | AnalysisReview
   | Extract<AnalysisRequest, { action: 'list' }>
   | (OpenInput &
@@ -161,6 +189,9 @@ export type AnalysisWorkerInput =
         | { action: 'retire'; receipt: AiHandoffReceipt }
       ))
 export type AnalysisValue =
+  | { type: 'hybrid-progress'; progress: DiscoveryValue | SemanticValue | null }
+  | DiscoveryValue
+  | SemanticValue
   | CommitValue
   | ReviewValue
   | MultiValue
@@ -196,7 +227,7 @@ const ids = (v: unknown): v is string[] =>
 const uint = (v: unknown, max = 100000): v is number =>
   Number.isSafeInteger(v) && Number(v) >= 0 && Number(v) <= max
 export const isImportBinding = (v: unknown): v is ConversationBinding =>
-  isContentBinding(v) && [7, 8].includes(bindingVersion(v))
+  isContentBinding(v) && [7, 8, 10, 11, 12].includes(bindingVersion(v))
 export function isAnalysisPacket(v: unknown): v is AnalysisPacket {
   return (
     record(v) &&
@@ -335,6 +366,7 @@ export function isAnalysisProposal(v: unknown): v is AnalysisProposal {
   )
 }
 export function isAnalysisCapture(v: unknown): v is AnalysisCapture {
+  if (isSemanticCapture(v) || isDiscoveryCapture(v)) return true
   return isAnalysisCaptureV1(v) || isMultiCapture(v)
 }
 export function isAnalysisCaptureV1(v: unknown): v is AnalysisCaptureV1 {
@@ -393,6 +425,32 @@ export function isMultiProposal(v: unknown): v is MultiProposal {
   )
 }
 export function isAnalysisRun(v: unknown): v is AnalysisRun {
+  if (record(v) && v.version === 4)
+    return (
+      isAnalysisRunV1({
+        ...v,
+        version: 1,
+        proposal: null,
+        validation: v.validation === 'valid' ? 'invalid' : v.validation
+      }) &&
+      typeof v.output === 'string' &&
+      v.output.length <= 32000 &&
+      (v.proposal === null || isSemanticOutput(v.proposal)) &&
+      (v.validation === 'valid') === (v.proposal !== null)
+    )
+  if (record(v) && v.version === 3)
+    return (
+      isAnalysisRunV1({
+        ...v,
+        version: 1,
+        proposal: null,
+        validation: v.validation === 'valid' ? 'invalid' : v.validation
+      }) &&
+      typeof v.output === 'string' &&
+      v.output.length <= 32000 &&
+      (v.proposal === null || isDiscoveryOutput(v.proposal)) &&
+      (v.validation === 'valid') === (v.proposal !== null)
+    )
   if (record(v) && v.version === 2)
     return (
       isAnalysisRunV1({
@@ -466,6 +524,34 @@ function isAnalysisRunV1(v: unknown): v is AnalysisRunV1 {
   )
 }
 export function isAnalysisRequest(v: unknown): v is AnalysisRequest {
+  if (record(v) && v.action === 'hybrid-progress')
+    return (
+      exact(v, ['projectId', 'workspaceId', 'action', 'graphId']) &&
+      isOpenInput({ projectId: v.projectId, workspaceId: v.workspaceId }) &&
+      isId(v.graphId)
+    )
+  if (isSemanticRequest(v) || isDiscoveryRequest(v)) return true
+  if (record(v) && v.action === 'review' && v.version === 4)
+    return isAnalysisRequest({ ...v, version: 3 })
+  if (record(v) && v.action === 'review' && v.version === 3)
+    return (
+      isOpenInput({ projectId: v.projectId, workspaceId: v.workspaceId }) &&
+      exact(v, [
+        'projectId',
+        'workspaceId',
+        'action',
+        'version',
+        'captureId',
+        'createdAt',
+        'batchId',
+        'graphId',
+        'expectedRevision',
+        'partId'
+      ]) &&
+      [v.captureId, v.batchId, v.graphId, v.expectedRevision, v.partId].every(isId) &&
+      importTime(v.createdAt)
+    )
+
   if (isCommitRequest(v) || isCurrentReviewRequest(v)) return true
   if (isMultiRequest(v)) return true
   if (!record(v) || !isOpenInput({ projectId: v.projectId, workspaceId: v.workspaceId }))
@@ -517,8 +603,36 @@ export function isAnalysisRequest(v: unknown): v is AnalysisRequest {
   )
 }
 export function isAnalysisWorkerInput(v: unknown): v is AnalysisWorkerInput {
+  if (record(v) && v.action === 'hybrid-progress')
+    return (
+      exact(v, ['projectId', 'workspaceId', 'action', 'graphId']) &&
+      isOpenInput({ projectId: v.projectId, workspaceId: v.workspaceId }) &&
+      isId(v.graphId)
+    )
+  if (isSemanticRequest(v) || isDiscoveryRequest(v)) return true
+  if (record(v) && v.action === 'review' && v.version === 4)
+    return isAnalysisWorkerInput({ ...v, version: 3 })
+  if (record(v) && v.action === 'review' && v.version === 3)
+    return (
+      isOpenInput({ projectId: v.projectId, workspaceId: v.workspaceId }) &&
+      exact(v, [
+        'projectId',
+        'workspaceId',
+        'action',
+        'version',
+        'captureId',
+        'createdAt',
+        'batchId',
+        'graphId',
+        'expectedRevision',
+        'partId'
+      ]) &&
+      [v.captureId, v.batchId, v.graphId, v.expectedRevision, v.partId].every(isId) &&
+      importTime(v.createdAt)
+    )
+
   if (isCommitRequest(v) || isReviewRequest(v)) return true
-  if (isMultiWorker(v)) return true
+  if (isMultiRequest(v)) return true
   if (!record(v) || !isOpenInput({ projectId: v.projectId, workspaceId: v.workspaceId }))
     return false
   if ((v.action === 'review' || v.action === 'list') && isAnalysisRequest(v)) return true
@@ -560,6 +674,12 @@ export function isAnalysisWorkerInput(v: unknown): v is AnalysisWorkerInput {
   )
 }
 export function isAnalysisValue(v: unknown): v is AnalysisValue {
+  if (record(v) && v.type === 'hybrid-progress')
+    return (
+      exact(v, ['type', 'progress']) &&
+      (v.progress === null || isDiscoveryValue(v.progress) || isSemanticValue(v.progress))
+    )
+  if (isSemanticValue(v) || isDiscoveryValue(v)) return true
   if (isCommitValue(v) || isReviewValue(v)) return true
   if (isMultiValue(v)) return true
   if (!record(v)) return false

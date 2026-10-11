@@ -3,12 +3,12 @@ import { exact, isOpenInput, record, type OpenInput } from './projects'
 
 /** Device-local proof of a committed portable outcome. Never a renderer grant. */
 export type AiHandoffReceipt = {
-  version: 1 | 2 | 3 | 4
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7
   scope: OpenInput
   purpose: 'conversation' | 'proofread' | 'import'
   attemptId: string
   operationId: string
-  operationVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+  operationVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12
   payloadDigest: string
   captureDigest: string
   resultDigest: string
@@ -44,10 +44,16 @@ export function isAiHandoffReceipt(v: unknown): v is AiHandoffReceipt {
       ['conversation', 'proofread'].includes(String(v.purpose)) &&
       v.operationVersion !== 7 &&
       v.operationVersion !== 8 &&
-      v.operationVersion !== 9) ||
+      v.operationVersion !== 9 &&
+      v.operationVersion !== 10 &&
+      v.operationVersion !== 11 &&
+      v.operationVersion !== 12) ||
       (v.version === 2 && v.purpose === 'import' && v.operationVersion === 7) ||
       (v.version === 3 && v.purpose === 'import' && v.operationVersion === 8) ||
-      (v.version === 4 && v.purpose === 'conversation' && v.operationVersion === 9)) &&
+      (v.version === 4 && v.purpose === 'conversation' && v.operationVersion === 9) ||
+      (v.version === 5 && v.purpose === 'import' && v.operationVersion === 10) ||
+      (v.version === 6 && v.purpose === 'import' && v.operationVersion === 11) ||
+      (v.version === 7 && v.purpose === 'import' && v.operationVersion === 12)) &&
     isOpenInput(v.scope) &&
     [v.attemptId, v.operationId, v.portableRevision, v.portableHead].every(isId) &&
     (v.operationVersion === 1 ||
@@ -58,7 +64,10 @@ export function isAiHandoffReceipt(v: unknown): v is AiHandoffReceipt {
       v.operationVersion === 6 ||
       v.operationVersion === 7 ||
       v.operationVersion === 8 ||
-      v.operationVersion === 9) &&
+      v.operationVersion === 9 ||
+      v.operationVersion === 10 ||
+      v.operationVersion === 11 ||
+      v.operationVersion === 12) &&
     (v.purpose !== 'conversation' || v.operationVersion !== 3) &&
     (v.purpose !== 'proofread' ||
       (v.operationVersion !== 4 && v.operationVersion !== 5 && v.operationVersion !== 6)) &&

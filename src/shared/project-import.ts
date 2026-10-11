@@ -1,3 +1,4 @@
+import { isSemanticSelection } from './import-semantic'
 import {
   isImportContentRequest,
   isImportContentValue,
@@ -50,6 +51,47 @@ export type ImportFileSelection = Pick<
 >
 /** Portable intent: no selected paths, workspace, account or execution permission. */
 export type ImportMutation =
+  | {
+      version: 5
+      operationId: string
+      batchId: string
+      action: 'transition-hybrid'
+      expectedRevision: string
+    }
+  | {
+      version: 6
+      operationId: string
+      batchId: string
+      action: 'prepare-semantic'
+      expectedRevision: string
+      sourceGraphId: string
+      semantic: import('./import-semantic').SemanticSelection
+    }
+  | {
+      version: 7
+      operationId: string
+      batchId: string
+      action: 'prepare-mapped'
+      expectedRevision: string
+      sourceGraphId: string
+      mappings: import('./import-graph').MappingSelection[]
+    }
+  | {
+      version: 4
+      operationId: string
+      batchId: string
+      action: 'prepare-semantic'
+      expectedRevision: string
+      semantic: import('./import-semantic').SemanticSelection
+    }
+  | {
+      version: 3
+      operationId: string
+      batchId: string
+      action: 'prepare-mapped'
+      expectedRevision: string
+      mappings: import('./import-graph').MappingSelection[]
+    }
   | ({ version: 1; operationId: string; batchId: string } & (
       | { action: 'create'; settings: ImportSettings }
       | {
@@ -77,7 +119,7 @@ export type ImportSessionReceipt = {
   headCommitId: string
 }
 export type ImportRevision = {
-  version: 1 | 2
+  version: 1 | 2 | 3 | 4
   id: string
   batchId: string
   parentRevisionId: string | null
@@ -255,6 +297,40 @@ export function isImportFile(v: unknown): v is ImportFile {
 }
 export function isImportMutation(v: unknown): v is ImportMutation {
   if (!record(v) || !isId(v.operationId) || !isId(v.batchId)) return false
+  if (v.version === 5)
+    return (
+      v.action === 'transition-hybrid' &&
+      exact(v, ['version', 'operationId', 'batchId', 'action', 'expectedRevision']) &&
+      isId(v.expectedRevision)
+    )
+  if (v.version === 6 || v.version === 7) {
+    const { sourceGraphId, ...legacy } = v
+    return isId(sourceGraphId) && isImportMutation({ ...legacy, version: v.version === 6 ? 4 : 3 })
+  }
+  if (v.version === 4)
+    return (
+      v.action === 'prepare-semantic' &&
+      exact(v, ['version', 'operationId', 'batchId', 'action', 'expectedRevision', 'semantic']) &&
+      isId(v.expectedRevision) &&
+      isSemanticSelection(v.semantic)
+    )
+  if (v.version === 3)
+    return (
+      v.action === 'prepare-mapped' &&
+      exact(v, ['version', 'operationId', 'batchId', 'action', 'expectedRevision', 'mappings']) &&
+      isId(v.expectedRevision) &&
+      Array.isArray(v.mappings) &&
+      v.mappings.length > 0 &&
+      v.mappings.length <= 8 &&
+      v.mappings.every(
+        (m) =>
+          record(m) &&
+          exact(m, ['normalizationId', 'attemptId']) &&
+          isId(m.normalizationId) &&
+          isId(m.attemptId)
+      ) &&
+      new Set(v.mappings.map((m) => m.normalizationId)).size === v.mappings.length
+    )
   if (v.version === 2)
     return (
       v.action === 'prepare-graph' &&
@@ -343,7 +419,7 @@ export function isImportRevision(v: unknown): v is ImportRevision {
       'createdAt',
       'digest'
     ]) &&
-    (v.version === 1 || v.version === 2) &&
+    (v.version === 1 || v.version === 2 || v.version === 3 || v.version === 4) &&
     (v.version === 1 ? v.graphId === null : isId(v.graphId)) &&
     [v.id, v.batchId, v.intakeArtifactId].every(isId) &&
     (v.parentRevisionId === null || isId(v.parentRevisionId)) &&

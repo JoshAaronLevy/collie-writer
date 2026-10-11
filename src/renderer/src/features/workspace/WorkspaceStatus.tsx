@@ -1,3 +1,4 @@
+import { useProjectImport } from '../imports/importContext'
 import type { ExportOperation } from './useExportOperations'
 import { useWorkspaceSession } from './workspaceContext'
 import SaveMenu from './SaveMenu'
@@ -14,6 +15,7 @@ import { useStorageNotices } from '../settings/storageNoticeContext'
 
 export function WorkspaceStatus(): React.JSX.Element {
   const storageAdvice = useStorageNotices()
+  const projectImport = useProjectImport()
   const {
     destination,
     project,
@@ -228,11 +230,17 @@ export function WorkspaceStatus(): React.JSX.Element {
           </p>
           <AppButton
             variant="subtle"
-            onClick={() => {
-              void navigate(operation.target)
+            disabled={closing || navigating}
+            onClick={(event) => {
+              if (
+                operation.kind.startsWith('project-import') &&
+                sameScope(current.current, operation.scope)
+              )
+                projectImport.open(event.currentTarget)
+              else void navigate(operation.target)
             }}
           >
-            View operation
+            {operation.kind.startsWith('project-import') ? 'Return to import' : 'View operation'}
           </AppButton>
         </div>
       ))}

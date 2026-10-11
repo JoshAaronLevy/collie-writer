@@ -1,3 +1,5 @@
+import type { DirectSemanticExecution } from './direct-import-semantic'
+import type { DirectMappingExecution } from './direct-import-mapping'
 import type { DirectImportedConversationExecution } from './direct-imported-conversation'
 import type { DirectMultiImportExecution } from './direct-import-multipart'
 import type { DirectImportExecution } from './direct-import'
@@ -22,6 +24,8 @@ export type DirectConversationExecution = Omit<
   instructions: typeof CONVERSATION_INSTRUCTIONS_V2
 }
 export type DirectTextExecution =
+  | DirectMappingExecution
+  | DirectSemanticExecution
   | DirectImportedConversationExecution
   | DirectExecution
   | DirectConversationExecution

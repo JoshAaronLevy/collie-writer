@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import type { AiPrepareInput } from '../../shared/ai'
 import {
   isMultiPacket,
+  MULTIPART_DISPATCH_INSTRUCTIONS,
   MULTIPART_INSTRUCTIONS,
   MULTIPART_PROMPT
 } from '../../shared/import-multipart'
@@ -12,14 +13,14 @@ import { exact, record } from '../../shared/projects'
 export type DirectMultiImportExecution = Omit<
   DirectImportExecution,
   'framingVersion' | 'template' | 'instructions'
-> & {
-  framingVersion: 5
-  template: 'project-import-analysis-v2'
-  instructions: typeof MULTIPART_INSTRUCTIONS
-}
+> & { template: 'project-import-analysis-v2' } & (
+    | { framingVersion: 5; instructions: typeof MULTIPART_INSTRUCTIONS }
+    | { framingVersion: 7; instructions: typeof MULTIPART_DISPATCH_INSTRUCTIONS }
+  )
 export function multipartFits(
   input: Pick<AiPrepareInput, 'prompt' | 'context'>,
-  model = 'x'.repeat(100)
+  model = 'x'.repeat(100),
+  framingVersion: 5 | 7 = 7
 ): boolean {
   if (input.prompt !== MULTIPART_PROMPT || input.context.length !== 1) return false
   try {
@@ -29,7 +30,7 @@ export function multipartFits(
   }
   const wire = JSON.stringify({
     model,
-    instructions: MULTIPART_INSTRUCTIONS,
+    instructions: framingVersion === 5 ? MULTIPART_INSTRUCTIONS : MULTIPART_DISPATCH_INSTRUCTIONS,
     input: JSON.parse(importFrame(input)),
     store: false,
     stream: true
@@ -62,10 +63,12 @@ export function isDirectMultiImportExecution(
   if (
     !record(v) ||
     v.template !== 'project-import-analysis-v2' ||
-    v.framingVersion !== 5 ||
-    v.instructions !== MULTIPART_INSTRUCTIONS ||
+    !(
+      (v.framingVersion === 5 && v.instructions === MULTIPART_INSTRUCTIONS) ||
+      (v.framingVersion === 7 && v.instructions === MULTIPART_DISPATCH_INSTRUCTIONS)
+    ) ||
     v.framedText !== importFrame(input) ||
-    !multipartFits(input, input.model)
+    !multipartFits(input, input.model, v.framingVersion === 5 ? 5 : 7)
   )
     return false
   return (
