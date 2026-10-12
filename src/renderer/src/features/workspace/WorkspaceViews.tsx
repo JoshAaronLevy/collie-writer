@@ -5,6 +5,7 @@ import { AppButton } from '../../components/ui/Controls'
 import styles from './WorkspaceViews.module.css'
 import exportStyles from '../export/ExportWorkspace.module.css'
 import OnboardingWizard from '../onboarding/OnboardingWizard'
+import { hasResumableSetup } from '../onboarding/setup-draft'
 import ProjectDetailsForm from '../project-details/ProjectDetailsForm'
 import ProjectLibrary from '../library/ProjectLibrary'
 import '../projects/Projects.css'
@@ -36,7 +37,7 @@ export default function WorkspaceViews(): React.JSX.Element {
     destination,
     storage,
     location,
-    setLocation,
+    chooseWorkingLocation,
     list,
     project,
     access,
@@ -125,7 +126,7 @@ export default function WorkspaceViews(): React.JSX.Element {
         <RetainedRegion name="history" label="Manuscript history">
           {project ? (
             <HistoryPanel
-              key={project.projectId}
+              key={`${project.projectId}:${project.workspaceId}`}
               project={project}
               readOnly={accessReadOnly || accessTransition}
               history={history}
@@ -153,7 +154,7 @@ export default function WorkspaceViews(): React.JSX.Element {
             {project && inspectionTarget ? (
               <SourceInspector
                 readOnly={accessReadOnly || accessTransition}
-                key={`${project.projectId}-${inspectionTarget.sourceId}`}
+                key={`${project.projectId}:${project.workspaceId}:${inspectionTarget.sourceId}`}
                 project={project}
                 sourceId={inspectionTarget.sourceId}
                 focusExcerptId={inspectionTarget.excerptId}
@@ -178,7 +179,7 @@ export default function WorkspaceViews(): React.JSX.Element {
           <RetainedRegion name="research-notes" label="Notes and annotations">
             {project ? (
               <NotesPanel
-                key={project.projectId}
+                key={`${project.projectId}:${project.workspaceId}`}
                 project={project}
                 capture={annotationCapture}
                 focusAnnotationId={
@@ -212,7 +213,7 @@ export default function WorkspaceViews(): React.JSX.Element {
             {project ? (
               <SourcesPanel
                 readOnly={accessReadOnly || accessTransition}
-                key={project.projectId}
+                key={`${project.projectId}:${project.workspaceId}`}
                 project={project}
                 focusPage={
                   destination.kind === 'workspace' &&
@@ -238,7 +239,7 @@ export default function WorkspaceViews(): React.JSX.Element {
             {project ? (
               <EvidencePanel
                 readOnly={accessReadOnly || accessTransition}
-                key={project.projectId}
+                key={`${project.projectId}:${project.workspaceId}`}
                 project={project}
                 focusSourceId={
                   destination.kind === 'workspace' &&
@@ -273,7 +274,7 @@ export default function WorkspaceViews(): React.JSX.Element {
           <RetainedRegion name="search" label="Project search">
             {project ? (
               <SearchPanel
-                key={project.projectId}
+                key={`${project.projectId}:${project.workspaceId}`}
                 project={project}
                 active={destination.kind === 'workspace' && destination.view === 'search'}
                 navigate={navigateSearch}
@@ -310,7 +311,7 @@ export default function WorkspaceViews(): React.JSX.Element {
               {project ? (
                 <CitationsPanel
                   readOnly={accessReadOnly || accessTransition}
-                  key={project.projectId}
+                  key={`${project.projectId}:${project.workspaceId}`}
                   project={project}
                   dirty={dirty}
                   disabled={busy || closing || acting || fileActive || storage.state !== 'ready'}
@@ -370,6 +371,15 @@ export default function WorkspaceViews(): React.JSX.Element {
               finish={() => run(() => changeAccess('finish'))}
               importGrant={() => run(() => changeAccess('import'))}
             />
+            {hasResumableSetup() ? (
+              <AppButton
+                variant="default"
+                disabled={acting || closing || navigating}
+                onClick={() => void navigate({ kind: 'setup' })}
+              >
+                Return to project setup
+              </AppButton>
+            ) : null}
           </RetainedRegion>
           <RetainedRegion name="settings-data" label="Storage">
             <h1>Storage</h1>
@@ -398,14 +408,8 @@ export default function WorkspaceViews(): React.JSX.Element {
                 ) : (
                   <AppButton
                     variant="default"
-                    disabled={acting}
-                    onClick={() =>
-                      run(async () => {
-                        const result = await window.collie.chooseWorkingLocation()
-                        if (result.ok) setLocation(result.value)
-                        else setError(result.error.message)
-                      })
-                    }
+                    disabled={acting || closing || navigating}
+                    onClick={() => run(chooseWorkingLocation)}
                   >
                     Choose local working folder…
                   </AppButton>

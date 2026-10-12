@@ -1,609 +1,78 @@
 import { ImportedOrigins } from '../imports/ImportedOrigins'
+import { useProjectImport } from '../imports/importContext'
 import { SourceChatHistory } from '../ai/conversations/SourceChatHistory'
-import { useConversations } from '../ai/conversations/conversationState'
 import { isEditableKind } from '../../../../shared/outline'
 import PresentationBoundary from '../../components/PresentationBoundary'
-import { useEffectEvent } from 'react'
-import { useLayoutEffect } from 'react'
-import { useSynchronousState } from '../../hooks/useSynchronousState'
 import { Checkbox, TextInput } from '@mantine/core'
 import { AppButton, SelectField } from '../../components/ui/Controls'
 import { EmptyState } from '../../components/ui/Feedback'
 import { ResearchHeader, ResearchLayout } from '../research/ResearchLayout'
 import { SourceUsage, UsageSummary } from '../research/SourceUsage'
-import { useWorkspaceSession } from '../workspace/workspaceContext'
-import './SourcesPanel.css'
-import { useRetainedDraft } from '../workspace/DraftOwner'
-import { useEffect, useRef, useState } from 'react'
-import type { OpenProject } from '../../../../shared/projects'
-import type {
-  SourceMetadata,
-  SourceRecord,
-  SourcesView,
-  SourceImportPreview,
-  SourceImportChoice,
-  SourceChangeInput,
-  BibliographyFormat,
-  SourceAttachmentInput
+import {
+  SOURCE_TYPES,
+  type SourceMetadata,
+  type BibliographyFormat
 } from '../../../../shared/sources'
-import { SOURCE_TYPES } from '../../../../shared/sources'
+import { useSources, type SourcesProps } from './useSources'
+import './SourcesPanel.css'
 
-const blank = (): SourceMetadata => ({
-  type: 'article-journal',
-  title: '',
-  author: [],
-  issued: '',
-  containerTitle: '',
-  publisher: '',
-  edition: '',
-  volume: '',
-  issue: '',
-  page: '',
-  DOI: '',
-  URL: '',
-  ISBN: '',
-  ISSN: ''
-})
-
-const creators = (metadata: SourceMetadata): string =>
-  metadata.author.map((a) => a.literal || `${a.family}${a.given ? `, ${a.given}` : ''}`).join('; ')
-const parseCreators = (text: string): SourceMetadata['author'] =>
-  text
-    .split(';')
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => {
-      if (!s.includes(',')) return { family: '', given: '', literal: s }
-      const [family, ...given] = s.split(',')
-      return { family: family.trim(), given: given.join(',').trim(), literal: '' }
-    })
-
-export default function SourcesPanel({
-  project,
-  focusSourceId,
-  focusPage,
-  disabled,
-  readOnly,
-  onCommitted,
-  onInspect
-}: {
-  project: OpenProject
-  focusSourceId: string | null
-  focusPage?: 'details' | 'usage' | 'files'
-  disabled: boolean
-  readOnly: boolean
-  onCommitted: () => Promise<void>
-  onInspect: (sourceId: string) => void
-}): React.JSX.Element {
-  const session = useWorkspaceSession(),
-    conversations = useConversations()
-  const [page, setPage] = useState<'details' | 'usage' | 'files'>('details'),
-    [creating, setCreating] = useState(false),
-    [query, setQuery] = useState(''),
-    [showRemoved, setShowRemoved] = useState(false)
-  const readSequence = useRef(0),
-    [attachmentPendingValue, setAttachmentPendingValue, attachmentPending] =
-      useSynchronousState<SourceAttachmentInput | null>(null)
-  const [baseRevisionValue, setBaseRevisionValue, baseRevision] = useSynchronousState<
-      string | null
-    >(null),
-    [mutationValue, setMutationValue, mutation] = useSynchronousState<SourceChangeInput | null>(
-      null
-    )
-  const panel = useRef<HTMLElement>(null),
-    focusedRequest = useRef<string | null>(null),
-    saveTask = useRef<Promise<boolean> | null>(null)
-  const [view, setView] = useState<SourcesView | null>(null),
-    [selected, setSelected] = useState<string | null>(null)
-  const [draft, setDraft] = useState<SourceMetadata>(blank),
-    [creatorText, setCreatorText] = useState(''),
-    [verified, setVerified] = useState(false),
-    [linked, setLinked] = useState<string[]>([])
-  const [dirty, setDirty] = useState(false),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    [message, setMessage] = useState('')
-  const [preview, setPreview] = useState<SourceImportPreview | null>(null),
-    [choices, setChoices] = useState<SourceImportChoice[]>([]),
-    [exportFormat, setExportFormat] = useState<BibliographyFormat>('csl-json'),
-    [exportSelection, setExportSelection] = useState<string[]>([]),
-    [exportLosses, setExportLosses] = useState<string[]>([]),
-    [mergeTarget, setMergeTarget] = useState('')
-  const [attachmentProgress, setAttachmentProgress] = useState<{
-      transferred: number
-      total: number
-    } | null>(null),
-    attachmentOperation = useRef<string | null>(null)
-  const [pendingValue, setPendingValue, pending] = useSynchronousState<SourceChangeInput | null>(
-      null
-    ),
-    [pendingImportValue, setPendingImportValue, pendingImport] = useSynchronousState<string | null>(
-      null
-    ),
-    latest = useRef({
-      selected: null as string | null,
-      draft: blank(),
-      verified: false,
-      linked: [] as string[],
-      dirty: false,
-      view: null as SourcesView | null
-    })
-  useLayoutEffect(() => {
-    latest.current = {
-      selected,
-      draft: { ...draft, author: parseCreators(creatorText) },
-      verified,
-      linked,
-      dirty,
-      view
-    }
-  })
-  function acceptView(next: SourcesView): void {
-    readSequence.current++
-    latest.current.view = next
-    setView(next)
-  }
-  useEffect(() => {
-    let active = true
-    const request = ++readSequence.current
-    void window.collie
-      .readSources({ projectId: project.projectId, workspaceId: project.workspaceId })
-      .then((result) => {
-        if (!active || request !== readSequence.current) return
-        if (result.ok) {
-          latest.current.view = result.value
-          setView(result.value)
-        } else setError(result.error.message)
-      })
-      .catch(() => {
-        if (active)
-          setError(
-            'Sources could not be loaded. Reopen this project to retry; existing drafts are retained.'
-          )
-      })
-    return () => {
-      active = false
-    }
-  }, [project.projectId, project.workspaceId, project.headCommitId])
-  useEffect(
-    () =>
-      window.collie.onSourceProgress((progress) => {
-        if (progress.operationId === attachmentOperation.current)
-          setAttachmentProgress({ transferred: progress.transferred, total: progress.total })
-      }),
-    []
-  )
-  function change(next: SourceMetadata, authors = creatorText): void {
-    setDraft(next)
-    setCreatorText(authors)
-    setDirty(true)
-    setPendingValue(null)
-  }
-  function choose(row: SourceRecord | null): void {
-    if (
-      latest.current.dirty ||
-      session.composition.current ||
-      pending.current ||
-      mutation.current ||
-      attachmentPending.current
-    )
-      return
-    setBaseRevisionValue(row?.revisionId ?? null)
-    setCreating(!row)
-    setPage('details')
-    setSelected(row?.id ?? null)
-    setDraft(row?.metadata ?? blank())
-    setCreatorText(row ? creators(row.metadata) : '')
-    setVerified(row?.verified ?? false)
-    setLinked(row?.documentIds ?? [])
-    setMergeTarget('')
-    setError('')
-    setMessage('')
-  }
-  const onSourceNavigation = useEffectEvent(() => {
-    if (!focusSourceId) {
-      focusedRequest.current = null
-      return
-    }
-    if (
-      !view ||
-      dirty ||
-      focusedRequest.current === `${focusSourceId}:${focusPage}:${session.focusRevision}`
-    )
-      return
-    if (pending.current || mutation.current || attachmentPending.current || pendingImport.current) {
-      setError('Retry the pending source operation before choosing a different source.')
-      return
-    }
-    const target = view.sources.find((source) => source.id === focusSourceId)
-    if (target) {
-      focusedRequest.current = `${focusSourceId}:${focusPage}:${session.focusRevision}`
-      choose(target)
-      setPage(focusPage ?? 'details')
-      setQuery('')
-      if (target.state !== 'active') setShowRemoved(true)
-    } else setError('The requested source is no longer available.')
-  })
-  // Present only the latest committed navigation request, after retained regions update.
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => onSourceNavigation())
-    return () => cancelAnimationFrame(frame)
-  }, [
-    focusSourceId,
-    focusPage,
-    session.focusRevision,
-    view,
-    dirty,
-    pendingValue,
-    mutationValue,
+export default function SourcesPanel(
+  props: SourcesProps & { onInspect: (sourceId: string) => void }
+): React.JSX.Element {
+  const { project, disabled, readOnly, onInspect } = props
+  const imports = useProjectImport()
+  const {
+    session,
+    conversations,
+    page,
+    creating,
+    query,
+    setQuery,
+    showRemoved,
+    setShowRemoved,
+    baseRevisionValue,
     attachmentPendingValue,
-    pendingImportValue
-  ])
-  async function save(): Promise<boolean> {
-    if (saveTask.current) return saveTask.current
-    const task = saveOnce()
-    saveTask.current = task
-    try {
-      return await task
-    } finally {
-      if (saveTask.current === task) saveTask.current = null
-    }
-  }
-
-  async function saveOnce(): Promise<boolean> {
-    if (session.composition.current) {
-      setError('Finish composing source details before saving.')
-      return false
-    }
-    const state = latest.current
-    if (!state.dirty && !pending.current) return true
-    const current = state.view?.sources.find((s) => s.id === state.selected)
-    const input = pending.current ?? {
-      ...{ projectId: project.projectId, workspaceId: project.workspaceId },
-      operationId: crypto.randomUUID(),
-      change: current
-        ? {
-            type: 'update' as const,
-            id: current.id,
-            expectedRevisionId: baseRevision.current ?? current.revisionId,
-            metadata: state.draft,
-            verified: state.verified,
-            documentIds: state.linked
-          }
-        : {
-            type: 'create' as const,
-            id: crypto.randomUUID(),
-            metadata: state.draft,
-            verified: state.verified,
-            documentIds: state.linked
-          }
-    }
-    setPendingValue(input)
-    setBusy(true)
-    setError('')
-    try {
-      const result = await window.collie.changeSource(input)
-      if (!result.ok) {
-        setError(result.error.message)
-        if (result.error.code !== 'UNAVAILABLE') setPendingValue(null)
-        return false
-      }
-      setPendingValue(null)
-      acceptView(result.value)
-      latest.current.dirty = false
-      setDirty(false)
-      if (input.change.type === 'create' || input.change.type === 'update') {
-        const saved = result.value.sources.find((row) => row.id === input.change.id)
-        if (saved) {
-          setBaseRevisionValue(saved.revisionId)
-          latest.current = {
-            selected: saved.id,
-            draft: saved.metadata,
-            verified: saved.verified,
-            linked: saved.documentIds,
-            dirty: false,
-            view: result.value
-          }
-          setSelected(saved.id)
-          setDraft(saved.metadata)
-          setCreatorText(creators(saved.metadata))
-          setVerified(saved.verified)
-          setLinked(saved.documentIds)
-          setCreating(false)
-        }
-      }
-      setMessage('Source protected in local recovery. Save the project file separately.')
-      await onCommitted()
-      return true
-    } catch {
-      setError(
-        pending.current
-          ? 'The source result is unknown. Retry the same source save.'
-          : 'Source saved, but the workspace could not refresh. Reopen Research to refresh its status.'
-      )
-      return false
-    } finally {
-      setBusy(false)
-    }
-  }
-  async function mutate(change: SourceChangeInput['change'], retry = false): Promise<void> {
-    if (readOnly || (mutation.current && !retry)) return
-    if (!retry && !(await save())) return
-    const input = mutation.current ?? {
-      ...{ projectId: project.projectId, workspaceId: project.workspaceId },
-      operationId: crypto.randomUUID(),
-      change
-    }
-    setMutationValue(input)
-    setBusy(true)
-    setError('')
-    try {
-      const result = await window.collie.changeSource(input)
-      if (!result.ok) {
-        if (result.error.code !== 'UNAVAILABLE') setMutationValue(null)
-        setError(result.error.message)
-        return
-      }
-      setMutationValue(null)
-      acceptView(result.value)
-      const id = input.change.id
-      const saved = result.value.sources.find((row) => row.id === id)
-      if (saved) {
-        setBaseRevisionValue(saved.revisionId)
-        setSelected(saved.id)
-        setDraft(saved.metadata)
-        setCreatorText(creators(saved.metadata))
-        setVerified(saved.verified)
-        setLinked(saved.documentIds)
-      }
-      setMergeTarget('')
-      setMessage('Source change protected locally.')
-      await onCommitted()
-    } catch {
-      setError(
-        'This source change has an unknown outcome. Retry the same operation before continuing.'
-      )
-    } finally {
-      setBusy(false)
-    }
-  }
-  async function pickImport(): Promise<void> {
-    if (!(await save())) return
-    setBusy(true)
-    setError('')
-    try {
-      const pick = await window.collie.pickSourceImport({
-        projectId: project.projectId,
-        workspaceId: project.workspaceId
-      })
-      if (!pick.ok) {
-        setError(pick.error.message)
-        return
-      }
-      if (!pick.value) return
-      const result = await window.collie.previewSourceImport({
-        ...{ projectId: project.projectId, workspaceId: project.workspaceId },
-        token: pick.value.token
-      })
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      setPendingImportValue(null)
-      setPreview(result.value)
-      setChoices(
-        result.value.rows.map((r) => ({
-          index: r.index,
-          action: r.error || r.candidates.length ? ('skip' as const) : ('create' as const),
-          targetId: null
-        }))
-      )
-      setMessage('Review every row. Similar titles are never merged automatically.')
-    } catch {
-      setError('The bibliography could not be opened. Sources and current edits were kept.')
-    } finally {
-      setBusy(false)
-    }
-  }
-  async function commitPreview(): Promise<void> {
-    if (!preview) return
-    setBusy(true)
-    setError('')
-    const operationId = pendingImport.current ?? crypto.randomUUID()
-    setPendingImportValue(operationId)
-    try {
-      const result = await window.collie.commitSourceImport({
-        ...{ projectId: project.projectId, workspaceId: project.workspaceId },
-        operationId,
-        token: preview.token,
-        digest: preview.digest,
-        choices
-      })
-      if (result.ok) {
-        setPendingImportValue(null)
-        acceptView(result.value)
-        setPreview(null)
-        setMessage('Bibliography imported. Review the retained report and unknown fields.')
-        await onCommitted()
-      } else {
-        if (result.error.code !== 'UNAVAILABLE') setPendingImportValue(null)
-        setError(result.error.message)
-      }
-    } catch {
-      setError('The import has an unknown outcome. Retry the same reviewed import.')
-    } finally {
-      setBusy(false)
-    }
-  }
-  async function attach(sourceId: string, retry = false): Promise<void> {
-    if (readOnly || busy || (!retry && !(await save()))) return
-    setBusy(true)
-    setError('')
-    setMessage('Copying the selected original into local managed storage…')
-    try {
-      if (!attachmentPending.current) {
-        const pick = await window.collie.pickSourceAttachment({
-          projectId: project.projectId,
-          workspaceId: project.workspaceId
-        })
-        if (!pick.ok) {
-          setError(pick.error.message)
-          return
-        }
-        if (!pick.value) return
-        setAttachmentPendingValue({
-          ...{ projectId: project.projectId, workspaceId: project.workspaceId },
-          operationId: crypto.randomUUID(),
-          sourceId,
-          token: pick.value.token
-        })
-      }
-      const input = attachmentPending.current
-      if (!input) throw new Error('Source attachment request was not retained')
-      attachmentOperation.current = input.operationId
-      setAttachmentProgress(null)
-      const result = await window.collie.attachSourceFile(input)
-      if (result.ok) {
-        setAttachmentPendingValue(null)
-        acceptView(result.value)
-        const saved = result.value.sources.find((row) => row.id === latest.current.selected)
-        if (saved) {
-          setBaseRevisionValue(saved.revisionId)
-          setDraft(saved.metadata)
-          setCreatorText(creators(saved.metadata))
-          setVerified(saved.verified)
-          setLinked(saved.documentIds)
-        }
-        setMessage('Managed original copied. Project backups include this local copy.')
-        await onCommitted()
-      } else {
-        if (result.error.code !== 'UNAVAILABLE') setAttachmentPendingValue(null)
-        setError(result.error.message)
-      }
-    } catch {
-      setError(
-        attachmentPending.current
-          ? 'The attachment copy has an unknown outcome. Retry the same copy.'
-          : 'Original copied, but the workspace could not refresh. Reopen Research.'
-      )
-    } finally {
-      attachmentOperation.current = null
-      setAttachmentProgress(null)
-      setBusy(false)
-    }
-  }
-  async function selectSource(id: string): Promise<void> {
-    if (
-      session.composition.current ||
-      busy ||
-      mutation.current ||
-      attachmentPending.current ||
-      !(await save())
-    )
-      return
-    const saved = latest.current.view?.sources.find((row) => row.id === id)
-    if (saved) {
-      choose(saved)
-      setPage('usage')
-    }
-  }
-  async function exportLibrary(): Promise<void> {
-    if (!(await save())) return
-    setBusy(true)
-    setError('')
-    try {
-      const result = await window.collie.exportSources({
-        ...{ projectId: project.projectId, workspaceId: project.workspaceId },
-        operationId: crypto.randomUUID(),
-        format: exportFormat,
-        sourceIds: exportSelection
-      })
-      if (result.ok) {
-        setExportLosses(result.value.losses)
-        setMessage(
-          `Exported ${result.value.count} sources to ${result.value.path}. Review the declared losses below.`
-        )
-      } else if (result.error.code !== 'CANCELLED') setError(result.error.message)
-    } catch {
-      setError('Bibliography export could not finish. Your sources remain stored.')
-    } finally {
-      setBusy(false)
-    }
-  }
-  const current = view?.sources.find((s) => s.id === selected)
-  const locked = disabled || busy || !!mutationValue || !!attachmentPendingValue
-  const fieldsLocked = locked || !!pendingValue || !!mutationValue || current?.state === 'merged'
-  const draftBinding = useRetainedDraft('sources', {
-    read: () => ({
-      scope: { projectId: project.projectId, workspaceId: project.workspaceId },
-      kind: 'source',
-      entityId: selected,
-      label: 'source metadata',
-      dirty: latest.current.dirty,
-      composing: false,
-      busy,
-      pendingOperation: pending.current,
-      policy: 'flush',
-      issue: error,
-      target: {
-        kind: 'workspace',
-        scope: { projectId: project.projectId, workspaceId: project.workspaceId },
-        view: 'research',
-        target: { kind: 'sources', sourceId: selected ?? undefined, page }
-      }
-    }),
-    flush: save,
-    focus: () => panel.current?.focus()
-  })
-  useRetainedDraft('source-operations', {
-    read: () => ({
-      scope: { projectId: project.projectId, workspaceId: project.workspaceId },
-      kind: 'source-operation',
-      entityId: selected,
-      label: 'source import or attachment',
-      dirty: false,
-      composing: false,
-      busy,
-      pendingOperation: pendingImport.current ?? mutation.current ?? attachmentPending.current,
-      policy: 'operation',
-      issue:
-        pendingImport.current || mutation.current || attachmentPending.current ? error : undefined,
-      status: busy ? 'Working…' : message || undefined,
-      target: {
-        kind: 'workspace',
-        scope: { projectId: project.projectId, workspaceId: project.workspaceId },
-        view: 'research',
-        target: { kind: 'sources' }
-      }
-    })
-  })
-  useRetainedDraft('source-import-review', {
-    read: () => ({
-      scope: { projectId: project.projectId, workspaceId: project.workspaceId },
-      kind: 'import-review',
-      entityId: null,
-      label: 'bibliography import choices',
-      dirty: !!preview && !pendingImport.current,
-      composing: false,
-      busy: false,
-      pendingOperation: null,
-      policy: 'explicit',
-      target: {
-        kind: 'workspace',
-        scope: { projectId: project.projectId, workspaceId: project.workspaceId },
-        view: 'research',
-        target: { kind: 'sources' }
-      }
-    })
-  })
-  const rows =
-    view?.sources.filter(
-      (row) =>
-        (showRemoved || row.state === 'active') &&
-        `${row.metadata.title} ${creators(row.metadata)}`
-          .toLocaleLowerCase()
-          .includes(query.toLocaleLowerCase())
-    ) ?? []
+    mutationValue,
+    pendingValue,
+    view,
+    selected,
+    draft,
+    creatorText,
+    verified,
+    setVerified,
+    linked,
+    setLinked,
+    dirty,
+    setDirty,
+    busy,
+    error,
+    message,
+    exportFormat,
+    setExportFormat,
+    exportSelection,
+    setExportSelection,
+    exportLosses,
+    mergeTarget,
+    setMergeTarget,
+    attachmentProgress,
+    current,
+    locked,
+    fieldsLocked,
+    panel,
+    draftBinding,
+    rows,
+    change,
+    choose,
+    save,
+    mutate,
+    attach,
+    selectSource,
+    exportLibrary,
+    discard,
+    saveCopy,
+    retryAttachment,
+    retryMutation
+  } = useSources(props)
   return (
     <PresentationBoundary
       label="Sources"
@@ -621,112 +90,27 @@ export default function SourcesPanel({
           {error ? <p role="alert">{error}</p> : null}
           {message ? <p role="status">{message}</p> : null}
           {attachmentPendingValue ? (
-            <AppButton
-              disabled={disabled || busy || readOnly}
-              onClick={() => {
-                if (attachmentPending.current) void attach(attachmentPending.current.sourceId, true)
-              }}
-            >
+            <AppButton disabled={disabled || busy || readOnly} onClick={retryAttachment}>
               Retry original copy
             </AppButton>
           ) : null}
           {mutationValue ? (
-            <AppButton
-              disabled={disabled || busy || readOnly}
-              onClick={() => {
-                if (mutation.current) void mutate(mutation.current.change, true)
-              }}
-            >
+            <AppButton disabled={disabled || busy || readOnly} onClick={retryMutation}>
               Retry source action
             </AppButton>
           ) : null}
           <div className="research-actions">
-            <AppButton
-              disabled={locked || readOnly || dirty || !!preview}
-              onClick={() => choose(null)}
-            >
+            <AppButton disabled={locked || readOnly || dirty} onClick={() => choose(null)}>
               Add source
             </AppButton>
             <AppButton
               variant="default"
-              disabled={locked || readOnly || !!pendingImportValue || !!preview}
-              onClick={() => void pickImport()}
+              disabled={locked || readOnly || imports.busy}
+              onClick={(event) => imports.open(event.currentTarget, 'sources')}
             >
               Import bibliography…
             </AppButton>
           </div>
-          {preview ? (
-            <section className="source-import-review" aria-label="Bibliography import review">
-              <h2>Review {preview.count} imported records</h2>
-              <p>
-                CSL JSON, BibTeX and RIS only. Similar records are never merged automatically.
-                Cancel leaves the library unchanged.
-              </p>
-              <ol>
-                {preview.rows.map((row) => {
-                  const choice = choices[row.index]
-                  return (
-                    <li key={row.index}>
-                      <strong>{row.metadata?.title || `Record ${row.index + 1}`}</strong>
-                      {row.error ? <p role="alert">{row.error}</p> : null}
-                      {row.losses.length ? <p>Declared losses: {row.losses.join(' ')}</p> : null}
-                      <SelectField
-                        label={`Action for record ${row.index + 1}`}
-                        value={`${choice?.action || 'skip'}:${choice?.targetId || ''}`}
-                        disabled={locked || !!row.error || !!pendingImportValue}
-                        onChange={(event) => {
-                          const [action, targetId] = event.target.value.split(':')
-                          setChoices((old) =>
-                            old.map((item) =>
-                              item.index === row.index
-                                ? {
-                                    ...item,
-                                    action: action as SourceImportChoice['action'],
-                                    targetId: targetId || null
-                                  }
-                                : item
-                            )
-                          )
-                        }}
-                      >
-                        <option value="skip:">Skip</option>
-                        <option value="create:">Keep separate</option>
-                        {row.candidates.flatMap((candidate) =>
-                          ['merge', 'link'].map((action) => (
-                            <option
-                              key={`${action}:${candidate.id}`}
-                              value={`${action}:${candidate.id}`}
-                            >
-                              {action === 'merge' ? 'Merge into' : 'Link imported ID to'}{' '}
-                              {view?.sources.find((item) => item.id === candidate.id)?.metadata
-                                .title ?? 'Retained source'}{' '}
-                              · {candidate.reason}
-                            </option>
-                          ))
-                        )}
-                      </SelectField>
-                    </li>
-                  )
-                })}
-              </ol>
-              <div className="research-actions">
-                <AppButton disabled={locked || readOnly} onClick={() => void commitPreview()}>
-                  {pendingImportValue ? 'Retry reviewed import' : 'Commit reviewed import'}
-                </AppButton>
-                <AppButton
-                  variant="default"
-                  disabled={locked || !!pendingImportValue}
-                  onClick={() => {
-                    setPreview(null)
-                    setChoices([])
-                    setMessage('Import cancelled. No source changed.')
-                  }}
-                >
-                  Cancel import
-                </AppButton>
-              </div>
-            </section>
-          ) : null}
           <ResearchLayout
             sidebar={
               <>
@@ -757,7 +141,7 @@ export default function SourcesPanel({
                         variant="subtle"
                         className="research-item-button"
                         classNames={{ label: 'research-item-label', inner: 'research-item-inner' }}
-                        disabled={locked || !!preview}
+                        disabled={locked}
                         aria-current={selected === source.id ? 'true' : undefined}
                         onClick={() => void selectSource(source.id)}
                       >
@@ -790,49 +174,42 @@ export default function SourcesPanel({
               <>
                 <h2>{current?.metadata.title || 'New source'}</h2>
                 {current ? (
-                  <>
-                    <div className="research-actions" role="group" aria-label="Source detail views">
-                      {(['usage', 'details', 'files'] as const).map((value) => (
-                        <AppButton
-                          key={value}
-                          variant={page === value ? 'default' : 'subtle'}
-                          aria-pressed={page === value}
-                          onClick={() => {
-                            if (!session.composition.current) setPage(value)
-                          }}
-                        >
-                          {value === 'usage'
-                            ? 'Usage and context'
-                            : value === 'details'
-                              ? 'Citation details'
-                              : 'Originals and history'}
-                        </AppButton>
-                      ))}
-                    </div>
-                    <p className="research-state">
-                      {current.state} ·{' '}
-                      {current.verified ? 'Metadata manually reviewed' : 'Metadata not reviewed'}
-                      {baseRevisionValue !== current.revisionId
-                        ? ' · Stored metadata changed; save will require resolving the revision.'
-                        : ''}
-                    </p>
-                  </>
-                ) : null}
-                {current ? (
-                  <div hidden={page !== 'usage'} inert={page !== 'usage'}>
-                    <SourceUsage sourceId={current.id} />
-                    <SourceChatHistory key={current.id} sourceId={current.id} />
-                    <ImportedOrigins
-                      key={`import:${project.projectId}:${project.workspaceId}:${current.id}`}
-                      kind="source"
-                      id={current.id}
-                    />
+                  <div className="research-actions">
+                    {current.attachments.some((file) =>
+                      ['application/pdf', 'text/plain'].includes(file.mediaType)
+                    ) ? (
+                      <AppButton
+                        variant="default"
+                        disabled={locked}
+                        onClick={() => onInspect(current.id)}
+                      >
+                        Read original
+                      </AppButton>
+                    ) : null}
+                    <AppButton
+                      variant="default"
+                      disabled={locked || readOnly || current.state !== 'active'}
+                      onClick={() => void attach(current.id)}
+                    >
+                      Attach file…
+                    </AppButton>
                   </div>
                 ) : null}
+                {current?.state !== 'active' && current ? (
+                  <p role="status">
+                    {current.state === 'merged'
+                      ? 'This source was merged; its history is kept.'
+                      : 'This source is in Trash.'}
+                  </p>
+                ) : null}
+                {current && baseRevisionValue !== current.revisionId ? (
+                  <p role="status">
+                    Stored details changed. Reload them or resolve the conflict when saving.
+                  </p>
+                ) : null}
+                <h3>Details</h3>
                 <form
                   className="research-form"
-                  hidden={!!current && page !== 'details'}
-                  inert={!!current && page !== 'details'}
                   onSubmit={(event) => {
                     event.preventDefault()
                     if (!readOnly) void save()
@@ -945,105 +322,67 @@ export default function SourcesPanel({
                       {pendingValue ? 'Retry source save' : 'Save source'}
                     </AppButton>
                     {!pendingValue ? (
-                      <AppButton
-                        variant="default"
-                        disabled={locked}
-                        onClick={() => {
-                          setDirty(false)
-                          setBaseRevisionValue(current?.revisionId ?? null)
-                          setDraft(current?.metadata ?? blank())
-                          setCreatorText(current ? creators(current.metadata) : '')
-                          setVerified(current?.verified ?? false)
-                          setLinked(current?.documentIds ?? [])
-                          if (!current) setCreating(false)
-                        }}
-                      >
-                        {current ? 'Reload saved details' : 'Cancel new source'}
+                      <AppButton variant="default" disabled={locked} onClick={discard}>
+                        {current ? 'Cancel edits' : 'Cancel new source'}
                       </AppButton>
                     ) : null}
                   </div>
                 </form>
                 {current ? (
-                  <div hidden={page !== 'files'} inert={page !== 'files'}>
-                    <h3>Managed originals</h3>
-                    <p>
-                      Attach PDF, text or an image. PDF/text inspection is local; scanned pages have
-                      no OCR.
-                    </p>
-                    <div className="research-actions">
-                      <AppButton
-                        variant="default"
-                        disabled={locked || readOnly || dirty || current.state !== 'active'}
-                        onClick={() => void attach(current.id)}
-                      >
-                        Attach local original…
-                      </AppButton>
-                      <AppButton
-                        variant="default"
-                        disabled={locked || dirty}
-                        onClick={() => onInspect(current.id)}
-                      >
-                        Inspect versions and excerpts
-                      </AppButton>
-                    </div>
-                    {!current.attachments.length ? (
-                      <p>No originals attached yet.</p>
-                    ) : (
-                      <ul className="source-attachments">
-                        {current.attachments.map((attachment) => (
-                          <li key={attachment.id}>
-                            <strong>{attachment.name}</strong> · {attachment.mediaType} ·{' '}
-                            {Math.round(attachment.bytes / 1024).toLocaleString()} KiB ·{' '}
-                            {attachment.state}
-                            <div className="research-actions">
-                              <AppButton
-                                variant="subtle"
-                                disabled={locked}
-                                onClick={() =>
-                                  void window.collie
-                                    .exportSourceAttachment({
-                                      ...{
-                                        projectId: project.projectId,
-                                        workspaceId: project.workspaceId
-                                      },
-                                      attachmentId: attachment.id,
-                                      suggestedName: attachment.name
-                                    })
-                                    .then((result) => {
-                                      if (result.ok)
-                                        setMessage(
-                                          `Managed original copied to ${result.value.path}`
-                                        )
-                                      else if (result.error.code !== 'CANCELLED')
-                                        setError(result.error.message)
-                                    })
-                                }
-                              >
-                                Save copy…
-                              </AppButton>
-                              {attachment.state === 'active' ? (
+                  <>
+                    <details className="research-disclosure" open={page === 'usage'}>
+                      <summary>Usage and context</summary>
+                      <SourceUsage sourceId={current.id} />
+                    </details>
+                    <details className="research-disclosure" open={page === 'files'}>
+                      <summary>Original files</summary>
+                      {!current.attachments.length ? (
+                        <p>No originals attached yet.</p>
+                      ) : (
+                        <ul className="source-attachments">
+                          {current.attachments.map((attachment) => (
+                            <li key={attachment.id}>
+                              <strong>{attachment.name}</strong> ·{' '}
+                              {Math.round(attachment.bytes / 1024).toLocaleString()} KiB ·{' '}
+                              {attachment.state}
+                              <div className="research-actions">
                                 <AppButton
                                   variant="subtle"
-                                  disabled={locked || readOnly || dirty}
-                                  onClick={() =>
-                                    void mutate({
-                                      type: 'removeAttachment',
-                                      id: current.id,
-                                      attachmentId: attachment.id,
-                                      expectedRevisionId: current.revisionId
-                                    })
-                                  }
+                                  disabled={locked}
+                                  onClick={() => void saveCopy(attachment)}
                                 >
-                                  Remove attachment link
+                                  Save copy…
                                 </AppButton>
-                              ) : null}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                                {attachment.state === 'active' ? (
+                                  <AppButton
+                                    variant="subtle"
+                                    disabled={locked || readOnly || dirty}
+                                    onClick={() =>
+                                      void mutate({
+                                        type: 'removeAttachment',
+                                        id: current.id,
+                                        attachmentId: attachment.id,
+                                        expectedRevisionId: current.revisionId
+                                      })
+                                    }
+                                  >
+                                    Remove file link
+                                  </AppButton>
+                                ) : null}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </details>
                     <details className="research-disclosure">
                       <summary>Provenance and retained import data</summary>
+                      <SourceChatHistory key={current.id} sourceId={current.id} />
+                      <ImportedOrigins
+                        key={`import:${project.projectId}:${project.workspaceId}:${current.id}`}
+                        kind="source"
+                        id={current.id}
+                      />
                       <p>{current.provenance}</p>
                       <p>Source identity: {current.id}</p>
                       {current.aliases.length ? (
@@ -1105,7 +444,7 @@ export default function SourcesPanel({
                               })
                             }
                           >
-                            Merge into chosen source
+                            Merge sources
                           </AppButton>
                         </>
                       ) : current.replacementId ? (
@@ -1119,13 +458,12 @@ export default function SourcesPanel({
                         </AppButton>
                       ) : null}
                     </details>
-                  </div>
+                  </>
                 ) : null}
               </>
             ) : (
               <EmptyState title="Choose a source">
-                Select a source to see where it is cited or connected to research, then edit its
-                details or inspect an original.
+                Select a source to edit its details or read an original.
               </EmptyState>
             )}
           </ResearchLayout>

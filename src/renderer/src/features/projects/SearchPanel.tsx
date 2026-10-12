@@ -60,38 +60,45 @@ export default function SearchPanel({
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [offset, setOffset] = useState(0),
-    [searching, setSearching] = useState(false)
+    [searching, setSearching] = useState(false),
+    [indexProblem, setIndexProblem] = useState(false)
   const [submitted, setSubmitted] = useState(''),
     [retry, setRetry] = useState(0)
   const resultSummary = useRef<HTMLParagraphElement | null>(null),
     focusNextPage = useRef(false)
-  const requestKey = JSON.stringify([query, kind, tag, section, source, offset])
+  const requestKey = JSON.stringify([
+    project.headCommitId,
+    query,
+    kind,
+    tag,
+    section,
+    source,
+    offset
+  ])
   useEffect(() => {
-    if (focusNextPage.current && submitted === requestKey && !searching) {
+    if (active && focusNextPage.current && submitted === requestKey && !searching) {
       focusNextPage.current = false
       resultSummary.current?.focus()
     }
-  }, [submitted, requestKey, searching])
+  }, [active, submitted, requestKey, searching])
   useEffect(() => {
     if (!active) return
     let live = true
-    void window.collie
-      .readSources({ projectId: project.projectId, workspaceId: project.workspaceId })
-      .then((result) => {
-        if (live && result.ok)
-          setSources(result.value.sources.map((row) => ({ id: row.id, title: row.metadata.title })))
+    const scope = { projectId: project.projectId, workspaceId: project.workspaceId }
+    void Promise.all([window.collie.readSources(scope), window.collie.readNotes(scope)])
+      .then(([sources, notes]) => {
+        if (!live) return
+        if (sources.ok)
+          setSources(
+            sources.value.sources.map((row) => ({ id: row.id, title: row.metadata.title }))
+          )
+        else setError(sources.error.message)
+        if (notes.ok)
+          setTags(notes.value.labels.filter((row) => row.kind === 'tag' && row.state === 'active'))
+        else setError(notes.error.message)
       })
       .catch(() => {
-        if (live) setError('Source filters could not be loaded.')
-      })
-    void window.collie
-      .readNotes({ projectId: project.projectId, workspaceId: project.workspaceId })
-      .then((result) => {
-        if (live && result.ok)
-          setTags(result.value.labels.filter((row) => row.kind === 'tag' && row.state === 'active'))
-      })
-      .catch(() => {
-        if (live) setError('Tag filters could not be loaded.')
+        if (live) setError('Search filters could not be loaded.')
       })
     return () => {
       live = false
@@ -99,7 +106,7 @@ export default function SearchPanel({
   }, [active, project.projectId, project.workspaceId, project.headCommitId, retry])
   useEffect(() => {
     let live = true
-    // Only entering Search may create/start the projection. Background polling only observes it.
+    // Search activation and saved edits use the existing incremental owner; polling only observes.
     if (active) {
       void window.collie
         .changeSearch({
@@ -111,17 +118,24 @@ export default function SearchPanel({
           if (!live) return
           if (result.ok) {
             setActivity(result.value)
+            setIndexProblem(false)
             setError('')
-          } else setError(result.error.message)
+          } else {
+            setIndexProblem(result.error.code === 'UNAVAILABLE')
+            setError(result.error.message)
+          }
         })
         .catch(() => {
-          if (live) setError('Search could not be opened. Retry when storage is available.')
+          if (live) {
+            setIndexProblem(true)
+            setError('Search could not be opened. Your project content is kept.')
+          }
         })
     }
     return () => {
       live = false
     }
-  }, [active, project.projectId, project.workspaceId, retry])
+  }, [active, project.projectId, project.workspaceId, project.headCommitId, retry])
   const observingWork = activity?.state === 'queued' || activity?.state === 'running'
   useEffect(() => {
     if (!active && !observingWork) return
@@ -227,10 +241,12 @@ export default function SearchPanel({
         ...{ projectId: project.projectId, workspaceId: project.workspaceId },
         action
       })
-      if (result.ok) setActivity(result.value)
-      else setError(result.error.message)
+      if (result.ok) {
+        setActivity(result.value)
+        setIndexProblem(false)
+      } else setError(result.error.message)
     } catch {
-      setError('Index activity could not be updated. Refresh its status before retrying.')
+      setError('Search updating could not be confirmed. Retry to check its saved status.')
     } finally {
       setBusy(false)
     }
@@ -238,6 +254,27 @@ export default function SearchPanel({
   const a = activity ?? view?.activity,
     indexing = a?.state === 'running' || a?.state === 'queued',
     current = submitted === requestKey
+  const complete = (status: SearchActivity | null | undefined): boolean =>
+    status?.state === 'completed' &&
+    status.indexedHead === project.headCommitId &&
+    status.currentHead === project.headCommitId &&
+    status.indexed === status.expected
+  const incomplete = !complete(a) || !complete(view?.activity)
+  const missingOriginals = !!a && (a.pagesWithoutText > 0 || a.uninspectedSources > 0)
+  const indexAction = indexing
+    ? 'cancel'
+    : a?.state === 'cancelled'
+      ? 'refresh'
+      : a?.state === 'failed' ||
+          indexProblem ||
+          (a?.state === 'completed' && a.indexedHead === a.currentHead && a.indexed !== a.expected)
+        ? 'rebuild'
+        : null
+  const indexNotice = indexing
+    ? `Updating search… ${a?.processed} of ${a?.total} items checked. Results may be incomplete.`
+    : indexAction === 'refresh'
+      ? 'Search updating stopped. Results may be incomplete; your writing and originals are kept.'
+      : `${a?.error || error || 'Local search data is incomplete or unavailable.'} Rebuilding keeps your project content.`
   useRetainedDraft('search-index-operation', {
     read: () => ({
       scope: { projectId: project.projectId, workspaceId: project.workspaceId },
@@ -356,22 +393,68 @@ export default function SearchPanel({
         </AppButton>
       </details>
       <p className="research-state">
-        Search uses saved content. Unsaved edits and PDF pages without extracted text are not
-        included.
+        Search uses locally saved content; edits still being saved are not included.
       </p>
-      {error ? (
+      {error && indexAction !== 'rebuild' ? (
         <p role="alert">
           {error}{' '}
           <AppButton variant="subtle" onClick={() => setRetry((value) => value + 1)}>
-            Retry search and status
+            Retry search
           </AppButton>
         </p>
+      ) : null}
+      {indexAction ? (
+        <div className="research-actions">
+          <p role={indexAction === 'rebuild' ? 'alert' : 'status'}>{indexNotice}</p>
+          <AppButton
+            variant={indexing ? 'subtle' : 'default'}
+            disabled={busy}
+            onClick={() => void act(indexAction)}
+          >
+            {indexing
+              ? 'Stop updating search'
+              : indexAction === 'refresh'
+                ? 'Continue updating search'
+                : 'Rebuild local search'}
+          </AppButton>
+        </div>
+      ) : null}
+      {missingOriginals ? (
+        <details className="research-disclosure">
+          <summary>Some originals are not searchable yet</summary>
+          <p>
+            {a?.pagesWithoutText ?? 0} pages have no searchable text. {a?.uninspectedSources ?? 0}{' '}
+            originals need text preparation or could not be read.
+          </p>
+          <p>
+            Read original prepares supported local text. Image-only or unsupported originals may
+            still have no searchable text.
+          </p>
+          <ul>
+            {a?.uninspected.map((row) => (
+              <li key={row.id}>
+                <AppButton
+                  variant="subtle"
+                  onClick={() => session.research({ kind: 'inspector', sourceId: row.id })}
+                >
+                  Read original: {row.title}
+                </AppButton>
+              </li>
+            ))}
+          </ul>
+          {a && a.uninspectedSources > a.uninspected.length ? (
+            <p>Showing the first {a.uninspected.length} originals needing attention.</p>
+          ) : null}
+          <AppButton variant="subtle" onClick={() => session.research({ kind: 'sources' })}>
+            Open sources
+          </AppButton>
+        </details>
       ) : null}
       <p ref={resultSummary} tabIndex={-1} aria-live="polite">
         {searching
           ? 'Searching…'
           : query.trim() && current && view
-            ? `${view.hits.length} results on this page.${view.hasMore ? ' More results are available.' : ''}`
+            ? `${view.hits.length} results on this page.${incomplete ? ' Search is incomplete.' : ''}${view.hasMore ? ' More results are available.' : ''}`
             : ''}
       </p>
       {!query.trim() ? (
@@ -382,12 +465,31 @@ export default function SearchPanel({
       ) : current && view ? (
         <>
           {!view.hits.length ? (
-            <EmptyState title="No matching results">
-              Try a shorter phrase or clear the filters. If content was just saved, check indexing
-              below.
+            <EmptyState
+              title={
+                incomplete
+                  ? 'Search is not complete yet'
+                  : offset
+                    ? 'No more results on this page'
+                    : missingOriginals
+                      ? 'No matches in searchable content'
+                      : 'No matching results'
+              }
+            >
+              {incomplete
+                ? 'No matches in the results available so far. More content may match when search finishes updating.'
+                : offset
+                  ? 'Go back to the previous results or change the phrase.'
+                  : 'Try a shorter phrase or clear the filters.'}
+              {missingOriginals ? ' Originals without prepared text are not included.' : ''}
             </EmptyState>
           ) : (
-            <ol className="search-results" start={offset + 1}>
+            <ol
+              className="search-results"
+              start={offset + 1}
+              tabIndex={0}
+              aria-label="Search results"
+            >
               {view.hits.map((hit) => (
                 <li key={hit.key}>
                   <p className="research-state">
@@ -407,12 +509,11 @@ export default function SearchPanel({
                     disabled={hit.status === 'stale' || hit.status === 'removed' || searching}
                     onClick={() => navigate(hit)}
                   >
-                    Open original context
+                    Open
                   </AppButton>
                   {hit.status === 'stale' || hit.status === 'removed' ? (
                     <p className="research-state">
-                      This result changed or was removed. Refresh the index to resolve it; another
-                      item will not be substituted.
+                      This result changed or was removed and cannot be opened from here.
                     </p>
                   ) : null}
                 </li>
@@ -443,72 +544,6 @@ export default function SearchPanel({
           </div>
         </>
       ) : null}
-      <details className="research-disclosure">
-        <summary>
-          Indexing and coverage
-          {indexing
-            ? ' · updating'
-            : a && a.indexedHead !== a.currentHead
-              ? ' · saved content not fully indexed'
-              : ''}
-        </summary>
-        {a ? (
-          <>
-            <p role="status">
-              {a.state} · {a.processed} of {a.total} records examined · {a.indexed} entries for{' '}
-              {a.expected} searchable records.
-            </p>
-            <p>
-              {a.pagesWithText} extracted pages with text; {a.pagesWithoutText} pages without
-              searchable text or with extraction errors. {a.uninspectedSources} sources need
-              inspection or extraction.
-            </p>
-            {a.error ? <p role="alert">{a.error}</p> : null}
-            <ul>
-              {a.uninspected.map((row) => (
-                <li key={row.id}>
-                  <AppButton
-                    variant="subtle"
-                    onClick={() => session.research({ kind: 'inspector', sourceId: row.id })}
-                  >
-                    {row.title}
-                  </AppButton>{' '}
-                  · {row.status}
-                </li>
-              ))}
-            </ul>
-            {a.uninspectedSources > a.uninspected.length ? (
-              <p>Showing the first {a.uninspected.length} sources needing attention.</p>
-            ) : null}
-          </>
-        ) : (
-          <p>Loading index status…</p>
-        )}
-        <div className="research-actions">
-          <AppButton
-            variant="default"
-            disabled={busy || indexing}
-            onClick={() => void act('refresh')}
-          >
-            Refresh index
-          </AppButton>
-          <AppButton
-            variant="subtle"
-            disabled={busy || indexing}
-            onClick={() => void act('rebuild')}
-          >
-            Rebuild index
-          </AppButton>
-          <AppButton
-            variant="subtle"
-            disabled={busy || !indexing}
-            onClick={() => void act('cancel')}
-          >
-            Cancel indexing
-          </AppButton>
-        </div>
-        <p>The local index can be rebuilt. Cancelling it keeps your writing and originals.</p>
-      </details>
     </section>
   )
 }

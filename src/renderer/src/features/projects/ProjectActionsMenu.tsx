@@ -7,7 +7,7 @@ import { ActionMenu, type MenuAction } from '../../components/ui/ActionMenu'
 import { AppDialog } from '../../components/ui/AppDialog'
 import { AppButton } from '../../components/ui/Controls'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
-import { scopeOf } from '../workspace/useWorkspaceController'
+import { scopeOf } from '../../../../shared/projects'
 import styles from './ProjectDialogs.module.css'
 
 export default function ProjectActionsMenu({

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { AppButton } from '../../../components/ui/Controls'
+import { StatusBanner } from '../../../components/ui/Feedback'
 import { useProofreading } from './proofreadingState'
 import { useAiConnections } from '../../ai-connections/connectionState'
+import { sameScope } from '../../../../../shared/project-files'
 import { connectionReason, featureDescription } from '../../ai-connections/connection-copy'
 import type { CoverageKind, ProofreadCapture } from '../../../../../shared/proofreading'
 import { AiRequestConnection } from '../../ai-connections/AiRequestConnection'
@@ -117,9 +119,9 @@ export function ProofreadingPanel(): React.JSX.Element {
       ref={panelRef}
       tabIndex={-1}
     >
-      {p.issue ? (
+      {p.issue || p.event?.issue ? (
         <p className={styles['proofreading-error']} role="alert">
-          {p.issue}
+          {p.issue || p.event?.issue}
         </p>
       ) : null}
       {p.notice ? <p role="status">{p.notice}</p> : null}
@@ -423,26 +425,43 @@ export function ProofreadingPanel(): React.JSX.Element {
 }
 export function ProofreadingNotice(): React.JSX.Element | null {
   const p = useProofreading()
+  const connections = useAiConnections()
+  const workShown = connections.status?.work.some(
+    (item) =>
+      item.feature === 'proofreading' &&
+      sameScope(item.scope, p.scope) &&
+      item.attemptId === p.event?.attemptId
+  )
   if (
     !p.scope ||
-    (!p.reviewed && !p.pending && !p.event?.pending && !p.event?.issue && !p.proofreadingLocked)
+    p.dialogOpen ||
+    (!p.issue &&
+      !p.reviewed &&
+      !p.pending &&
+      (workShown || (!p.event?.pending && !p.event?.issue)) &&
+      !p.proofreadingLocked)
   )
     return null
   return (
     <aside className={styles['proofreading-notice']} aria-label="Proofreading work">
-      <span>
-        {p.proofreadingLocked
-          ? 'A proofreading correction needs reconciliation.'
-          : (p.event?.issue ??
-            (p.pending
-              ? 'A proofreading action needs acknowledgment.'
-              : p.event?.pending
-                ? 'Protecting proofreading work…'
-                : 'A proofreading capture is awaiting your decision.'))}
-      </span>
-      <AppButton variant="subtle" onClick={() => p.show()}>
-        Return to proofreading
-      </AppButton>
+      <StatusBanner
+        title="Proofreading"
+        tone={p.issue || p.proofreadingLocked || (!workShown && p.event?.issue) ? 'error' : 'info'}
+      >
+        <p>
+          {p.proofreadingLocked
+            ? 'A proofreading correction needs reconciliation.'
+            : ((p.issue || (!workShown ? p.event?.issue : null)) ??
+              (p.pending
+                ? 'A proofreading action needs acknowledgment.'
+                : p.event?.pending && !workShown
+                  ? 'Protecting proofreading work…'
+                  : 'A proofreading capture is awaiting your decision.'))}
+        </p>
+        <AppButton variant="subtle" onClick={() => p.show()}>
+          Return to proofreading
+        </AppButton>
+      </StatusBanner>
     </aside>
   )
 }

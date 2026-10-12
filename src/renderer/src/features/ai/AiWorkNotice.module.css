@@ -18,6 +18,9 @@
   gap: var(--collie-space-3);
   margin: 0;
   padding: 0;
+  max-height: min(40dvh, 24rem);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .ai-work-list li {
   padding-block: var(--collie-space-2);
@@ -43,12 +46,4 @@
 }
 .ai-retention-confirmation p {
   margin: 0;
-}
-
-.ai-work-details {
-  margin-block: var(--collie-space-3);
-}
-.ai-work-details summary {
-  cursor: pointer;
-  font-weight: 600;
 }

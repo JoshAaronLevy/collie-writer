@@ -242,12 +242,6 @@ async function receive(message: unknown): Promise<void> {
         case 'sourceChange':
           value = await repository.sourceChange(command.input)
           break
-        case 'sourcePreview':
-          value = await repository.sourcePreview(command.input)
-          break
-        case 'sourceImport':
-          value = await repository.sourceImport(command.input)
-          break
         case 'sourceAttach':
           value = await repository.sourceAttach(command.input, (transferred, total) =>
             parent.postMessage({

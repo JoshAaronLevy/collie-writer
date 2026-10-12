@@ -7,8 +7,20 @@
 .citations-panel p {
   margin-block: var(--collie-space-2);
 }
-.citations-panel > button {
-  justify-self: start;
+.citation-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--collie-space-3);
+}
+.citation-controls > :first-child {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+.citation-preview {
+  max-height: min(32rem, 60dvh);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
 }
 .citations-panel li {
   margin-block: var(--collie-space-3);

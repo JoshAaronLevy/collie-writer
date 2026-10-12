@@ -1,10 +1,6 @@
 import type { AiReason, AiStatus } from '../../../../shared/ai'
 import type { AiConnectionHealthReason } from '../../../../shared/ai-connection-health'
-import type {
-  AiActionAvailability,
-  AiConnectionReason,
-  AiFunding
-} from '../../../../shared/ai-route'
+import type { AiActionAvailability, AiConnectionReason } from '../../../../shared/ai-route'
 
 export const connectionHealthDescription: Record<AiConnectionHealthReason, string> = {
   ready: 'Connected. You can send a message from your conversation.',
@@ -102,9 +98,9 @@ export const connectionReason: Record<AiReason | AiConnectionReason, string> = {
   'ai-work-pending':
     'An AI request is still finishing. Wait for its outcome, or stop it in its conversation or proofreading panel.',
   'output-protection-required':
-    'Wait for local AI work to be protected. If protection needs attention, use the global work notice to return to its owner and retry local protection. This does not resend a request.',
+    'A response still needs to be saved. Use Finish saving response in the AI work notice; it sends no new request.',
   'operation-capacity-full':
-    'All 64 active AI slots are occupied. Open the original projects under AI work → Local AI capacity and recovery, finish local protection, and acknowledge any retained uncertain outcomes in the AI work notice. These actions do not resend requests. Saved history and local saving remain available.',
+    'Saved responses need attention before another request. Open the affected project from the AI work notice to finish saving or dismiss a retained notice. This is local recovery, separate from ChatGPT usage limits.',
   'local-workspace-identity-unavailable':
     'Codex has not supplied a usable account and workspace identity. Open Manage ChatGPT and explicitly resume or reconnect the intended account; no request has been sent.',
   'plan-authorization-required':
@@ -161,13 +157,6 @@ export function featureDescription(feature: AiActionAvailability): string {
     : 'Available for a new reviewed request. Provider access and usage limits are checked again when sending.'
 }
 
-export function fundingDescription(funding: AiFunding): string {
-  if (funding.kind === 'normal-subscription')
-    return 'Local development follows your normal ChatGPT subscription and account spending settings. Available credits may be consumed. Collie will not buy credits, enable top-ups, change your plan or use API-key fallback.'
-  if (funding.kind === 'included-only') return connectionReason['funding-unknown']
-  return 'AI spending is unavailable for this app identity.'
-}
-
 export function connectionLabel(
   status: AiStatus | null,
   checking = false,
@@ -177,11 +166,8 @@ export function connectionLabel(
     | 'refresh'
     | 'disconnect'
     | 'select'
-    | 'resume'
-    | 'cleanup'
     | 'protectConnection'
     | 'prepareConnection'
-    | 'refreshModels'
     | 'selectModel'
 ): string {
   if (action === 'prepareConnection' || status?.direct?.preparation === 'running')
@@ -190,25 +176,15 @@ export function connectionLabel(
     return 'ChatGPT setup will continue when current work is protected.'
   if (action === 'cancel') return 'Cancelling sign-in…'
   if (action === 'select') return 'Selecting account…'
-  if (action === 'resume') return 'Resuming Codex connection…'
-  if (action === 'cleanup') return 'Signing out inactive Codex sessions…'
   if (action === 'protectConnection') return 'Saving connection state on this device…'
-  if (action === 'refreshModels' || status?.catalog?.state === 'loading')
-    return 'Loading account models…'
+  if (status?.catalog?.state === 'loading') return 'Loading account models…'
   if (action === 'selectModel') return 'Selecting model…'
   if (action === 'connect' && status?.state !== 'signing-in') return 'Starting browser sign-in…'
   if (action === 'refresh') return 'Renewing account session…'
   if (action === 'disconnect') return 'Disconnecting account…'
   if (!status) return checking ? 'Checking connection…' : 'Connection status unavailable'
-  if (status.route.kind === 'local-codex-chatgpt' && status.session.state === 'unavailable')
-    return 'Local development · connection unavailable'
-  if (status.session.state === 'saved-needs-resume')
-    return 'Saved Codex connection · resume required'
-  if (status.session.state === 'resuming') return 'Resuming Codex connection…'
   if (status.session.state === 'reconnect-required')
     return 'Account needs renewal or reauthorization'
-  if (status.state === 'signing-in' && status.local && !status.local.cancellable)
-    return 'Finishing Codex connection…'
   if (status.state === 'signing-in') return 'Waiting for browser sign-in'
   if (status.state === 'refreshing') return 'Renewing account session…'
   if (status.state === 'disconnecting') return 'Disconnecting account…'
@@ -220,25 +196,6 @@ export function connectionLabel(
       ? 'Signed in · Reviewed requests available'
       : 'Signed in · AI unavailable'
   return status.channelPermitted && status.configured ? 'Not connected' : 'Connection unavailable'
-}
-
-export function signInUnavailable(status: AiStatus): AiReason | AiConnectionReason | null {
-  const localPrerequisite = status.reasons.find((reason) =>
-    ['secure-storage-unavailable', 'storage-unavailable', 'runtime-unavailable'].includes(reason)
-  )
-  if (status.route.kind === 'local-codex-chatgpt' && localPrerequisite) return localPrerequisite
-  if (status.session.state === 'unavailable') return status.session.reason
-  return (
-    status.reasons.find((reason) =>
-      [
-        'development-access-unavailable',
-        'commercial-activation-pending',
-        'configuration-required',
-        'secure-storage-unavailable',
-        'storage-unavailable'
-      ].includes(reason)
-    ) ?? null
-  )
 }
 
 export const connectionProblemReasons: AiReason[] = [

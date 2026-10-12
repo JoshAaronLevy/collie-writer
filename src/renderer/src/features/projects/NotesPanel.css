@@ -13,7 +13,12 @@
   padding: 0;
 }
 .notes-panel .note-label-list li {
-  padding-block: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--collie-space-2);
+  padding-block: var(--collie-space-3);
   border-bottom: 1px solid var(--collie-border);
 }
 .notes-panel .editor-host .tiptap {

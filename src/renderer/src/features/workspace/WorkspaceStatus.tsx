@@ -22,6 +22,7 @@ export function WorkspaceStatus(): React.JSX.Element {
   const {
     destination,
     project,
+    list,
     saveState,
     files,
     dirty,
@@ -37,7 +38,6 @@ export function WorkspaceStatus(): React.JSX.Element {
     location,
     drafts,
     blocker,
-    notice,
     error,
     setError,
     run,
@@ -54,20 +54,41 @@ export function WorkspaceStatus(): React.JSX.Element {
     exports,
     chooseProject,
     trackExport,
+    dismissExportNotice,
     setLocalCopyTarget
   } = useWorkspaceSession()
   const writing = destination.kind === 'workspace' && destination.view === 'write'
+  const storageVisible = destination.kind === 'settings' && destination.page === 'data'
+  const exportVisible = destination.kind === 'workspace' && destination.view === 'export'
   const operations = drafts
     .states()
     .filter(
       (s) =>
-        s.id !== 'project-file-save' &&
+        !['project-file-save', 'ai-work-action', 'conversations', 'proofreading'].includes(s.id) &&
+        !(
+          sameScope(project, s.scope) &&
+          destination.kind === 'workspace' &&
+          ['search-index', 'export-preparation', 'writing-import'].includes(s.kind) &&
+          s.target.kind === 'workspace' &&
+          s.target.view === destination.view
+        ) &&
         ((s.policy === 'operation' && (s.status || s.issue)) || (s.pendingOperation && !s.busy))
     )
   const fileStateReady = !!project && sameScope(project, files.scope)
   const fileNeedsAttention =
     projectFileNeedsAttention(files, project) || saveState === 'unconfirmed'
   const filePresentation = projectFilePresentation(project, files, dirty, saveState)
+  const exportNotices = exports.filter(
+    (item) =>
+      !item.noticeDismissed &&
+      !(exportVisible && sameScope(project, item.scope)) &&
+      (item.job.state !== 'complete' ||
+        item.issue ||
+        item.job.error ||
+        item.job.space?.length ||
+        item.job.losses.length ||
+        item.job.files?.some((file) => file.state !== 'complete' || file.losses.length))
+  )
   function exportNotice(operation: ExportOperation): React.JSX.Element {
     return (
       <div
@@ -76,8 +97,18 @@ export function WorkspaceStatus(): React.JSX.Element {
         role={operation.issue || operation.job.error ? 'alert' : 'status'}
       >
         <p>
-          Export: {operation.issue || `${operation.job.state} · ${operation.job.phase}`}. Export is
-          separate from project-file Save.
+          Export ·{' '}
+          {list.projects.find((item) => sameScope(item, operation.scope))?.title ??
+            'Another local project'}
+          :{' '}
+          {operation.issue ||
+            (operation.job.state === 'complete'
+              ? 'Finished with omissions or formatting limits.'
+              : operation.job.state === 'rendering' || operation.job.state === 'publishing'
+                ? 'Exporting…'
+                : operation.job.state === 'cancelled'
+                  ? 'Export stopped. Completed files are kept.'
+                  : 'Export needs attention. Existing files are kept.')}
         </p>
         <AppButton
           variant="subtle"
@@ -117,20 +148,23 @@ export function WorkspaceStatus(): React.JSX.Element {
             Cancel export
           </AppButton>
         ) : null}
+        {!['rendering', 'publishing'].includes(operation.job.state) ? (
+          <AppButton
+            variant="subtle"
+            title="The result stays available in Export"
+            onClick={() => dismissExportNotice(operation.job.id)}
+          >
+            Dismiss notice
+          </AppButton>
+        ) : null}
       </div>
     )
   }
   return (
     <div className={`projects ${styles['session-status']}`}>
-      {project && destination.kind === 'workspace' && !writing ? (
-        <p className={styles['current-project']}>
-          {project.title} · {dirty ? 'Changes need local protection' : 'Protected on this device'}
-        </p>
-      ) : null}
-      {notice && !writing ? <p role="status">{notice}</p> : null}
-      {storageAdvice.visible.length ? (
+      {storageAdvice.visible.length && !storageVisible ? (
         <div className={styles['operation-notice']}>
-          <p>{storageAdvice.visible.length} storage notice(s) from the last measurement.</p>
+          <p>Storage needs attention. Review the affected project or disk space.</p>
           <AppButton
             variant="subtle"
             disabled={closing || acting}
@@ -145,7 +179,7 @@ export function WorkspaceStatus(): React.JSX.Element {
           Keep this window open and copy any unprotected writing.
         </StatusBanner>
       ) : null}
-      {location?.state === 'required' ? (
+      {location?.state === 'required' && destination.kind !== 'setup' && !storageVisible ? (
         <StatusBanner tone="warning" title="Choose a local working folder">
           <AppButton
             variant="default"
@@ -158,7 +192,11 @@ export function WorkspaceStatus(): React.JSX.Element {
         </StatusBanner>
       ) : null}
       <RecoveryNotice />
-      {error && !recovery.opened ? (
+      {error &&
+      !recovery.opened &&
+      error !== blocker?.message &&
+      !(project && retry && !committing) &&
+      !(files.job?.state === 'awaiting-choice' && files.job.inspection) ? (
         <StatusBanner tone="error" title="Your attention is needed">
           {error}
         </StatusBanner>
@@ -169,6 +207,7 @@ export function WorkspaceStatus(): React.JSX.Element {
             Collie could not confirm saving recent changes on this computer. Keep this window open.
             Retry saving your visible writing, or copy it elsewhere if saving remains unavailable.
           </p>
+          {error ? <p>{error}</p> : null}
           <AppButton
             disabled={!available || busy || acting || closing || navigating}
             onClick={() =>
@@ -208,7 +247,9 @@ export function WorkspaceStatus(): React.JSX.Element {
           </div>
         </StatusBanner>
       ) : null}
-      {accessTransition || accessReadOnly ? (
+      {(accessTransition || accessReadOnly) &&
+      destination.kind !== 'setup' &&
+      !(destination.kind === 'settings' && destination.page === 'access') ? (
         <StatusBanner
           tone="warning"
           title={accessTransition ? 'Editing access changed' : 'Project open for reading'}
@@ -254,16 +295,7 @@ export function WorkspaceStatus(): React.JSX.Element {
           </AppButton>
         </div>
       ))}
-      {exports.filter((item) => item.job.state !== 'complete' || item.issue).map(exportNotice)}
-      {exports.some((item) => item.job.state === 'complete' && !item.issue) ? (
-        <details>
-          <summary>
-            Completed exports ·{' '}
-            {exports.filter((item) => item.job.state === 'complete' && !item.issue).length}
-          </summary>
-          {exports.filter((item) => item.job.state === 'complete' && !item.issue).map(exportNotice)}
-        </details>
-      ) : null}
+      {exportNotices.map(exportNotice)}
       {closing ? (
         <p role="status">Protecting writing and finishing file work before closing…</p>
       ) : null}
@@ -284,20 +316,6 @@ export function WorkspaceStatus(): React.JSX.Element {
         </div>
       ) : null}
       {!recovery.opened ? <FileOperation /> : null}
-      {project && dirty && !writing ? (
-        <AppButton
-          variant="default"
-          disabled={acting || closing}
-          onClick={() =>
-            run(async () => {
-              await flush()
-              await refresh()
-            })
-          }
-        >
-          Protect pending drafts
-        </AppButton>
-      ) : null}
     </div>
   )
 }

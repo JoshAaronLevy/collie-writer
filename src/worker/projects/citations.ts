@@ -132,7 +132,7 @@ export async function readCitations(
             documentId: doc.id,
             citationId: c.citationId,
             sourceId: source.id,
-            message: `${m.title}: review ${missing.join(', ')}. Correct the source or acknowledge the omission for this preview.`
+            message: `${m.title}: review ${missing.join(', ')}.`
           })
         if (view.issues.length > 100000) throw new ProjectError('LIMIT_EXCEEDED')
       }

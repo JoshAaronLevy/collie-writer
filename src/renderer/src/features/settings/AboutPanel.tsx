@@ -1,23 +1,16 @@
 import { useRef, useState } from 'react'
-import { ShieldCheck } from 'lucide-react'
+import { IconShieldCheck } from '@tabler/icons-react'
 import type { AppInfo } from '../../../../shared/commands'
-import type { StorageStatus } from '../../../../shared/storage'
 import type { SupportPreview } from '../../../../shared/support'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { AppButton, TextareaField } from '../../components/ui/Controls'
 import { AppDialog } from '../../components/ui/AppDialog'
-import { ContentSurface, EmptyState, StatusBanner } from '../../components/ui/Feedback'
+import { ContentSurface, StatusBanner } from '../../components/ui/Feedback'
 import NativeHelpActions from './NativeHelpActions'
 import { AppLogo } from '../../components/AppLogo'
 import styles from './SettingsPanel.module.css'
 
-export default function AboutPanel({
-  info,
-  storage
-}: {
-  info: AppInfo | null
-  storage: StorageStatus
-}): React.JSX.Element {
+export default function AboutPanel({ info }: { info: AppInfo | null }): React.JSX.Element {
   const { navigate } = useWorkspaceSession()
   const [preview, setPreview] = useState<SupportPreview | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -35,6 +28,7 @@ export default function AboutPanel({
     if (previewPending) return
     const request = ++previewRequest.current
     setPreviewPending(true)
+    setPreview(null)
     setPreviewIssue(null)
     try {
       const result = await window.collie.readSupportPreview()
@@ -72,53 +66,28 @@ export default function AboutPanel({
           Writing guide and optional tutorial
         </AppButton>
         <details className={styles['privacy-disclosure']}>
-          <summary>Runtime and local storage</summary>
-          <p>
-            {storage.state === 'ready'
-              ? `SQLite ${storage.runtime.sqliteVersion} · Node ${storage.runtime.nodeVersion} · Node-API ${storage.runtime.napiVersion}`
-              : storage.state === 'starting'
-                ? 'Waiting for a local working folder or starting storage…'
-                : 'Storage is unavailable. Keep this window open and copy unprotected writing.'}
-          </p>
-          <p>
-            The support preview below includes the remaining app/runtime versions without project
-            content.
-          </p>
-        </details>
-        <details className={styles['privacy-disclosure']}>
           <summary>Where your data lives</summary>
           <p>
-            Working projects, unsaved recovery and retained file operations stay in the local
-            working folder shown under Settings → Storage. Search cache can be cleared there and
-            rebuilds when needed. Source originals, excerpts, backups and recovery are not
-            disposable caches. A project file contains saved writing, research, citations, managed
-            original files and saved AI conversations. A new project has no selected file until
-            Save; a backup is another chosen file.
+            Working projects and unsaved recovery stay in the local working folder under Settings →
+            Storage. Save chooses or updates a project file containing writing, research, originals
+            and saved AI conversations; Backup makes another copy. Your cloud provider may sync a
+            selected file, but Collie cannot confirm its upload.
           </p>
           <p>
-            Display choices, orientation dismissal, writing layout, the last-section hint, an
-            optional remembered author, and unfinished new-project setup stay in the local app
-            profile. The setup draft can contain a title and description; cancelling before creation
-            or finishing clears it, while an uncertain creation request stays for safe retry. Signed
-            access documents and the free project choice live separately under the local working
-            folder. When configured, optional purchase connections use OS-protected credentials in
-            the app profile and contact the purchase service only for actions you request.
-            Connection tokens never enter project files or support previews. Direct-build updates
-            connect only when you choose Check for updates in Settings or the native Help menu;
-            there are no automatic update checks, content analytics or crash uploads. Your own cloud
-            provider may sync a selected project file; Collie Writer cannot confirm when that upload
-            finishes.
+            Display choices, remembered author and unfinished project setup (including its title and
+            description) stay in the local app profile. Connection credentials stay out of project
+            files and support previews. Optional purchase-service connections and update checks run
+            only when requested. There are no automatic update checks, content analytics or crash
+            uploads.
           </p>
           <p>
-            Archive changes library visibility and frees no space. Deleting app data outside Collie
-            Writer can remove the only local copy of unsaved work. Save or back up projects before
-            removing local data.
+            Storage offers safe cache cleanup. Originals, history and unsaved recovery are not
+            disposable cache; Archive only changes library visibility. Save or back up projects
+            before removing app data, which may hold the only copy of unsaved work.
           </p>
           <AppButton
             variant="default"
-            onClick={() => {
-              void navigate({ kind: 'settings', page: 'data' })
-            }}
+            onClick={() => void navigate({ kind: 'settings', page: 'data' })}
           >
             Open Storage
           </AppButton>
@@ -133,67 +102,67 @@ export default function AboutPanel({
           </div>
           <AppButton
             variant="default"
-            leftSection={<ShieldCheck size={18} aria-hidden="true" />}
-            onClick={() => setPreviewOpen(true)}
+            leftSection={<IconShieldCheck size={18} aria-hidden="true" />}
+            onClick={() => {
+              setPreviewOpen(true)
+              void preparePreview()
+            }}
           >
             Review support preview
           </AppButton>
         </div>
       </ContentSurface>
-      <AppDialog opened={previewOpen} onClose={closePreview} title="Support preview">
+      <AppDialog
+        opened={previewOpen}
+        onClose={closePreview}
+        title="Support preview"
+        classNames={{
+          content: styles['support-dialog-content'],
+          body: styles['support-dialog-container']
+        }}
+      >
         <div className={styles['support-dialog']}>
-          <p>
-            Includes app and runtime versions, storage state, elapsed runtime and known error codes.
-            It contains no writing, filenames, paths, URLs, source titles, hashes, account details
-            or secrets. Nothing is sent automatically.
-          </p>
-          {preview ? (
-            <>
-              <TextareaField
-                label="Preview to review and copy"
-                description="Select and copy only if you choose to share it."
-                classNames={{ input: styles['support-preview-text'] }}
-                readOnly
-                rows={12}
-                value={JSON.stringify(preview, null, 2)}
-                onFocus={(event) => event.currentTarget.select()}
-              />
-              <p role="status">Preview ready. This is a snapshot from when you prepared it.</p>
+          <div className={styles['support-dialog-body']}>
+            <p>
+              Includes app and runtime versions, storage state, elapsed runtime and known error
+              codes. It contains no writing, filenames, paths, URLs, source titles, hashes, account
+              details or secrets. Nothing is sent automatically.
+            </p>
+            {preview ? (
+              <>
+                <TextareaField
+                  label="Preview to review and copy"
+                  description="Select and copy only if you choose to share it."
+                  classNames={{ input: styles['support-preview-text'] }}
+                  readOnly
+                  rows={12}
+                  value={JSON.stringify(preview, null, 2)}
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <p role="status">
+                  Preview ready. This is a snapshot from when you opened or refreshed it.
+                </p>
+              </>
+            ) : previewPending ? (
+              <p role="status">Preparing preview…</p>
+            ) : null}
+            {previewIssue ? (
+              <StatusBanner tone="error" title="Preview unavailable">
+                {previewIssue}
+              </StatusBanner>
+            ) : null}
+          </div>
+          <div className={styles['support-dialog-actions']}>
+            {preview || previewIssue ? (
               <AppButton
                 variant="default"
                 pending={previewPending}
-                onClick={() => {
-                  void preparePreview()
-                }}
+                onClick={() => void preparePreview()}
               >
-                {previewPending ? 'Refreshing preview…' : 'Refresh preview'}
+                {previewIssue ? 'Try again' : 'Refresh preview'}
               </AppButton>
-            </>
-          ) : (
-            <EmptyState
-              title="Choose what you share"
-              action={
-                <AppButton
-                  data-autofocus
-                  pending={previewPending}
-                  onClick={() => {
-                    void preparePreview()
-                  }}
-                >
-                  {previewPending ? 'Preparing preview…' : 'Prepare content-free preview'}
-                </AppButton>
-              }
-            >
-              Prepare a local summary, then read and copy it here.
-            </EmptyState>
-          )}
-          {previewIssue ? (
-            <StatusBanner tone="error" title="Preview unavailable">
-              {previewIssue}
-            </StatusBanner>
-          ) : null}
-          <div className={styles['support-dialog-actions']}>
-            <AppButton variant="default" onClick={closePreview}>
+            ) : null}
+            <AppButton data-autofocus variant="default" onClick={closePreview}>
               Close preview
             </AppButton>
           </div>

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Radio } from '@mantine/core'
-import { BookOpen, FileText, GraduationCap, PenLine, Search } from 'lucide-react'
+import { IconBook, IconFileText, IconSchool, IconPencil, IconSearch } from '@tabler/icons-react'
 import { canEditProject, sameProject, type AccessView } from '../../../../shared/access'
 import type { CreateInput } from '../../../../shared/projects'
 import {
@@ -36,13 +36,13 @@ const descriptions: Record<ProjectTemplate, string> = {
   blank: 'Start with an empty draft and shape your own outline.'
 }
 const icons = {
-  book: BookOpen,
-  essay: GraduationCap,
-  article: FileText,
-  report: FileText,
-  critique: Search,
-  research: GraduationCap,
-  blank: PenLine
+  book: IconBook,
+  essay: IconSchool,
+  article: IconFileText,
+  report: IconFileText,
+  critique: IconSearch,
+  research: IconSchool,
+  blank: IconPencil
 }
 const primary = projectTemplates.filter((template) => projectTypes[template].primary)
 const secondary = projectTemplates.filter((template) => !projectTypes[template].primary)
@@ -197,7 +197,7 @@ export default function OnboardingWizard(): React.JSX.Element {
     if (!result.ok) {
       setIssue(
         result.error.code === 'UNAVAILABLE'
-          ? 'The result is unknown. Resume this same creation request; your project will not be created twice.'
+          ? 'Creation could not be confirmed. Continue setup to check; this will not create a second project.'
           : result.error.message
       )
       return
@@ -220,7 +220,7 @@ export default function OnboardingWizard(): React.JSX.Element {
     }
     if (!save(next)) {
       setIssue(
-        'The project was created, but setup progress could not be saved. Retry saving setup here; after a restart, resume the same creation request.'
+        'The project was created, but setup could not be saved. Retry saving setup here; after a restart, choose Continue setup.'
       )
       return
     }
@@ -228,7 +228,7 @@ export default function OnboardingWizard(): React.JSX.Element {
     setIssue(null)
     await finishCreated('write')
     if (!authorRemembered)
-      session.setNotice(
+      session.setError(
         'Your project is kept. The author preference could not be saved; review it in Settings.'
       )
   }
@@ -320,9 +320,7 @@ export default function OnboardingWizard(): React.JSX.Element {
         }
         await sendCreate(input, current.rememberAuthor)
       } catch {
-        setIssue(
-          'Creation could not be confirmed. Resume the same request when storage is available.'
-        )
+        setIssue('Creation could not be confirmed. Continue setup when local storage is available.')
       } finally {
         workingRef.current = false
         setWorking(false)
@@ -352,7 +350,7 @@ export default function OnboardingWizard(): React.JSX.Element {
         if (!save(latest.current)) return
         await sendCreate(latest.current.request!, latest.current.rememberAuthor)
       } catch {
-        setIssue('The result remains unknown. This exact request is kept for another retry.')
+        setIssue('Creation still could not be confirmed. Your setup is kept for another try.')
       } finally {
         workingRef.current = false
         setWorking(false)
@@ -511,6 +509,38 @@ export default function OnboardingWizard(): React.JSX.Element {
           {issue}
         </StatusBanner>
       ) : null}
+      {session.location?.state === 'required' ? (
+        <StatusBanner tone="warning" title="Choose a local working folder">
+          <p>{session.location.message} Your setup details are kept here.</p>
+          <AppButton
+            variant="default"
+            disabled={busy || !!unreadable}
+            onClick={() => session.run(session.chooseWorkingLocation)}
+          >
+            Choose local working folder…
+          </AppButton>
+        </StatusBanner>
+      ) : null}
+      {session.available &&
+      (draft.step === 'details' || (created && draft.step === 'opening')) &&
+      !editingIntent(session.access) ? (
+        <StatusBanner tone="warning" title="Editing access needs attention">
+          <p>
+            {created
+              ? 'Check editing access, or open the project for reading below.'
+              : 'Check editing access before creating your project.'}{' '}
+            Your setup is kept.
+          </p>
+          <div className={styles['setup-actions']}>
+            <AppButton variant="default" disabled={busy} onClick={checkAccess}>
+              Check editing access
+            </AppButton>
+            <AppButton variant="subtle" disabled={busy} onClick={session.showAccess}>
+              Open Collie access
+            </AppButton>
+          </div>
+        </StatusBanner>
+      ) : null}
 
       {draft.step === 'type' ? (
         <>
@@ -645,40 +675,11 @@ export default function OnboardingWizard(): React.JSX.Element {
               Your description stays with this project. It is not sent to an AI provider or added to
               manuscript pages automatically.
             </p>
-            {!session.available ? (
-              <StatusBanner tone="warning" title="Local storage is needed">
-                Choose a safe device-local working folder before Create. Your setup details remain
-                here.{' '}
-                <AppButton
-                  variant="default"
-                  onClick={() => {
-                    void session.navigate({ kind: 'settings', page: 'data' })
-                  }}
-                >
-                  Open Storage
-                </AppButton>
-              </StatusBanner>
-            ) : null}
             {switching ? (
               <p className={styles['editing-choice']}>
                 Creating this project will make it your free writing project. Your other projects
                 will remain available to read and export.
               </p>
-            ) : null}
-            {!editingIntent(session.access) ? (
-              <StatusBanner tone="warning" title="Editing access needs attention">
-                <p>Check Collie access before creating this project. Your details are kept.</p>
-                <AppButton variant="default" disabled={busy} onClick={checkAccess}>
-                  Check editing access
-                </AppButton>
-                <AppButton
-                  variant="subtle"
-                  disabled={busy}
-                  onClick={() => void session.navigate({ kind: 'settings', page: 'access' })}
-                >
-                  Open Collie access
-                </AppButton>
-              </StatusBanner>
             ) : null}
             <div className={styles['setup-actions']}>
               <AppButton
@@ -701,7 +702,11 @@ export default function OnboardingWizard(): React.JSX.Element {
                 type="submit"
                 className={styles['setup-primary-action']}
                 disabled={
-                  busy || !!unreadable || !!persistenceIssue || !editingIntent(session.access)
+                  busy ||
+                  !session.available ||
+                  !!unreadable ||
+                  !!persistenceIssue ||
+                  !editingIntent(session.access)
                 }
               >
                 {working
@@ -720,15 +725,15 @@ export default function OnboardingWizard(): React.JSX.Element {
           <p>
             {working
               ? 'Creating your project locally…'
-              : 'The result of the creation request needs to be confirmed. Resuming repeats the same request and will not make a second project.'}
+              : 'Continue setup to confirm creation. Collie will not create a second project.'}
           </p>
           <div className={styles['setup-actions']}>
             <AppButton
-              disabled={busy || !!persistenceIssue || !!unreadable}
+              disabled={busy || !session.available || !!persistenceIssue || !!unreadable}
               pending={working}
               onClick={resumeCreation}
             >
-              Resume project creation
+              Continue setup
             </AppButton>
             <AppButton
               variant="subtle"
@@ -737,7 +742,7 @@ export default function OnboardingWizard(): React.JSX.Element {
                 void leave()
               }}
             >
-              Leave setup and keep request
+              Return to Projects
             </AppButton>
           </div>
         </div>
@@ -767,6 +772,7 @@ export default function OnboardingWizard(): React.JSX.Element {
             <AppButton
               disabled={
                 busy ||
+                !session.available ||
                 !!unreadable ||
                 !!persistenceIssue ||
                 (draft.step !== 'completed' && !editingIntent(session.access))
@@ -782,17 +788,14 @@ export default function OnboardingWizard(): React.JSX.Element {
             {draft.step !== 'completed' ? (
               <AppButton
                 variant="default"
-                disabled={busy || !!unreadable || !!persistenceIssue}
+                disabled={busy || !session.available || !!unreadable || !!persistenceIssue}
                 onClick={() => openCreated('read')}
               >
                 Open for reading
               </AppButton>
             ) : null}
-            <AppButton variant="subtle" disabled={busy} onClick={checkAccess}>
-              Check editing access
-            </AppButton>
             <AppButton variant="subtle" disabled={busy} onClick={() => void leave()}>
-              Review Projects; keep setup
+              Return to Projects
             </AppButton>
           </div>
         </div>

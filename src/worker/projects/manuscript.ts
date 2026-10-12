@@ -192,6 +192,20 @@ export function payloadAnchors(
   visit(payload)
   return result
 }
+/** Insert the current document identities inside the caller's write transaction. */
+export function indexDocumentIds(
+  db: Database.Database,
+  projectId: string,
+  documentId: string,
+  payload: DocumentPayload
+): void {
+  const insert = db.prepare('INSERT INTO editor_ids VALUES (?,?,?,?)')
+  const prior = db.prepare('SELECT document_id FROM editor_ids WHERE project_id=? AND id=?')
+  for (const anchor of payloadAnchors(payload)) {
+    if (prior.get(projectId, anchor.id)) throw new ProjectError('VALIDATION')
+    insert.run(projectId, anchor.id, documentId, anchor.kind)
+  }
+}
 export function currentAnchors(
   documents: RetainedDocument[],
   version: 1 | 2 = 2

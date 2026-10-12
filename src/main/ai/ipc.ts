@@ -9,7 +9,6 @@ import {
   isAiConnection,
   isAiEvent,
   isAiOperationInput,
-  isAiPrepare,
   isAiStart,
   isAiStartupInput,
   isAiChannelValue,
@@ -35,9 +34,7 @@ export function registerAiIpc(
         !isId(payload.requestId) ||
         !exact(
           payload,
-          ['status', 'cleanupConnection', 'protectConnection'].includes(kind)
-            ? ['requestId']
-            : ['requestId', 'input']
+          ['status', 'protectConnection'].includes(kind) ? ['requestId'] : ['requestId', 'input']
         )
       )
         return { ok: false, requestId: '', reason: 'invalid-request' }
@@ -56,19 +53,11 @@ export function registerAiIpc(
           value = await service.disconnect(input.connectionId)
         else if (kind === 'select' && isAiConnection(input))
           value = await service.select(input.connectionId)
-        else if (kind === 'resumeConnection' && isAiConnection(input))
-          value = await service.resumeConnection(input.connectionId)
-        else if (kind === 'cleanupConnection') value = await service.cleanupConnection()
         else if (kind === 'protectConnection') value = await service.protectConnection()
-        else if (kind === 'models' && isAiConnection(input))
-          value = await service.models(input.connectionId)
         else if (kind === 'prepareConnection' && isAiConnection(input))
           value = await service.prepareConnection(input.connectionId)
-        else if (kind === 'refreshModels' && isAiConnection(input))
-          value = await service.refreshModels(input.connectionId)
         else if (kind === 'selectModel' && isAiSelectModel(input))
           value = await service.selectModel(input)
-        else if (kind === 'prepare' && isAiPrepare(input)) value = await service.prepare(input)
         else if (kind === 'start' && isAiStart(input)) value = await service.start(input)
         else if (kind === 'cancel' && isAiOperationInput(input)) value = await service.cancel(input)
         else if (kind === 'operations' && isOpenInput(input))

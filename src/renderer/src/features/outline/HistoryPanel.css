@@ -59,7 +59,7 @@
   }
 }
 
-.history-panel > h2 {
-  font-size: 1.25rem;
-  margin-top: 1.5rem;
+.history-panel .history-deletion-list {
+  max-height: 18rem;
+  overflow: auto;
 }

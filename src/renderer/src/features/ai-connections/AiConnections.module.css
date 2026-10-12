@@ -21,9 +21,7 @@
   align-items: center;
   gap: var(--collie-space-2);
 }
-.ai-current-account,
-.ai-account-choice,
-.ai-saved-accounts {
+.ai-account-choice {
   display: grid;
   gap: var(--collie-space-2);
 }
@@ -36,27 +34,6 @@
   gap: var(--collie-space-2);
   padding-block: var(--collie-space-2);
   border-top: 1px solid var(--collie-border);
-}
-.ai-connection-details {
-  border-top: 1px solid var(--collie-border);
-  padding-block-start: var(--collie-space-4);
-}
-.ai-connection-details summary {
-  cursor: pointer;
-  font-weight: 600;
-}
-.ai-connection-details dl {
-  display: grid;
-  gap: var(--collie-space-4);
-}
-.ai-connection-details dt {
-  font-weight: 600;
-}
-.ai-connection-details dd {
-  margin: var(--collie-space-1) 0 0;
-}
-.ai-connection-details p + p {
-  margin-block-start: var(--collie-space-2);
 }
 .ai-connection-notice {
   margin-block: var(--collie-space-4);
@@ -138,10 +115,6 @@
   justify-self: start;
 }
 
-.ai-execution-availability {
-  display: grid;
-  gap: var(--collie-space-2);
-}
 .ai-request-connection {
   display: grid;
   gap: var(--collie-space-3);
@@ -173,7 +146,6 @@
 
 .chatgpt-dialog,
 .chatgpt-account-controls,
-.chatgpt-connection-details,
 .chatgpt-disconnect-confirmation {
   display: grid;
   gap: var(--collie-space-3);

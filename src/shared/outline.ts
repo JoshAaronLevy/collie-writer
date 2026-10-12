@@ -290,14 +290,17 @@ export function isHistoryView(v: unknown): v is HistoryView {
     v.prunableIds.every(isId)
   )
 }
-export function effectiveState(doc: OutlineDocument, documents: OutlineDocument[]): OutlineState {
-  const byId = new Map(documents.map((d) => [d.id, d]))
+export function effectiveState(
+  doc: OutlineDocument,
+  documents: OutlineDocument[] | ReadonlyMap<string, OutlineDocument>
+): OutlineState {
+  const byId = Array.isArray(documents) ? new Map(documents.map((d) => [d.id, d])) : documents
   let result = doc.state,
     cursor = doc,
     count = 0
   while (cursor.parentId) {
     const parent = byId.get(cursor.parentId)
-    if (!parent || ++count > documents.length) return 'trashed'
+    if (!parent || ++count > byId.size) return 'trashed'
     if (parent.state === 'trashed' || parent.state === 'merged') return 'trashed'
     if (parent.state === 'archived' && result === 'active') result = 'archived'
     cursor = parent

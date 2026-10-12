@@ -243,11 +243,7 @@ export class AiStorage {
     }
     await this.initialized
   }
-  async runtimeRoot(): Promise<string> {
-    await this.initialize()
-    await directory(this.root!, join(this.root!, 'runtime'))
-    return join(this.root!, 'runtime')
-  }
+  /** Read/decrypt historical account namespaces without resuming or rewriting them. */
   async localSession(): Promise<LocalCodexSessionV2> {
     const value = await this.read(LOCAL_CODEX_SESSION_FILE)
     if (value !== null) {
@@ -262,10 +258,6 @@ export class AiStorage {
       active: legacy.account ? { profileId: legacy.profileId, account: legacy.account } : null,
       retired: legacy.account ? [] : [legacy.profileId]
     }
-  }
-  async saveLocalSession(value: LocalCodexSessionV2): Promise<void> {
-    if (!isLocalCodexSessionV2(value)) throw new AiError('storage-unavailable')
-    await this.write(LOCAL_CODEX_SESSION_FILE, value)
   }
   private async read(name: string, maxBytes = 2 * 1024 * 1024): Promise<unknown | null> {
     await this.initialize()

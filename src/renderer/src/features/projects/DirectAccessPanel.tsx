@@ -8,18 +8,26 @@ export default function DirectAccessPanel(): React.JSX.Element {
   const [view, setView] = useState<DirectView | null>(null)
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [])
+    if (!view?.pending || !view.expiresAt) return
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, view.expiresAt - Date.now()))
+    return () => clearTimeout(timer)
+  }, [view?.pending, view?.expiresAt])
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   useEffect(() => {
     let mounted = true
-    void window.collie.readDirectAccess().then((result) => {
-      if (!mounted) return
-      if (result.ok) setView(result.value)
-      else setError(result.error.message)
-    })
+    void window.collie
+      .readDirectAccess()
+      .then((result) => {
+        if (!mounted) return
+        if (result.ok) {
+          setView(result.value)
+          setNow(Date.now())
+        } else setError(result.error.message)
+      })
+      .catch(() => {
+        if (mounted) setError('Purchase access could not be read. Your projects are kept.')
+      })
     return () => {
       mounted = false
     }
@@ -30,12 +38,12 @@ export default function DirectAccessPanel(): React.JSX.Element {
     setError('')
     try {
       const result = await work()
-      if (result.ok) setView(result.value)
-      else setError(result.error.message)
+      if (result.ok) {
+        setView(result.value)
+        setNow(Date.now())
+      } else setError(result.error.message)
     } catch {
-      setError(
-        'The purchase action could not finish. Existing writing and cached signed access remain available.'
-      )
+      setError('The purchase action could not finish. Your projects and saved access are kept.')
     } finally {
       setBusy(false)
     }
@@ -45,82 +53,96 @@ export default function DirectAccessPanel(): React.JSX.Element {
   }
   const available = !!view?.configured && view.secureStorage && !busy
   const activeSession = !!view?.pending && (view.expiresAt ?? 0) > now
+  if (!view)
+    return (
+      <>
+        <p role={error ? 'alert' : 'status'}>{error || 'Reading purchase access…'}</p>
+        {error ? (
+          <AppButton
+            variant="default"
+            disabled={busy}
+            onClick={() => void perform(window.collie.readDirectAccess)}
+          >
+            Retry purchase access
+          </AppButton>
+        ) : null}
+      </>
+    )
   return (
-    <details className={styles['purchase-connection']}>
-      <summary>Direct purchase, restore and subscription management</summary>
-      <p>
-        Purchase and restore open your system browser. Connection credentials stay in OS-protected
-        storage; your projects, paths, research and writing are never sent to the purchase service.
-      </p>
-      {view ? (
+    <section className={styles['purchase-connection']} aria-labelledby="purchase-title">
+      <h3 id="purchase-title">Purchase and restore</h3>
+      {view.configured ? (
         <>
           <p role="status" aria-live="polite">
             {view.message}
           </p>
           {!view.checkoutEnabled ? (
             <p>
-              Checkout is not enabled in this build. The commercial-value decision, merchant
-              configuration and checkout review remain prerequisites.
+              New purchases are unavailable in this build; purchase restore is available when secure
+              storage is working.
             </p>
           ) : null}
           {!view.secureStorage ? (
             <p>
-              Secure purchase credential storage is unavailable. Free writing and cached signed
-              licenses remain available.
+              Purchase access cannot be stored securely. Free writing and saved access remain
+              available.
             </p>
           ) : null}
           <div className={styles['access-actions']}>
-            <AppButton
-              variant="default"
-              type="button"
-              disabled={!available || !view.checkoutEnabled || activeSession}
-              onClick={() => begin('monthly')}
-            >
-              Monthly nonfiction · $9.99 USD
-            </AppButton>
-            <AppButton
-              variant="default"
-              type="button"
-              disabled={!available || !view.checkoutEnabled || activeSession}
-              onClick={() => begin('lifetime')}
-            >
-              Lifetime nonfiction · $199 USD
-            </AppButton>
+            {view.checkoutEnabled ? (
+              <>
+                <AppButton
+                  variant="default"
+                  type="button"
+                  disabled={!available || activeSession}
+                  onClick={() => begin('monthly')}
+                >
+                  Monthly · $9.99 USD
+                </AppButton>
+                <AppButton
+                  variant="default"
+                  type="button"
+                  disabled={!available || activeSession}
+                  onClick={() => begin('lifetime')}
+                >
+                  Lifetime · $199 USD
+                </AppButton>
+              </>
+            ) : null}
             <AppButton
               variant="default"
               type="button"
               disabled={!available || activeSession}
               onClick={() => begin('restore')}
             >
-              Restore with purchase recovery code…
+              Restore purchase…
             </AppButton>
           </div>
+          <p>Purchase and restore open your browser. Your writing is not shared.</p>
           {view.pending ? (
             <div>
               <p>
-                Browser session:{' '}
-                {view.pending === 'restore' ? 'restore' : `${view.pending} purchase`}. Expires{' '}
-                {new Date(view.expiresAt!).toLocaleTimeString()}. Keep the recovery code shown after
-                payment before returning here.
+                {view.pending === 'restore' ? 'Restore' : 'Purchase'}{' '}
+                {activeSession ? 'is waiting in your browser' : 'session expired'}.
+                {activeSession && view.expiresAt
+                  ? ` Expires ${new Date(view.expiresAt).toLocaleTimeString()}.`
+                  : ''}{' '}
+                Keep the recovery code from your browser for future restores.
               </p>
               <div className={styles['access-actions']}>
                 <AppButton
                   variant="default"
                   type="button"
-                  disabled={!available}
-                  onClick={() => {
-                    void perform(window.collie.resumeDirectAccess)
-                  }}
+                  disabled={!available || !activeSession}
+                  onClick={() => void perform(window.collie.resumeDirectAccess)}
                 >
-                  Reopen browser session
+                  Continue in browser
                 </AppButton>
                 <AppButton
                   variant="default"
                   type="button"
-                  disabled={!available}
-                  onClick={() => {
-                    void perform(window.collie.claimDirectAccess)
-                  }}
+                  disabled={!available || !activeSession}
+                  onClick={() => void perform(window.collie.claimDirectAccess)}
                 >
                   Check completion
                 </AppButton>
@@ -133,59 +155,47 @@ export default function DirectAccessPanel(): React.JSX.Element {
                 variant="default"
                 type="button"
                 disabled={!available}
-                onClick={() => {
-                  void perform(window.collie.refreshDirectAccess)
-                }}
+                onClick={() => void perform(window.collie.refreshDirectAccess)}
               >
-                Refresh signed purchase access
+                Refresh purchase access
               </AppButton>
               <AppButton
                 variant="default"
                 type="button"
                 disabled={!available}
-                onClick={() => {
-                  void perform(window.collie.manageDirectAccess)
-                }}
+                onClick={() => void perform(window.collie.manageDirectAccess)}
               >
-                Manage subscription and receipts…
+                Manage subscription…
               </AppButton>
             </div>
           ) : null}
           {view.hasSubscription ? (
             <p>
-              A recurring subscription exists on this connection. Buying lifetime access does not
-              cancel it automatically. Use subscription management to review billing.
+              Buying lifetime access does not cancel your subscription. Manage it above to review
+              billing.
             </p>
           ) : null}
-          {view.connected || view.pending || !view.secureStorage ? (
-            <>
-              <p>
-                Disconnect clears this computer&apos;s purchase connection and pending session. It
-                keeps cached signed licenses and projects, and does not cancel a subscription. You
-                can restore with your recovery code later.
-              </p>
-              <AppButton
-                variant="default"
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  void perform(window.collie.disconnectDirectAccess)
-                }}
-              >
-                Disconnect purchase account
-              </AppButton>
-            </>
-          ) : null}
-          <p>
-            Refresh when online to receive renewal, cancellation or refund decisions. If the service
-            cannot be reached, the last authenticated document governs offline access; reading,
-            export, backup and recovery stay available.
-          </p>
         </>
       ) : (
-        <p role="status">Reading this computer&apos;s purchase connection…</p>
+        <p role="status">{view.message}</p>
       )}
+      {view.connected || view.pending || !view.secureStorage ? (
+        <details>
+          <summary>Disconnect purchase account</summary>
+          <p>
+            Clears this computer’s purchase connection. Keeps projects and saved access; does not
+            cancel billing.
+          </p>
+          <AppButton
+            variant="default"
+            disabled={busy}
+            onClick={() => void perform(window.collie.disconnectDirectAccess)}
+          >
+            Disconnect
+          </AppButton>
+        </details>
+      ) : null}
       {error ? <p role="alert">{error}</p> : null}
-    </details>
+    </section>
   )
 }

@@ -227,7 +227,11 @@ export class LocalSearch {
   }
   ensure(db: Database.Database, operations: Database.Database): void {
     const m = this.meta()
-    if (m.state === 'partial' || (m.state === 'completed' && m.indexed_head !== head(db)))
+    if (
+      m.state === 'partial' ||
+      m.state === 'interrupted' ||
+      (m.state === 'completed' && m.indexed_head !== head(db))
+    )
       this.start(db, operations)
   }
   private select(db: Database.Database, phase: number, cursor: string): Record<string, unknown>[] {
@@ -507,10 +511,16 @@ export class LocalSearch {
     const m = this.meta(),
       current = head(db)
     if (!this.coverage || this.coverage.head !== current) {
-      const pagesWithText = count(db, "SELECT count(*) n FROM source_pages WHERE state='text'")
-      const pagesWithoutText = count(db, "SELECT count(*) n FROM source_pages WHERE state<>'text'")
+      const pagesWithText = count(
+        db,
+        "SELECT count(*) n FROM source_pages WHERE state='text' AND length(text)>0"
+      )
+      const pagesWithoutText = count(
+        db,
+        "SELECT count(*) n FROM source_pages WHERE state<>'text' OR text IS NULL OR length(text)=0"
+      )
       const missing =
-        "FROM sources s LEFT JOIN source_version_selections a ON a.project_id=s.project_id AND a.source_id=s.id LEFT JOIN source_versions v ON v.project_id=a.project_id AND v.id=a.version_id WHERE s.state='active' AND (v.status IS NULL OR v.status<>'indexed')"
+        "FROM sources s LEFT JOIN source_version_selections a ON a.project_id=s.project_id AND a.source_id=s.id LEFT JOIN source_versions v ON v.project_id=a.project_id AND v.id=a.version_id WHERE s.state='active' AND EXISTS (SELECT 1 FROM source_versions original WHERE original.project_id=s.project_id AND original.source_id=s.id) AND (v.status IS NULL OR v.status<>'indexed')"
       const uninspectedSources = count(db, `SELECT count(*) n ${missing}`)
       const uninspected = (
         db

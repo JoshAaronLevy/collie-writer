@@ -12,14 +12,11 @@ type ConnectionControllerState = {
   connect: (connectionId: string | null, trigger: HTMLElement | null) => Promise<boolean>
   cancel: () => Promise<boolean>
   accountAction: (
-    kind: 'refresh' | 'disconnect' | 'select' | 'resume' | 'refreshModels' | 'prepareConnection',
+    kind: 'refresh' | 'disconnect' | 'select' | 'prepareConnection',
     connectionId: string,
     trigger: HTMLElement | null
   ) => Promise<boolean>
-  localAction: (
-    kind: 'cleanup' | 'protectConnection',
-    trigger: HTMLElement | null
-  ) => Promise<boolean>
+  localAction: (kind: 'protectConnection', trigger: HTMLElement | null) => Promise<boolean>
   selectModel: (input: AiSelectModelInput, trigger: HTMLElement | null) => Promise<boolean>
   dialogOpen: boolean
   openDialog: (trigger?: HTMLElement | null) => void
@@ -45,11 +42,8 @@ type Action = {
     | 'refresh'
     | 'disconnect'
     | 'select'
-    | 'resume'
-    | 'cleanup'
     | 'protectConnection'
     | 'prepareConnection'
-    | 'refreshModels'
     | 'selectModel'
   connectionId: string | null
   attemptId: string | null
@@ -309,14 +303,11 @@ export function useConnectionController(): ConnectionControllerState {
   }, [session.available, checkStatus])
   const waiting =
     status?.state === 'signing-in' || pending?.kind === 'connect' || pending?.kind === 'cancel'
-  const canCancel =
-    status?.state === 'signing-in'
-      ? (status.local?.cancellable ?? true)
-      : pending?.kind === 'connect'
+  const canCancel = status?.state === 'signing-in' || pending?.kind === 'connect'
   useEffect(() => {
     if (!session.available) return
     // Repair missed initial/terminal events even while panels are hidden.
-    // Main's local snapshot never refreshes authentication or runs Codex.
+    // A status snapshot never refreshes authentication or sends a request.
     const timer = setInterval(() => {
       void checkStatus()
     }, 5000)
@@ -428,7 +419,7 @@ export function useConnectionController(): ConnectionControllerState {
 
   const accountAction = useCallback(
     (
-      kind: 'refresh' | 'disconnect' | 'select' | 'resume' | 'refreshModels' | 'prepareConnection',
+      kind: 'refresh' | 'disconnect' | 'select' | 'prepareConnection',
       connectionId: string,
       trigger: HTMLElement | null
     ): Promise<boolean> => {
@@ -442,13 +433,9 @@ export function useConnectionController(): ConnectionControllerState {
           ? window.collie.prepareAiConnection(input)
           : kind === 'refresh'
             ? window.collie.refreshAiConnection(input)
-            : kind === 'refreshModels'
-              ? window.collie.refreshAiModels(input)
-              : kind === 'resume'
-                ? window.collie.resumeAiConnection(input)
-                : kind === 'disconnect'
-                  ? window.collie.disconnectAi(input)
-                  : window.collie.selectAiConnection(input)
+            : kind === 'disconnect'
+              ? window.collie.disconnectAi(input)
+              : window.collie.selectAiConnection(input)
       )
     },
     [begin, finish]
@@ -464,16 +451,10 @@ export function useConnectionController(): ConnectionControllerState {
   )
 
   const localAction = useCallback(
-    (kind: 'cleanup' | 'protectConnection', trigger: HTMLElement | null): Promise<boolean> => {
+    (kind: 'protectConnection', trigger: HTMLElement | null): Promise<boolean> => {
       if (!snapshot.current?.actions[kind]) return Promise.resolve(false)
       const next = begin(kind, null, trigger)
-      return next
-        ? finish(next, () =>
-            kind === 'cleanup'
-              ? window.collie.cleanupAiConnection()
-              : window.collie.protectAiConnection()
-          )
-        : Promise.resolve(false)
+      return next ? finish(next, () => window.collie.protectAiConnection()) : Promise.resolve(false)
     },
     [begin, finish]
   )

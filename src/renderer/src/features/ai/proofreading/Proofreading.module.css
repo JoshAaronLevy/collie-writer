@@ -110,12 +110,5 @@
   padding-inline-start: var(--collie-space-3);
 }
 .proofreading-notice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--collie-space-3);
-  padding: var(--collie-space-2) var(--collie-space-4);
-  border-block-end: 1px solid var(--collie-border);
-  background: var(--collie-surface);
-  font-size: 0.8125rem;
+  margin-block: var(--collie-space-4);
 }

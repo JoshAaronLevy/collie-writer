@@ -24,19 +24,6 @@
   max-height: 20rem;
   overflow: auto;
 }
-.sources-panel .source-import-review {
-  padding: var(--collie-space-4);
-  border: 1px solid var(--collie-control-border);
-  border-radius: var(--collie-radius-surface);
-  margin-bottom: var(--collie-space-6);
-}
-.sources-panel .source-import-review ol {
-  max-height: 30rem;
-  overflow: auto;
-}
-.sources-panel .source-import-review li {
-  margin-bottom: 1rem;
-}
 @media (max-width: 42rem) {
   .sources-panel .source-metadata-fields {
     grid-template-columns: minmax(0, 1fr);

@@ -270,14 +270,7 @@
   padding-block: var(--collie-space-4);
 }
 .conversation-notice {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--collie-space-3);
-  align-items: center;
-  padding: var(--collie-space-3) var(--collie-space-4);
-  background: var(--collie-surface);
-  border-block-end: 1px solid var(--collie-border);
-  font-size: 0.875rem;
+  margin-block: var(--collie-space-4);
 }
 .conversation-panel [hidden] {
   display: none;

@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
+import type { ImportCategory } from '../../../../shared/project-import'
 export const ImportContext = createContext<{
-  open: (trigger: HTMLElement) => void
+  open: (trigger: HTMLElement, category?: ImportCategory) => void
   showAnalysis: (attemptId: string) => void
   busy: boolean
 } | null>(null)

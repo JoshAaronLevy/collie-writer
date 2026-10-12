@@ -12,15 +12,14 @@ import {
   type AnchorTarget
 } from '../../../../shared/outline'
 
-function readable(value: unknown): string {
+function readable(value: unknown, notes: string[]): string {
   if (!value || typeof value !== 'object') return ''
   if ('type' in value && value.type === 'text' && 'text' in value) return String(value.text)
   if ('type' in value && value.type === 'hardBreak') return '\n'
   if ('type' in value && 'attrs' in value && value.attrs && typeof value.attrs === 'object') {
-    if (value.type === 'citation' && 'citationId' in value.attrs)
-      return `[Citation ${String(value.attrs.citationId).slice(0, 8)}]`
+    if (value.type === 'citation' && 'citationId' in value.attrs) return '[Citation]'
     if (value.type === 'footnote' && 'footnoteId' in value.attrs)
-      return `[Note ${String(value.attrs.footnoteId).slice(0, 8)}]`
+      return `[Note ${notes.indexOf(String(value.attrs.footnoteId)) + 1}]`
     if (value.type === 'image' && 'alt' in value.attrs && 'caption' in value.attrs)
       return `[Image: ${value.attrs.alt}] ${value.attrs.caption}\n`
     if (value.type === 'pageBreak') return '\n[Page break]\n'
@@ -28,50 +27,42 @@ function readable(value: unknown): string {
   }
   if ('content' in value && Array.isArray(value.content))
     return (
-      value.content.map(readable).join('') +
+      value.content.map((child) => readable(child, notes)).join('') +
       ('type' in value && ['paragraph', 'heading', 'tableRow'].includes(String(value.type))
         ? '\n'
-        : '')
+        : 'type' in value && ['tableCell', 'tableHeader'].includes(String(value.type))
+          ? '\t'
+          : '')
     )
   return ''
 }
 function text(doc: RetainedDocument): string {
+  const notes = Object.keys(doc.payload.footnotesById)
   return (
-    readable(doc.payload.ast) +
+    readable(doc.payload.ast, notes) +
     Object.entries(doc.payload.footnotesById)
-      .map(([id, body]) => `\nNote ${id.slice(0, 8)}\n${readable(body)}`)
+      .map(([id, body]) => `\nNote ${notes.indexOf(id) + 1}\n${readable(body, notes)}`)
       .join('')
   )
 }
 function formatting(doc: RetainedDocument): string {
   const marks = new Set<string>()
-  let citations = 0,
-    blocks = 0
   function visit(v: unknown): void {
     if (!v || typeof v !== 'object') return
-    if ('attrs' in v && v.attrs && typeof v.attrs === 'object' && 'blockId' in v.attrs) blocks++
-    if ('type' in v && v.type === 'citation') citations++
     if ('marks' in v && Array.isArray(v.marks))
       for (const m of v.marks)
         if (m && typeof m === 'object' && 'type' in m) marks.add(String(m.type))
     for (const [key, child] of Object.entries(v)) if (key !== 'marks') visit(child)
   }
   visit(doc.payload)
-  return `${blocks} addressable blocks · ${citations} citations · formatting: ${[...marks].join(', ') || 'plain'}`
+  return `Text formatting: ${[...marks].join(', ') || 'plain'}`
 }
-function bytes(n: number): string {
-  return n < 1024
-    ? `${n} bytes`
-    : n < 1024 ** 2
-      ? `${(n / 1024).toFixed(1)} KiB`
-      : `${(n / 1024 ** 2).toFixed(1)} MiB`
-}
-function placement(doc: RetainedDocument, docs: RetainedDocument[]): string {
+function placement(doc: RetainedDocument, docs: Map<string, RetainedDocument>): string {
   const path = [doc.title]
   let cursor = doc,
     count = 0
-  while (cursor.parentId && ++count < 4) {
-    const parent = docs.find((d) => d.id === cursor.parentId)
+  while (cursor.parentId && ++count < 8) {
+    const parent = docs.get(cursor.parentId)
     if (!parent) break
     path.unshift(parent.title)
     cursor = parent
@@ -96,122 +87,94 @@ export default function HistoryPanel({
   navigate: (doc: string, anchor?: string) => void
 }): React.JSX.Element {
   const [title, setTitle] = useState(''),
-    [selected, setSelected] = useState(''),
-    [confirm, setConfirm] = useState<'restore' | 'prune' | null>(null)
+    [cleanup, setCleanup] = useState(false)
   const [repair, setRepair] = useState<AnchorTarget | null>(null),
     [target, setTarget] = useState(''),
     [page, setPage] = useState(0),
     [issuePage, setIssuePage] = useState(0)
-  const checkpointId = history?.checkpointId ?? ''
-  const [lastCheckpointId, setLastCheckpointId] = useState(checkpointId)
-  if (lastCheckpointId !== checkpointId) {
-    setLastCheckpointId(checkpointId)
-    setSelected(checkpointId)
-    setConfirm(null)
+  const selected = history?.checkpointId ?? ''
+  const comparisonKey = `${history?.headCommitId}:${selected}`
+  const [lastComparison, setLastComparison] = useState(comparisonKey)
+  if (lastComparison !== comparisonKey) {
+    setLastComparison(comparisonKey)
+    setCleanup(false)
+    setRepair(null)
     setPage(0)
+    setIssuePage(0)
   }
   const fresh = history?.headCommitId === project.headCommitId
   const issues = history?.anchors.filter((a) => a.state !== 'active') ?? []
-  const oldDocs = history?.snapshot?.documents ?? [],
-    currentDocs = history?.currentSnapshot.documents ?? []
-  const changedIds = [...new Set([...oldDocs, ...currentDocs].map((d) => d.id))].filter((id) => {
-    const old = oldDocs.find((d) => d.id === id),
-      current = currentDocs.find((d) => d.id === id)
-    const comparable = (doc: RetainedDocument | undefined): string => {
-      if (!doc) return ''
-      const rest = withoutKeys(doc, ['revisionId'])
-      return JSON.stringify(rest)
-    }
-    return comparable(old) !== comparable(current)
-  })
+  const oldDocs = new Map(history?.snapshot?.documents.map((d) => [d.id, d])),
+    currentDocs = new Map(history?.currentSnapshot.documents.map((d) => [d.id, d]))
+  const comparable = (doc: RetainedDocument | undefined): string =>
+    doc ? JSON.stringify(withoutKeys(doc, ['revisionId'])) : ''
+  const changedIds = [...new Set([...oldDocs.keys(), ...currentDocs.keys()])].filter(
+    (id) => comparable(oldDocs.get(id)) !== comparable(currentDocs.get(id))
+  )
   return (
     <section className="history-panel" aria-label="Revision history">
       <h1>Manuscript history</h1>
-      <p>
-        Local commits protect current writing. Retained checkpoints preserve earlier manuscript
-        content and outline structure. Undo/Redo belongs to the current editor session.
-      </p>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          change({ type: 'checkpoint', title })
-          setTitle('')
-        }}
-      >
-        <TextInput
-          label="Checkpoint name"
-          required
-          maxLength={500}
-          value={title}
-          disabled={disabled || readOnly}
-          onChange={(e) => setTitle(e.target.value)}
-        />{' '}
-        <AppButton variant="default" type="submit" disabled={disabled || readOnly}>
-          Keep checkpoint
-        </AppButton>
-      </form>
+      <p>Choose a dated version to compare with your current manuscript.</p>
       <AppButton
         variant="default"
         disabled={disabled}
         onClick={() => {
-          setSelected('')
-          setConfirm(null)
+          setCleanup(false)
           setPage(0)
-          read(null)
+          read(selected || null)
         }}
       >
-        Refresh history and targets
+        Refresh history
       </AppButton>
       {history ? (
         <>
           {!fresh ? (
             <p role="status">
-              Writing changed after this history view. Refresh before restoring, repairing or
-              cleaning up.
+              Your writing changed. Refresh history before restoring a version or changing saved
+              targets.
             </p>
           ) : null}
-          <p>
-            {history.checkpoints.length} retained checkpoints · {bytes(history.totalBytes)} of
-            snapshot indexes and shared section content. Unchanged sections are stored once. Actual
-            disk use also includes SQLite, retained migration copies and managed assets.
-          </p>
           <SelectField
-            label="Compare checkpoint with current manuscript"
+            label="Saved version"
             value={selected}
             disabled={disabled}
             onChange={(e) => {
-              setSelected(e.target.value)
-              setConfirm(null)
+              setCleanup(false)
               setPage(0)
               read(e.target.value || null)
             }}
           >
-            <option value="">Choose a checkpoint</option>
+            <option value="">Choose a version</option>
             {history.checkpoints.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.title} · {c.reason} · {new Date(c.createdAt).toLocaleString()} · {bytes(c.bytes)}{' '}
-                index
+                {new Date(c.createdAt).toLocaleString()} ·{' '}
+                {c.reason === 'automatic'
+                  ? 'Automatic version'
+                  : c.reason === 'restore'
+                    ? 'Before restoring'
+                    : c.title}
               </option>
             ))}
           </SelectField>
-          {history.snapshot && selected && history.checkpointId === selected ? (
+          {history.snapshot && selected ? (
             <div className="history-comparison">
               <p>
-                {changedIds.length} changed outline items. Text is shown side by side; formatting,
-                references, block order and metadata also count as changes.
+                {changedIds.length
+                  ? `${changedIds.length} outline items changed. Compare the earlier and current writing below.`
+                  : 'No writing or outline changes in this comparison.'}
               </p>
               {changedIds.slice(page * 10, page * 10 + 10).map((id) => {
-                const before = oldDocs.find((d) => d.id === id),
-                  after = currentDocs.find((d) => d.id === id)
+                const before = oldDocs.get(id),
+                  after = currentDocs.get(id)
                 return (
-                  <details key={id}>
+                  <details key={id} open={changedIds.length === 1}>
                     <summary>
                       {after?.title ?? before?.title} ·{' '}
                       {before && after ? 'changed' : before ? 'absent now' : 'added later'}
                     </summary>
                     <div className="history-columns">
                       {[
-                        { doc: before, docs: oldDocs, label: 'Checkpoint' },
+                        { doc: before, docs: oldDocs, label: 'Earlier version' },
                         { doc: after, docs: currentDocs, label: 'Current' }
                       ].map(({ doc, docs, label }) => (
                         <section key={label}>
@@ -219,17 +182,11 @@ export default function HistoryPanel({
                           {doc ? (
                             <>
                               <p>{placement(doc, docs)}</p>
-                              <p>Synopsis: {doc.synopsis || 'None'}</p>
+                              {doc.synopsis ? <p>Synopsis: {doc.synopsis}</p> : null}
                               <p>{formatting(doc)}</p>
-                              <p>
-                                Block order:{' '}
-                                {doc.payload.ast.content.map((b) => b.type).join(' → ')}
-                              </p>
-                              <p>
-                                {doc.payload.ast.content.length} top-level blocks ·{' '}
-                                {Object.keys(doc.payload.footnotesById).length} footnotes
-                              </p>
-                              <pre>{text(doc)}</pre>
+                              <pre tabIndex={0} aria-label={`${label}: ${doc.title}`}>
+                                {text(doc) || 'No writing in this item.'}
+                              </pre>
                             </>
                           ) : (
                             <p>This item is absent.</p>
@@ -237,173 +194,219 @@ export default function HistoryPanel({
                         </section>
                       ))}
                     </div>
+                    {before &&
+                    after &&
+                    text(before) === text(after) &&
+                    JSON.stringify(before.payload) !== JSON.stringify(after.payload) ? (
+                      <p>
+                        Formatting, references or layout changed. This text preview shows only the
+                        words.
+                      </p>
+                    ) : null}
                   </details>
                 )
               })}
-              <AppButton variant="default" disabled={page === 0} onClick={() => setPage(page - 1)}>
-                Previous changes
-              </AppButton>{' '}
-              <AppButton
-                variant="default"
-                disabled={(page + 1) * 10 >= changedIds.length}
-                onClick={() => setPage(page + 1)}
-              >
-                Next changes
-              </AppButton>
-              <AppButton
-                variant="default"
-                disabled={disabled || readOnly || !fresh}
-                onClick={() => setConfirm('restore')}
-              >
-                Restore this checkpoint…
-              </AppButton>
-            </div>
-          ) : null}
-          <h2>History retention</h2>
-          <p>
-            Automatic checkpoints older than 30 days are eligible for manual cleanup. Manual
-            checkpoints, checkpoints before changes and the newest checkpoint stay. No automatic
-            deletion or blob cleanup occurs.
-          </p>
-          <p>
-            {history.prunableIds.length} eligible checkpoints · {bytes(history.prunableBytes)}{' '}
-            snapshot content removable. SQLite may reuse this space without shrinking its file.
-          </p>
-          <AppButton
-            variant="default"
-            disabled={disabled || readOnly || !fresh || !history.prunableIds.length}
-            onClick={() => setConfirm('prune')}
-          >
-            Review cleanup…
-          </AppButton>
-          {confirm ? (
-            <div
-              className="outline-confirm"
-              role="group"
-              aria-label={
-                confirm === 'restore' ? 'Confirm checkpoint restore' : 'Confirm history cleanup'
-              }
-            >
-              <p>
-                {confirm === 'restore'
-                  ? 'Restore the entire manuscript and outline? Current writing will first be kept in a protected checkpoint. Later history remains available. This creates new revisions and makes the chosen file need Save.'
-                  : `Remove these ${history.prunableIds.length} old automatic checkpoints? This cannot be undone in this workspace. Current writing, explicit checkpoints, structural checkpoints, blobs, recovery and saved files stay. Use Backup first if you want to retain these old automatic versions elsewhere.`}
-              </p>
-              <AppButton
-                variant="default"
-                disabled={disabled || readOnly || !fresh}
-                onClick={() => {
-                  change(
-                    confirm === 'restore'
-                      ? { type: 'restore', checkpointId: selected }
-                      : { type: 'prune', checkpointIds: history.prunableIds }
-                  )
-                  setConfirm(null)
-                }}
-              >
-                {confirm === 'restore'
-                  ? 'Restore and keep current checkpoint'
-                  : 'Remove reviewed automatic checkpoints'}
-              </AppButton>{' '}
-              <AppButton variant="default" onClick={() => setConfirm(null)}>
-                Cancel
-              </AppButton>
-            </div>
-          ) : null}
-          <h2>Unavailable anchor targets ({issues.length})</h2>
-          <p>
-            Removed blocks keep their identity and last text context. Archive/trash targets become
-            available when their outline item is restored. A manual repair explicitly links a
-            deleted identity to a chosen existing block; it never changes manuscript text.
-          </p>
-          <ul>
-            {issues.slice(issuePage * 25, issuePage * 25 + 25).map((a) => {
-              const repaired = a.replacementId
-                ? history.anchors.find((x) => x.id === a.replacementId)
-                : undefined
-              return (
-                <li key={a.id}>
-                  {a.label || a.kind} · {a.state} · {a.id.slice(0, 8)}
-                  {repaired
-                    ? ` · manually linked to ${repaired.label || repaired.id.slice(0, 8)} (${repaired.state})`
-                    : ''}{' '}
+              {changedIds.length > 10 ? (
+                <div className="history-actions">
                   <AppButton
                     variant="default"
-                    disabled={disabled}
-                    onClick={() =>
-                      navigate(
-                        repaired?.documentId ?? a.documentId,
-                        repaired?.id ?? (a.state !== 'deleted' ? a.id : undefined)
-                      )
-                    }
+                    disabled={page === 0}
+                    onClick={() => setPage(page - 1)}
                   >
-                    Open {repaired ? 'chosen target' : 'section'}
+                    Previous changes
                   </AppButton>{' '}
-                  {a.state === 'deleted' ? (
-                    <AppButton
-                      variant="default"
-                      disabled={disabled || readOnly || !fresh}
-                      onClick={() => {
-                        setRepair(a)
-                        setTarget('')
-                      }}
-                    >
-                      Repair target…
-                    </AppButton>
-                  ) : null}
-                </li>
-              )
-            })}
-          </ul>
-          <AppButton
-            variant="default"
-            disabled={issuePage === 0}
-            onClick={() => setIssuePage(issuePage - 1)}
-          >
-            Previous targets
-          </AppButton>{' '}
-          <AppButton
-            variant="default"
-            disabled={(issuePage + 1) * 25 >= issues.length}
-            onClick={() => setIssuePage(issuePage + 1)}
-          >
-            Next targets
-          </AppButton>
-          {repair ? (
+                  <AppButton
+                    variant="default"
+                    disabled={(page + 1) * 10 >= changedIds.length}
+                    onClick={() => setPage(page + 1)}
+                  >
+                    Next changes
+                  </AppButton>
+                </div>
+              ) : null}
+              <p>
+                Restoring replaces the whole manuscript and outline. Your current writing is kept as
+                a version first.
+              </p>
+              <AppButton
+                variant="filled"
+                disabled={disabled || readOnly || !fresh}
+                onClick={() => change({ type: 'restore', checkpointId: selected })}
+              >
+                Restore this version
+              </AppButton>
+            </div>
+          ) : null}
+          <details>
+            <summary>Delete older automatic versions</summary>
+            <p>
+              {history.prunableIds.length} automatic versions older than 30 days can be deleted.
+              Named versions, versions before changes and the newest version are kept.
+            </p>
+            {cleanup ? (
+              <ul className="history-deletion-list" tabIndex={0} aria-label="Versions to delete">
+                {history.checkpoints
+                  .filter((c) => history.prunableIds.includes(c.id))
+                  .map((c) => (
+                    <li key={c.id}>
+                      {new Date(c.createdAt).toLocaleString()} · {c.title}
+                    </li>
+                  ))}
+              </ul>
+            ) : null}
+            <AppButton
+              variant="default"
+              disabled={disabled || readOnly || !fresh || !history.prunableIds.length}
+              onClick={() => setCleanup(true)}
+            >
+              Delete older versions…
+            </AppButton>
+            {cleanup ? (
+              <div className="outline-confirm" role="group" aria-label="Confirm history deletion">
+                <p>
+                  Delete these {history.prunableIds.length} older automatic versions permanently?
+                  Your current writing, originals and saved project files are kept. Make a backup
+                  first if you want to keep these versions elsewhere.
+                </p>
+                <AppButton
+                  variant="default"
+                  disabled={disabled || readOnly || !fresh}
+                  onClick={() => {
+                    change({ type: 'prune', checkpointIds: history.prunableIds })
+                    setCleanup(false)
+                  }}
+                >
+                  Delete these versions
+                </AppButton>{' '}
+                <AppButton variant="default" onClick={() => setCleanup(false)}>
+                  Cancel
+                </AppButton>
+              </div>
+            ) : null}
+          </details>
+          <details>
+            <summary>Keep a named version</summary>
             <form
               onSubmit={(e) => {
                 e.preventDefault()
-                change({ type: 'repair', anchorId: repair.id, targetId: target })
-                setRepair(null)
+                change({ type: 'checkpoint', title })
+                setTitle('')
               }}
             >
-              <p>
-                Choose the intended replacement for: {repair.label || repair.id.slice(0, 8)}. No
-                text matching is performed.
-              </p>
-              <SelectField
-                label="Existing target"
+              <TextInput
+                label="Version name"
                 required
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-              >
-                <option value="">Choose explicitly</option>
-                {history.anchors
-                  .filter((a) => a.state === 'active' && a.kind === repair.kind)
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {currentDocs.find((d) => d.id === a.documentId)?.title} · {a.label || a.kind}{' '}
-                      · {a.id.slice(0, 8)}
-                    </option>
-                  ))}
-              </SelectField>
-              <AppButton variant="default" type="submit" disabled={disabled || readOnly || !fresh}>
-                Confirm target
-              </AppButton>{' '}
-              <AppButton variant="default" type="button" onClick={() => setRepair(null)}>
-                Cancel
+                maxLength={500}
+                value={title}
+                disabled={disabled || readOnly}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+              <AppButton variant="default" type="submit" disabled={disabled || readOnly}>
+                Keep this version
               </AppButton>
             </form>
+          </details>
+          {issues.length ? (
+            <details>
+              <summary>Unavailable passage targets ({issues.length})</summary>
+              <p>
+                Restore an archived or trashed section to make its passages available. A deleted
+                passage can be linked to a replacement without changing your writing.
+              </p>
+              <ul>
+                {issues.slice(issuePage * 25, issuePage * 25 + 25).map((a) => {
+                  const repaired = a.replacementId
+                    ? history.anchors.find((x) => x.id === a.replacementId)
+                    : undefined
+                  return (
+                    <li key={a.id}>
+                      {a.label || a.kind} · {a.state} · {a.id.slice(0, 8)}
+                      {repaired
+                        ? ` · manually linked to ${repaired.label || repaired.id.slice(0, 8)} (${repaired.state})`
+                        : ''}{' '}
+                      <AppButton
+                        variant="default"
+                        disabled={disabled}
+                        onClick={() =>
+                          navigate(
+                            repaired?.documentId ?? a.documentId,
+                            repaired?.id ?? (a.state !== 'deleted' ? a.id : undefined)
+                          )
+                        }
+                      >
+                        Open {repaired ? 'chosen target' : 'section'}
+                      </AppButton>{' '}
+                      {a.state === 'deleted' ? (
+                        <AppButton
+                          variant="default"
+                          disabled={disabled || readOnly || !fresh}
+                          onClick={() => {
+                            setRepair(a)
+                            setTarget('')
+                          }}
+                        >
+                          Repair target…
+                        </AppButton>
+                      ) : null}
+                    </li>
+                  )
+                })}
+              </ul>
+              <AppButton
+                variant="default"
+                disabled={issuePage === 0}
+                onClick={() => setIssuePage(issuePage - 1)}
+              >
+                Previous targets
+              </AppButton>{' '}
+              <AppButton
+                variant="default"
+                disabled={(issuePage + 1) * 25 >= issues.length}
+                onClick={() => setIssuePage(issuePage + 1)}
+              >
+                Next targets
+              </AppButton>
+              {repair ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    change({ type: 'repair', anchorId: repair.id, targetId: target })
+                    setRepair(null)
+                  }}
+                >
+                  <p>
+                    Choose the intended replacement for: {repair.label || repair.id.slice(0, 8)}. No
+                    text matching is performed.
+                  </p>
+                  <SelectField
+                    label="Existing target"
+                    required
+                    value={target}
+                    onChange={(e) => setTarget(e.target.value)}
+                  >
+                    <option value="">Choose explicitly</option>
+                    {history.anchors
+                      .filter((a) => a.state === 'active' && a.kind === repair.kind)
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {currentDocs.get(a.documentId)?.title} · {a.label || a.kind} ·{' '}
+                          {a.id.slice(0, 8)}
+                        </option>
+                      ))}
+                  </SelectField>
+                  <AppButton
+                    variant="default"
+                    type="submit"
+                    disabled={disabled || readOnly || !fresh}
+                  >
+                    Confirm target
+                  </AppButton>{' '}
+                  <AppButton variant="default" type="button" onClick={() => setRepair(null)}>
+                    Cancel
+                  </AppButton>
+                </form>
+              ) : null}
+            </details>
           ) : null}
         </>
       ) : null}

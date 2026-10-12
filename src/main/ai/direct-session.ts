@@ -8,8 +8,7 @@ import { RESEARCH_INSTRUCTIONS, RESEARCH_POLICY, researchFits } from './direct-r
 import {
   conversationFits,
   conversationFrame,
-  CONVERSATION_INSTRUCTIONS_V2,
-  type DirectTextExecution
+  CONVERSATION_INSTRUCTIONS_V2
 } from './direct-conversation'
 import { randomUUID } from 'node:crypto'
 import type { AiConnectInput, AiPrepareInput, AiStatus } from '../../shared/ai'
@@ -42,7 +41,7 @@ import {
   directFits,
   directFrame
 } from './direct-operation'
-import type { AiDispatchSession } from './dispatch-session'
+import type { AiDispatchSession, CurrentAiExecution } from './dispatch-session'
 import { DirectConnectionIssues } from './connection-health'
 import type { AiConnectionHealthReason } from '../../shared/ai-connection-health'
 import { emptyPlanPreferences, type PlanPreferences } from './direct-preferences'
@@ -630,10 +629,7 @@ export class DirectPlanSession {
       | 'conversation-research-v1'
       | 'project-import-mapping-v1'
       | 'project-import-semantic-v1' = 'conversation-v1'
-  ): Exclude<
-    DirectTextExecution,
-    { template: 'project-import-analysis-v1' | 'project-import-analysis-v2' }
-  > {
+  ): CurrentAiExecution {
     this.requireIdle()
     const a = this.requireAccount(input.connectionId),
       catalog = this.catalog
@@ -753,11 +749,6 @@ export class DirectPlanSession {
     const authorize: AiDispatchSession['authorize'] = (input, execution) => {
       if (!execution || execution.route !== 'local-chatgpt-plan')
         throw new AiError('context-changed')
-      if (
-        execution.template === 'project-import-analysis-v1' ||
-        execution.template === 'project-import-analysis-v2'
-      )
-        throw new AiError('invalid-request')
       const current = this.execution(input, execution.captureDigest, execution.template)
       if (JSON.stringify(current) !== JSON.stringify(execution))
         throw new AiError('context-changed')

@@ -457,6 +457,7 @@ export default function RichDraft({
     <div className="rich-draft" data-writing-dialog-open={dialog !== null}>
       <PresentationBoundary
         label="Writing tools"
+        writingRetained
         render={() => (
           <>
             <div className="editor-toolbar" role="group" aria-label="Writing tools">
@@ -765,6 +766,7 @@ export default function RichDraft({
       />
       <PresentationBoundary
         label="Find and writing dialogs"
+        writingRetained
         render={() => (
           <>
             <p className="word-count" aria-live="off">

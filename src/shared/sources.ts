@@ -97,33 +97,6 @@ export type SourceImportRow = {
   error: string | null
   candidates: { id: string; reason: string }[]
 }
-export type SourceImportPreview = {
-  token: string
-  digest: string
-  format: BibliographyFormat
-  rows: SourceImportRow[]
-  count: number
-}
-export type SourceImportChoice = {
-  index: number
-  action: 'create' | 'merge' | 'link' | 'skip'
-  targetId: string | null
-}
-export type SourcePreviewInput = OpenInput & { token: string }
-export type SourceImportInput = OpenInput & {
-  operationId: string
-  token: string
-  digest: string
-  choices: SourceImportChoice[]
-}
-export type WorkerSourcePreview = SourcePreviewInput & {
-  sourcePath: string
-  format: BibliographyFormat
-}
-export type WorkerSourceImport = SourceImportInput & {
-  sourcePath: string
-  format: BibliographyFormat
-}
 export type SourceAttachmentInput = OpenInput & {
   operationId: string
   token: string
@@ -271,33 +244,6 @@ export function isSourceScope(v: unknown): v is OpenInput {
     record(v) && exact(v, ['projectId', 'workspaceId']) && isId(v.projectId) && isId(v.workspaceId)
   )
 }
-export function isSourcePreviewInput(v: unknown): v is SourcePreviewInput {
-  return (
-    record(v) &&
-    exact(v, ['projectId', 'workspaceId', 'token']) &&
-    [v.projectId, v.workspaceId, v.token].every(isId)
-  )
-}
-export function isSourceImportInput(v: unknown): v is SourceImportInput {
-  return (
-    record(v) &&
-    exact(v, ['projectId', 'workspaceId', 'operationId', 'token', 'digest', 'choices']) &&
-    [v.projectId, v.workspaceId, v.operationId, v.token].every(isId) &&
-    typeof v.digest === 'string' &&
-    /^[a-f0-9]{64}$/.test(v.digest) &&
-    Array.isArray(v.choices) &&
-    v.choices.length <= 2000 &&
-    v.choices.every(
-      (c: unknown) =>
-        record(c) &&
-        exact(c, ['index', 'action', 'targetId']) &&
-        Number.isSafeInteger(c.index) &&
-        Number(c.index) >= 0 &&
-        ['create', 'merge', 'link', 'skip'].includes(String(c.action)) &&
-        (c.targetId === null || isId(c.targetId))
-    )
-  )
-}
 export function isSourceAttachmentInput(v: unknown): v is SourceAttachmentInput {
   return (
     record(v) &&
@@ -380,49 +326,6 @@ export function isSourcesView(v: unknown): v is SourcesView {
         r.errors.every((x: unknown) => str(x, 2000)) &&
         r.losses.every((x: unknown) => str(x, 2000)) &&
         str(r.createdAt, 40)
-    )
-  )
-}
-export function isSourcePreview(v: unknown): v is SourceImportPreview {
-  return (
-    record(v) &&
-    exact(v, ['token', 'digest', 'format', 'rows', 'count']) &&
-    isId(v.token) &&
-    typeof v.digest === 'string' &&
-    /^[a-f0-9]{64}$/.test(v.digest) &&
-    ['csl-json', 'bibtex', 'ris'].includes(String(v.format)) &&
-    Number.isSafeInteger(v.count) &&
-    Array.isArray(v.rows) &&
-    v.rows.length === v.count &&
-    v.rows.length <= 2000 &&
-    v.rows.every(
-      (r: unknown, index: number) =>
-        record(r) &&
-        exact(r, [
-          'index',
-          'metadata',
-          'externalId',
-          'unknownFields',
-          'losses',
-          'error',
-          'candidates'
-        ]) &&
-        r.index === index &&
-        (r.metadata === null || isSourceMetadata(r.metadata)) &&
-        str(r.externalId, 500) &&
-        Array.isArray(r.unknownFields) &&
-        r.unknownFields.length <= 20 &&
-        r.unknownFields.every((x: unknown) => str(x, 200)) &&
-        Array.isArray(r.losses) &&
-        r.losses.length <= 20 &&
-        r.losses.every((x: unknown) => str(x, 2000)) &&
-        (r.error === null || str(r.error, 2000)) &&
-        Array.isArray(r.candidates) &&
-        r.candidates.length <= 12 &&
-        r.candidates.every(
-          (c: unknown) =>
-            record(c) && exact(c, ['id', 'reason']) && isId(c.id) && str(c.reason, 200)
-        )
     )
   )
 }

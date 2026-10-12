@@ -5,7 +5,6 @@ import { importedConversationFits, operationDigestV9 } from './direct-imported-c
 import { operationDigestV6, researchFits } from './direct-research'
 import { conversationFits, operationDigestV5 } from './direct-conversation'
 import type { WorkspaceAiEvidence } from '../../shared/working-copy'
-import { app } from 'electron'
 import type { AiHandoffReceipt } from '../../shared/ai-handoff'
 import { handoffMatches } from './handoff'
 import { randomUUID } from 'node:crypto'
@@ -15,7 +14,6 @@ import {
   DIRECT_AI_PROVIDER,
   type AiConnectInput,
   type AiEvent,
-  type AiModel,
   type AiOperation,
   type AiOperationInput,
   type AiContentWork,
@@ -28,60 +26,35 @@ import {
   type AiStatus
 } from '../../shared/ai'
 import { sameProject } from '../../shared/access'
-import type { AiSession } from '../../shared/ai-route'
 import type { AiSelectModelInput } from '../../shared/ai-catalog'
 import type { OpenInput } from '../../shared/projects'
 import type { AccessService } from '../entitlements/service'
 import { RELEASE } from '../release'
-import { codexExecutable, CodexRuntime } from './codex-runtime'
-import type { CodexTextUpdate } from './codex-text-turn'
-import type { AiDispatchSession } from './dispatch-session'
-import {
-  CODEX_VERSION,
-  OPENAI_REGISTRATIONS,
-  registration,
-  requireIncludedFunding,
-  requireTextOnlyRuntime,
-  requireRegisteredRoute,
-  routeFunding,
-  selectAiRoute
-} from './deployment'
-import { operationDigestV1 } from './operation-identity'
+import type { AiDispatchSession, AiTextUpdate, CurrentAiExecution } from './dispatch-session'
+import { routeFunding, selectAiRoute, requireDirectRoute } from './deployment'
 import {
   contentOperation,
   contentState,
   identityHash,
-  isSchemaExecution,
-  localExecution,
   localRequestFits,
   mechanicsSchemaDigestV1,
-  operationDigestV2,
-  operationDigestV3,
   templateFor,
-  type ContentTemplate,
-  type DispatchExecution
+  type ContentTemplate
 } from './local-operation'
 import { DirectPlanSession } from './direct-session'
 import { deriveConnectionHealth } from './connection-health'
 import { conversationCapabilities } from './capabilities'
 import { directFits, operationDigestV4 } from './direct-operation'
-import { LocalCodexSession } from './local-codex-session'
-import { localExecutionReadiness, localFeatureAvailability } from './codex-local-policy'
 import { AiError, aiReason } from './errors'
-import { OpenAiSignIn, refreshOpenAi } from './openai-auth'
-import { revokeOpenAi } from './openai-http'
-import {
-  AiStorage,
-  secureAiStorage,
-  type Account,
-  type Credentials,
-  type RetainedOperation
-} from './storage'
+import { AiStorage, secureAiStorage, type RetainedOperation } from './storage'
+
+// Historical versions remain readable through RetainedOperation, never live dispatch.
+type CurrentOperation = Extract<RetainedOperation, { version: 4 | 5 | 6 | 9 | 12 }>
 
 type Prepared = {
   receipt: AiPrepared
   input: AiPrepareInput
-  execution: DispatchExecution | null
+  execution: CurrentAiExecution
   session: AiDispatchSession
 }
 export type ContentAuthorization = {
@@ -113,7 +86,6 @@ function providerSettled(work: Promise<unknown>): Promise<boolean> {
 export class AiService {
   private startupPrepared = false
   private startupPromptHandled = false
-  private credentials: Credentials | null = null
   private initialization: Promise<void> | null = null
   private storageFailure = false
   private accountStorageState: 'starting' | 'ready' | 'failed' = 'starting'
@@ -124,15 +96,7 @@ export class AiService {
   private closeRequested = false
   private suspended = false
   private handoffWork: Promise<void> | null = null
-  private attempt: OpenAiSignIn | null = null
-  private authWork: Promise<void> | null = null
-  private authAbort: AbortController | null = null
-  private connectionState: AiStatus['state'] | null = null
-  private connectionActionId: string | null = null
-  private lastReason: AiReason | null = null
   private statusSequence = 0
-  private revocation: AiStatus['remoteRevocation'] = 'none'
-  private runtimeState: AiStatus['runtime'] = 'unavailable'
   private prepared = new Map<string, Prepared>()
   private reviewGeneration = randomUUID()
   private retained = new Map<string, RetainedOperation>()
@@ -198,7 +162,6 @@ export class AiService {
   private pendingRetention: RetainedOperation | null = null
   private retention = Promise.resolve()
   private retentionWriting = false
-  private attempted = new Map<string, string | null>()
   private cancelledAttempts = new Set<string>()
   private preparationScheduled = false
   private publishTimer: ReturnType<typeof setTimeout> | null = null
@@ -240,8 +203,6 @@ export class AiService {
     return (
       !this.running &&
       !this.busy &&
-      !this.attempt &&
-      !this.local.hasPendingWork() &&
       !this.direct.hasPendingWork() &&
       !this.pendingRetention &&
       !this.retentionWriting &&
@@ -290,17 +251,12 @@ export class AiService {
     }
   }
   readonly storage: AiStorage
-  private readonly local: LocalCodexSession
   private readonly direct: DirectPlanSession
   constructor(
     workingRoot: () => string | undefined,
     private readonly access: AccessService
   ) {
     this.storage = new AiStorage(workingRoot)
-    this.local = new LocalCodexSession(this.storage, () => {
-      this.invalidateReviews()
-      this.publish()
-    })
     this.direct = new DirectPlanSession(this.storage, (invalidate) => {
       if (invalidate) this.invalidateReviews()
       this.publish()
@@ -365,13 +321,11 @@ export class AiService {
   hasPendingWork(): boolean {
     return !!(
       this.busy ||
-      this.attempt ||
       this.running ||
       this.handoffWork ||
       this.pendingRetention ||
       this.retentionWriting ||
       this.journalFailure ||
-      this.local.hasPendingWork() ||
       this.direct.hasPendingWork()
     )
   }
@@ -420,8 +374,6 @@ export class AiService {
         this.protectedRecords.clear()
         try {
           if (selectAiRoute().kind === 'local-chatgpt-plan') await this.direct.initialize()
-          else this.credentials = await this.storage.credentials()
-          if (selectAiRoute().kind === 'local-codex-chatgpt') await this.local.initialize()
           this.accountStorageState = 'ready'
         } catch (error) {
           this.accountStorageState = 'failed'
@@ -444,15 +396,6 @@ export class AiService {
           this.protectedRecords.set(item.view.operationId, structuredClone(item))
         }
         this.retentionLoaded = true
-        this.runtimeState =
-          selectAiRoute().kind === 'local-chatgpt-plan'
-            ? 'unavailable'
-            : app.isPackaged
-              ? 'not-packaged'
-              : await codexExecutable().then(
-                  () => 'development-installed' as const,
-                  () => 'unavailable' as const
-                )
         this.storageFailure = false
       })().catch((error) => {
         this.storageFailure = true
@@ -576,145 +519,21 @@ export class AiService {
         ...snapshot
       }
     }
-    if (route.kind === 'local-codex-chatgpt') {
-      const available =
-        secureAiStorage() &&
-        !this.storageFailure &&
-        !this.journalFailure &&
-        this.runtimeState === 'development-installed'
-      const execution = localExecutionReadiness(),
-        reasons: AiReason[] = execution.state === 'unavailable' ? ['isolation-unresolved'] : []
-      if (!secureAiStorage()) reasons.push('secure-storage-unavailable')
-      if (this.storageFailure || this.journalFailure) reasons.push('storage-unavailable')
-      if (this.runtimeState !== 'development-installed') reasons.push('runtime-unavailable')
-      const idle = !this.isSettling() && !this.busy && !this.running && !this.contentPending()
-      const snapshot = this.local.snapshot(
-        available,
-        secureAiStorage() && !this.storageFailure && !this.journalFailure && idle,
-        idle
-      )
-      return {
-        sequence: ++this.statusSequence,
-        reviewRevision: this.currentReviewStamp('conversation'),
-        proofreadReviewRevision: this.currentReviewStamp('proofread'),
-        work: this.contentWork(),
-        capacity: this.capacity(),
-        provider: AI_PROVIDER,
-        channel: RELEASE.channel,
-        implementation: 'partial',
-        route,
-        funding: routeFunding(route),
-        features: this.localFeatures(snapshot),
-        execution,
-        direct: null,
-        configured: true,
-        channelPermitted: true,
-        commercialApproved: false,
-        runtime: this.runtimeState,
-        reasons,
-        ...snapshot
-      }
-    }
-    if (route.kind !== 'registered-openai') {
-      const reasons: AiReason[] = ['development-access-unavailable']
-      if (!secureAiStorage()) reasons.push('secure-storage-unavailable')
-      if (this.storageFailure || this.journalFailure) reasons.push('storage-unavailable')
-      if (this.runtimeState !== 'development-installed') reasons.push('runtime-unavailable')
-      if (this.lastReason && !reasons.includes(this.lastReason)) reasons.push(this.lastReason)
-      return {
-        sequence: ++this.statusSequence,
-        reviewRevision: this.currentReviewStamp('conversation'),
-        proofreadReviewRevision: this.currentReviewStamp('proofread'),
-        work: this.contentWork(),
-        capacity: this.capacity(),
-        provider: AI_PROVIDER,
-        channel: RELEASE.channel,
-        implementation: 'partial',
-        route,
-        session: { state: 'unavailable', reason: route.reason },
-        funding: routeFunding(route),
-        features: {
-          conversation: { state: 'unavailable', reason: route.reason },
-          proofread: { state: 'unavailable', reason: route.reason }
-        },
-        configured: false,
-        channelPermitted: false,
-        commercialApproved: false,
-        runtime: this.runtimeState,
-        state: 'unavailable',
-        reasons,
-        attemptId: null,
-        activeConnectionId: null,
-        connections: [],
-        remoteRevocation: 'none',
-        catalog: null,
-        execution: null,
-        direct: null,
-        local: null,
-        actions: {
-          connect: false,
-          refresh: false,
-          disconnect: false,
-          select: false,
-          resume: false,
-          cleanup: false,
-          protectConnection: false,
-          refreshModels: false,
-          selectModel: false
-        }
-      }
-    }
-    const config = OPENAI_REGISTRATIONS[RELEASE.channel],
-      reasons: AiReason[] = []
-    try {
-      registration()
-    } catch (error) {
-      reasons.push(aiReason(error))
-    }
-    if (!config) reasons.push('configuration-required')
+    // Commercial identity is recognized, but no registered funding/isolation
+    // contract exists. It cannot activate another account or execution owner.
+    const reason =
+      route.kind === 'registered-openai' ? 'commercial-requirements-pending' : route.reason
+    const reasons: AiReason[] =
+      route.kind === 'registered-openai'
+        ? [
+            'commercial-activation-pending',
+            'configuration-required',
+            'funding-unknown',
+            'isolation-unresolved'
+          ]
+        : ['development-access-unavailable']
     if (!secureAiStorage()) reasons.push('secure-storage-unavailable')
     if (this.storageFailure || this.journalFailure) reasons.push('storage-unavailable')
-    const selected = this.credentials?.accounts.find((a) => a.id === this.credentials?.activeId)
-    if (!selected?.tokens) reasons.push('signed-out')
-    else if (selected.tokens.expiresAt <= Date.now() || selected.refreshPending)
-      reasons.push('session-expired')
-    else if (!selected.tokens.scopes.includes('chatgpt.tokens.use.direct'))
-      reasons.push('consent-required')
-    reasons.push('funding-unknown', 'isolation-unresolved')
-    if (this.runtimeState !== 'development-installed') reasons.push('runtime-unavailable')
-    if (this.lastReason && !reasons.includes(this.lastReason)) reasons.push(this.lastReason)
-    const settled =
-      !!this.credentials &&
-      secureAiStorage() &&
-      !this.storageFailure &&
-      !this.journalFailure &&
-      !this.busy &&
-      !this.attempt &&
-      !this.running &&
-      !this.isSettling() &&
-      !this.contentPending()
-    const permitted =
-      !!config &&
-      !reasons.some((reason) =>
-        [
-          'configuration-required',
-          'commercial-activation-pending',
-          'development-access-unavailable'
-        ].includes(reason)
-      )
-    const session: AiSession = this.attempt
-      ? { state: 'signing-in', attemptId: this.attempt.attemptId }
-      : this.connectionState === 'disconnecting' && this.connectionActionId
-        ? { state: 'disconnecting', connectionId: this.connectionActionId }
-        : this.connectionState === 'refreshing' && this.connectionActionId
-          ? { state: 'refreshing', connectionId: this.connectionActionId }
-          : !config
-            ? { state: 'unavailable', reason: 'commercial-requirements-pending' }
-            : !selected?.tokens
-              ? { state: 'signed-out' }
-              : selected.refreshPending || selected.tokens.expiresAt <= Date.now()
-                ? { state: 'reconnect-required', connectionId: selected.id }
-                : { state: 'signed-in', connectionId: selected.id }
     return {
       sequence: ++this.statusSequence,
       reviewRevision: this.currentReviewStamp('conversation'),
@@ -724,44 +543,32 @@ export class AiService {
       provider: AI_PROVIDER,
       channel: RELEASE.channel,
       implementation: 'partial',
-      configured: !!config,
       route,
-      session,
+      session: { state: 'unavailable', reason },
       funding: routeFunding(route),
       features: {
-        conversation: { state: 'unavailable', reason: 'commercial-requirements-pending' },
-        proofread: { state: 'unavailable', reason: 'commercial-requirements-pending' }
+        conversation: { state: 'unavailable', reason },
+        proofread: { state: 'unavailable', reason }
       },
-      channelPermitted: permitted,
-      commercialApproved: !!config?.commercialReference,
-      runtime: this.runtimeState,
-      state:
-        this.connectionState ??
-        (!config ? 'unavailable' : selected?.tokens ? 'signed-in' : 'signed-out'),
+      configured: false,
+      channelPermitted: false,
+      commercialApproved: false,
+      runtime: 'unavailable',
+      state: 'unavailable',
       reasons,
-      attemptId: this.attempt?.attemptId ?? null,
-      activeConnectionId: this.credentials?.activeId ?? null,
-      connections:
-        this.credentials?.accounts.map((a) => ({
-          id: a.id,
-          label: a.label,
-          state: !a.tokens
-            ? 'signed-out'
-            : a.refreshPending || a.tokens.expiresAt <= Date.now()
-              ? 'expired'
-              : 'signed-in',
-          planConsent: !!a.tokens?.scopes.includes('chatgpt.tokens.use.direct')
-        })) ?? [],
-      remoteRevocation: this.revocation,
+      attemptId: null,
+      activeConnectionId: null,
+      connections: [],
+      remoteRevocation: 'none',
       catalog: null,
       execution: null,
       direct: null,
       local: null,
       actions: {
-        connect: settled && permitted,
-        refresh: settled && permitted,
-        disconnect: settled,
-        select: settled && permitted,
+        connect: false,
+        refresh: false,
+        disconnect: false,
+        select: false,
         resume: false,
         cleanup: false,
         protectConnection: false,
@@ -770,25 +577,6 @@ export class AiService {
       }
     }
   }
-  private localFeatures(
-    snapshot: ReturnType<LocalCodexSession['snapshot']>,
-    dispatching = false
-  ): ReturnType<typeof localFeatureAvailability> {
-    return localFeatureAvailability({
-      session: snapshot.session,
-      catalog: snapshot.catalog,
-      execution: localExecutionReadiness(),
-      accountProtectionPending: !!snapshot.local?.protectionPending,
-      protectionPending: this.journalFailure || (!dispatching && this.contentPending()),
-      busy:
-        this.closing ||
-        this.suspended ||
-        this.busy ||
-        (!dispatching && (this.closeRequested || !!this.running)),
-      capacityFull: !dispatching && this.retained.size >= AI_LIMITS.jobs,
-      identityKnown: this.local.hasExecutionIdentity()
-    })
-  }
   private requireIdle(): void {
     if (this.isSettling() || this.hasPendingWork()) throw new AiError('busy')
   }
@@ -796,387 +584,74 @@ export class AiService {
     this.requireIdle()
     if (this.contentPending()) throw new AiError('busy')
   }
-  private account(id: string): Account {
-    const value = this.credentials?.accounts.find((a) => a.id === id)
-    if (!value) throw new AiError('signed-out')
-    return value
-  }
-  private async saveCredentials(): Promise<void> {
-    try {
-      await this.storage.saveCredentials(this.credentials!)
-    } catch (error) {
-      this.storageFailure = true
-      this.accountStorageState = 'failed'
-      throw error
-    }
-  }
   async connect(input: AiConnectInput): Promise<AiStatus> {
     await this.ensure()
-    if (selectAiRoute().kind === 'local-chatgpt-plan') {
-      if (this.cancelledAttempts.has(input.attemptId)) return this.status()
-      if (
-        this.isSettling() ||
-        this.busy ||
-        this.running ||
-        this.pendingRetention ||
-        this.retentionWriting ||
-        this.contentPending()
-      )
-        throw new AiError('busy')
-      this.direct.connect(input)
-      return this.status()
-    }
-    if (selectAiRoute().kind === 'local-codex-chatgpt') {
-      if (this.cancelledAttempts.has(input.attemptId)) return this.status()
-      if (
-        this.isSettling() ||
-        this.busy ||
-        this.running ||
-        this.pendingRetention ||
-        this.retentionWriting ||
-        this.contentPending()
-      )
-        throw new AiError('busy')
-      this.local.connect(input)
-      return this.status()
-    }
+    requireDirectRoute()
     if (this.cancelledAttempts.has(input.attemptId)) return this.status()
-    if (this.attempted.has(input.attemptId)) {
-      if (this.attempted.get(input.attemptId) !== input.connectionId)
-        throw new AiError('invalid-request')
-      return this.status()
-    }
-    this.requireAccountIdle()
-    const config = registration(),
-      existing = input.connectionId ? this.account(input.connectionId) : undefined
-    if (existing && existing.clientId !== config.clientId)
-      throw new AiError('configuration-required')
-    if (!existing && this.credentials!.accounts.length >= 8) throw new AiError('busy')
-    this.busy = true
-    try {
-      await this.saveCredentials()
-    } finally {
-      this.busy = false
-    }
-    if (this.cancelledAttempts.has(input.attemptId)) return this.status()
-    if (this.closing) throw new AiError('busy')
-    const attempt = new OpenAiSignIn(input.attemptId)
-    if (this.attempted.size >= 64) this.attempted.delete(this.attempted.keys().next().value!)
-    this.attempted.set(input.attemptId, input.connectionId)
-    this.attempt = attempt
-    this.connectionState = 'signing-in'
-    this.lastReason = null
-    this.publish()
-    const task = (async () => {
-      const result = await attempt.run(config, this.credentials!.hostId, existing)
-      if (this.attempt !== attempt || attempt.abort.signal.aborted || this.closing)
-        throw new AiError('cancelled')
-      const duplicate = this.credentials!.accounts.find(
-        (a) => a.clientId === config.clientId && a.subject === result.subject
-      )
-      const id = existing?.id ?? duplicate?.id ?? randomUUID()
-      const account: Account = {
-        id,
-        clientId: config.clientId,
-        subject: result.subject,
-        label: result.label,
-        tokens: result.tokens,
-        refreshPending: false
-      }
-      const next = {
-        ...this.credentials!,
-        activeId: id,
-        accounts: [...this.credentials!.accounts.filter((a) => a.id !== id), account]
-      }
-      // Persist before publishing success. On uncertain storage, all further calls stay closed.
-      try {
-        await this.storage.saveCredentials(next)
-      } catch {
-        this.storageFailure = true
-        this.accountStorageState = 'failed'
-        throw new AiError('storage-unavailable')
-      }
-      if (this.attempt !== attempt || attempt.abort.signal.aborted || this.closing) {
-        try {
-          await this.storage.saveCredentials(this.credentials!)
-        } catch {
-          this.storageFailure = true
-          this.accountStorageState = 'failed'
-          throw new AiError('storage-unavailable')
-        }
-        throw new AiError('cancelled')
-      }
-      this.credentials = next
-      this.invalidateReviews()
-      this.revocation = 'none'
-    })()
-      .catch((error) => {
-        this.lastReason = aiReason(error)
-      })
-      .finally(() => {
-        if (this.attempt === attempt) {
-          this.attempt = null
-          this.connectionState = null
-        }
-        this.authWork = null
-        this.publish()
-      })
-    this.authWork = task
+    if (
+      this.isSettling() ||
+      this.busy ||
+      this.running ||
+      this.pendingRetention ||
+      this.retentionWriting ||
+      this.contentPending()
+    )
+      throw new AiError('busy')
+    this.direct.connect(input)
     return this.status()
   }
   async cancelConnect(attemptId: string): Promise<AiStatus> {
-    // Cancellation may arrive while the matching connect call is still loading
-    // or protecting credentials. It must also stop that not-yet-opened browser.
+    // Latch cancellation even while the matching connect is loading storage.
     if (this.cancelledAttempts.size >= 64)
       this.cancelledAttempts.delete(this.cancelledAttempts.values().next().value!)
     this.cancelledAttempts.add(attemptId)
-    if (selectAiRoute().kind === 'local-chatgpt-plan') {
-      await this.direct.cancel(attemptId)
-      return this.status()
-    }
-    if (selectAiRoute().kind === 'local-codex-chatgpt') {
-      await this.local.cancel(attemptId)
-      return this.status()
-    }
-    if (this.attempt?.attemptId === attemptId) {
-      this.attempt.cancel()
-      await this.authWork
-    }
+    await this.direct.cancel(attemptId)
     return this.status()
   }
-  async refresh(id: string, reservedContent = false): Promise<AiStatus> {
+  async refresh(id: string): Promise<AiStatus> {
     await this.ensure()
-    if (reservedContent) this.requireIdle()
-    else this.requireAccountIdle()
-    if (selectAiRoute().kind === 'local-chatgpt-plan') {
-      await this.direct.renew(id)
-      if (!reservedContent && !this.isSettling()) this.direct.requestPreparation(id)
-      return this.status()
-    }
-    const config = registration()
-    const account = this.account(id)
-    if (account.clientId !== config.clientId) throw new AiError('configuration-required')
-    if (!account.tokens) throw new AiError('signed-out')
-    this.busy = true
-    this.connectionState = 'refreshing'
-    this.connectionActionId = id
-    this.authAbort = new AbortController()
-    this.invalidateReviews()
-    this.publish()
-    try {
-      if (account.tokens.expiresAt <= Date.now() + 120000) {
-        account.refreshPending = true
-        await this.saveCredentials()
-        const next = await refreshOpenAi(account, this.authAbort.signal)
-        account.tokens = next
-        account.refreshPending = false
-        await this.saveCredentials()
-        this.lastReason = null
-      }
-    } catch (error) {
-      // A sent rotation with an unknown outcome is never replayed with the old token.
-      account.tokens = null
-      account.refreshPending = false
-      try {
-        await this.saveCredentials()
-      } catch {
-        this.storageFailure = true
-      }
-      this.lastReason = aiReason(error)
-      throw error
-    } finally {
-      this.busy = false
-      this.connectionState = null
-      this.connectionActionId = null
-      this.authAbort = null
-      this.publish()
-    }
+    this.requireAccountIdle()
+    await this.direct.renew(id)
+    if (!this.isSettling()) this.direct.requestPreparation(id)
     return this.status()
   }
   async disconnect(id: string): Promise<AiStatus> {
     await this.ensure()
     this.requireAccountIdle()
-    if (selectAiRoute().kind === 'local-chatgpt-plan') {
-      await this.direct.disconnect(id)
-      return this.status()
-    }
-    if (selectAiRoute().kind === 'local-codex-chatgpt') {
-      this.invalidateReviews()
-      await this.local.disconnect(id)
-      return this.status()
-    }
-    requireRegisteredRoute()
-    const account = this.account(id)
-    this.busy = true
-    this.connectionState = 'disconnecting'
-    this.connectionActionId = id
-    this.invalidateReviews()
-    this.authAbort = new AbortController()
-    this.publish()
-    try {
-      let confirmed = false
-      const hadTokens = !!account.tokens
-      if (account.tokens) {
-        // Durable local sign-out intent prevents reuse after interruption, even if
-        // remote revocation or the final encrypted write has an unknown outcome.
-        account.refreshPending = true
-        await this.saveCredentials()
-        // No stored token authorizes a route after its deployment permission is removed.
-        try {
-          if (registration().clientId === account.clientId)
-            confirmed = await revokeOpenAi(
-              account.tokens.refresh,
-              account.clientId,
-              this.authAbort.signal
-            )
-        } catch {
-          /* Local sign-out remains available. */
-        }
-      }
-      account.tokens = null
-      account.refreshPending = false
-      if (this.credentials!.activeId === id) this.credentials!.activeId = null
-      this.revocation = !hadTokens ? 'none' : confirmed ? 'confirmed' : 'unconfirmed'
-      await this.saveCredentials()
-      this.lastReason = null
-    } finally {
-      this.busy = false
-      this.connectionState = null
-      this.connectionActionId = null
-      this.authAbort = null
-      this.publish()
-    }
-    return this.status()
-  }
-  async resumeConnection(id: string): Promise<AiStatus> {
-    await this.ensure()
-    this.requireAccountIdle()
-    if (selectAiRoute().kind !== 'local-codex-chatgpt')
-      throw new AiError('development-access-unavailable')
-    this.invalidateReviews()
-    await this.local.resumeAccount(id)
-    return this.status()
-  }
-  async cleanupConnection(): Promise<AiStatus> {
-    await this.ensure()
-    this.requireAccountIdle()
-    if (selectAiRoute().kind !== 'local-codex-chatgpt')
-      throw new AiError('development-access-unavailable')
-    this.invalidateReviews()
-    await this.local.cleanup()
+    await this.direct.disconnect(id)
     return this.status()
   }
   async protectConnection(): Promise<AiStatus> {
     await this.ensure()
-    if (selectAiRoute().kind === 'local-chatgpt-plan') {
-      if (this.isSettling() || this.busy || this.running) throw new AiError('busy')
-      await this.direct.protect()
-      return this.status()
-    }
-    if (selectAiRoute().kind !== 'local-codex-chatgpt')
-      throw new AiError('development-access-unavailable')
-    if (this.closing || this.busy || this.running || this.attempt) throw new AiError('busy')
-    await this.local.protect()
+    requireDirectRoute()
+    if (this.isSettling() || this.busy || this.running) throw new AiError('busy')
+    await this.direct.protect()
     return this.status()
   }
-  /** Selecting a protected direct account schedules metadata preparation. It
-   * never opens a browser or sends project context. Historical routes stay local. */
+  /** Selecting a protected account prepares metadata, never sends project context. */
   async select(id: string): Promise<AiStatus> {
     await this.ensure()
     this.requireAccountIdle()
-    if (selectAiRoute().kind === 'local-chatgpt-plan') {
-      await this.direct.select(id)
-      return this.status()
-    }
-    const config = registration(),
-      account = this.account(id)
-    if (account.clientId !== config.clientId) throw new AiError('configuration-required')
-    if (!account.tokens) throw new AiError('signed-out')
-    const previous = this.credentials!.activeId
-    this.busy = true
-    try {
-      this.credentials!.activeId = id
-      this.invalidateReviews()
-      await this.saveCredentials()
-      this.lastReason = null
-    } catch (error) {
-      this.credentials!.activeId = previous
-      throw error
-    } finally {
-      this.busy = false
-      this.publish()
-    }
+    await this.direct.select(id)
     return this.status()
-  }
-  private requireSession(id: string): Account {
-    registration()
-    if (!secureAiStorage() || this.storageFailure)
-      throw new AiError(this.storageFailure ? 'storage-unavailable' : 'secure-storage-unavailable')
-    const account = this.account(id)
-    if (this.credentials!.activeId !== id || !account.tokens) throw new AiError('signed-out')
-    if (account.refreshPending || account.tokens.expiresAt <= Date.now())
-      throw new AiError('session-expired')
-    if (account.clientId !== registration().clientId) throw new AiError('configuration-required')
-    if (
-      !['chatgpt.tokens.use.direct', 'resource.invoke'].every((scope) =>
-        account.tokens!.scopes.includes(scope)
-      )
-    )
-      throw new AiError('consent-required')
-    return account
-  }
-  async models(id: string): Promise<AiModel[]> {
-    await this.ensure()
-    if (selectAiRoute().kind === 'local-chatgpt-plan') return [] // The explicit current catalog owns direct model choices.
-    if (selectAiRoute().kind === 'local-codex-chatgpt') return this.local.legacyModels(id)
-    this.requireIdle()
-    const account = this.requireSession(id)
-    // Catalog access sends no prompt. Isolation must still be established before launching a child.
-    requireTextOnlyRuntime()
-    const runtime = new CodexRuntime(this.storage)
-    this.busy = true
-    try {
-      await runtime.open(account.tokens!.access)
-      return await runtime.models()
-    } finally {
-      await runtime.close()
-      this.busy = false
-    }
   }
   async prepareConnection(id: string): Promise<AiStatus> {
     await this.ensure()
-    if (selectAiRoute().kind !== 'local-chatgpt-plan')
-      throw new AiError('development-access-unavailable')
+    requireDirectRoute()
     if (this.isSettling()) throw new AiError('busy')
     this.direct.requestPreparation(id)
-    return this.status()
-  }
-  async refreshModels(id: string): Promise<AiStatus> {
-    await this.ensure()
-    if (selectAiRoute().kind === 'local-chatgpt-plan') return this.prepareConnection(id)
-    this.requireAccountIdle()
-    if (selectAiRoute().kind !== 'local-codex-chatgpt')
-      throw new AiError('development-access-unavailable')
-    this.invalidateReviews()
-    await this.local.refreshModels(id)
     return this.status()
   }
   async selectModel(input: AiSelectModelInput): Promise<AiStatus> {
     await this.ensure()
     this.requireAccountIdle()
-    if (selectAiRoute().kind === 'local-chatgpt-plan') {
-      await this.direct.selectModel(input)
-      return this.status()
-    }
-    if (selectAiRoute().kind !== 'local-codex-chatgpt')
-      throw new AiError('development-access-unavailable')
-    this.local.selectModel(input)
+    await this.direct.selectModel(input)
     return this.status()
   }
   private authorize(
     input: AiPrepareInput,
     session: AiDispatchSession,
-    execution: DispatchExecution | null
+    execution: CurrentAiExecution
   ): void {
     this.requireWorkspaceAvailable(input.scope)
     try {
@@ -1187,99 +662,18 @@ export class AiService {
     const route = selectAiRoute()
     if (this.closing || this.suspended || route.kind !== session.route)
       throw new AiError('context-changed')
-    if (execution?.route === 'local-chatgpt-plan') {
-      if (
-        route.kind !== 'local-chatgpt-plan' ||
-        route.policyRevision !== execution.policyRevision ||
-        !['conversation', 'import'].includes(input.action)
-      )
-        throw new AiError('context-changed')
-      if (!secureAiStorage()) throw new AiError('secure-storage-unavailable')
-      if (this.storageFailure || this.journalFailure) throw new AiError('storage-unavailable')
-    } else if (
-      execution &&
-      (route.kind !== 'local-codex-chatgpt' ||
-        route.policyRevision !== execution.policyRevision ||
-        CODEX_VERSION !== execution.runtimeVersion)
+    if (
+      route.kind !== 'local-chatgpt-plan' ||
+      route.policyRevision !== execution.policyRevision ||
+      !['conversation', 'import'].includes(input.action)
     )
       throw new AiError('context-changed')
-    if (route.kind === 'local-codex-chatgpt') {
-      if (!secureAiStorage()) throw new AiError('secure-storage-unavailable')
-      if (this.storageFailure || this.journalFailure) throw new AiError('storage-unavailable')
-      if (this.runtimeState !== 'development-installed') throw new AiError('runtime-unavailable')
-      const available =
-        secureAiStorage() &&
-        !this.storageFailure &&
-        !this.journalFailure &&
-        this.runtimeState === 'development-installed'
-      // The content owner has already reserved this exact intent. Its own write
-      // and running slot must not be mistaken for competing work.
-      if (input.action === 'import') throw new AiError('context-changed')
-      const feature = this.localFeatures(this.local.snapshot(available, false, false), true)[
-        input.action
-      ]
-      if (feature.state === 'unavailable')
-        throw new AiError(
-          feature.reason === 'output-protection-required'
-            ? 'storage-unavailable'
-            : feature.reason === 'model-selection-required' ||
-                feature.reason === 'model-refresh-required' ||
-                feature.reason === 'no-text-models'
-              ? 'model-unavailable'
-              : feature.reason === 'connect-required'
-                ? 'signed-out'
-                : feature.reason === 'resume-required' || feature.reason === 'reconnect-required'
-                  ? 'session-expired'
-                  : feature.reason === 'local-workspace-identity-unavailable'
-                    ? 'auth-failed'
-                    : feature.reason === 'account-work-pending' ||
-                        feature.reason === 'ai-work-pending'
-                      ? 'busy'
-                      : 'isolation-unresolved'
-        )
-      if (feature.connectionId !== input.connectionId || feature.model !== input.model)
-        throw new AiError('context-changed')
-    }
+    if (!secureAiStorage()) throw new AiError('secure-storage-unavailable')
+    if (this.storageFailure || this.journalFailure) throw new AiError('storage-unavailable')
     session.authorize(input, execution)
   }
-  private registeredSession(): AiDispatchSession {
-    let runtime: CodexRuntime | null = null
-    return {
-      route: 'registered-openai',
-      authorize: (input, execution) => {
-        if (execution) throw new AiError('context-changed')
-        requireRegisteredRoute()
-        this.requireSession(input.connectionId)
-        requireIncludedFunding()
-        requireTextOnlyRuntime()
-      },
-      execute: async (input, _execution, authorize, update) => {
-        const account = this.requireSession(input.connectionId)
-        runtime = new CodexRuntime(this.storage)
-        try {
-          await authorize()
-          await runtime.open(account.tokens!.access)
-          const catalog = await runtime.models()
-          if (!catalog.some((model) => model.id === input.model))
-            throw new AiError('model-unavailable')
-          await runtime.execute(
-            input.model,
-            JSON.stringify({ request: input.prompt, context: input.context }),
-            authorize,
-            (value) => update({ ...value, commentary: '', finalText: null })
-          )
-        } finally {
-          await runtime.close()
-        }
-      },
-      interrupt: async () => {
-        await runtime?.interrupt()
-      }
-    }
-  }
-  /** Public raw prepare stays registered-only. Owner-local routes require a
-   * capture committed by the applicable main content adapter and live review. */
-  async prepare(input: AiPrepareInput, content?: ContentAuthorization): Promise<AiPrepared> {
+  /** New work requires a capture committed by the main content adapter and live review. */
+  async prepare(input: AiPrepareInput, content: ContentAuthorization): Promise<AiPrepared> {
     this.requireWorkspaceAvailable(input.scope)
     await this.ensure()
     this.requireIdle()
@@ -1312,46 +706,12 @@ export class AiService {
       content?.template === 'project-import-analysis-v2'
     )
       throw new AiError('invalid-request')
-    const route = selectAiRoute()
-    if (input.action === 'import' && route.kind !== 'local-chatgpt-plan')
+    requireDirectRoute()
+    if (content.template === 'mechanics-v1' || !['conversation', 'import'].includes(input.action))
       throw new AiError('invalid-request')
-    let execution: DispatchExecution | null = null,
-      session: AiDispatchSession
-    if (route.kind === 'local-chatgpt-plan') {
-      if (
-        !content ||
-        content.template === 'mechanics-v1' ||
-        !['conversation', 'import'].includes(input.action)
-      )
-        throw new AiError('invalid-request')
-      await this.direct.renew(input.connectionId)
-      execution = this.direct.execution(input, content.captureDigest, content.template)
-      session = this.direct.dispatchSession()
-    } else if (route.kind === 'local-codex-chatgpt') {
-      if (
-        !content ||
-        content.template === 'conversation-v2' ||
-        content.template === 'conversation-research-v1' ||
-        content.template === 'conversation-imported-v1' ||
-        content.template === 'conversation-imported-research-v1' ||
-        content.template === 'project-import-mapping-v1' ||
-        content.template === 'project-import-semantic-v1'
-      )
-        throw new AiError('invalid-request')
-      execution = localExecution(
-        input,
-        this.local.executionIdentity(input),
-        content.template,
-        content.captureDigest
-      )
-      session = this.local.dispatchSession()
-    } else {
-      requireRegisteredRoute()
-      const selected = this.account(input.connectionId)
-      if (selected.tokens && selected.tokens.expiresAt <= Date.now() + 120000)
-        await this.refresh(input.connectionId, !!content)
-      session = this.registeredSession()
-    }
+    await this.direct.renew(input.connectionId)
+    const execution = this.direct.execution(input, content.captureDigest, content.template)
+    const session = this.direct.dispatchSession()
     this.requireIdle()
     if (content && content.reviewStamp !== this.currentReviewStamp(input.action))
       throw new AiError('context-changed')
@@ -1364,23 +724,17 @@ export class AiService {
     const receipt: AiPrepared = {
       authorizationId: randomUUID(),
       operationId: input.operationId,
-      digest: execution
-        ? execution.route === 'local-chatgpt-plan'
-          ? execution.template === 'project-import-semantic-v1'
-            ? operationDigestV12(input, execution)
-            : execution.template === 'project-import-mapping-v1'
-              ? operationDigestV12(input, execution)
-              : execution.framingVersion === 6
-                ? operationDigestV9(input, execution)
-                : execution.template === 'conversation-research-v1'
-                  ? operationDigestV6(input, execution)
-                  : execution.template === 'conversation-v2'
-                    ? operationDigestV5(input, execution)
-                    : operationDigestV4(input, execution)
-          : isSchemaExecution(execution)
-            ? operationDigestV3(input, execution)
-            : operationDigestV2(input, execution)
-        : operationDigestV1(input),
+      digest:
+        execution.template === 'project-import-semantic-v1' ||
+        execution.template === 'project-import-mapping-v1'
+          ? operationDigestV12(input, execution)
+          : execution.framingVersion === 6
+            ? operationDigestV9(input, execution)
+            : execution.template === 'conversation-research-v1'
+              ? operationDigestV6(input, execution)
+              : execution.template === 'conversation-v2'
+                ? operationDigestV5(input, execution)
+                : operationDigestV4(input, execution),
       expiresAt: Date.now() + 5 * 60000
     }
     this.requireWorkspaceAvailable(input.scope)
@@ -1392,32 +746,20 @@ export class AiService {
     })
     return { ...receipt }
   }
-  preparedVersion(authorizationId: string): 1 | 2 | 3 | 4 | 5 | 6 | 9 | 12 {
+  preparedVersion(authorizationId: string): CurrentOperation['version'] {
     const prepared = this.prepared.get(authorizationId)
     if (!prepared) throw new AiError('context-changed')
-    if (
-      prepared.execution?.template === 'project-import-analysis-v1' ||
-      prepared.execution?.template === 'project-import-analysis-v2'
-    )
-      throw new AiError('invalid-request')
-    return prepared.execution
-      ? prepared.execution.route === 'local-chatgpt-plan'
-        ? prepared.execution.template === 'project-import-semantic-v1'
-          ? 12
-          : prepared.execution.template === 'project-import-mapping-v1'
-            ? 12
-            : prepared.execution.template === 'conversation-imported-v1' ||
-                prepared.execution.template === 'conversation-imported-research-v1'
-              ? 9
-              : prepared.execution.template === 'conversation-research-v1'
-                ? 6
-                : prepared.execution.template === 'conversation-v2'
-                  ? 5
-                  : 4
-        : isSchemaExecution(prepared.execution)
-          ? 3
-          : 2
-      : 1
+    const execution = prepared.execution
+    return execution.template === 'project-import-semantic-v1' ||
+      execution.template === 'project-import-mapping-v1'
+      ? 12
+      : execution.framingVersion === 6
+        ? 9
+        : execution.template === 'conversation-research-v1'
+          ? 6
+          : execution.template === 'conversation-v2'
+            ? 5
+            : 4
   }
   async start(input: AiStartInput, dispatchGuard?: () => void): Promise<AiOperation> {
     if (this.initialization) await this.initialization
@@ -1462,15 +804,16 @@ export class AiService {
       finishedAt: null
     }
     const execution = prepared.execution
-    if (
-      execution?.template === 'project-import-analysis-v1' ||
-      execution?.template === 'project-import-analysis-v2'
-    )
-      throw new AiError('invalid-request')
-
-    const item: RetainedOperation = execution
-      ? execution.route === 'local-chatgpt-plan'
-        ? execution.template === 'project-import-semantic-v1'
+    const item: CurrentOperation =
+      execution.template === 'project-import-semantic-v1'
+        ? {
+            version: 12,
+            input: structuredClone(prepared.input),
+            execution: structuredClone(execution),
+            view: { ...view, importRefusal: null },
+            output: { commentary: '', finalText: null }
+          }
+        : execution.template === 'project-import-mapping-v1'
           ? {
               version: 12,
               input: structuredClone(prepared.input),
@@ -1478,64 +821,40 @@ export class AiService {
               view: { ...view, importRefusal: null },
               output: { commentary: '', finalText: null }
             }
-          : execution.template === 'project-import-mapping-v1'
+          : execution.framingVersion === 6
             ? {
-                version: 12,
-                input: structuredClone(prepared.input),
-                execution: structuredClone(execution),
-                view: { ...view, importRefusal: null },
+                version: 9,
+                input: prepared.input,
+                execution,
+                view:
+                  execution.outputContract === 'responses-research-v1'
+                    ? { ...view, research: null }
+                    : view,
                 output: { commentary: '', finalText: null }
               }
-            : execution.framingVersion === 6
+            : execution.template === 'conversation-research-v1'
               ? {
-                  version: 9,
+                  version: 6,
                   input: prepared.input,
                   execution,
-                  view:
-                    execution.outputContract === 'responses-research-v1'
-                      ? { ...view, research: null }
-                      : view,
+                  view: { ...view, research: null },
                   output: { commentary: '', finalText: null }
                 }
-              : execution.template === 'conversation-research-v1'
+              : execution.template === 'conversation-v2'
                 ? {
-                    version: 6,
+                    version: 5,
                     input: prepared.input,
                     execution,
-                    view: { ...view, research: null },
+                    view,
                     output: { commentary: '', finalText: null }
                   }
-                : execution.template === 'conversation-v2'
-                  ? {
-                      version: 5,
-                      input: prepared.input,
-                      execution,
-                      view,
-                      output: { commentary: '', finalText: null }
-                    }
-                  : {
-                      version: 4,
-                      input: prepared.input,
-                      execution,
-                      view,
-                      output: { commentary: '', finalText: null }
-                    }
-        : isSchemaExecution(execution)
-          ? {
-              version: 3,
-              input: prepared.input,
-              execution,
-              view,
-              output: { commentary: '', finalText: null }
-            }
-          : {
-              version: 2,
-              input: prepared.input,
-              execution,
-              view,
-              output: { commentary: '', finalText: null }
-            }
-      : { version: 1, input: prepared.input, view }
+                : {
+                    version: 4,
+                    input: prepared.input,
+                    execution,
+                    view,
+                    output: { commentary: '', finalText: null }
+                  }
     this.busy = true
     try {
       await this.storage.retain(item)
@@ -1555,7 +874,6 @@ export class AiService {
       this.prepared.delete(input.authorizationId)
       this.journalFailure = true
       this.unprotectedOperationId = input.operationId
-      this.lastReason = 'storage-unavailable'
       this.publish()
       throw new AiError('storage-unavailable')
     } finally {
@@ -1600,7 +918,6 @@ export class AiService {
       .catch(() => {
         this.journalFailure = true
         this.unprotectedOperationId = writingOperationId
-        this.lastReason = 'storage-unavailable'
         void this.dispatch?.interrupt().catch(() => undefined)
         this.publish()
       })
@@ -1609,11 +926,11 @@ export class AiService {
       })
   }
   private async run(
-    item: RetainedOperation,
+    item: CurrentOperation,
     session: AiDispatchSession,
     dispatchGuard?: () => void
   ): Promise<void> {
-    const update = (value: CodexTextUpdate): void => {
+    const update = (value: AiTextUpdate): void => {
       if (!active(item.view)) return
       item.view = {
         ...item.view,
@@ -1633,15 +950,14 @@ export class AiService {
         sequence: item.view.sequence + 1,
         finishedAt: value.state === 'running' ? null : Date.now()
       }
-      if (item.version !== 1)
-        item.output = {
-          commentary: value.commentary,
-          finalText: value.state === 'completed' ? value.finalText : null
-        }
+      item.output = {
+        commentary: value.commentary,
+        finalText: value.state === 'completed' ? value.finalText : null
+      }
       this.queueRetention(item)
     }
     try {
-      const execution = item.version !== 1 ? item.execution : null
+      const execution = item.execution
       this.authorize(item.input, session, execution)
       await session.execute(
         item.input,
@@ -1662,7 +978,7 @@ export class AiService {
       if (active(item.view))
         update({
           text: item.view.text,
-          commentary: item.version !== 1 ? item.output.commentary : '',
+          commentary: item.output.commentary,
           finalText: null,
           state: 'unknown',
           reason: 'outcome-unknown'
@@ -1671,7 +987,7 @@ export class AiService {
       const reason = aiReason(error)
       update({
         text: item.view.text,
-        commentary: item.version !== 1 ? item.output.commentary : '',
+        commentary: item.output.commentary,
         finalText: null,
         state:
           reason === 'cancelled'
@@ -1712,7 +1028,7 @@ export class AiService {
       try {
         await this.dispatch?.interrupt()
       } catch {
-        this.lastReason = 'outcome-unknown'
+        // The protected operation owns cancellation status.
       }
     }
     const protectedRecord = this.protectedRecords.get(input.operationId)
@@ -1787,14 +1103,7 @@ export class AiService {
       if (!cold) throw new AiError('invalid-request')
       return structuredClone(cold.view)
     }
-    if (
-      this.running ||
-      this.busy ||
-      this.attempt ||
-      this.local.hasPendingWork() ||
-      this.direct.hasAccountWork()
-    )
-      throw new AiError('busy')
+    if (this.running || this.busy || this.direct.hasAccountWork()) throw new AiError('busy')
     const item = this.retained.get(input.operationId)
     if (!item || !sameProject(item.view.scope, input.scope)) throw new AiError('invalid-request')
     this.busy = true
@@ -1813,7 +1122,6 @@ export class AiService {
       this.pendingRetention = null
       this.journalFailure = false
       this.unprotectedOperationId = null
-      this.lastReason = null
       this.emit({ kind: 'operation', operation: item.view })
       return structuredClone(item.view)
     } finally {
@@ -1830,13 +1138,7 @@ export class AiService {
     this.publish()
   }
   hasProviderWork(): boolean {
-    return !!(
-      this.attempt ||
-      this.authAbort ||
-      this.running ||
-      this.local.hasAccountWork() ||
-      this.direct.hasAccountWork()
-    )
+    return !!(this.running || this.direct.hasAccountWork())
   }
   async prepareClose(stopProvider = false): Promise<boolean> {
     this.beginClose()
@@ -1844,8 +1146,6 @@ export class AiService {
     this.closing = true
     this.publish()
     if (stopProvider) {
-      this.attempt?.cancel()
-      this.authAbort?.abort()
       const item = this.activeOperationId ? this.retained.get(this.activeOperationId) : null
       if (item && active(item.view)) {
         item.view = { ...item.view, state: 'cancelling', sequence: item.view.sequence + 1 }
@@ -1854,15 +1154,10 @@ export class AiService {
       const stopped = (async () => {
         await this.dispatch?.interrupt().catch(() => undefined)
         await this.direct.close()
-        await this.authWork
         await this.running
       })()
       if (!(await providerSettled(stopped))) return false
     }
-    // Idle account teardown follows request settlement, never interrupts a
-    // request as a side effect of merely opening the native close dialog.
-    const closed = this.local.close()
-    if (!(await providerSettled(closed)) || !(await closed)) return false
     this.flushRetention()
     await this.retention
     if (this.hasPendingWork()) return false
@@ -1883,10 +1178,7 @@ export class AiService {
     this.suspended = true
     this.invalidateReviews()
     this.publish()
-    this.attempt?.cancel()
-    this.authAbort?.abort()
     void this.dispatch?.interrupt().catch(() => undefined)
-    this.local.suspend()
     this.direct.suspend()
   }
 }

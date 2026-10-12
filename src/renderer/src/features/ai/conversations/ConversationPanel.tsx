@@ -21,6 +21,7 @@ import PresentationBoundary from '../../../components/PresentationBoundary'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { NativeSelect, Popover, TextInput, Textarea } from '@mantine/core'
 import { AppButton, SelectField } from '../../../components/ui/Controls'
+import { StatusBanner } from '../../../components/ui/Feedback'
 import { useWorkspaceSession } from '../../workspace/workspaceContext'
 import { useAiConnections } from '../../ai-connections/connectionState'
 import { connectionReason } from '../../ai-connections/connection-copy'
@@ -388,7 +389,7 @@ export function ConversationPanel(): React.JSX.Element {
     shownKey = useRef(''),
     revealed = useRef('')
   const anchor = useRef<{ id: string; offset: number } | null>(null),
-    matchTarget = useRef<{ key: string; id: string } | null>(null)
+    matchTarget = useRef<{ key: string; id: string; response?: boolean } | null>(null)
   const [away, setAway] = useState(false),
     [renaming, setRenaming] = useState(false),
     [findOpen, setFindOpen] = useState(false),
@@ -440,7 +441,7 @@ export function ConversationPanel(): React.JSX.Element {
       c.reveal.conversationId === c.selected &&
       c.reveal.requestId !== revealed.current
     ) {
-      matchTarget.current = { key, id: c.reveal.attemptId }
+      matchTarget.current = { key, id: c.reveal.attemptId, response: true }
       revealed.current = c.reveal.requestId
       follow.current = false
     }
@@ -450,7 +451,12 @@ export function ConversationPanel(): React.JSX.Element {
         (node) => node.dataset.attempt === matchTarget.current?.id
       )
       if (hit) {
-        target.scrollTop += hit.getBoundingClientRect().top - target.getBoundingClientRect().top
+        if (hit instanceof HTMLDetailsElement) hit.open = true
+        const response = matchTarget.current.response
+          ? hit.querySelector<HTMLElement>('[data-role="assistant"]')
+          : null
+        target.scrollTop +=
+          (response ?? hit).getBoundingClientRect().top - target.getBoundingClientRect().top
         matchTarget.current = null
         follow.current = false
         anchor.current = readingPosition(target)
@@ -533,6 +539,7 @@ export function ConversationPanel(): React.JSX.Element {
       render={() => (
         <section
           className={styles['conversation-panel']}
+          data-conversation-panel
           data-chat={!c.listOpen}
           aria-label="Project conversations"
           onCompositionStartCapture={() => {
@@ -1109,10 +1116,17 @@ export function ConversationPanel(): React.JSX.Element {
 }
 export function ConversationNotice(): React.JSX.Element | null {
   const c = useConversations()
+  const connections = useAiConnections()
+  const workShown = connections.status?.work.some(
+    (item) =>
+      item.feature === 'conversation' &&
+      sameScope(item.scope, c.scope) &&
+      item.attemptId === c.run?.attemptId
+  )
   if (
     !c.scope ||
-    (!c.run?.pending &&
-      !c.run?.issue &&
+    (!c.issue &&
+      (workShown || (!c.run?.pending && !c.run?.issue)) &&
       !c.pending &&
       !c.draftProtection.issue &&
       !c.memoryEdit &&
@@ -1120,21 +1134,36 @@ export function ConversationNotice(): React.JSX.Element | null {
   )
     return null
   return (
-    <aside className={styles['conversation-notice']} aria-label="Conversation work">
-      <span>
-        {c.run?.issue ??
-          (c.draftProtection.issue || null) ??
-          (c.pending
-            ? 'A conversation action needs acknowledgment.'
-            : c.run?.pending
-              ? 'Protecting conversation work…'
-              : c.memoryEdit
-                ? 'A memory edit is unsaved. Open Context → Memory to save or cancel it.'
-                : 'A conversation title is unsaved.')}
-      </span>
-      <AppButton variant="subtle" onClick={() => c.show()}>
-        Return to conversations
-      </AppButton>
+    <aside
+      className={styles['conversation-notice']}
+      aria-label="Conversation work"
+      data-conversation-notice-covered={
+        !c.pending &&
+        !c.memoryEdit &&
+        !c.rename &&
+        (workShown || (!c.run?.pending && !c.run?.issue))
+      }
+    >
+      <StatusBanner
+        title="Conversation"
+        tone={c.issue || c.draftProtection.issue || (!workShown && c.run?.issue) ? 'error' : 'info'}
+      >
+        <p>
+          {(c.issue || null) ??
+            (!workShown ? c.run?.issue : null) ??
+            (c.draftProtection.issue || null) ??
+            (c.pending
+              ? 'A conversation action needs acknowledgment.'
+              : c.run?.pending && !workShown
+                ? 'Protecting conversation work…'
+                : c.memoryEdit
+                  ? 'A memory edit is unsaved. Open Context → Memory to save or cancel it.'
+                  : 'A conversation title is unsaved.')}
+        </p>
+        <AppButton variant="subtle" onClick={() => c.show()}>
+          Return to conversations
+        </AppButton>
+      </StatusBanner>
     </aside>
   )
 }

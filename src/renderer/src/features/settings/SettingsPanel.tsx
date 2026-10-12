@@ -1,4 +1,4 @@
-import { Palette } from 'lucide-react'
+import { IconPalette } from '@tabler/icons-react'
 import { isZoomLevel, ZOOM_LEVELS } from '../../../../shared/support'
 import { useVisualPreferences } from '../../theme/visualPreferencesContext'
 import { AppButton, ChoiceField, SelectField } from '../../components/ui/Controls'
@@ -17,7 +17,7 @@ export default function SettingsPanel(): React.JSX.Element {
         className={styles['settings-panel']}
       >
         <div className={styles['settings-heading']}>
-          <Palette size={22} aria-hidden="true" />
+          <IconPalette size={22} aria-hidden="true" />
           <h2 id="settings-title" tabIndex={-1}>
             Appearance and accessibility
           </h2>

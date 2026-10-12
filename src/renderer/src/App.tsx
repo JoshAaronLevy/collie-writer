@@ -4,8 +4,7 @@ import { ProofreadingNotice } from './features/ai/proofreading/ProofreadingPanel
 import { ConversationProvider } from './features/ai/conversations/ConversationProvider'
 import { ConversationNotice } from './features/ai/conversations/ConversationPanel'
 import { useEffect, useRef, useState } from 'react'
-import { BookOpen, FolderOpen, Settings } from 'lucide-react'
-import { IconMenu2, IconSettings } from '@tabler/icons-react'
+import { IconBook, IconFolderOpen, IconMenu2, IconSettings } from '@tabler/icons-react'
 import { IconButton } from './components/ui/IconButton'
 import type { AppInfo } from '../../shared/commands'
 import type { StorageStatus } from '../../shared/storage'
@@ -69,7 +68,7 @@ export default function App(): React.JSX.Element {
         <ImportProvider>
           <ConversationProvider>
             <ProofreadingProvider>
-              <AppShell info={info} failed={failed} storageStatus={storageStatus} />
+              <AppShell info={info} failed={failed} />
             </ProofreadingProvider>
           </ConversationProvider>
         </ImportProvider>
@@ -78,15 +77,7 @@ export default function App(): React.JSX.Element {
   )
 }
 
-function AppShell({
-  info,
-  failed,
-  storageStatus
-}: {
-  info: AppInfo | null
-  failed: boolean
-  storageStatus: StorageStatus
-}): React.JSX.Element {
+function AppShell({ info, failed }: { info: AppInfo | null; failed: boolean }): React.JSX.Element {
   const { persistenceIssue, zoomIssue } = useVisualPreferences()
   const { navigate, returnToWork, project, navigating, destination, writingView } =
     useWorkspaceSession()
@@ -166,7 +157,7 @@ function AppShell({
               {
                 id: 'tutorial',
                 label: 'Explore the tutorial',
-                icon: <BookOpen size={18} aria-hidden="true" />,
+                icon: <IconBook size={18} aria-hidden="true" />,
                 onSelect: () => {
                   void navigate({ kind: 'help', page: 'tutorial' })
                 }
@@ -174,7 +165,7 @@ function AppShell({
               {
                 id: 'data',
                 label: 'Storage',
-                icon: <FolderOpen size={18} aria-hidden="true" />,
+                icon: <IconFolderOpen size={18} aria-hidden="true" />,
                 onSelect: () => {
                   void navigate({ kind: 'settings', page: 'data' })
                 }
@@ -182,7 +173,7 @@ function AppShell({
               {
                 id: 'settings',
                 label: 'About and help',
-                icon: <Settings size={18} aria-hidden="true" />,
+                icon: <IconSettings size={18} aria-hidden="true" />,
                 onSelect: () => {
                   void navigate({ kind: 'help', page: 'about' })
                 }
@@ -199,10 +190,16 @@ function AppShell({
             </StatusBanner>
           </div>
         ) : null}
-        {zoomIssue ? (
+        {zoomIssue && !(destination.kind === 'settings' && destination.page === 'appearance') ? (
           <div className={styles['app-notice']}>
             <StatusBanner tone="warning" title="Interface zoom needs attention">
-              Open Settings to retry your zoom choice. Local writing remains available.
+              <p>Your zoom choice could not be applied. Local writing remains available.</p>
+              <AppButton
+                variant="default"
+                onClick={() => void navigate({ kind: 'settings', page: 'appearance' })}
+              >
+                Review display settings
+              </AppButton>
             </StatusBanner>
           </div>
         ) : null}
@@ -214,7 +211,7 @@ function AppShell({
         <Orientation />
         <WorkspaceViews />
         <RetainedRegion name="help-about" label="About and help">
-          <AboutPanel info={info} storage={storageStatus} />
+          <AboutPanel info={info} />
         </RetainedRegion>
       </main>
       {failed || !info ? (

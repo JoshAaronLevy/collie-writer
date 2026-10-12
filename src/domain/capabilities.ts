@@ -41,7 +41,6 @@ export function commandCapability(command: ProjectCommand): Capability {
     case 'outline':
     case 'noteChange':
     case 'sourceChange':
-    case 'sourceImport':
     case 'sourceAttach':
     case 'evidenceChange':
     case 'citationStyle':
@@ -65,7 +64,6 @@ export function commandCapability(command: ProjectCommand): Capability {
     case 'history':
     case 'notes':
     case 'sources':
-    case 'sourcePreview':
     case 'sourceExport':
     case 'sourceExportAttachment':
     case 'inspection':

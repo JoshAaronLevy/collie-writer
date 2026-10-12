@@ -14,7 +14,6 @@ export function AiConnectionNotice(): React.JSX.Element | null {
     connections.issue,
     connections.busy
   )
-  const localIssue = connections.status?.local?.issue
   const directDiagnostic = connections.status?.direct?.issue
   // Request errors are shown with the message. Only evidence about the
   // connection belongs in this global account notice.
@@ -22,7 +21,6 @@ export function AiConnectionNotice(): React.JSX.Element | null {
     directDiagnostic?.stage === 'inference-http' || directDiagnostic?.stage === 'inference-stream'
       ? null
       : directDiagnostic
-  const cleanup = connections.status?.local?.cleanupCount ?? 0
   const health = connections.status?.connectionHealth
   const preparationAttention =
     health &&
@@ -42,32 +40,27 @@ export function AiConnectionNotice(): React.JSX.Element | null {
     (health?.state === 'attention' || health?.state === 'error' || disconnectedSavedAccount) &&
     (!preparationAttention || (connections.startupPrepared && !connections.busy))
   const unavailable = connections.statusUnavailable && (!!connections.status || !!connections.issue)
-  const needsAttention =
-    connections.issue || localIssue || directIssue || unavailable || healthIssue
+  const needsAttention = connections.issue || directIssue || unavailable || healthIssue
   // Background preparation/renewal is silent. Explicit account work keeps its controls.
   const explicitProgress =
     !!connections.pending || connections.waiting || connections.status?.state === 'disconnecting'
   if (connections.dialogOpen) return null
-  if (!explicitProgress && !needsAttention && !cleanup) return null
+  if (!explicitProgress && !needsAttention) return null
   return (
     <div className={styles['ai-connection-notice']}>
       <StatusBanner title="ChatGPT" tone={needsAttention ? 'warning' : 'info'}>
         <p>
           {connections.issue
             ? connectionReason[connections.issue]
-            : localIssue
-              ? connectionReason[localIssue]
-              : directIssue
-                ? connectionReason[directIssue.reason]
-                : connections.statusUnavailable
-                  ? connectionHealthDescription['status-unavailable']
-                  : disconnectedSavedAccount
-                    ? 'Your saved ChatGPT account is disconnected. Open Manage ChatGPT to reconnect.'
-                    : healthIssue
-                      ? connectionHealthDescription[health.reason]
-                      : explicitProgress
-                        ? view.description
-                        : 'Inactive Codex sessions are waiting for local sign-out.'}
+            : directIssue
+              ? connectionReason[directIssue.reason]
+              : connections.statusUnavailable
+                ? connectionHealthDescription['status-unavailable']
+                : disconnectedSavedAccount
+                  ? 'Your saved ChatGPT account is disconnected. Open Manage ChatGPT to reconnect.'
+                  : healthIssue
+                    ? connectionHealthDescription[health.reason]
+                    : view.description}
         </p>
         <div className={styles['ai-account-actions']}>
           <AppButton
@@ -84,17 +77,6 @@ export function AiConnectionNotice(): React.JSX.Element | null {
               onClick={() => void connections.cancel()}
             >
               Cancel sign-in
-            </AppButton>
-          ) : null}
-          {connections.issue ||
-          connections.statusUnavailable ||
-          health?.action === 'check-status' ? (
-            <AppButton
-              variant="default"
-              pending={connections.checking}
-              onClick={() => void connections.checkStatus(true)}
-            >
-              Check status
             </AppButton>
           ) : null}
         </div>

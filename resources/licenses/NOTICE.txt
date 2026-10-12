@@ -62,7 +62,7 @@ dependencies/. Update checks use a configured release feed only after the
 user chooses Check for updates; no manuscript or project metadata is sent.
 
 The local interface uses @mantine/core and @mantine/hooks 9.6.3 (MIT),
-with lucide-react 1.49.0 icons (ISC and retained Feather MIT notices).
+with @tabler/icons-react 3.49.0 icons (MIT).
 Their complete distributed licenses and dependency notices are bundled in
 dependencies/ and listed in dependencies/inventory.json. Floating UI and
 the other UI dependencies run locally; no hosted fonts, icon service,
@@ -76,10 +76,10 @@ PDF export metadata uses pdf-lib 1.17.1 (MIT) locally, with @pdf-lib/standard-fo
 project details are sent to a conversion or metadata service.
 
 The optional provider connection boundary verifies signed OpenAI tokens with
-jose 6.2.12 (MIT). Its complete notice is in dependencies/. The development
-Codex CLI 0.160.0 dependency is not redistributed in application packages.
-Its Apache-2.0 package metadata does not confer provider account, funding or
-commercial integration permission. Runtime distribution remains pending.
+jose 6.2.12 (MIT). Its complete notice is in dependencies/. RF16 removes the
+unused development Codex CLI dependency and runtime authoring. Historical
+records remain readable; provider account, funding and commercial integration
+permission are separate unresolved release requirements.
 
 Writing controls use @tabler/icons-react 3.49.0 and @tabler/icons 3.49.0
 (MIT), copyright (c) 2020-2026 Paweł Kuna. Complete unmodified licenses

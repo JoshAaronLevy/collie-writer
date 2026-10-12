@@ -84,16 +84,7 @@ export class AiContentService {
         if (
           !this.timer &&
           !this.writing &&
-          [...this.bound.values()].some(
-            (owner) =>
-              this.ai.isContentScopeOpen(owner.scope) &&
-              !this.failures.has(owner.binding.attemptId) &&
-              this.ai.protectedContentState(
-                owner.binding.operationId,
-                bindingVersion(owner.binding)
-              ) === 'completed' &&
-              this.ai.handoffReady(owner.binding.operationId)
-          )
+          [...this.bound.values()].some((owner) => this.automaticHandoff(owner))
         )
           this.timer = setTimeout(() => {
             this.timer = null
@@ -339,26 +330,8 @@ export class AiContentService {
         )
       }
       for (const owner of [...this.bound.values()]) {
-        // A project open may have entered the worker queue before this timer.
-        // Wait for its observed scope; never turn a closed original into a
-        // failed write that would prevent returning to it.
-        if (
-          !this.storage.idle() ||
-          !this.ai.isContentScopeOpen(owner.scope) ||
-          this.failures.has(owner.binding.attemptId) ||
-          this.queued.has(owner.binding.attemptId)
-        )
-          continue
-        const operation = this.ai.protectedContentOperation(
-          owner.binding.operationId,
-          bindingVersion(owner.binding)
-        )
-        if (
-          operation?.state === 'completed' ||
-          (operation?.state === 'failed' &&
-            operation.importRefusal &&
-            bindingVersion(owner.binding) === 12)
-        )
+        const operation = this.automaticHandoff(owner)
+        if (operation)
           try {
             await this.transfer(owner, operation, operation.state !== 'completed')
           } catch {
@@ -383,6 +356,28 @@ export class AiContentService {
           this.failures.has(owner.binding.attemptId) ? 'AI output needs local protection.' : null
         )
     }
+  }
+  private automaticHandoff(owner: Bound): AiOperation | null {
+    // A queued project open must settle before writing to its observed scope.
+    // Failed exact writes still need recovery; no closed original is acquired here.
+    if (
+      !this.storage.idle() ||
+      !this.ai.isContentScopeOpen(owner.scope) ||
+      this.failures.has(owner.binding.attemptId) ||
+      this.queued.has(owner.binding.attemptId) ||
+      !this.ai.handoffReady(owner.binding.operationId)
+    )
+      return null
+    const operation = this.ai.protectedContentOperation(
+      owner.binding.operationId,
+      bindingVersion(owner.binding)
+    )
+    return operation?.state === 'completed' ||
+      (operation?.state === 'failed' &&
+        operation.importRefusal &&
+        bindingVersion(owner.binding) === 12)
+      ? operation
+      : null
   }
   private preparedInput(scope: OpenInput, b: ConversationBinding, t: ContentTurn): AiPrepareInput {
     return {
@@ -667,7 +662,7 @@ export class AiContentService {
         captureDigest: stored.turn.capture.digest
       }
       const version = this.ai.preparedVersion(prepared.authorizationId)
-      binding = version === 1 ? fields : { version, ...fields }
+      binding = { version, ...fields }
       await this.protect({ ...scope, action: 'bind', binding }, input.attemptId)
       this.bound.set(operationId, { scope, binding })
       const operation = await this.ai.start(

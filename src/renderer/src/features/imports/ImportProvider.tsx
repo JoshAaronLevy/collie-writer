@@ -11,7 +11,7 @@ import type { ReviewCounts } from '../../../../shared/import-review'
 import { VisuallyHidden } from '@mantine/core'
 import { IconX } from '@tabler/icons-react'
 import { IconButton } from '../../components/ui/IconButton'
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useVisualPreferences } from '../../theme/visualPreferencesContext'
 import { AppDialog } from '../../components/ui/AppDialog'
 import { AppButton, ChoiceField, SelectField, TextareaField } from '../../components/ui/Controls'
@@ -117,6 +117,34 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
     render(owned.current)
     session.drafts.changed()
   }
+  const projectId = session.project?.projectId,
+    workspaceId = session.project?.workspaceId
+  const onAnalysisRecovery = useEffectEvent(async (captured: OpenInput, issue: string | null) => {
+    if (!sameScope(session.project, captured)) return
+    if (issue) patch({ issue })
+    else await session.refreshConversationHead(captured)
+  })
+  useEffect(() => {
+    if (!projectId || !workspaceId) return
+    const captured = { projectId, workspaceId }
+    let live = true
+    // Finish only retained output and exact receipts. No grant, analysis or Accept.
+    void window.collie
+      .importAnalysis({ ...captured, action: 'reconcile' })
+      .then(async (result) => {
+        if (live) await onAnalysisRecovery(captured, result.ok ? null : result.error.message)
+      })
+      .catch(() => {
+        if (live)
+          void onAnalysisRecovery(
+            captured,
+            'Saved import responses could not be recovered. Open Import to try local recovery; nothing was sent.'
+          )
+      })
+    return () => {
+      live = false
+    }
+  }, [projectId, workspaceId])
   const writable =
     !session.accessReadOnly &&
     !session.accessTransition &&
@@ -329,7 +357,7 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
     } else if (owned.current.revision && !dirty(owned.current))
       await loadBatch(owned.current.revision.batchId)
   }
-  function open(element: HTMLElement, attemptId?: string): void {
+  function open(element: HTMLElement, attemptId?: string, category?: ImportCategory): void {
     if (
       !session.project ||
       session.closing ||
@@ -403,6 +431,13 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
       const revision = owned.current.revision
       if (revision && !owned.current.pending && !dirty(owned.current))
         await multipart.restore(captured, revision, formIntent())
+      if (
+        category &&
+        !owned.current.revision &&
+        !owned.current.selected.length &&
+        !dirty(owned.current)
+      )
+        patch({ settings: { ...owned.current.settings, categories: [category] } })
     })
   }
   async function close(toManage = false): Promise<void> {
@@ -921,7 +956,13 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
     return () => cancelAnimationFrame(frame)
   }, [state.opened, state.screen, state.busy, state.selected, multipart.busy, multipart.phase])
   return (
-    <ImportContext.Provider value={{ open, showAnalysis, busy: state.busy }}>
+    <ImportContext.Provider
+      value={{
+        open: (trigger, category) => open(trigger, undefined, category),
+        showAnalysis,
+        busy: state.busy
+      }}
+    >
       {children}
       {success ? (
         <div className={styles.success} role="status">

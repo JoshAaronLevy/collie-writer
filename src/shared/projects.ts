@@ -85,26 +85,18 @@ import {
 } from '../domain/projects/templates'
 import {
   isSourceChangeInput,
-  isSourcePreviewInput,
-  isSourceImportInput,
   isSourceAttachmentInput,
   isSourceExportInput,
   isSourceAttachmentExportInput,
   isSourcesView,
-  isSourcePreview,
   type SourceChangeInput,
   type SourcesView,
   type SourcePick,
-  type SourcePreviewInput,
-  type SourceImportInput,
-  type SourceImportPreview,
   type SourceAttachmentInput,
   type SourceExportInput,
   type SourceExportReceipt,
   type SourceAttachmentExportInput,
   type SourceProgress,
-  type WorkerSourcePreview,
-  type WorkerSourceImport,
   type WorkerSourceAttachment,
   type WorkerSourceExport,
   type WorkerSourceAttachmentExport
@@ -208,9 +200,6 @@ export const PROJECT_CHANNELS = {
   readImage: 'images.read',
   sources: 'sources.read',
   sourceChange: 'sources.change',
-  sourcePickImport: 'sources.pickImport',
-  sourcePreview: 'sources.preview',
-  sourceImport: 'sources.import',
   sourcePickAttachment: 'sources.pickAttachment',
   sourcePickVersion: 'sources.pickVersion',
   sourceAttach: 'sources.attach',
@@ -455,8 +444,6 @@ export type ProjectCommand =
   | { kind: 'inspectionChange'; input: InspectionChangeInput }
   | { kind: 'noteChange'; input: NoteChangeInput }
   | { kind: 'sourceChange'; input: SourceChangeInput }
-  | { kind: 'sourcePreview'; input: WorkerSourcePreview }
-  | { kind: 'sourceImport'; input: WorkerSourceImport }
   | { kind: 'sourceAttach'; input: WorkerSourceAttachment }
   | { kind: 'sourceExport'; input: WorkerSourceExport }
   | { kind: 'sourceExportAttachment'; input: WorkerSourceAttachmentExport }
@@ -490,7 +477,6 @@ export type ProjectValue =
   | HistoryView
   | NotesView
   | SourcesView
-  | SourceImportPreview
   | SourceExportReceipt
   | InspectionView
   | InspectionPageText
@@ -533,9 +519,6 @@ export type ProjectAPI = {
   changeInspection: (input: InspectionChangeInput) => Promise<ProjectResult<InspectionView>>
   readSources: (input: OpenInput) => Promise<ProjectResult<SourcesView>>
   changeSource: (input: SourceChangeInput) => Promise<ProjectResult<SourcesView>>
-  pickSourceImport: (input: OpenInput) => Promise<ProjectResult<SourcePick | null>>
-  previewSourceImport: (input: SourcePreviewInput) => Promise<ProjectResult<SourceImportPreview>>
-  commitSourceImport: (input: SourceImportInput) => Promise<ProjectResult<SourcesView>>
   pickSourceAttachment: (input: OpenInput) => Promise<ProjectResult<SourcePick | null>>
   pickSourceVersion: (input: OpenInput) => Promise<ProjectResult<SourcePick | null>>
   attachSourceFile: (input: SourceAttachmentInput) => Promise<ProjectResult<SourcesView>>
@@ -756,33 +739,6 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (v.kind === 'inspectionAsset') return isInspectionAssetInput(v.input)
   if (v.kind === 'inspectionChange') return isInspectionChangeInput(v.input)
   if (v.kind === 'sourceChange') return isSourceChangeInput(v.input)
-  if (v.kind === 'sourcePreview')
-    return (
-      record(v.input) &&
-      isSourcePreviewInput({
-        projectId: v.input.projectId,
-        workspaceId: v.input.workspaceId,
-        token: v.input.token
-      }) &&
-      ['csl-json', 'bibtex', 'ris'].includes(String(v.input.format)) &&
-      typeof v.input.sourcePath === 'string' &&
-      v.input.sourcePath.length <= 4096
-    )
-  if (v.kind === 'sourceImport')
-    return (
-      record(v.input) &&
-      isSourceImportInput({
-        projectId: v.input.projectId,
-        workspaceId: v.input.workspaceId,
-        operationId: v.input.operationId,
-        token: v.input.token,
-        digest: v.input.digest,
-        choices: v.input.choices
-      }) &&
-      ['csl-json', 'bibtex', 'ris'].includes(String(v.input.format)) &&
-      typeof v.input.sourcePath === 'string' &&
-      v.input.sourcePath.length <= 4096
-    )
   if (v.kind === 'sourceAttach')
     return (
       record(v.input) &&
@@ -889,12 +845,7 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
   if (kind === 'searchCache') return isSearchCacheView(v)
   if (kind === 'search') return isSearchView(v)
   if (kind === 'searchActivity' || kind === 'searchAction') return isSearchActivity(v)
-  if (
-    kind === 'sources' ||
-    kind === 'sourceChange' ||
-    kind === 'sourceImport' ||
-    kind === 'sourceAttach'
-  )
+  if (kind === 'sources' || kind === 'sourceChange' || kind === 'sourceAttach')
     return isSourcesView(v)
   if (kind === 'inspection' || kind === 'inspectionChange') return isInspectionView(v)
   if (kind === 'inspectionPage') return isInspectionPageText(v)
@@ -910,7 +861,6 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
       typeof v.sha256 === 'string' &&
       /^[a-f0-9]{64}$/.test(v.sha256)
     )
-  if (kind === 'sourcePreview') return isSourcePreview(v)
   if (kind === 'sourceExport' || kind === 'sourceExportAttachment')
     return (
       exact(v, ['path', 'count', 'losses']) &&
@@ -1059,4 +1009,9 @@ export function isLocation(v: unknown): v is LocationStatus {
     typeof v.message === 'string' &&
     v.message.length <= 500
   )
+}
+
+/** Project identity only; never carries document payloads or file authority. */
+export function scopeOf(project: OpenInput): OpenInput {
+  return { projectId: project.projectId, workspaceId: project.workspaceId }
 }

@@ -45,6 +45,11 @@
 .app-notice {
   margin-block: var(--collie-space-4);
 }
+/* Actual retained-panel visibility includes narrow layouts, focus mode and render failure. */
+.app-shell:has([data-conversation-visible='true'] [data-conversation-panel])
+  [data-conversation-notice-covered='true'] {
+  display: none;
+}
 .app-footer {
   display: flex;
   flex-wrap: wrap;

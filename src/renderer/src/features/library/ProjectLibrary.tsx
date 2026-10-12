@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { TextInput } from '@mantine/core'
-import { Archive, RotateCcw } from 'lucide-react'
+import { IconArchive, IconRefresh } from '@tabler/icons-react'
 import { canEditProject, sameProject } from '../../../../shared/access'
 import { sameScope } from '../../../../shared/project-files'
 import { type ProjectListing } from '../../../../shared/projects'
@@ -9,7 +9,7 @@ import ProjectActionsMenu from '../projects/ProjectActionsMenu'
 import { AppButton } from '../../components/ui/Controls'
 import { StatusBanner } from '../../components/ui/Feedback'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
-import { scopeOf } from '../workspace/useWorkspaceController'
+import { scopeOf } from '../../../../shared/projects'
 import styles from './ProjectLibrary.module.css'
 import { projectFilePresentation } from '../projects/project-file-presentation'
 
@@ -162,7 +162,7 @@ export default function ProjectLibrary(): React.JSX.Element {
         </ul>
       ) : (
         <div className={styles['project-library-empty']}>
-          <Archive size={24} aria-hidden="true" />
+          <IconArchive size={24} aria-hidden="true" />
           <h2>
             {normalized
               ? 'No matching projects'
@@ -202,7 +202,7 @@ export default function ProjectLibrary(): React.JSX.Element {
           disabled={unavailable}
           onClick={() => session.run(session.refresh)}
         >
-          <RotateCcw size={16} aria-hidden="true" /> Refresh projects
+          <IconRefresh size={16} aria-hidden="true" /> Refresh projects
         </AppButton>
         <AppButton
           variant="subtle"

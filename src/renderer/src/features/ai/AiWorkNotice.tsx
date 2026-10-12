@@ -6,7 +6,6 @@ import { AppButton } from '../../components/ui/Controls'
 import { AppDialog } from '../../components/ui/AppDialog'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useRetainedDraft } from '../workspace/DraftOwner'
-import { AiCapacity } from '../ai-connections/AiCapacity'
 import { useAiConnections } from '../ai-connections/connectionState'
 import { useConversations } from './conversations/conversationState'
 import { useProofreading } from './proofreading/proofreadingState'
@@ -20,12 +19,12 @@ const labels: Record<AiContentWork['state'], string> = {
   stopping: 'Stopping response…',
   protecting: 'Saving response…',
   'protection-required': 'Response could not be saved',
-  'retained-outcome': 'Saved result needs review',
+  'retained-outcome': 'Interrupted or unsuccessful response kept',
   'handoff-required': 'Response is waiting to be saved to the project',
   'record-unavailable': 'Saved request needs recovery'
 }
 
-/** Always mounted. An exact acknowledgment survives removal of its work item. */
+/** Exact local actions survive removal of their work item; viewing never acknowledges a result. */
 export function AiWorkNotice(): React.JSX.Element | null {
   const session = useWorkspaceSession(),
     connections = useAiConnections(),
@@ -34,34 +33,32 @@ export function AiWorkNotice(): React.JSX.Element | null {
     imports = useProjectImport()
   const [pending, setPending] = useState<Pending | null>(null),
     [busy, setBusy] = useState(false),
-    [issue, setIssue] = useState('')
-  const [acknowledge, setAcknowledge] = useState<AiContentWork | null>(null)
+    [issue, setIssue] = useState(''),
+    [acknowledge, setAcknowledge] = useState<AiContentWork | null>(null)
   const held = useRef<Pending | null>(null),
     locked = useRef(false),
-    importAfterExit = useRef<string | null>(null),
     region = useRef<HTMLDivElement>(null)
   const work = connections.status?.work ?? []
   const capacity = connections.status?.capacity
-  const capacityNeedsAttention =
-    !!capacity && (capacity.used === null || capacity.used > 0 || capacity.projects.length > 0)
+  const otherProjects = (capacity?.projects ?? []).filter(
+    (scope) =>
+      !sameScope(session.project, scope) && !work.some((item) => sameScope(item.scope, scope))
+  )
+  const unreadable = capacity?.used === null
+  const full = !!capacity && capacity.used === capacity.limit
   const needsAttention =
     !!issue ||
-    capacity?.used === null ||
-    (!!capacity && capacity.used === capacity.limit) ||
-    work.some(
-      (item) =>
-        item.state === 'protection-required' ||
-        item.state === 'record-unavailable' ||
-        item.state === 'handoff-required'
-    )
-  const running = work.some((item) => item.state === 'running' || item.state === 'stopping')
-  const savedResults = work.filter((item) => item.state === 'retained-outcome').length
+    unreadable ||
+    full ||
+    otherProjects.length > 0 ||
+    work.some((item) => !['running', 'stopping', 'protecting'].includes(item.state))
+  const blocked = !!pending || busy || session.closing || session.navigating || session.acting
   useRetainedDraft('ai-work-action', {
     read: () => ({
       scope: pending?.work.scope ?? { projectId: '', workspaceId: '' },
       kind: 'ai-work',
       entityId: pending?.work.attemptId ?? null,
-      label: 'AI stop, protection or retention acknowledgment',
+      label: 'saving or stopping an AI response',
       dirty: false,
       composing: false,
       busy,
@@ -74,7 +71,8 @@ export function AiWorkNotice(): React.JSX.Element | null {
     }
   })
   async function act(input: Pending): Promise<void> {
-    if (locked.current || (held.current && held.current !== input)) return
+    if (locked.current || (held.current && held.current !== input) || session.composition.current)
+      return
     locked.current = true
     held.current = input
     setPending(input)
@@ -95,7 +93,7 @@ export function AiWorkNotice(): React.JSX.Element | null {
         }
         setIssue(
           result.error.code === 'NOT_FOUND'
-            ? 'The original local execution record or binding is missing. Saved history remains readable; this request was not resent.'
+            ? 'The local response could not be found. Saved project history is kept. Recovery sends no request; sending again would be a new request.'
             : result.error.message
         )
       } else {
@@ -105,39 +103,67 @@ export function AiWorkNotice(): React.JSX.Element | null {
       await connections.checkStatus()
     } catch {
       setIssue(
-        'This local acknowledgment is uncertain. Keep Collie open and retry the same action; it cannot send a new request.'
+        'This local action could not be confirmed. Retry it here; it cannot send a new request.'
       )
     } finally {
       locked.current = false
       setBusy(false)
     }
   }
-  if (!work.length && !pending && !issue && !acknowledge && !capacityNeedsAttention) return null
+  const openProject = (scope: AiContentWork['scope']): React.JSX.Element => {
+    const project = session.list.projects.find((item) => sameScope(item, scope))
+    return project ? (
+      <AppButton
+        variant="default"
+        disabled={blocked || session.busy}
+        onClick={() => {
+          if (!session.composition.current) session.run(() => session.chooseProject(scope))
+        }}
+      >
+        Open {project.title}
+        {project.archived ? ' (archived)' : ''}
+      </AppButton>
+    ) : (
+      <p>The original project is unavailable here. Its saved response has been kept.</p>
+    )
+  }
+  if (
+    !work.length &&
+    !pending &&
+    !issue &&
+    !acknowledge &&
+    !otherProjects.length &&
+    !unreadable &&
+    !full
+  )
+    return null
   return (
     <div ref={region} tabIndex={-1} className={styles['ai-work-notice']}>
       <details
         className={styles['ai-work-summary']}
         open={needsAttention || !!pending || undefined}
       >
-        <summary>
-          {needsAttention
-            ? 'AI work needs attention'
-            : running
-              ? 'AI response in progress'
-              : savedResults
-                ? `${savedResults} saved AI result${savedResults === 1 ? '' : 's'} to review`
-                : work.length
-                  ? 'Saving AI response…'
-                  : 'AI recovery details'}
-        </summary>
-        {running ? <p>Wait for the response to finish saving before changing accounts.</p> : null}
+        <summary>{needsAttention ? 'AI work needs attention' : 'AI response in progress'}</summary>
         {issue ? <p role="alert">{issue}</p> : null}
+        {unreadable ? (
+          <p role="alert">Saved AI work could not be read. Check work status to try again.</p>
+        ) : null}
+        {full ? (
+          <p>
+            Finish saving responses or dismiss retained notices before sending more. This is local
+            recovery, separate from ChatGPT usage limits.
+          </p>
+        ) : null}
         {pending ? (
-          <AppButton disabled={busy} pending={busy} onClick={() => void act(pending)}>
-            Retry the same local action
+          <AppButton
+            disabled={busy || session.closing}
+            pending={busy}
+            onClick={() => void act(pending)}
+          >
+            Retry local action
           </AppButton>
         ) : null}
-        <ul className={styles['ai-work-list']}>
+        <ul className={styles['ai-work-list']} tabIndex={0} aria-label="Retained AI work">
           {work.map((item) => (
             <li key={key(item)}>
               <p>
@@ -147,109 +173,93 @@ export function AiWorkNotice(): React.JSX.Element | null {
                     : item.feature === 'import'
                       ? 'Import analysis'
                       : 'Proofreading'}
-                </strong>{' '}
-                ·{' '}
+                </strong>
+                {' · '}
                 {session.list.projects.find((project) => sameScope(project, item.scope))?.title ??
-                  'Another local project'}{' '}
-                · {labels[item.state]}
+                  'Another local project'}
+                {' · '}
+                {labels[item.state]}
               </p>
               <div className={styles['ai-work-actions']}>
-                <AppButton
-                  variant="subtle"
-                  disabled={!sameScope(session.project, item.scope) || busy || session.closing}
-                  onClick={() =>
-                    item.feature === 'conversation'
-                      ? conversations.show(item.attemptId)
-                      : item.feature === 'import'
-                        ? imports.showAnalysis(item.attemptId)
-                        : proofreading.show(item.attemptId)
-                  }
-                >
-                  View request
-                </AppButton>
+                {sameScope(session.project, item.scope) ? (
+                  <>
+                    <AppButton
+                      variant="default"
+                      disabled={blocked}
+                      onClick={() => {
+                        if (session.composition.current) return
+                        if (item.feature === 'conversation') conversations.show(item.attemptId)
+                        else if (item.feature === 'import') imports.showAnalysis(item.attemptId)
+                        else proofreading.show(item.attemptId)
+                      }}
+                    >
+                      {item.feature === 'import' ? 'Open import' : 'View response'}
+                    </AppButton>
+                    {['protection-required', 'handoff-required', 'record-unavailable'].includes(
+                      item.state
+                    ) ? (
+                      <AppButton
+                        variant="default"
+                        disabled={blocked}
+                        onClick={() => void act({ work: item, action: 'protect' })}
+                      >
+                        {item.state === 'record-unavailable'
+                          ? 'Retry local recovery'
+                          : 'Finish saving response'}
+                      </AppButton>
+                    ) : null}
+                    {item.state === 'retained-outcome' ? (
+                      <AppButton
+                        variant="subtle"
+                        disabled={blocked}
+                        onClick={() => {
+                          if (!session.composition.current) setAcknowledge(item)
+                        }}
+                      >
+                        Dismiss notice…
+                      </AppButton>
+                    ) : null}
+                  </>
+                ) : (
+                  openProject(item.scope)
+                )}
                 {item.state === 'running' ? (
                   <AppButton
                     variant="default"
-                    disabled={!!pending || busy || session.closing}
+                    disabled={blocked}
                     onClick={() => void act({ work: item, action: 'cancel' })}
                   >
-                    Stop request
-                  </AppButton>
-                ) : null}
-                {item.state === 'protection-required' || item.state === 'handoff-required' ? (
-                  <AppButton
-                    variant="default"
-                    disabled={
-                      !!pending ||
-                      busy ||
-                      session.closing ||
-                      !sameScope(session.project, item.scope)
-                    }
-                    onClick={() => void act({ work: item, action: 'protect' })}
-                  >
-                    {item.state === 'handoff-required'
-                      ? 'Finish saving response'
-                      : 'Retry saving response'}
-                  </AppButton>
-                ) : null}
-                {item.state === 'retained-outcome' ? (
-                  <AppButton
-                    variant="default"
-                    disabled={
-                      !!pending ||
-                      busy ||
-                      session.closing ||
-                      !sameScope(session.project, item.scope)
-                    }
-                    onClick={() => setAcknowledge(item)}
-                  >
-                    Review saved result…
-                  </AppButton>
-                ) : null}
-                {item.state === 'record-unavailable' ? (
-                  <AppButton
-                    variant="default"
-                    disabled={
-                      !!pending ||
-                      busy ||
-                      session.closing ||
-                      !sameScope(session.project, item.scope)
-                    }
-                    onClick={() => void act({ work: item, action: 'protect' })}
-                  >
-                    Retry local recovery
+                    Stop response
                   </AppButton>
                 ) : null}
               </div>
-              {!sameScope(session.project, item.scope) ? (
+              {['protection-required', 'handoff-required', 'record-unavailable'].includes(
+                item.state
+              ) ? (
                 <p>
-                  Open the original project from Local AI capacity and recovery in this notice to
-                  recover its saved request.
-                </p>
-              ) : null}
-              {item.state === 'record-unavailable' ? (
-                <p>
-                  The protected execution record is not loaded. Retry local recovery in the original
-                  project. If it remains unavailable, keep the existing files and report the issue;
-                  Collie cannot release this binding without its original proof.
+                  {item.state === 'record-unavailable'
+                    ? 'The local response is unavailable. Recovery checks retained files only; sending again would be a new request.'
+                    : 'Finish saving uses the retained response and sends no new request.'}
                 </p>
               ) : null}
             </li>
           ))}
+          {otherProjects.map((scope) => (
+            <li key={`${scope.projectId}:${scope.workspaceId}`}>
+              <p>A response in this project still needs attention.</p>
+              {openProject(scope)}
+            </li>
+          ))}
         </ul>
-        {capacityNeedsAttention || work.length ? (
-          <details className={styles['ai-work-details']}>
-            <summary>Local AI capacity and recovery</summary>
-            <AiCapacity />
-          </details>
+        {needsAttention ? (
+          <AppButton
+            variant="subtle"
+            disabled={connections.checking || busy}
+            onClick={() => void connections.checkStatus(true)}
+          >
+            Check work status
+          </AppButton>
         ) : null}
-        <AppButton
-          variant="subtle"
-          disabled={connections.checking}
-          onClick={() => void connections.checkStatus(true)}
-        >
-          Check work status
-        </AppButton>
         {!work.length && !pending && issue ? (
           <AppButton variant="subtle" onClick={() => setIssue('')}>
             Dismiss notice
@@ -259,57 +269,28 @@ export function AiWorkNotice(): React.JSX.Element | null {
       <AppDialog
         opened={acknowledge !== null}
         onClose={() => setAcknowledge(null)}
-        title="Dismiss saved result?"
-        onExited={() => {
-          const id = importAfterExit.current
-          importAfterExit.current = null
-          if (id) requestAnimationFrame(() => imports.showAnalysis(id))
-        }}
+        title="Dismiss this response notice?"
       >
         <div className={styles['ai-retention-confirmation']}>
           <p>
-            Your request and any partial response stay saved. Dismissing this notice lets Collie
-            accept more AI work. It does not send your message again.
-          </p>
-          <p>
-            You can reopen the saved request at any time. A failed or interrupted response keeps
-            that status.
+            The request, any partial response and its failure or interruption status stay in the
+            project. This dismisses the notice without sending another request
+            {acknowledge?.feature === 'import' ? ' or accepting imported content' : ''}.
           </p>
           <div className={styles['ai-work-actions']}>
-            <AppButton
-              variant="default"
-              onClick={() => {
-                const item = acknowledge
-                setAcknowledge(null)
-                if (item && sameScope(session.project, item.scope)) {
-                  if (item.feature === 'conversation') conversations.show(item.attemptId)
-                  else if (item.feature === 'import') importAfterExit.current = item.attemptId
-                  else proofreading.show(item.attemptId)
-                }
-              }}
-            >
-              View request
-            </AppButton>
             <AppButton variant="default" onClick={() => setAcknowledge(null)}>
               Cancel
             </AppButton>
             <AppButton
-              disabled={
-                !acknowledge ||
-                !!pending ||
-                busy ||
-                session.closing ||
-                !sameScope(session.project, acknowledge.scope)
-              }
+              disabled={!acknowledge || blocked || !sameScope(session.project, acknowledge.scope)}
               onClick={() => {
-                const item = acknowledge
-                if (item) {
+                if (acknowledge && !session.composition.current) {
+                  void act({ work: acknowledge, action: 'acknowledge' })
                   setAcknowledge(null)
-                  void act({ work: item, action: 'acknowledge' })
                 }
               }}
             >
-              Dismiss
+              Dismiss notice
             </AppButton>
           </div>
         </div>

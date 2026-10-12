@@ -30,7 +30,7 @@ import { captureDigest } from '../ai/capture'
 import { activeBindings, localBinding, protectHandoff, retireBinding } from '../ai/handoff'
 import { inWriteTransaction } from '../storage/driver'
 import { requestDigest } from '../storage/digest'
-import { checkpoint, manuscript, payloadAnchors, updateDocumentAnchors } from './manuscript'
+import { checkpoint, manuscript, indexDocumentIds, updateDocumentAnchors } from './manuscript'
 import { mapDocumentAnnotations, reconcileAnnotationAnchors } from './notes'
 import { projectCitations } from './citation-occurrences'
 
@@ -562,13 +562,7 @@ export async function proofreadingCommand(
           revisionId = randomUUID()
           // Exact text replacement cannot introduce/remove rich identities; keep projections transactional.
           db.prepare('DELETE FROM editor_ids WHERE project_id=? AND document_id=?').run(p, doc.id)
-          for (const anchor of payloadAnchors(after))
-            db.prepare('INSERT INTO editor_ids VALUES (?,?,?,?)').run(
-              p,
-              anchor.id,
-              doc.id,
-              anchor.kind
-            )
+          indexDocumentIds(db, p, doc.id, after)
           mapDocumentAnnotations(db, p, doc.id, before, after)
           updateDocumentAnchors(db, p, doc.id, after)
           projectCitations(db, p, doc.id, after)

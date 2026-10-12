@@ -1,165 +1,134 @@
 import type { CapturedSelection } from '../../editor/selection'
-import { WritingPositions, bindWritingPosition, type PositionBinding } from './writing-positions'
 import { isEditableKind } from '../../../../shared/outline'
-import type { ExportJob } from '../../../../shared/exports'
-import type { ExportOperation } from './useExportOperations'
-import type { OutlineDocument } from '../../../../shared/outline'
 import { savePresentation, type SavePresentation } from '../projects/project-file-presentation'
 import { spaceMessage } from '../../../../shared/storage-space'
-type WorkspaceControllerState = {
-  localCopyTarget: OpenInput | null
-  setLocalCopyTarget: React.Dispatch<React.SetStateAction<OpenInput | null>>
-  projectDetailsOpen: boolean
-  setProjectDetailsOpen: React.Dispatch<React.SetStateAction<boolean>>
-  acceptProjectDetails: (next: OpenProject) => void
-  composition: React.RefObject<boolean>
-  actionTask: React.RefObject<Promise<unknown> | null>
-  storage: StorageStatus
-  drafts: DraftRegistry
-  destination: AppDestination
-  focusRevision: number
-  focusRequest: React.RefObject<DestinationPresentation | null>
-  navigating: boolean
-  blocker: DraftBlocker | null
-  navigate: (next: AppDestination, remember?: boolean) => Promise<boolean>
-  returnToDraft: () => void
-  showAccess: () => void
-  workspace: (view: 'write' | 'search' | 'export' | 'history' | 'details') => AppDestination | null
-  research: (target: ResearchTarget) => void
-  returnToWork: () => void
-  startupPending: boolean
-  libraryIssue: string | null
-  setLibraryIssue: React.Dispatch<React.SetStateAction<string | null>>
-  libraryView: 'active' | 'archived' | 'recent'
-  setLibraryView: React.Dispatch<React.SetStateAction<'active' | 'archived' | 'recent'>>
-  editorEpoch: number
-  setData: React.Dispatch<React.SetStateAction<DataLocations | null>>
-  setList: React.Dispatch<React.SetStateAction<ProjectList>>
-  location: LocationStatus | null
-  setLocation: React.Dispatch<React.SetStateAction<LocationStatus | null>>
-  list: ProjectList
-  project: OpenProject | null
-  access: AccessView | null
-  sectionTitle: string
-  setSectionTitle: React.Dispatch<React.SetStateAction<string>>
-  sectionStatus: 'review' | 'draft' | 'complete'
-  setSectionStatus: React.Dispatch<React.SetStateAction<'review' | 'draft' | 'complete'>>
-  sectionSynopsis: string
-  setSectionSynopsis: React.Dispatch<React.SetStateAction<string>>
-  sectionFields: React.RefObject<{
-    title: string
-    status: 'draft' | 'review' | 'complete'
-    synopsis: string
-  }>
-  busy: boolean
-  setBusy: React.Dispatch<React.SetStateAction<boolean>>
-  acting: boolean
-  working: boolean
-  closing: boolean
-  committing: boolean
-  retry: CommitInput | null
-  error: string
-  setError: React.Dispatch<React.SetStateAction<string>>
-  notice: string
-  setNotice: React.Dispatch<React.SetStateAction<string>>
-  history: HistoryView | null
-  annotationCapture: AnnotationCapture | null
-  noteDirty: boolean
-  sourceDirty: boolean
-  inspectionTarget: {
-    sourceId: string
-    excerptId: string | null
-    versionId: string | null
-    pageIndex: number | null
-  } | null
-  setInspectionTarget: React.Dispatch<
-    React.SetStateAction<{
+import { useManuscriptProtection, type ManuscriptProtection } from './useManuscriptProtection'
+import { useWorkspaceNavigation, type WorkspaceNavigation } from './useWorkspaceNavigation'
+type WorkspaceControllerState = ManuscriptProtection &
+  WorkspaceNavigation &
+  ReturnType<typeof useExportOperations> & {
+    localCopyTarget: OpenInput | null
+    setLocalCopyTarget: React.Dispatch<React.SetStateAction<OpenInput | null>>
+    projectDetailsOpen: boolean
+    setProjectDetailsOpen: React.Dispatch<React.SetStateAction<boolean>>
+    acceptProjectDetails: (next: OpenProject) => void
+    composition: React.RefObject<boolean>
+    actionTask: React.RefObject<Promise<unknown> | null>
+    storage: StorageStatus
+    drafts: DraftRegistry
+    navigating: boolean
+    blocker: DraftBlocker | null
+    navigate: (next: AppDestination, remember?: boolean) => Promise<boolean>
+    returnToDraft: () => void
+    showAccess: () => void
+    startupPending: boolean
+    libraryIssue: string | null
+    setLibraryIssue: React.Dispatch<React.SetStateAction<string | null>>
+    libraryView: 'active' | 'archived' | 'recent'
+    setLibraryView: React.Dispatch<React.SetStateAction<'active' | 'archived' | 'recent'>>
+    editorEpoch: number
+    setData: React.Dispatch<React.SetStateAction<DataLocations | null>>
+    setList: React.Dispatch<React.SetStateAction<ProjectList>>
+    location: LocationStatus | null
+    chooseWorkingLocation: () => Promise<void>
+    list: ProjectList
+    project: OpenProject | null
+    access: AccessView | null
+    busy: boolean
+    setBusy: React.Dispatch<React.SetStateAction<boolean>>
+    acting: boolean
+    working: boolean
+    closing: boolean
+    error: string
+    setError: React.Dispatch<React.SetStateAction<string>>
+    history: HistoryView | null
+    annotationCapture: AnnotationCapture | null
+    noteDirty: boolean
+    sourceDirty: boolean
+    inspectionTarget: {
       sourceId: string
       excerptId: string | null
       versionId: string | null
       pageIndex: number | null
-    } | null>
-  >
-  citationRequest: { sourceId: string; selection: CapturedSelection } | null
-  setCitationRequest: React.Dispatch<
-    React.SetStateAction<{ sourceId: string; selection: CapturedSelection } | null>
-  >
-  citationContext: { projectId: string; sources: SourceRecord[]; view: CitationsView | null } | null
-  setCitationContext: React.Dispatch<
-    React.SetStateAction<{
+    } | null
+    setInspectionTarget: React.Dispatch<
+      React.SetStateAction<{
+        sourceId: string
+        excerptId: string | null
+        versionId: string | null
+        pageIndex: number | null
+      } | null>
+    >
+    citationRequest: { sourceId: string; selection: CapturedSelection } | null
+    setCitationRequest: React.Dispatch<
+      React.SetStateAction<{ sourceId: string; selection: CapturedSelection } | null>
+    >
+    citationContext: {
       projectId: string
       sources: SourceRecord[]
       view: CitationsView | null
-    } | null>
-  >
-  outlineRetry: boolean
-  conflict: OpenProject | null
-  files: FileStatus
-  data: DataLocations | null
-  metaPending: React.RefObject<SectionMetaInput | null>
-  current: React.RefObject<OpenProject | null>
-  editorReady: (editor: Editor | null) => void
-  editorRef: React.RefObject<Editor | null>
-  imageUrls: React.RefObject<Map<string, string>>
-  anchorToFocus: React.RefObject<string | null>
-  selectedSection: OutlineDocument | undefined
-  sectionReadOnly: boolean
-  sectionDirty: boolean
-  dirty: boolean
-  fileActive: boolean
-  saveState: SavePresentation
-  accessReadOnly: boolean
-  accessTransition: boolean
-  available: boolean
-  updateProject: (next: OpenProject | null) => void
-  isDirty: () => boolean
-  changed: () => void
-  refresh: () => Promise<void>
-  refreshData: () => Promise<void>
-  reviewRecovery: () => Promise<ProjectResult<DataLocations> | null>
-  importImage: (details: { alt: string; caption: string }) => Promise<void>
-  navigateSection: (documentId: string, anchorId?: string) => Promise<void>
-  navigateSearch: (hit: SearchHit) => void
-  loadHistory: (checkpointId: string | null) => Promise<void>
-  performOutline: (change?: OutlineChange) => Promise<boolean>
-  saveSectionMeta: () => Promise<void>
-  flush: (forAccess?: boolean, mode?: FlushMode, exclude?: string[]) => Promise<OpenProject | null>
-  flushManuscript: () => Promise<OpenProject | null>
-  run: (work: () => Promise<unknown>) => void
-  waitActive: () => Promise<boolean>
-  save: (as: boolean) => Promise<boolean>
-  openLocal: (scope: OpenInput, after?: 'write' | 'details') => Promise<void>
-  openFile: (inspect?: boolean, locate?: boolean, shell?: boolean) => Promise<void>
-  lifecycleFile: (
-    kind: 'backup' | 'duplicate' | 'restore' | 'recover',
-    artifactId?: string
-  ) => Promise<boolean>
-  archive: (input: ArchiveInput) => Promise<boolean>
-  captureAnnotation: () => Promise<void>
-  afterNoteCommit: () => Promise<void>
-  changeAccess: (kind: 'designate' | 'finish' | 'import') => Promise<void>
-  openTutorial: (reset: boolean) => Promise<void>
-  prepareSetupCreation: () => Promise<SetupCompletion>
-  createSetupProject: (input: CreateInput) => Promise<ProjectResult<OpenProject>>
-  readSetupAccess: () => Promise<ProjectResult<AccessView>>
-  completeSetupProject: (
-    receipt: SetupReceipt,
-    intent: SetupEditingIntent | null,
-    mode: 'write' | 'read'
-  ) => Promise<SetupCompletion>
-  chooseProject: (scope: OpenInput, after?: 'write' | 'details') => Promise<void>
-  exports: ExportOperation[]
-  trackExport: (scope: OpenInput, job: ExportJob) => void
-  manuscriptDirty: boolean
-  applyProofreading: (capture?: ProofreadCapture, finding?: ProofreadFinding) => Promise<boolean>
-  proofreadingLocked: boolean
-  refreshConversationHead: (scope: OpenInput) => Promise<void>
-  backDestination: AppDestination | null
-  backLabel: string
-  goBack: () => Promise<boolean>
-  referenceAnchor: { id: string; documentId: string; request: number } | null
-  writingView: ReturnType<typeof useWritingPreferences>
-}
+    } | null
+    setCitationContext: React.Dispatch<
+      React.SetStateAction<{
+        projectId: string
+        sources: SourceRecord[]
+        view: CitationsView | null
+      } | null>
+    >
+    outlineRetry: boolean
+    files: FileStatus
+    data: DataLocations | null
+    current: React.RefObject<OpenProject | null>
+    editorRef: React.RefObject<Editor | null>
+    imageUrls: React.RefObject<Map<string, string>>
+    sectionReadOnly: boolean
+    dirty: boolean
+    fileActive: boolean
+    saveState: SavePresentation
+    accessReadOnly: boolean
+    accessTransition: boolean
+    available: boolean
+    updateProject: (next: OpenProject | null) => void
+    isDirty: () => boolean
+    refresh: () => Promise<void>
+    refreshData: () => Promise<void>
+    reviewRecovery: () => Promise<ProjectResult<DataLocations> | null>
+    importImage: (details: { alt: string; caption: string }) => Promise<void>
+    loadHistory: (checkpointId: string | null) => Promise<void>
+    performOutline: (change?: OutlineChange) => Promise<boolean>
+    saveSectionMeta: () => Promise<void>
+    flush: (
+      forAccess?: boolean,
+      mode?: FlushMode,
+      exclude?: string[]
+    ) => Promise<OpenProject | null>
+    run: (work: () => Promise<unknown>) => void
+    waitActive: () => Promise<boolean>
+    save: (as: boolean) => Promise<boolean>
+    openFile: (inspect?: boolean, locate?: boolean, shell?: boolean) => Promise<void>
+    lifecycleFile: (
+      kind: 'backup' | 'duplicate' | 'restore' | 'recover',
+      artifactId?: string
+    ) => Promise<boolean>
+    archive: (input: ArchiveInput) => Promise<boolean>
+    captureAnnotation: () => Promise<void>
+    afterNoteCommit: () => Promise<void>
+    changeAccess: (kind: 'designate' | 'finish' | 'import') => Promise<void>
+    openTutorial: (reset: boolean) => Promise<void>
+    prepareSetupCreation: () => Promise<SetupCompletion>
+    createSetupProject: (input: CreateInput) => Promise<ProjectResult<OpenProject>>
+    readSetupAccess: () => Promise<ProjectResult<AccessView>>
+    completeSetupProject: (
+      receipt: SetupReceipt,
+      intent: SetupEditingIntent | null,
+      mode: 'write' | 'read'
+    ) => Promise<SetupCompletion>
+    chooseProject: (scope: OpenInput, after?: 'write' | 'details') => Promise<void>
+    applyProofreading: (capture?: ProofreadCapture, finding?: ProofreadFinding) => Promise<boolean>
+    proofreadingLocked: boolean
+    refreshConversationHead: (scope: OpenInput) => Promise<void>
+    writingView: ReturnType<typeof useWritingPreferences>
+  }
 import { closeHistory } from '@tiptap/pm/history'
 import { replaceMechanicsFinding } from '../../../../domain/ai/proofreading'
 import type {
@@ -189,14 +158,13 @@ import type { DataLocations, ArchiveInput } from '../../../../shared/project-lif
 import type { StorageStatus } from '../../../../shared/storage'
 import {
   projectMessages,
-  type CommitInput,
+  scopeOf,
   type CreateInput,
   type LocationStatus,
   type OpenInput,
   type OpenProject,
   type ProjectList,
-  type ProjectResult,
-  type SectionMetaInput
+  type ProjectResult
 } from '../../../../shared/projects'
 import {
   fileBusy,
@@ -218,10 +186,8 @@ import { readLastProject, rememberLastProject } from '../library/last-project'
 import type { AnnotationCapture } from '../projects/NotesPanel'
 import type { CitationsView } from '../../../../shared/citations'
 import type { SourceRecord } from '../../../../shared/sources'
-import type { SearchHit } from '../../../../shared/search'
 import {
   editorIsComposing,
-  serializeEditor,
   hydrateDocument,
   lockEditorMutation,
   dispatchProtectedCorrection
@@ -231,13 +197,9 @@ import {
   pageDestination,
   writingDestination,
   type AppDestination,
-  type DestinationPresentation,
   type ResearchTarget
 } from '../../app/navigation'
-import { DraftRegistry, type DraftBlocker, type DraftHandle, type FlushMode } from './drafts'
-export function scopeOf(project: OpenInput): OpenInput {
-  return { projectId: project.projectId, workspaceId: project.workspaceId }
-}
+import { DraftRegistry, type DraftBlocker, type FlushMode } from './drafts'
 const emptyFiles: FileStatus = { scope: null, destination: null, state: 'unsaved', job: null }
 
 export function useWorkspaceController(storage: StorageStatus): WorkspaceControllerState {
@@ -253,29 +215,15 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     before: Editor['state']['doc']
     after: DocumentPayload
   } | null>(null)
-  const [positions] = useState(() => new WritingPositions())
-  const positionBinding = useRef<PositionBinding | null>(null)
   const [drafts] = useState(() => new DraftRegistry())
   const draftRevision = useSyncExternalStore(drafts.subscribe, drafts.version)
-  const [destination, setDestination] = useState<AppDestination>({ kind: 'setup' })
-  const destinationRef = useRef(destination)
-  destinationRef.current = destination
   const initialDestinationResolved = useRef(false)
   const [startupPending, setStartupPending] = useState(true)
   const [libraryIssue, setLibraryIssue] = useState<string | null>(null)
   const [libraryView, setLibraryView] = useState<'recent' | 'active' | 'archived'>('recent')
-  const [focusRevision, setFocusRevision] = useState(0)
   const [navigating, setNavigating] = useState(false)
   const navigationTask = useRef<Promise<boolean> | null>(null)
   const [blocker, setBlocker] = useState<DraftBlocker | null>(null)
-  const focusRequest = useRef<DestinationPresentation | null>(null)
-  const origin = useRef<AppDestination | null>(null)
-  const [backTrail, setBackTrail] = useState<AppDestination[]>([])
-  const [referenceAnchor, setReferenceAnchor] = useState<{
-    id: string
-    documentId: string
-    request: number
-  } | null>(null)
   const [location, setLocation] = useState<LocationStatus | null>(null)
   const [list, setList] = useState<ProjectList>({ projects: [], issues: [] })
   const [project, setProject] = useState<OpenProject | null>(null)
@@ -283,24 +231,11 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
   function applyAccess(next: AccessView): void {
     setAccess(next)
   }
-  const [editVersion, setEditVersion] = useState(0),
-    [protectedVersion, setProtectedVersion] = useState(0),
-    [editorEpoch, setEditorEpoch] = useState(0)
-  const [sectionTitle, setSectionTitle] = useState(''),
-    [sectionStatus, setSectionStatus] = useState<'draft' | 'review' | 'complete'>('draft'),
-    [sectionSynopsis, setSectionSynopsis] = useState('')
-  const sectionFields = useRef({
-    title: '',
-    status: 'draft' as 'draft' | 'review' | 'complete',
-    synopsis: ''
-  })
+  const [editorEpoch, setEditorEpoch] = useState(0)
   const [busy, setBusy] = useState(false),
     [working, setActing] = useState(false),
     [closing, setClosing] = useState(false)
-  const [committing, setCommitting] = useState(false),
-    [retry, setRetry] = useState<CommitInput | null>(null)
-  const [error, setError] = useState(''),
-    [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
   const [localCopyTarget, setLocalCopyTarget] = useState<OpenInput | null>(null)
   const [history, setHistory] = useState<HistoryView | null>(null)
   const [annotationCapture, setAnnotationCapture] = useState<AnnotationCapture | null>(null)
@@ -322,21 +257,13 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
 
   const [outlineRetry, setOutlineRetry] = useState(false)
   const outlinePending = useRef<OutlineInput | null>(null)
-  const anchorToFocus = useRef<string | null>(null)
   const acting = working || outlineRetry
-  const [conflict, setConflict] = useState<OpenProject | null>(null)
   const [files, setFiles] = useState<FileStatus>(emptyFiles)
   const [data, setData] = useState<DataLocations | null>(null)
   const [projectDetailsOpen, setProjectDetailsOpen] = useState(false)
-  const metaPending = useRef<SectionMetaInput | null>(null)
   const current = useRef<OpenProject | null>(null),
     editorRef = useRef<Editor | null>(null)
   const imageUrls = useRef(new Map<string, string>())
-  const editVersionRef = useRef(0),
-    protectedVersionRef = useRef(0),
-    retryVersion = useRef(0)
-  const retryCommit = useRef<CommitInput | null>(null),
-    committingTask = useRef<Promise<OpenProject | null> | null>(null)
   const pendingSave = useRef<SaveInput | null>(null)
   // Presentation mirrors the existing request owner; neither field authorizes a file operation.
   const [pendingSaveScope, setPendingSaveScope] = useState<OpenInput | null>(null)
@@ -372,19 +299,40 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
   const selectedSection = project?.documents.find((doc) => doc.id === project.documentId)
   const sectionReadOnly =
     !!selectedSection && effectiveState(selectedSection, project!.documents) !== 'active'
-  const sectionDirty =
-    !!selectedSection &&
-    (sectionTitle !== selectedSection.title ||
-      sectionStatus !== selectedSection.status ||
-      sectionSynopsis !== selectedSection.synopsis)
-  const dirty =
-    editVersion !== protectedVersion ||
-    sectionDirty ||
-    retry !== null ||
-    committing ||
-    noteDirty ||
-    sourceDirty ||
-    drafts.hasUnprotected()
+  const manuscript = useManuscriptProtection({
+    current,
+    editorRef,
+    composition,
+    drafts,
+    alive,
+    storage,
+    closing,
+    canAutoProtect: () => !actionTask.current && !closingRef.current,
+    proofreadingPending: () => !!proofreadingApplication.current,
+    updateHead,
+    setError
+  })
+  const { flushManuscript } = manuscript
+  const navigation = useWorkspaceNavigation({
+    current,
+    editorRef,
+    drafts,
+    textProtected: manuscript.textProtected,
+    navigate,
+    setError
+  })
+  const {
+    destination,
+    destinationRef,
+    positions,
+    positionBinding,
+    anchorToFocus,
+    showDestination,
+    captureOrigin,
+    rememberOrigin,
+    setReferenceAnchor
+  } = navigation
+  const dirty = manuscript.manuscriptDirty || drafts.hasUnprotected()
   const fileActive = fileBusy(files.job)
   const saveState = savePresentation(project, files, savingScope, pendingSaveScope)
   const accessReadOnly = !!project && !canEditProject(access, project)
@@ -450,42 +398,10 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       jobWaiters.current.delete(next.job.id)
     }
   }
-  function isMetaDirty(): boolean {
-    const doc = current.current?.documents.find((item) => item.id === current.current?.documentId),
-      fields = sectionFields.current
-    return (
-      !!doc &&
-      (fields.title !== doc.title ||
-        fields.status !== doc.status ||
-        fields.synopsis !== doc.synopsis)
-    )
-  }
   function isDirty(): boolean {
-    return (
-      editVersionRef.current !== protectedVersionRef.current ||
-      isMetaDirty() ||
-      !!retryCommit.current ||
-      !!committingTask.current ||
-      drafts.hasUnprotected()
-    )
-  }
-  function changed(): void {
-    editVersionRef.current += 1
-    setEditVersion(editVersionRef.current)
-    window.collie.setUnprotectedChanges(true)
-    setNotice('Writing changed. Waiting for a local commit…')
+    return manuscript.isManuscriptDirty() || drafts.hasUnprotected()
   }
   const onFileStatus = useEffectEvent((status: FileStatus) => applyFiles(status))
-  const onProtectionTick = useEffectEvent(() => {
-    if (
-      isDirty() &&
-      !retryCommit.current &&
-      !metaPending.current &&
-      !actionTask.current &&
-      !closingRef.current
-    )
-      void flushManuscript()
-  })
   const onDirtyChanged = useEffectEvent(() => window.collie.setUnprotectedChanges(isDirty()))
   const onStorageReady = useEffectEvent(async () => {
     // The library and intended project become available before the broader recovery/size scan.
@@ -551,31 +467,6 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       jobWaiters.current.clear()
     }
   }, [storage.state])
-  useEffect(() => {
-    if (!project?.documentId || !dirty || closing || storage.state !== 'ready') return
-    const timer = setTimeout(() => {
-      onProtectionTick()
-    }, 900)
-    return () => clearTimeout(timer)
-  }, [
-    editVersion,
-    sectionTitle,
-    sectionStatus,
-    sectionSynopsis,
-    project?.projectId,
-    project?.workspaceId,
-    project?.documentId,
-    dirty,
-    closing,
-    storage.state
-  ])
-  useEffect(() => {
-    if (!project?.documentId || storage.state !== 'ready') return
-    const timer = setInterval(() => {
-      onProtectionTick()
-    }, 5000)
-    return () => clearInterval(timer)
-  }, [project?.projectId, project?.workspaceId, project?.documentId, storage.state])
   async function resolveInitialDestination(projects: ProjectList): Promise<void> {
     if (initialDestinationResolved.current) return
     initialDestinationResolved.current = true
@@ -700,42 +591,6 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     const result = await window.collie.openSection({ ...scopeOf(opened), documentId: preferred.id })
     return result.ok && result.value.documentId === preferred.id ? result.value : opened
   }
-  function editorReady(editor: Editor | null): void {
-    positionBinding.current?.dispose()
-    positionBinding.current = null
-    editorRef.current = editor
-    const p = current.current
-    if (!editor || !p) return
-    const anchor = anchorToFocus.current
-    positionBinding.current = bindWritingPosition(
-      positions,
-      editor,
-      scopeOf(p),
-      p.documentId,
-      () => {
-        const currentProject = current.current
-        return currentProject &&
-          sameScope(currentProject, p) &&
-          currentProject.documentId === p.documentId &&
-          editVersionRef.current === protectedVersionRef.current
-          ? currentProject.revisionId
-          : null
-      },
-      !!anchor,
-      () => focusRequest.current?.mode === 'resume'
-    )
-    if (anchor) {
-      anchorToFocus.current = null
-      const target = manuscriptAnchor(editor, anchor)
-      if (target) {
-        if (target.footnote || target.reference) editor.commands.setNodeSelection(target.position)
-        else
-          editor.commands.setTextSelection(
-            Math.min(target.position + 1, editor.state.doc.content.size)
-          )
-      } else setError('The exact passage is no longer present in this writing item.')
-    }
-  }
   async function select(
     next: OpenProject,
     after: 'write' | 'setup' | 'details' = 'write'
@@ -751,8 +606,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       )
     if (!sameScope(current.current, next)) {
       setProjectDetailsOpen(false)
-      setBackTrail([])
-      setReferenceAnchor(null)
+      navigation.resetNavigation()
     }
     let imageIssue = ''
     if (!retainEditor) {
@@ -803,27 +657,10 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     const item = next.documents.find((d) => d.id === next.documentId)
     if (item && effectiveState(item, next.documents) === 'active')
       positions.remember(scopeOf(next), next.documentId)
-    setConflict(null)
     if (!retainEditor) setEditorEpoch((value) => value + 1)
-    const selected = next.documents.find((doc) => doc.id === next.documentId)!
-    setSectionTitle(selected.title)
-    setSectionStatus(selected.status as 'draft' | 'review' | 'complete')
-    setSectionSynopsis(selected.synopsis)
-    metaPending.current = null
-    sectionFields.current = {
-      title: selected.title,
-      status: selected.status as 'draft' | 'review' | 'complete',
-      synopsis: selected.synopsis
-    }
-    editVersionRef.current = 0
-    protectedVersionRef.current = 0
-    setEditVersion(0)
-    setProtectedVersion(0)
-    retryCommit.current = null
-    setRetry(null)
+    manuscript.resetManuscript(next)
     window.collie.setUnprotectedChanges(drafts.hasUnprotected())
     setError(imageIssue)
-    setNotice('Draft protected locally.')
     if (!(
       retainEditor &&
       after === 'write' &&
@@ -923,39 +760,6 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
         height: Math.max(1, Math.round(imported.value.height * scale))
       }
     })
-    setNotice(
-      'Image copied into the project. Its placement is waiting for a local document commit.'
-    )
-  }
-  async function navigateSection(documentId: string, anchorId?: string): Promise<void> {
-    const p = current.current
-    if (p)
-      await navigate(
-        { kind: 'workspace', scope: scopeOf(p), view: 'write', documentId, anchorId },
-        true,
-        'resume'
-      )
-  }
-  function navigateSearch(hit: SearchHit): void {
-    const p = current.current
-    if (!p) return
-    if (hit.kind === 'draft' && hit.documentId) {
-      void navigateSection(hit.documentId, hit.anchorId ?? undefined)
-      return
-    }
-    let target: ResearchTarget | null = null
-    if (hit.kind === 'note') target = { kind: 'notes', noteId: hit.entityId }
-    if (hit.kind === 'source') target = { kind: 'sources', sourceId: hit.entityId }
-    if (hit.kind === 'question' || hit.kind === 'claim')
-      target = { kind: 'evidence', item: { kind: hit.kind, id: hit.entityId } }
-    if (hit.kind === 'page' && hit.sourceId && hit.versionId)
-      target = {
-        kind: 'inspector',
-        sourceId: hit.sourceId,
-        versionId: hit.versionId,
-        pageIndex: hit.pageIndex ?? undefined
-      }
-    if (target) void navigate({ kind: 'workspace', scope: scopeOf(p), view: 'research', target })
   }
   async function loadHistory(checkpointId: string | null): Promise<void> {
     setBusy(true)
@@ -984,16 +788,14 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
         return false
       }
       if (change.type === 'restore' && history?.checkpointId !== change.checkpointId) {
-        setError('Select and review that checkpoint before restoring it.')
+        setError('Select that saved version before restoring it.')
         return false
       }
       if (
         ['restore', 'prune', 'repair'].includes(change.type) &&
         history?.headCommitId !== p.headCommitId
       ) {
-        setError(
-          'Refresh history after protecting your latest edits, then review this action again.'
-        )
+        setError('Your writing changed. Refresh history before trying this action again.')
         return false
       }
       outlinePending.current = {
@@ -1027,79 +829,13 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     setOutlineRetry(false)
     await select(result.value)
     setHistory(null)
-    setNotice('Outline/history change protected locally. The chosen file may still need Save.')
     await refresh()
+    if (destinationRef.current.kind === 'workspace' && destinationRef.current.view === 'history')
+      await loadHistory(null)
     return true
   }
   async function saveSectionMeta(): Promise<void> {
     if (await flush()) await refresh()
-  }
-  async function protectText(
-    value: DocumentPayload,
-    version: number,
-    prior?: CommitInput
-  ): Promise<OpenProject | null> {
-    const p = current.current
-    if (!p) return null
-    const input = prior ?? {
-      ...scopeOf(p),
-      documentId: p.documentId,
-      operationId: crypto.randomUUID(),
-      expectedRevisionId: p.revisionId,
-      payload: value
-    }
-    setCommitting(true)
-    setError('')
-    setNotice('Protecting edits locally…')
-    window.collie.setUnprotectedChanges(true)
-    retryCommit.current = input
-    retryVersion.current = version
-    setRetry(input)
-    const result = await window.collie.commitDocument(input).catch(() => ({
-      ok: false as const,
-      requestId: input.operationId,
-      error: {
-        code: 'UNAVAILABLE' as const,
-        message: 'The local acknowledgment is unavailable. Retry keeps this exact draft operation.'
-      }
-    }))
-    if (!alive.current) return null
-    if (result.ok) {
-      const next = {
-        ...current.current!,
-        documents: current.current!.documents.map((d) =>
-          d.id === input.documentId ? { ...d, revisionId: result.value.revisionId } : d
-        ),
-        payload: input.payload,
-        revisionId: result.value.revisionId,
-        headCommitId: result.value.headCommitId
-      }
-      updateHead(next)
-      protectedVersionRef.current = version
-      setProtectedVersion(version)
-      retryCommit.current = null
-      setRetry(null)
-      setNotice(
-        editVersionRef.current === protectedVersionRef.current
-          ? 'Draft protected locally.'
-          : 'The submitted draft is protected locally. Newer typing still needs protection.'
-      )
-      setCommitting(false)
-      return next
-    }
-    retryCommit.current = input
-    retryVersion.current = version
-    setRetry(input)
-    setError(result.error.message)
-    if (result.error.code === 'STALE_REVISION') {
-      const stored = await window.collie.openSection({ ...scopeOf(p), documentId: p.documentId })
-      if (stored.ok) setConflict(stored.value)
-    }
-    setNotice(
-      'Local acknowledgment failed. Your current writing is still visible and selectable; Retry keeps the same operation.'
-    )
-    setCommitting(false)
-    return null
   }
   async function flush(
     forAccess = false,
@@ -1123,105 +859,6 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     const saved = await flushManuscript()
     if (saved) setBlocker(null)
     return saved
-  }
-  async function flushManuscript(): Promise<OpenProject | null> {
-    if (proofreadingApplication.current) {
-      setError(
-        'Reconcile the proofreading correction before saving or navigating. Its exact operation is retained.'
-      )
-      return null
-    }
-    if (!current.current) return null
-    const editor = editorRef.current
-    if (!editor) {
-      setError('This document could not be opened safely for editing. Its stored copy is retained.')
-      return null
-    }
-    if (composition.current || editorIsComposing(editor)) {
-      setError('Finish composing the current text before saving or closing.')
-      return null
-    }
-    let requested: DocumentPayload
-    try {
-      requested = serializeEditor(editor)
-    } catch {
-      setError(
-        'This edit cannot be protected yet. Keep the window open and copy the visible writing; unsupported content was not discarded.'
-      )
-      return null
-    }
-    const version = editVersionRef.current
-    const previous = committingTask.current
-    const task = (previous ?? Promise.resolve(current.current)).then(async (result) => {
-      if (previous && !result) return null
-      if (
-        retryCommit.current &&
-        !(await protectText(retryCommit.current.payload, retryVersion.current, retryCommit.current))
-      )
-        return null
-      const written =
-        version !== protectedVersionRef.current
-          ? await protectText(requested, version)
-          : current.current
-      if (!written || !isMetaDirty()) return written
-      const fields = { ...sectionFields.current }
-      metaPending.current ??= {
-        ...scopeOf(written),
-        documentId: written.documentId,
-        operationId: crypto.randomUUID(),
-        expectedHead: written.headCommitId,
-        title: fields.title.trim(),
-        status: fields.status,
-        synopsis: fields.synopsis
-      }
-      const meta = await window.collie.updateSectionMeta(metaPending.current).catch(() => ({
-        ok: false as const,
-        requestId: metaPending.current!.operationId,
-        error: {
-          code: 'UNAVAILABLE' as const,
-          message:
-            'The section-details outcome is unknown. Retry the same details before changing them.'
-        }
-      }))
-      if (!meta.ok) {
-        if (meta.error.code !== 'UNAVAILABLE') metaPending.current = null
-        setError(meta.error.message)
-        if (meta.error.code === 'STALE_REVISION') {
-          const stored = await window.collie.openSection({
-            ...scopeOf(written),
-            documentId: written.documentId
-          })
-          if (stored.ok) setConflict(stored.value)
-        }
-        return null
-      }
-      metaPending.current = null
-      updateHead(meta.value)
-      if (
-        fields.title === sectionFields.current.title &&
-        fields.status === sectionFields.current.status &&
-        fields.synopsis === sectionFields.current.synopsis
-      ) {
-        const saved = meta.value.documents.find((doc) => doc.id === meta.value.documentId)!
-        sectionFields.current = {
-          title: saved.title,
-          status: saved.status as 'draft' | 'review' | 'complete',
-          synopsis: saved.synopsis
-        }
-        setSectionTitle(saved.title)
-        setSectionStatus(saved.status as 'draft' | 'review' | 'complete')
-        setSectionSynopsis(saved.synopsis)
-      }
-      setNotice('Section details protected locally. The selected file may still need Save.')
-      return meta.value
-    })
-    committingTask.current = task
-    try {
-      return await task
-    } finally {
-      if (committingTask.current === task) committingTask.current = null
-      window.collie.setUnprotectedChanges(isDirty())
-    }
   }
   function waitJob(id: string): Promise<FileJobView | null> {
     const finished = finishedJobs.current.get(id)
@@ -1435,13 +1072,6 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
         await openLocal(job.opened)
         if (!sameScope(current.current, job.opened)) return false
       }
-      setNotice(
-        kind === 'backup'
-          ? 'Backup saved. The project’s Save location is unchanged.'
-          : kind === 'duplicate'
-            ? 'Duplicate opened. The original project is kept; first Save asks for a location.'
-            : 'Restored copy opened. Existing projects and files are kept; first Save asks for a location.'
-      )
     }
     if (!(await waitActive())) return false
     await refreshData()
@@ -1463,11 +1093,6 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     }
     // Organization changes do not replace editor content, selection or undo history.
     updateProject({ ...p, archived: result.value.archived })
-    setNotice(
-      result.value.archived
-        ? 'Find this project under Projects → Archived.'
-        : 'Project returned to All active.'
-    )
     await waitActive()
     await refresh()
     return true
@@ -1598,7 +1223,6 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       view: 'research',
       target: { kind: 'notes' }
     })
-    setNotice('Selected passage ready in Passage annotations.')
   }
   async function applyProofreading(
     capture?: ProofreadCapture,
@@ -1741,16 +1365,12 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
         editor.view.dispatch(closeHistory(editor.state.tr))
       }
       updateHead(stored.value)
-      protectedVersionRef.current = editVersionRef.current
-      setProtectedVersion(editVersionRef.current)
+      manuscript.markProtected()
       lockEditorMutation(editor, false)
       proofreadingApplication.current = null
       setProofreadingLocked(false)
       setHistory(null)
       setError('')
-      setNotice(
-        'Correction protected locally. Other findings for the previous revision are stale. The pre-correction manuscript is retained in History.'
-      )
       return true
     } catch {
       setError(
@@ -1825,7 +1445,6 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     if (result) {
       if (result.ok) {
         applyAccess(result.value)
-        setNotice('Access settings updated. Existing writing and saved files were kept.')
       } else setError(result.error.message)
     }
   }
@@ -1847,37 +1466,16 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     await refreshData()
     const updated = await window.collie.readAccess()
     if (updated.ok) applyAccess(updated.value)
-    setNotice(
-      reset
-        ? 'Fresh sample opened. The previous sample remains a local project.'
-        : 'Tutorial sample opened. The fictional source and cited draft are ready.'
-    )
   }
   const available = storage.state === 'ready' && location?.state === 'ready'
 
-  function showDestination(
-    next: AppDestination,
-    focus?: () => void,
-    mode: DestinationPresentation['mode'] = focus
-      ? 'target'
-      : next.kind === 'workspace' && next.view === 'write'
-        ? 'resume'
-        : 'top'
-  ): void {
-    if (destinationRef.current.kind === 'workspace' && next.kind !== 'workspace')
-      origin.current = destinationRef.current
-    destinationRef.current = next
-    setDestination(next)
-    positionBinding.current?.cancelScroll()
-    if (mode === 'target') positionBinding.current?.cancelRestore()
-    else setReferenceAnchor(null)
-    focusRequest.current = {
-      mode,
-      focus:
-        focus ?? (mode === 'resume' ? () => positionBinding.current?.resumeScroll() : undefined)
-    }
-    setFocusRevision((value) => value + 1)
+  async function chooseWorkingLocation(): Promise<void> {
+    if (closingRef.current || location?.state !== 'required') return
+    const result = await window.collie.chooseWorkingLocation()
+    if (result.ok) setLocation(result.value)
+    else setError(result.error.message)
   }
+
   function returnToDraft(): void {
     if (blocker) showDestination(blocker.target, blocker.focus)
   }
@@ -1941,50 +1539,6 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     }
     return true
   }
-  function captureOrigin(previous: AppDestination): AppDestination {
-    if (previous.kind === 'workspace' && previous.view === 'write' && editorRef.current) {
-      const selection = editorRef.current.state.selection
-      const node = (selection as { node?: { attrs: Record<string, unknown> } }).node
-      const selectedAnchor =
-        node?.attrs.footnoteId ?? node?.attrs.citationId ?? selection.$from.parent.attrs.blockId
-      previous = {
-        ...previous,
-        documentId: current.current?.documentId,
-        anchorId: typeof selectedAnchor === 'string' ? selectedAnchor : previous.anchorId
-      }
-    }
-    if (previous.kind === 'workspace' && previous.view === 'research') {
-      const owner = {
-        sources: 'sources',
-        notes: 'notes',
-        evidence: 'research',
-        inspector: 'transcription'
-      }[previous.target.kind]
-      const target = drafts.states().find((state) => state.id === owner)?.target
-      if (target?.kind === 'workspace' && sameScope(target.scope, previous.scope)) previous = target
-    }
-    return previous
-  }
-  function rememberOrigin(previous: AppDestination): void {
-    setBackTrail((trail) => [...trail.slice(-19), previous])
-  }
-  const backDestination = backTrail.at(-1) ?? null
-  const backLabel =
-    backDestination?.kind === 'workspace'
-      ? backDestination.view === 'write'
-        ? 'writing'
-        : backDestination.view === 'research'
-          ? 'research'
-          : backDestination.view
-      : backDestination?.kind === 'library'
-        ? 'Projects'
-        : 'previous view'
-  async function goBack(): Promise<boolean> {
-    if (!backDestination) return false
-    if (!(await navigate(pageDestination(backDestination), false))) return false
-    setBackTrail((trail) => trail.slice(0, -1))
-    return true
-  }
   function navigate(
     next: AppDestination,
     remember = true,
@@ -2039,7 +1593,17 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
           setError('Open this project from Projects before navigating to its contents.')
           return false
         }
-        if (next.view === 'research') {
+        if (next.view === 'history') {
+          const result = await window.collie.readHistory({
+            ...scopeOf(active),
+            checkpointId: history?.checkpointId ?? null
+          })
+          if (!result.ok) {
+            setError(result.error.message)
+            return false
+          }
+          setHistory(result.value)
+        } else if (next.view === 'research') {
           if (
             next.target.kind === 'inspector' &&
             inspectionTarget?.sourceId !== next.target.sourceId
@@ -2137,53 +1701,6 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     navigationTask.current = task
     return task
   }
-  function workspace(
-    view: 'write' | 'search' | 'export' | 'history' | 'details'
-  ): AppDestination | null {
-    const p = current.current
-    return p ? { kind: 'workspace', scope: scopeOf(p), view, documentId: p.documentId } : null
-  }
-  function research(target: ResearchTarget): void {
-    const p = current.current
-    if (p) void navigate({ kind: 'workspace', scope: scopeOf(p), view: 'research', target })
-  }
-  function returnToWork(): void {
-    const target =
-      origin.current?.kind === 'workspace' && sameScope(origin.current.scope, current.current)
-        ? origin.current
-        : workspace('write')
-    if (target) void navigate(pageDestination(target))
-  }
-  const manuscriptHandle = useRef<DraftHandle | null>(null)
-  if (project)
-    manuscriptHandle.current = {
-      read: () => ({
-        scope: scopeOf(current.current ?? project!),
-        kind: 'manuscript',
-        entityId: (current.current ?? project!).documentId,
-        label: 'manuscript and section details',
-        dirty: editVersionRef.current !== protectedVersionRef.current || isMetaDirty(),
-        composing:
-          composition.current || (!!editorRef.current && editorIsComposing(editorRef.current)),
-        busy: !!committingTask.current,
-        pendingOperation: retryCommit.current ?? metaPending.current,
-        policy: 'flush',
-        target: writingDestination(
-          current.current ?? project!,
-          (current.current ?? project!).documentId
-        )
-      }),
-      flush: async () => !!(await flushManuscript()),
-      focus: () => editorRef.current?.commands.focus()
-    }
-  useLayoutEffect(() => {
-    if (!project) return
-    return drafts.register('manuscript', {
-      read: () => manuscriptHandle.current!.read(),
-      flush: (mode) => manuscriptHandle.current!.flush!(mode),
-      focus: () => manuscriptHandle.current!.focus?.()
-    })
-  }, [drafts, project])
   useLayoutEffect(() => {
     if (!project) return
     const owner = project
@@ -2242,10 +1759,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     drafts.changed()
   })
   async function prepareSetupCreation(): Promise<SetupCompletion> {
-    const blocked = (message: string): SetupCompletion => {
-      setError(message)
-      return { ok: false, message }
-    }
+    const blocked = (message: string): SetupCompletion => ({ ok: false, message })
     if (!available || closingRef.current)
       return blocked(
         'Choose a safe local working folder and finish closing before creating a project.'
@@ -2273,9 +1787,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
   async function createSetupProject(input: CreateInput): Promise<ProjectResult<OpenProject>> {
     // Return the receipt before any renderer opening work can fail. The wizard
     // persists it before designation or selecting a new draft owner.
-    const result = await window.collie.createProject(input)
-    if (!result.ok) setError(result.error.message)
-    return result
+    return window.collie.createProject(input)
   }
   async function readSetupAccess(): Promise<ProjectResult<AccessView>> {
     const result = await window.collie.readAccess()
@@ -2414,15 +1926,11 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
   }
 
   return {
-    manuscriptDirty:
-      editVersion !== protectedVersion || sectionDirty || retry !== null || committing,
+    ...manuscript,
+    ...navigation,
     applyProofreading,
     proofreadingLocked,
     refreshConversationHead,
-    backDestination,
-    backLabel,
-    goBack,
-    referenceAnchor,
     writingView,
     ...exportOperations,
     acceptProjectDetails,
@@ -2432,17 +1940,11 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     setProjectDetailsOpen,
     storage,
     drafts,
-    destination,
-    focusRevision,
-    focusRequest,
     navigating,
     blocker,
     navigate,
     returnToDraft,
     showAccess,
-    workspace,
-    research,
-    returnToWork,
     startupPending,
     libraryIssue,
     setLibraryIssue,
@@ -2452,28 +1954,17 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     setData,
     setList,
     location,
-    setLocation,
+    chooseWorkingLocation,
     list,
     project,
     access,
-    sectionTitle,
-    setSectionTitle,
-    sectionStatus,
-    setSectionStatus,
-    sectionSynopsis,
-    setSectionSynopsis,
-    sectionFields,
     busy: busy || proofreadingLocked,
     setBusy,
     acting,
     working,
     closing,
-    committing,
-    retry,
     error,
     setError,
-    notice,
-    setNotice,
     localCopyTarget,
     setLocalCopyTarget,
     history,
@@ -2487,18 +1978,12 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     citationContext,
     setCitationContext,
     outlineRetry,
-    conflict,
     files,
     data,
-    metaPending,
     current,
-    editorReady,
     editorRef,
     imageUrls,
-    anchorToFocus,
-    selectedSection,
     sectionReadOnly,
-    sectionDirty,
     dirty,
     fileActive,
     saveState,
@@ -2507,22 +1992,17 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     available,
     updateProject,
     isDirty,
-    changed,
     refresh,
     refreshData,
     reviewRecovery,
     importImage,
-    navigateSection,
-    navigateSearch,
     loadHistory,
     performOutline,
     saveSectionMeta,
     flush,
-    flushManuscript,
     run,
     waitActive,
     save,
-    openLocal,
     openFile,
     lifecycleFile,
     archive,

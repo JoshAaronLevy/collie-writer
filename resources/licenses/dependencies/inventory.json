@@ -595,14 +595,6 @@
     ]
   },
   {
-    "package": "lucide-react",
-    "version": "1.49.0",
-    "license": "ISC",
-    "notices": [
-      "lucide-react-1.49.0-LICENSE"
-    ]
-  },
-  {
     "package": "@floating-ui/core",
     "version": "1.8.0",
     "license": "MIT",

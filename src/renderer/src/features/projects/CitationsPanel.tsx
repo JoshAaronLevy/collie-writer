@@ -1,11 +1,9 @@
 import PresentationBoundary from '../../components/PresentationBoundary'
-import { useEffectEvent } from 'react'
-import { useLayoutEffect } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import { useSynchronousState } from '../../hooks/useSynchronousState'
-import { AppButton, SelectField, ChoiceField } from '../../components/ui/Controls'
+import { AppButton, SelectField } from '../../components/ui/Controls'
 import { useRetainedDraft } from '../workspace/DraftOwner'
 import styles from '../export/CitationsPanel.module.css'
-import { useEffect, useRef, useState } from 'react'
 import type { OpenProject } from '../../../../shared/projects'
 import type { CitationStyle, CitationStyleInput, CitationsView } from '../../../../shared/citations'
 import type { SourceRecord } from '../../../../shared/sources'
@@ -59,25 +57,32 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
     scope = { projectId: project.projectId, workspaceId: project.workspaceId }
   const [view, setView] = useState<CitationsView | null>(null),
     [error, setError] = useState(''),
-    [loading, setLoading] = useState(false),
-    [acknowledged, setAcknowledged] = useState(false),
-    [selectedStyle, setSelectedStyle] = useState<CitationStyle>('apa')
+    [loading, setLoading] = useState(true)
   const current = useRef(props),
     [pendingValue, setPendingValue, pending] = useSynchronousState<CitationStyleInput | null>(null),
     generation = useRef(0)
   const panel = useRef<HTMLElement>(null),
     [changingValue, setChangingValue, changing] = useSynchronousState(false)
   useEffect(() => {
-    if (error || pending.current) panel.current?.closest('details')?.setAttribute('open', '')
-  }, [error, loading, pending])
+    if (error || pendingValue) panel.current?.closest('details')?.setAttribute('open', '')
+  }, [error, pendingValue])
   useLayoutEffect(() => {
     current.current = props
   })
-  async function load(): Promise<void> {
+  async function load(protect = false): Promise<void> {
     const epoch = ++generation.current
     setLoading(true)
+    if (!pending.current && !changing.current) setError('')
     try {
-      if (current.current.dirty) {
+      if (protect) {
+        const saved = await current.current.flush()
+        if (epoch !== generation.current) return
+        if (!saved) {
+          setError('Finish saving the pending edits before refreshing the preview.')
+          return
+        }
+      }
+      if (current.current.dirty && !protect) {
         const sources = await window.collie.readSources(scope)
         if (epoch === generation.current) {
           if (sources.ok) current.current.onContext(sources.value.sources, null)
@@ -97,6 +102,7 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
         return
       }
       if (
+        sources.value.headCommitId !== citations.value.headCommitId ||
         citations.value.headCommitId !== current.current.project.headCommitId ||
         current.current.dirty
       ) {
@@ -104,23 +110,17 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
         return
       }
       setView(citations.value)
-      if (!pending.current && !changing.current) setSelectedStyle(citations.value.style)
-      setError('')
-      setAcknowledged(false)
+      if (!pending.current && !changing.current) setError('')
       current.current.onContext(sources.value.sources, citations.value)
     } catch {
-      if (epoch === generation.current)
+      if (epoch === generation.current) {
+        setView(null)
+        current.current.onContext([], null)
         setError('Citation preview is unavailable. Your manuscript is kept.')
+      }
     } finally {
       if (epoch === generation.current) setLoading(false)
     }
-  }
-  const previewKey = `${project.headCommitId}:${dirty}`
-  const [lastPreviewKey, setLastPreviewKey] = useState(previewKey)
-  if (lastPreviewKey !== previewKey) {
-    setLastPreviewKey(previewKey)
-    setView(null)
-    setAcknowledged(false)
   }
   const onPreviewTimer = useEffectEvent(() => {
     void load()
@@ -135,20 +135,23 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
       requestGeneration.current++
     }
   }, [project.headCommitId, dirty])
-  async function changeStyle(): Promise<void> {
+  async function changeStyle(style: CitationStyle): Promise<void> {
     if (changing.current) return
     setChangingValue(true)
     setLoading(true)
     setError('')
     try {
       const saved = await current.current.flush()
-      if (!saved) return
+      if (!saved) {
+        setError('Finish saving the pending edits before changing the citation style.')
+        return
+      }
       setPendingValue(
         pending.current ?? {
           ...scope,
           operationId: crypto.randomUUID(),
           expectedHead: saved.headCommitId,
-          style: selectedStyle
+          style
         }
       )
       const input = pending.current
@@ -160,10 +163,15 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
         return
       }
       setPendingValue(null)
+      setView(result.value)
       await current.current.onCommitted()
       // The head change drives a fresh context; never attach old strings to newer edits.
     } catch {
-      setError('The style change was not acknowledged. Retry uses the same operation.')
+      setError(
+        pending.current
+          ? 'The style change could not be confirmed. Retry keeps the same change.'
+          : 'Citation style could not be refreshed. Refresh preview to check the current style.'
+      )
     } finally {
       setChangingValue(false)
       setLoading(false)
@@ -188,8 +196,7 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
       panel.current?.focus()
     }
   })
-  const metadata = view?.issues.filter((i) => i.kind === 'metadata') ?? [],
-    references = view?.issues.filter((i) => i.kind === 'reference') ?? []
+  const preview = !dirty && view?.headCommitId === project.headCommitId ? view : null
   return (
     <PresentationBoundary
       label="Citation preview"
@@ -201,79 +208,77 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
           tabIndex={-1}
         >
           <h2 id="citations-heading">Citations and bibliography</h2>
-          <p>
-            APA 7 or Chicago 18 notes and bibliography · English (US) · pinned offline style
-            profile. Preview includes active manuscript sections in outline order.
-          </p>
-          <SelectField
-            label="Style"
-            value={selectedStyle}
-            disabled={props.readOnly || disabled || loading || changingValue || !!pendingValue}
-            onChange={(event) => setSelectedStyle(event.target.value as CitationStyle)}
-          >
-            <option value="apa">APA 7</option>
-            <option value="chicago">Chicago 18 — notes and bibliography</option>
-          </SelectField>
-          <AppButton
-            variant="default"
-            type="button"
-            disabled={
-              props.readOnly ||
-              disabled ||
-              loading ||
-              changingValue ||
-              (!pendingValue && selectedStyle === view?.style)
-            }
-            onClick={() => {
-              void changeStyle()
-            }}
-          >
-            {pendingValue ? 'Retry style change' : 'Apply style to project'}
-          </AppButton>
-          <AppButton
-            variant="default"
-            type="button"
-            disabled={disabled || loading || changingValue}
-            onClick={() => {
-              void current.current.flush().then((saved) => {
-                if (saved) void load()
-              })
-            }}
-          >
-            Protect writing and refresh preview
-          </AppButton>
-          {loading ? <p role="status">Preparing offline citation preview…</p> : null}
-          {dirty ? (
+          <div className={styles['citation-controls']}>
+            <SelectField
+              label="Citation style"
+              value={pendingValue?.style ?? view?.style ?? ''}
+              disabled={
+                props.readOnly || disabled || loading || changingValue || !!pendingValue || !view
+              }
+              onChange={(event) => {
+                void changeStyle(event.currentTarget.value as CitationStyle)
+              }}
+            >
+              {!view ? (
+                <option value="">{loading ? 'Loading style…' : 'Style unavailable'}</option>
+              ) : null}
+              <option value="apa">APA 7</option>
+              <option value="chicago">Chicago 18 — notes and bibliography</option>
+            </SelectField>
+            {pendingValue && !changingValue ? (
+              <AppButton
+                variant="default"
+                type="button"
+                disabled={props.readOnly || disabled || loading || changingValue}
+                onClick={() => {
+                  void changeStyle(pendingValue.style)
+                }}
+              >
+                Retry style change
+              </AppButton>
+            ) : null}
+            <AppButton
+              variant="default"
+              type="button"
+              disabled={disabled || loading || changingValue || !!pendingValue}
+              onClick={() => {
+                void load(true)
+              }}
+            >
+              Refresh preview
+            </AppButton>
+          </div>
+          {changingValue || loading || dirty ? (
             <p role="status">
-              Writing or source edits are pending. Preview and reference numbers refresh after local
-              protection.
+              {changingValue
+                ? 'Saving citation style…'
+                : loading
+                  ? 'Updating preview…'
+                  : 'Refresh preview to include your latest edits.'}
             </p>
           ) : null}
           {error ? <p role="alert">{error}</p> : null}
-          {view && !dirty ? (
-            <>
-              <p>
-                Preview from local revision {view.headCommitId.slice(0, 8)} ·{' '}
-                {view.style === 'apa' ? 'APA 7' : 'Chicago 18'}.
-              </p>
-              {view.error ? <p role="alert">{view.error}</p> : null}
-              {references.length ? (
-                <p role="alert">
-                  {references.length} unresolved source reference(s). Repair these before formatting
-                  or export.
-                </p>
-              ) : null}
-              {view.issues.length ? (
+          {preview ? (
+            <div
+              className={styles['citation-preview']}
+              role="region"
+              aria-label="Citation preview"
+              tabIndex={0}
+            >
+              <p>Active manuscript in outline order.</p>
+              {preview.error ? <p role="alert">{preview.error}</p> : null}
+              {preview.issues.length ? (
                 <ul>
-                  {view.issues.map((issue, index) => (
+                  {preview.issues.map((issue, index) => (
                     <li key={`${issue.citationId}-${issue.sourceId}-${index}`}>
                       <strong>
-                        {issue.kind === 'reference' ? 'Reference needs repair' : 'Metadata review'}:
+                        {issue.kind === 'reference' ? 'Citation needs repair' : 'Source details'}:
                       </strong>{' '}
                       {issue.message}{' '}
                       <AppButton
                         variant="default"
                         type="button"
+                        disabled={disabled || changingValue || !!pendingValue}
                         onClick={() => {
                           void current.current.navigate(issue.documentId, issue.citationId)
                         }}
@@ -283,6 +288,7 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
                       <AppButton
                         variant="default"
                         type="button"
+                        disabled={disabled || changingValue || !!pendingValue}
                         onClick={() => current.current.source(issue.sourceId)}
                       >
                         Open source
@@ -291,69 +297,13 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
                   ))}
                 </ul>
               ) : null}
-              {metadata.length ? (
-                <ChoiceField
-                  label="I reviewed these metadata omissions for this preview revision. They remain visible and will need review at export."
-                  checked={acknowledged}
-                  onChange={(event) => setAcknowledged(event.currentTarget.checked)}
-                />
-              ) : null}
-              {!view.error ? (
-                <p role="status">
-                  {metadata.length && !acknowledged
-                    ? 'Metadata review is still required. Formatting below is a draft preview.'
-                    : 'Citation references are resolved for this preview.'}
-                </p>
-              ) : null}
-              <details>
-                <summary>Actual manuscript citations · {view.occurrences.length} clusters</summary>
-                <p>
-                  These are inserted citations, separate from source-section links and evidence
-                  associations. Archived and trashed sections are excluded from formatting.
-                </p>
-                <ol>
-                  {view.occurrences.map((o) => (
-                    <li key={o.citationId}>
-                      {project.documents.find((d) => d.id === o.documentId)?.title ?? 'Section'} ·{' '}
-                      {o.state} · {o.sourceIds.length} source item(s)
-                      {o.footnoteId ? ' · inside author footnote' : ''}{' '}
-                      <AppButton
-                        variant="default"
-                        type="button"
-                        onClick={() => {
-                          void current.current.navigate(o.documentId, o.citationId)
-                        }}
-                      >
-                        Open citation
-                      </AppButton>
-                    </li>
-                  ))}
-                </ol>
-              </details>
-              <h3>Notes in manuscript order</h3>
-              {view.notes.length ? (
-                <ol className={styles['citation-note-preview']}>
-                  {view.notes.map((note) => (
-                    <li key={note.id} value={note.number}>
-                      {note.paragraphs.map((runs, index) => (
-                        <p key={index}>
-                          <CitationRuns runs={runs} />
-                        </p>
-                      ))}
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p>
-                  {view.error
-                    ? 'Notes are unavailable until the preview is repaired.'
-                    : 'No numbered notes in the active manuscript.'}
-                </p>
-              )}
               <h3>Bibliography</h3>
-              {view.bibliography.length ? (
-                <div className={styles['bibliography-preview']} data-hanging={view.hangingIndent}>
-                  {view.bibliography.map((runs, index) => (
+              {preview.bibliography.length ? (
+                <div
+                  className={styles['bibliography-preview']}
+                  data-hanging={preview.hangingIndent}
+                >
+                  {preview.bibliography.map((runs, index) => (
                     <p key={index}>
                       <CitationRuns runs={runs} />
                     </p>
@@ -361,12 +311,28 @@ export default function CitationsPanel(props: Props): React.JSX.Element {
                 </div>
               ) : (
                 <p>
-                  {view.error
+                  {preview.error
                     ? 'Bibliography is unavailable until the preview is repaired.'
                     : 'No cited sources in the active manuscript.'}
                 </p>
               )}
-            </>
+              {preview.notes.length ? (
+                <details>
+                  <summary>Notes in manuscript order</summary>
+                  <ol className={styles['citation-note-preview']}>
+                    {preview.notes.map((note) => (
+                      <li key={note.id} value={note.number}>
+                        {note.paragraphs.map((runs, index) => (
+                          <p key={index}>
+                            <CitationRuns runs={runs} />
+                          </p>
+                        ))}
+                      </li>
+                    ))}
+                  </ol>
+                </details>
+              ) : null}
+            </div>
           ) : null}
         </section>
       )}

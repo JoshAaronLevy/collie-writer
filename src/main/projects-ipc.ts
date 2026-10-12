@@ -34,13 +34,10 @@ import {
 } from '../shared/projects'
 import {
   isSourceChangeInput,
-  isSourcePreviewInput,
-  isSourceImportInput,
   isSourceAttachmentInput,
   isSourceExportInput,
   isSourceAttachmentExportInput,
-  SOURCE_PROGRESS,
-  type BibliographyFormat
+  SOURCE_PROGRESS
 } from '../shared/sources'
 import {
   isInspectionScope,
@@ -97,7 +94,6 @@ export function registerProjectIpc(
       frame: number
       process: number
       expires: number
-      kind: 'import' | 'attachment'
     }
   >()
   const interchangeGrants = new Map<
@@ -436,11 +432,7 @@ export function registerProjectIpc(
         })
         return { ok: true, requestId, value: { token, name } }
       }
-      if (
-        kind === 'sourcePickImport' ||
-        kind === 'sourcePickAttachment' ||
-        kind === 'sourcePickVersion'
-      ) {
+      if (kind === 'sourcePickAttachment' || kind === 'sourcePickVersion') {
         if (
           !exact(value, ['requestId', 'input']) ||
           !isOpenInput(value.input) ||
@@ -449,19 +441,12 @@ export function registerProjectIpc(
           return projectFailure(requestId, 'VALIDATION')
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) return projectFailure(requestId, 'DENIED')
-        const attachment = kind !== 'sourcePickImport',
-          version = kind === 'sourcePickVersion'
+        const version = kind === 'sourcePickVersion'
         const answer = await dialog.showOpenDialog(window, {
-          title: version
-            ? 'Reimport a PDF or text version'
-            : attachment
-              ? 'Attach a managed copy'
-              : 'Import bibliography',
+          title: version ? 'Attach newer original' : 'Attach file',
           filters: version
             ? [{ name: 'Source versions', extensions: ['pdf', 'txt'] }]
-            : attachment
-              ? [{ name: 'Local originals', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'txt'] }]
-              : [{ name: 'Bibliography', extensions: ['json', 'bib', 'bibtex', 'ris'] }],
+            : [{ name: 'Local originals', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'txt'] }],
           properties: ['openFile', 'dontAddToRecent']
         })
         if (answer.canceled || answer.filePaths.length !== 1)
@@ -479,13 +464,7 @@ export function registerProjectIpc(
           name.length > 255 ||
           hasControlCharacters(name) ||
           /[\\/:]/u.test(name) ||
-          !(
-            version
-              ? /\.(pdf|txt)$/i
-              : attachment
-                ? /\.(pdf|png|jpe?g|txt)$/i
-                : /\.(json|bib|bibtex|ris)$/i
-          ).test(name)
+          !(version ? /\.(pdf|txt)$/i : /\.(pdf|png|jpe?g|txt)$/i).test(name)
         )
           return projectFailure(requestId, 'VALIDATION')
         for (const [id, g] of sourceGrants) if (g.expires < Date.now()) sourceGrants.delete(id)
@@ -498,8 +477,7 @@ export function registerProjectIpc(
           owner: event.sender.id,
           frame: event.senderFrame.routingId,
           process: event.senderFrame.processId,
-          expires: Date.now() + (attachment ? 10 : 60) * 60_000,
-          kind: attachment ? 'attachment' : 'import'
+          expires: Date.now() + 10 * 60_000
         })
         return { ok: true, requestId, value: { token, name } }
       }
@@ -683,56 +661,6 @@ export function registerProjectIpc(
         command = { kind, input: value.input }
       else if (
         exact(value, ['requestId', 'input']) &&
-        kind === 'sourcePreview' &&
-        isSourcePreviewInput(value.input)
-      ) {
-        const input = value.input,
-          g = sourceGrants.get(input.token)
-        if (
-          !g ||
-          g.kind !== 'import' ||
-          !event.senderFrame ||
-          g.owner !== event.sender.id ||
-          g.frame !== event.senderFrame.routingId ||
-          g.process !== event.senderFrame.processId ||
-          g.expires < Date.now() ||
-          g.scope.projectId !== input.projectId ||
-          g.scope.workspaceId !== input.workspaceId
-        )
-          return projectFailure(requestId, 'DENIED')
-        const format: BibliographyFormat = /\.json$/i.test(g.name)
-          ? 'csl-json'
-          : /\.ris$/i.test(g.name)
-            ? 'ris'
-            : 'bibtex'
-        command = { kind, input: { ...input, sourcePath: g.path, format } }
-      } else if (
-        exact(value, ['requestId', 'input']) &&
-        kind === 'sourceImport' &&
-        isSourceImportInput(value.input)
-      ) {
-        const input = value.input,
-          g = sourceGrants.get(input.token)
-        if (
-          !g ||
-          g.kind !== 'import' ||
-          !event.senderFrame ||
-          g.owner !== event.sender.id ||
-          g.frame !== event.senderFrame.routingId ||
-          g.process !== event.senderFrame.processId ||
-          g.expires < Date.now() ||
-          g.scope.projectId !== input.projectId ||
-          g.scope.workspaceId !== input.workspaceId
-        )
-          return projectFailure(requestId, 'DENIED')
-        const format: BibliographyFormat = /\.json$/i.test(g.name)
-          ? 'csl-json'
-          : /\.ris$/i.test(g.name)
-            ? 'ris'
-            : 'bibtex'
-        command = { kind, input: { ...input, sourcePath: g.path, format } }
-      } else if (
-        exact(value, ['requestId', 'input']) &&
         kind === 'sourceAttach' &&
         isSourceAttachmentInput(value.input)
       ) {
@@ -740,7 +668,6 @@ export function registerProjectIpc(
           g = sourceGrants.get(input.token)
         if (
           !g ||
-          g.kind !== 'attachment' ||
           !event.senderFrame ||
           g.owner !== event.sender.id ||
           g.frame !== event.senderFrame.routingId ||
@@ -863,7 +790,7 @@ export function registerProjectIpc(
       )
         imageGrants.delete(value.input.token)
       if (
-        (kind === 'sourceImport' || kind === 'sourceAttach') &&
+        kind === 'sourceAttach' &&
         result.ok &&
         'input' in value &&
         record(value.input) &&

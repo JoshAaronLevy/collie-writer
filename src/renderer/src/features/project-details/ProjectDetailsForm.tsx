@@ -140,7 +140,6 @@ export default function ProjectDetailsForm({
       setPending(null)
       session.acceptProjectDetails(result.value)
       adopt(result.value)
-      session.setNotice('Project details saved locally. Save updates the project file.')
       await session.refresh()
       session.setProjectDetailsOpen(false)
     } catch {

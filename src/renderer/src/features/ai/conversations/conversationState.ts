@@ -102,7 +102,7 @@ import {
 import type { OpenInput } from '../../../../../shared/projects'
 import { sameScope } from '../../../../../shared/project-files'
 import { useWorkspaceSession } from '../../workspace/workspaceContext'
-import { scopeOf } from '../../workspace/useWorkspaceController'
+import { scopeOf } from '../../../../../shared/projects'
 import { useRetainedDraft } from '../../workspace/DraftOwner'
 import { useAiConnections } from '../../ai-connections/connectionState'
 import { editorIsComposing } from '../../../editor/adapter'
@@ -597,7 +597,6 @@ export function useConversationController(): ConversationControllerState {
       window.collie.onConversationChanged((event) => {
         if (!belongs(event)) return
         setRun(event)
-        if (event.issue) setIssue(event.issue)
         if (!refreshTimer.current)
           refreshTimer.current = setTimeout(() => {
             refreshTimer.current = null

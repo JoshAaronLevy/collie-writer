@@ -53,7 +53,6 @@ import {
 import { isCodexReasoningEffort } from '../../shared/ai-catalog'
 import { exact, record } from '../../shared/projects'
 import { operationDigestV1 } from './operation-identity'
-import { AiError } from './errors'
 import { mechanicsOutputSchemaV1 } from '../../domain/ai/proofreading'
 import { MECHANICS_RESULT_V1 } from '../../shared/mechanics-contract'
 import { isDirectExecution, operationDigestV4, type DirectExecution } from './direct-operation'
@@ -128,17 +127,6 @@ export type LocalExecutionV3 = Omit<LocalExecutionV2, 'template' | 'outputContra
   schemaId: typeof MECHANICS_RESULT_V1.schemaId
   schemaDigest: string
 }
-export type LocalExecution = LocalExecutionV2 | LocalExecutionV3
-export type DispatchExecution =
-  | LocalExecution
-  | DirectExecution
-  | DirectConversationExecution
-  | DirectResearchExecution
-  | DirectImportExecution
-  | DirectMultiImportExecution
-  | DirectImportedConversationExecution
-  | DirectMappingExecution
-  | DirectSemanticExecution
 export type RetainedOperationV3 = {
   version: 3
   input: AiPrepareInput
@@ -226,8 +214,7 @@ function frame(input: Pick<AiPrepareInput, 'prompt' | 'context'>): string {
     }))
   })
 }
-/** Count the frozen frame/instructions plus the v3 mechanics schema, including
- * escaping, identifiers and labels. Review and dispatch never trim to fit. */
+/** Frozen frame bound for offline review and historical admission; never a send path. */
 export function localRequestFits(
   input: Pick<AiPrepareInput, 'prompt' | 'context'>,
   action: AiPrepareInput['action'] = 'conversation'
@@ -243,51 +230,6 @@ export function localRequestFits(
 }
 export function mechanicsSchemaDigestV1(): string {
   return identityHash(mechanicsOutputSchemaV1())
-}
-export function isSchemaExecution(e: LocalExecution): e is LocalExecutionV3 {
-  return e.outputContract === 'mechanics-schema-json-v1'
-}
-export function localExecution(
-  input: AiPrepareInput,
-  session: LocalSessionIdentity,
-  template: Exclude<
-    ContentTemplate,
-    | 'conversation-v2'
-    | 'conversation-research-v1'
-    | 'conversation-imported-v1'
-    | 'conversation-imported-research-v1'
-    | 'project-import-analysis-v1'
-    | 'project-import-analysis-v2'
-    | 'project-import-mapping-v1'
-    | 'project-import-semantic-v1'
-  >,
-  captureDigest: string
-): LocalExecution {
-  if (template !== templateFor(input.action) || !digest(captureDigest))
-    throw new AiError('context-changed')
-  const framedText = frame(input)
-  if (!localRequestFits(input, input.action)) throw new AiError('invalid-request')
-  const legacy: LocalExecutionV2 = {
-    ...session,
-    route: 'local-codex-chatgpt',
-    policyRevision: 1,
-    runtimeVersion: LOCAL_DISPATCH_V2.runtimeVersion,
-    framingVersion: 1,
-    template,
-    outputContract:
-      input.action === 'conversation' ? 'conversation-text-v1' : 'mechanics-final-json-v1',
-    captureDigest,
-    framedText
-  }
-  return input.action === 'proofread'
-    ? {
-        ...legacy,
-        template: 'mechanics-v1',
-        outputContract: 'mechanics-schema-json-v1',
-        schemaId: MECHANICS_RESULT_V1.schemaId,
-        schemaDigest: mechanicsSchemaDigestV1()
-      }
-    : legacy
 }
 export function operationDigestV2(input: AiPrepareInput, e: LocalExecutionV2): string {
   return identityHash({
@@ -327,14 +269,6 @@ export function operationDigestV3(input: AiPrepareInput, e: LocalExecutionV3): s
     schemaId: e.schemaId,
     schemaDigest: e.schemaDigest
   })
-}
-export function executionOutputSchema(
-  e: LocalExecution
-): ReturnType<typeof mechanicsOutputSchemaV1> | null {
-  if (!isSchemaExecution(e)) return null
-  if (e.schemaId !== MECHANICS_RESULT_V1.schemaId || e.schemaDigest !== mechanicsSchemaDigestV1())
-    throw new AiError('context-changed')
-  return mechanicsOutputSchemaV1()
 }
 function isExecution(v: unknown, input: AiPrepareInput): v is LocalExecutionV2 {
   return (

@@ -2,12 +2,18 @@ import { useEffect, useState } from 'react'
 import type { ExportJob } from '../../../../shared/exports'
 import type { OpenInput } from '../../../../shared/projects'
 
-export type ExportOperation = { scope: OpenInput; job: ExportJob; issue: string | null }
+export type ExportOperation = {
+  scope: OpenInput
+  job: ExportJob
+  issue: string | null
+  noticeDismissed?: boolean
+}
 
 /** The session owns polling and results even after the export screen or project is left. */
 export function useExportOperations(): {
   exports: ExportOperation[]
   trackExport: (scope: OpenInput, job: ExportJob) => void
+  dismissExportNotice: (jobId: string) => void
 } {
   const [exports, setExports] = useState<ExportOperation[]>([])
   function trackExport(scope: OpenInput, job: ExportJob): void {
@@ -72,5 +78,16 @@ export function useExportOperations(): {
       clearTimeout(timer)
     }
   }, [runningKey])
-  return { exports, trackExport }
+  return {
+    exports,
+    trackExport,
+    dismissExportNotice: (jobId) =>
+      setExports((previous) =>
+        previous.map((item) =>
+          item.job.id === jobId && !['rendering', 'publishing'].includes(item.job.state)
+            ? { ...item, noticeDismissed: true }
+            : item
+        )
+      )
+  }
 }

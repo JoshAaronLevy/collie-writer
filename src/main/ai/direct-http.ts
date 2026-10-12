@@ -7,7 +7,7 @@ import { AI_LIMITS, aiText } from '../../shared/ai'
 import { record } from '../../shared/projects'
 import { isCatalogModelId, type AiCatalogModel } from '../../shared/ai-catalog'
 import type { DirectStage } from '../../shared/ai-direct'
-import type { CodexTextUpdate } from './codex-text-turn'
+import type { AiTextUpdate } from './dispatch-session'
 import { DirectError, directFailure, directIssue, httpFailure } from './direct-errors'
 import type { DirectTextExecution } from './direct-conversation'
 
@@ -184,7 +184,7 @@ export async function planResponse(
   model: string,
   execution: DirectTextExecution,
   signal: AbortSignal,
-  update: (value: CodexTextUpdate) => void,
+  update: (value: AiTextUpdate) => void,
   onStreaming: () => void
 ): Promise<void> {
   const limit =

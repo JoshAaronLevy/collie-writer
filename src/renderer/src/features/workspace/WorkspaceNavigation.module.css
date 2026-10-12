@@ -45,11 +45,6 @@
 .session-actions {
   margin-top: 0.5rem;
 }
-.current-project {
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-  overflow-wrap: anywhere;
-}
 .file-summary {
   display: flex;
   flex-wrap: wrap;

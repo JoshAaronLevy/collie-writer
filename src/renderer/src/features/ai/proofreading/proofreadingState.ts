@@ -59,7 +59,7 @@ import { sameScope } from '../../../../../shared/project-files'
 import { editorIsComposing, serializeEditor } from '../../../editor/adapter'
 import { mechanicsTargets, sameMarks } from '../../../../../domain/ai/proofreading'
 import { useWorkspaceSession } from '../../workspace/workspaceContext'
-import { scopeOf } from '../../workspace/useWorkspaceController'
+import { scopeOf } from '../../../../../shared/projects'
 import { useRetainedDraft } from '../../workspace/DraftOwner'
 import { useAiConnections } from '../../ai-connections/connectionState'
 import { selectedRanges } from '../selection'
@@ -275,7 +275,6 @@ export function useProofreadingController(): ProofreadingControllerState {
       window.collie.onProofreadingChanged((value) => {
         if (!belongs(value)) return
         setEvent(value)
-        if (value.issue) setIssue(value.issue)
         if (!timer.current)
           timer.current = setTimeout(() => {
             timer.current = null

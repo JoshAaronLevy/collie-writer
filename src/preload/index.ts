@@ -15,11 +15,9 @@ import { isCitationsView, type CitationsView } from '../shared/citations'
 import type { HistoryView } from '../shared/outline'
 import {
   isSourcesView,
-  isSourcePreview,
   isSourceProgress,
   SOURCE_PROGRESS,
   type SourcesView,
-  type SourceImportPreview,
   type SourcePick,
   type SourceExportReceipt
 } from '../shared/sources'
@@ -235,22 +233,6 @@ const api: CollieAPI = {
   readSources: (input) => projectCall<SourcesView>(PROJECT_CHANNELS.sources, isSourcesView, input),
   changeSource: (input) =>
     projectCall<SourcesView>(PROJECT_CHANNELS.sourceChange, isSourcesView, input),
-  pickSourceImport: (input) =>
-    projectCall<SourcePick | null>(
-      PROJECT_CHANNELS.sourcePickImport,
-      (value) =>
-        value === null ||
-        (record(value) &&
-          exact(value, ['token', 'name']) &&
-          isId(value.token) &&
-          typeof value.name === 'string' &&
-          value.name.length <= 255),
-      input
-    ),
-  previewSourceImport: (input) =>
-    projectCall<SourceImportPreview>(PROJECT_CHANNELS.sourcePreview, isSourcePreview, input),
-  commitSourceImport: (input) =>
-    projectCall<SourcesView>(PROJECT_CHANNELS.sourceImport, isSourcesView, input),
   pickSourceAttachment: (input) =>
     projectCall<SourcePick | null>(
       PROJECT_CHANNELS.sourcePickAttachment,

@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react'
+import { AppButton } from './ui/Controls'
 import styles from './ErrorBoundary.module.css'
 
 class Presentation extends Component<{ render: () => ReactNode }> {
@@ -11,7 +12,7 @@ class Presentation extends Component<{ render: () => ReactNode }> {
  * editor host or another draft owner: React removes a boundary's failed subtree.
  * The callback also puts JSX computations inside the boundary without moving hooks. */
 export default class PresentationBoundary extends Component<
-  { label: string; render: () => ReactNode },
+  { label: string; render: () => ReactNode; writingRetained?: boolean },
   { failed: boolean; pending: boolean; message: string }
 > {
   state = { failed: false, pending: false, message: '' }
@@ -25,8 +26,8 @@ export default class PresentationBoundary extends Component<
       this.setState({
         message:
           result.ok && result.value
-            ? 'Reopening the protected workspace…'
-            : 'Restart paused. Return to the affected draft to save or explicitly clear it, finish composing, or resolve pending work. Surviving panels remain available.'
+            ? 'Restarting Collie Writer…'
+            : 'Restart paused. Finish composing, save or cancel unfinished drafts, and resolve pending work before trying again.'
       })
     } catch {
       this.setState({
@@ -45,27 +46,29 @@ export default class PresentationBoundary extends Component<
         role="alert"
         aria-label={`${this.props.label} recovery`}
       >
-        <h2>{this.props.label} could not be displayed.</h2>
-        <p>
-          This panel’s state owner is still mounted. Retained input is not necessarily protected on
-          disk. Previously protected writing remains in local recovery; check the workspace
-          protection status for pending changes. Text still being composed may be uncertain.
-        </p>
-        <p>Retry this panel first. Other panels and their draft owners remain available.</p>
-        <button
-          type="button"
+        <h2>{this.props.label} couldn’t open.</h2>
+        {this.props.writingRetained ? <p>Your text is still in the editor.</p> : null}
+        <p>Try again. You can still use other panels.</p>
+        <AppButton
           disabled={this.state.pending}
           onClick={() => this.setState({ failed: false, message: '' })}
         >
-          Retry panel
-        </button>
-        <button type="button" disabled={this.state.pending} onClick={() => void this.restart()}>
-          {this.state.pending ? 'Checking protection…' : 'Restart after protecting work'}
-        </button>
-        <p>
-          Restart uses Collie’s normal close protection checks. Explicit drafts and unresolved work
-          must be settled first; active AI requires the existing stop confirmation.
-        </p>
+          Try again
+        </AppButton>
+        <details className={styles['panel-restart']}>
+          <summary>If this keeps happening</summary>
+          <p>
+            Save or copy any visible unsaved text before restarting. Collie checks unfinished drafts
+            and work first; restarting does not save the project file.
+          </p>
+          <AppButton
+            variant="default"
+            pending={this.state.pending}
+            onClick={() => void this.restart()}
+          >
+            {this.state.pending ? 'Checking unfinished work…' : 'Restart Collie Writer'}
+          </AppButton>
+        </details>
         {this.state.message ? <p role="status">{this.state.message}</p> : null}
       </section>
     )

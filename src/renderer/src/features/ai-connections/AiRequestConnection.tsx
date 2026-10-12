@@ -9,7 +9,7 @@ function availability(feature: AiActionAvailability | undefined): string {
   if (feature.state === 'available') return 'Ready for a new reviewed request.'
   switch (feature.reason) {
     case 'operation-capacity-full':
-      return 'AI work needs attention before another request. Open Local AI capacity and recovery in the AI work notice.'
+      return 'Saved responses need attention before another request. Open the affected project from the AI work notice.'
     case 'output-protection-required':
       return 'An AI outcome needs local protection. Use the AI work notice to finish recovery.'
     case 'ai-work-pending':

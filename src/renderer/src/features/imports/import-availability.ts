@@ -65,7 +65,7 @@ export function importAvailability({
         )
       case 'operation-capacity-full':
         return blocked(
-          'Saved AI work needs attention. Close Import and open Local AI capacity and recovery in the AI work notice.',
+          'Saved responses need attention. Close Import and open the affected project from the AI work notice.',
           null
         )
       default:

@@ -37,14 +37,9 @@ export const AI_CHANNELS = {
   refresh: 'ai.refresh',
   disconnect: 'ai.disconnect',
   select: 'ai.select',
-  models: 'ai.models',
-  resumeConnection: 'ai.resumeConnection',
-  cleanupConnection: 'ai.cleanupConnection',
   protectConnection: 'ai.protectConnection',
   prepareConnection: 'ai.prepareConnection',
-  refreshModels: 'ai.refreshModels',
   selectModel: 'ai.selectModel',
-  prepare: 'ai.prepare',
   start: 'ai.start',
   cancel: 'ai.cancel',
   operations: 'ai.operations',
@@ -182,7 +177,6 @@ export type AiStatus = {
 export type AiConnectInput = { attemptId: string; connectionId: string | null }
 export type AiAttemptInput = { attemptId: string }
 export type AiConnectionInput = { connectionId: string }
-export type AiModel = { id: string; label: string; eligibility: 'unverified' }
 export type AiContext = {
   kind: 'passage' | 'section' | 'note' | 'source-excerpt' | 'history'
   id: string
@@ -267,14 +261,9 @@ export type AiAPI = {
   refreshAiConnection: (input: AiConnectionInput) => Promise<AiResult<AiStatus>>
   disconnectAi: (input: AiConnectionInput) => Promise<AiResult<AiStatus>>
   selectAiConnection: (input: AiConnectionInput) => Promise<AiResult<AiStatus>>
-  resumeAiConnection: (input: AiConnectionInput) => Promise<AiResult<AiStatus>>
-  cleanupAiConnection: () => Promise<AiResult<AiStatus>>
   protectAiConnection: () => Promise<AiResult<AiStatus>>
   prepareAiConnection: (input: AiConnectionInput) => Promise<AiResult<AiStatus>>
-  refreshAiModels: (input: AiConnectionInput) => Promise<AiResult<AiStatus>>
   selectAiModel: (input: AiSelectModelInput) => Promise<AiResult<AiStatus>>
-  aiModels: (input: AiConnectionInput) => Promise<AiResult<AiModel[]>>
-  prepareAiOperation: (input: AiPrepareInput) => Promise<AiResult<AiPrepared>>
   startAiOperation: (input: AiStartInput) => Promise<AiResult<AiOperation>>
   cancelAiOperation: (input: AiOperationInput) => Promise<AiResult<AiOperation>>
   aiOperations: (scope: OpenInput) => Promise<AiResult<AiOperation[]>>
@@ -327,17 +316,6 @@ export function isAiPrepare(v: unknown): v is AiPrepareInput {
         aiText(c.text, AI_LIMITS.context)
     ) &&
     v.context.reduce((n, c) => n + c.text.length, 0) <= AI_LIMITS.context
-  )
-}
-export function isAiPrepared(v: unknown): v is AiPrepared {
-  return (
-    record(v) &&
-    exact(v, ['authorizationId', 'operationId', 'digest', 'expiresAt']) &&
-    isId(v.authorizationId) &&
-    isId(v.operationId) &&
-    typeof v.digest === 'string' &&
-    /^[a-f0-9]{64}$/.test(v.digest) &&
-    time(v.expiresAt)
   )
 }
 export function isAiStart(v: unknown): v is AiStartInput {
@@ -598,20 +576,6 @@ export function isAiContentWork(v: unknown): v is AiContentWork {
     ].includes(String(v.state))
   )
 }
-export function isAiModels(v: unknown): v is AiModel[] {
-  return (
-    Array.isArray(v) &&
-    v.length <= 100 &&
-    v.every(
-      (m) =>
-        record(m) &&
-        exact(m, ['id', 'label', 'eligibility']) &&
-        aiText(m.id, 100) &&
-        aiText(m.label, 200) &&
-        m.eligibility === 'unverified'
-    )
-  )
-}
 export function isAiEvent(v: unknown): v is AiEvent {
   return (
     record(v) &&
@@ -655,17 +619,10 @@ export function isAiChannelValue(
     case AI_CHANNELS.refresh:
     case AI_CHANNELS.disconnect:
     case AI_CHANNELS.select:
-    case AI_CHANNELS.resumeConnection:
-    case AI_CHANNELS.cleanupConnection:
     case AI_CHANNELS.protectConnection:
     case AI_CHANNELS.prepareConnection:
-    case AI_CHANNELS.refreshModels:
     case AI_CHANNELS.selectModel:
       return isAiStatus(value)
-    case AI_CHANNELS.models:
-      return isAiModels(value)
-    case AI_CHANNELS.prepare:
-      return isAiPrepared(value)
     case AI_CHANNELS.start:
     case AI_CHANNELS.cancel:
     case AI_CHANNELS.protect:

@@ -90,7 +90,7 @@ export class DirectAccessService {
         this.message ||
         (config
           ? 'Purchase connections contact the service only when you request an action.'
-          : 'Direct purchases and restore are not configured in this build. Free writing has no time limit.')
+          : 'Purchases and purchase-code restore are unavailable in this build.')
     }
   }
   private requireConfig(): DirectConfiguration {

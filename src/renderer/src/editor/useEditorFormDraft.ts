@@ -1,7 +1,7 @@
 import { useId, useRef } from 'react'
 import { useWorkspaceSession } from '../features/workspace/workspaceContext'
 import { useRetainedDraft } from '../features/workspace/DraftOwner'
-import { scopeOf } from '../features/workspace/useWorkspaceController'
+import { scopeOf } from '../../../shared/projects'
 
 /** Dialog values must be applied or explicitly cancelled before native close or scope replacement. */
 export function useEditorFormDraft(

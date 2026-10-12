@@ -3,7 +3,7 @@ import Database from 'better-sqlite3'
 import { Cite, type CSL } from '@citation-js/core'
 import '@citation-js/plugin-bibtex'
 import '@citation-js/plugin-ris'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { constants, createReadStream } from 'node:fs'
 import { open, lstat, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -14,15 +14,12 @@ import type {
   SourceAttachment,
   SourceChangeInput,
   SourceExportReceipt,
-  SourceImportPreview,
   SourceImportRow,
   SourceMetadata,
   SourceRecord,
   SourcesView,
   WorkerSourceAttachment,
-  WorkerSourceExport,
-  WorkerSourceImport,
-  WorkerSourcePreview
+  WorkerSourceExport
 } from '../../shared/sources'
 import { isSourceMetadata, isSourcesView, SOURCE_TYPES } from '../../shared/sources'
 import { requestDigest } from '../storage/digest'
@@ -52,13 +49,6 @@ type Row = {
   updated_at: string
 }
 const IMPORT_LIMIT = 8 * 1024 * 1024
-const formatOf = (name: string): BibliographyFormat => {
-  const extension = name.toLowerCase().split('.').pop()
-  if (extension === 'json') return 'csl-json'
-  if (extension === 'bib' || extension === 'bibtex') return 'bibtex'
-  if (extension === 'ris') return 'ris'
-  throw new ProjectError('VALIDATION')
-}
 const norm = (value: string): string =>
   value
     .normalize('NFKC')
@@ -821,219 +811,6 @@ export function changeSource(context: SourceContext, input: SourceChangeInput): 
 function getOptional(db: Database.Database, projectId: string, id: string): Row | undefined {
   return db.prepare('SELECT * FROM sources WHERE project_id=? AND id=?').get(projectId, id) as
     Row | undefined
-}
-export async function previewImport(
-  context: SourceContext,
-  input: WorkerSourcePreview
-): Promise<SourceImportPreview> {
-  const format = formatOf(input.sourcePath)
-  if (format !== input.format) throw new ProjectError('VALIDATION')
-  const bytes = await selectedFile(input.sourcePath, IMPORT_LIMIT)
-  let rows: SourceImportRow[]
-  try {
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-    rows = parseBibliographyRows(text, format)
-  } catch (error) {
-    if (error instanceof ProjectError) throw error
-    throw new ProjectError('VALIDATION')
-  }
-  for (const row of rows)
-    if (row.metadata)
-      row.candidates = candidateRows(context.db, context.projectId, row.metadata, row.externalId)
-  return {
-    token: input.token,
-    digest: createHash('sha256').update(bytes).digest('hex'),
-    format,
-    rows,
-    count: rows.length
-  }
-}
-export async function commitImport(
-  context: SourceContext,
-  input: WorkerSourceImport
-): Promise<SourcesView> {
-  const preview = await previewImport(context, input)
-  if (
-    preview.digest !== input.digest ||
-    new Set(input.choices.map((c) => c.index)).size !== input.choices.length ||
-    input.choices.length !== preview.rows.length
-  )
-    throw new ProjectError('EXTERNAL_CHANGE')
-  const rawBytes = await selectedFile(input.sourcePath, IMPORT_LIMIT)
-  if (createHash('sha256').update(rawBytes).digest('hex') !== preview.digest)
-    throw new ProjectError('EXTERNAL_CHANGE')
-  const rawText = new TextDecoder('utf-8', { fatal: true }).decode(rawBytes)
-  const rawRecords: unknown[] =
-    preview.format === 'csl-json'
-      ? (JSON.parse(rawText) as unknown[])
-      : preview.format === 'bibtex'
-        ? bibtexRecords(rawText)
-        : risRecords(rawText)
-  const { db, projectId } = context,
-    digest = requestDigest({
-      kind: 'sourceImport',
-      format: preview.format,
-      sha256: preview.digest,
-      choices: input.choices
-    })
-  inWriteTransaction(db, () => {
-    if (priorOperation(db, projectId, input.operationId, digest)) return
-    const now = new Date().toISOString(),
-      report: { imported: number; skipped: number; errors: string[]; losses: string[] } = {
-        imported: 0,
-        skipped: 0,
-        errors: [],
-        losses: []
-      }
-    for (const row of preview.rows) {
-      const choice = input.choices.find((c) => c.index === row.index)!
-      const raw =
-        typeof rawRecords[row.index] === 'string'
-          ? (rawRecords[row.index] as string)
-          : JSON.stringify(rawRecords[row.index])
-      if (row.error) {
-        report.errors.push(`Record ${row.index + 1}: ${row.error}`)
-        if (choice.action !== 'skip') throw new ProjectError('VALIDATION')
-        report.skipped++
-        db.prepare('INSERT INTO source_import_records VALUES (?,?,?,?,?,?,?,?)').run(
-          projectId,
-          input.operationId,
-          row.index,
-          raw,
-          '[]',
-          'skip',
-          null,
-          row.error
-        )
-        continue
-      }
-      if (choice.action === 'skip') {
-        report.skipped++
-        db.prepare('INSERT INTO source_import_records VALUES (?,?,?,?,?,?,?,?)').run(
-          projectId,
-          input.operationId,
-          row.index,
-          raw,
-          JSON.stringify(row.unknownFields),
-          'skip',
-          null,
-          null
-        )
-        continue
-      }
-      if (!row.metadata) throw new ProjectError('VALIDATION')
-      let acceptedId: string
-      if (choice.action === 'create') {
-        if (choice.targetId !== null) throw new ProjectError('VALIDATION')
-        if (
-          (
-            db.prepare('SELECT count(*) count FROM sources WHERE project_id=?').get(projectId) as {
-              count: number
-            }
-          ).count >= 100000
-        )
-          throw new ProjectError('LIMIT_EXCEEDED')
-        const id = randomUUID()
-        acceptedId = id
-        db.prepare('INSERT INTO sources VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(
-          projectId,
-          id,
-          randomUUID(),
-          JSON.stringify(row.metadata),
-          'active',
-          null,
-          0,
-          `import:${preview.format}`,
-          raw,
-          JSON.stringify(row.unknownFields),
-          now,
-          now
-        )
-        if (row.externalId) {
-          if (
-            !db
-              .prepare('SELECT 1 FROM source_aliases WHERE project_id=? AND alias=?')
-              .get(projectId, row.externalId) &&
-            !getOptional(db, projectId, row.externalId)
-          )
-            db.prepare('INSERT INTO source_aliases VALUES (?,?,?)').run(
-              projectId,
-              row.externalId,
-              id
-            )
-          else
-            report.losses.push(
-              `Record ${row.index + 1}: imported identifier already belongs to another source; kept in raw record, not aliased.`
-            )
-        }
-        report.imported++
-      } else {
-        if (!choice.targetId || !row.candidates.some((c) => c.id === choice.targetId))
-          throw new ProjectError('VALIDATION')
-        const target = getOptional(db, projectId, choice.targetId)
-        if (!target || target.state !== 'active') throw new ProjectError('STALE_REVISION')
-        acceptedId = target.id
-        if (row.externalId) {
-          const old = db
-            .prepare('SELECT source_id FROM source_aliases WHERE project_id=? AND alias=?')
-            .get(projectId, row.externalId) as { source_id: string } | undefined
-          const canonical = getOptional(db, projectId, row.externalId)
-          if ((old && old.source_id !== target.id) || (canonical && canonical.id !== target.id))
-            throw new ProjectError('OPERATION_CONFLICT')
-          if (!canonical)
-            db.prepare('INSERT OR IGNORE INTO source_aliases VALUES (?,?,?)').run(
-              projectId,
-              row.externalId,
-              target.id
-            )
-        }
-        if (choice.action === 'merge') {
-          oldRevision(db, projectId, target, now)
-          const existing = JSON.parse(target.metadata) as SourceMetadata
-          const combined = {
-            ...row.metadata,
-            ...Object.fromEntries(
-              Object.entries(existing).filter(([, v]) => (Array.isArray(v) ? v.length : !!v))
-            )
-          } as SourceMetadata
-          db.prepare(
-            'UPDATE sources SET metadata=?,revision_id=?,updated_at=?,raw_import=?,unknown_fields=? WHERE project_id=? AND id=?'
-          ).run(
-            JSON.stringify(normalizeMetadata(combined)),
-            randomUUID(),
-            now,
-            raw,
-            JSON.stringify([
-              ...new Set([...(JSON.parse(target.unknown_fields) as string[]), ...row.unknownFields])
-            ]),
-            projectId,
-            target.id
-          )
-        }
-        report.imported++
-      }
-      db.prepare('INSERT INTO source_import_records VALUES (?,?,?,?,?,?,?,?)').run(
-        projectId,
-        input.operationId,
-        row.index,
-        raw,
-        JSON.stringify(row.unknownFields),
-        choice.action,
-        acceptedId,
-        null
-      )
-      report.losses.push(...row.losses.map((loss) => `Record ${row.index + 1}: ${loss}`))
-    }
-    db.prepare('INSERT INTO source_import_reports VALUES (?,?,?,?,?)').run(
-      projectId,
-      input.operationId,
-      preview.format,
-      JSON.stringify(report),
-      now
-    )
-    commit(db, projectId, input.operationId, digest, now)
-  })
-  return readSources(db, projectId)
 }
 export async function attachSourceFile(
   context: SourceContext,

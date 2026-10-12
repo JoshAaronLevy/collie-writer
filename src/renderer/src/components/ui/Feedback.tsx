@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Alert, Paper } from '@mantine/core'
-import { CircleAlert, Info, TriangleAlert } from 'lucide-react'
+import { IconAlertCircle, IconInfoCircle, IconAlertTriangle } from '@tabler/icons-react'
 import styles from './feedback.module.css'
 
 export function ContentSurface({
@@ -36,7 +36,8 @@ export function StatusBanner({
   children: ReactNode
   tone?: 'info' | 'warning' | 'error'
 }): React.JSX.Element {
-  const Icon = tone === 'error' ? CircleAlert : tone === 'warning' ? TriangleAlert : Info
+  const Icon =
+    tone === 'error' ? IconAlertCircle : tone === 'warning' ? IconAlertTriangle : IconInfoCircle
   return (
     <Alert
       title={title}

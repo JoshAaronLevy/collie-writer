@@ -1,11 +1,11 @@
 import { ImportedOrigins } from '../imports/ImportedOrigins'
 import { isEditableKind } from '../../../../shared/outline'
 import PresentationBoundary from '../../components/PresentationBoundary'
-import { useEffectEvent } from 'react'
-import { useLayoutEffect } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import { useSynchronousState } from '../../hooks/useSynchronousState'
-import { Checkbox, TextInput, Textarea } from '@mantine/core'
+import { Checkbox, MultiSelect, TextInput, Textarea } from '@mantine/core'
 import { AppButton, SelectField } from '../../components/ui/Controls'
+import { ActionMenu } from '../../components/ui/ActionMenu'
 import { AppDialog } from '../../components/ui/AppDialog'
 import { ResearchHeader, ResearchLayout } from '../research/ResearchLayout'
 import { EmptyState } from '../../components/ui/Feedback'
@@ -13,12 +13,11 @@ import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useResearchData } from '../research/researchContext'
 import './NotesPanel.css'
 import { useRetainedDraft, useDraftRegistry } from '../workspace/DraftOwner'
-import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { emptyDocument } from '../../../../domain/projects/templates'
 import type { DocumentPayload } from '../../../../domain/editor/schema'
 import type { OpenProject } from '../../../../shared/projects'
-import type { Annotation, Note, NoteChange, NotesView } from '../../../../shared/notes'
+import type { Annotation, Note, NoteChange, NoteLabel, NotesView } from '../../../../shared/notes'
 import RichDraft from '../../editor/RichDraft'
 import { serializeEditor } from '../../editor/adapter'
 
@@ -52,7 +51,7 @@ export default function NotesPanel({
 }): React.JSX.Element {
   const session = useWorkspaceSession(),
     researchData = useResearchData()
-  const [tab, setTab] = useState<'notes' | 'annotations' | 'labels'>('notes'),
+  const [tab, setTab] = useState<'notes' | 'annotations'>('notes'),
     [query, setQuery] = useState(''),
     [annotationId, setAnnotationId] = useState<string | null>(null)
   const [labelDialog, setLabelDialog] = useState<{
@@ -79,7 +78,7 @@ export default function NotesPanel({
   const [title, setTitle] = useState(''),
     [links, setLinks] = useState<string[]>([]),
     [labels, setLabels] = useState<string[]>([])
-  const [filter, setFilter] = useState('inbox'),
+  const [filter, setFilter] = useState('all'),
     [message, setMessage] = useState(''),
     [busy, setBusy] = useState(false)
   const [showArchivedAnnotations, setShowArchivedAnnotations] = useState(false)
@@ -104,6 +103,7 @@ export default function NotesPanel({
     latest.current = { title, links, labels, selected, view }
   })
   const note = view?.notes.find((n) => n.id === selected)
+  const locked = disabled || busy || !!pendingValue || !!unresolvedValue
   const commentDraft =
     !!(capture && annotationText) ||
     !!(editingAnnotation && editText !== annotationBaseValue?.interpretation)
@@ -125,7 +125,7 @@ export default function NotesPanel({
         }
       })
       .catch(() => {
-        if (live)
+        if (live && request === readSequence.current)
           setMessage(
             'Notes could not be loaded. Reopen this project to retry; existing drafts are retained.'
           )
@@ -164,6 +164,10 @@ export default function NotesPanel({
     if (
       !view ||
       dirty.current ||
+      busy ||
+      pending.current ||
+      unresolved.current ||
+      session.composition.current ||
       focusedRequest.current === `${focusNoteId}:${session.focusRevision}`
     )
       return
@@ -214,9 +218,15 @@ export default function NotesPanel({
       readSequence.current++
       latest.current.view = result.value
       setView(result.value)
-      setMessage(
-        'Protected locally. Save the project file separately if you need an external copy.'
-      )
+      if (changeValue.type === 'mergeLabel' && !dirty.current) {
+        const saved = result.value.notes.find((row) => row.id === latest.current.selected)
+        if (saved) {
+          setBaseRevisionValue(saved.revisionId)
+          setLabels(saved.labelIds)
+          latest.current.labels = saved.labelIds
+        }
+      }
+      setMessage('Saved.')
       await onCommitted()
       return true
     } catch {
@@ -240,7 +250,7 @@ export default function NotesPanel({
         return false
       }
       if (commentDraft && !allowCommentDraft) {
-        setMessage('Save the annotation draft before switching projects, saving a file or closing.')
+        setMessage('Save or discard the passage comment before leaving or saving the project file.')
         return false
       }
       if (unresolved.current && unresolved.current.operationId !== pending.current?.operationId) {
@@ -368,7 +378,7 @@ export default function NotesPanel({
   }
   async function retryPending(): Promise<void> {
     if (pending.current) {
-      await flush()
+      await flush(true)
       return
     }
     const operation = unresolved.current
@@ -405,6 +415,16 @@ export default function NotesPanel({
           ? { type: 'renameLabel', id: labelDialog.id!, name: labelName.trim() }
           : { type: 'mergeLabel', id: labelDialog.id!, targetId: labelTarget }
     if (await change(input)) setLabelDialog(null)
+  }
+  function openLabel(
+    kind: NoteLabel['kind'],
+    action: 'create' | 'rename' | 'merge',
+    label?: NoteLabel
+  ): void {
+    if (locked || session.composition.current) return
+    setLabelDialog({ kind, action, id: label?.id })
+    setLabelName(label?.name ?? '')
+    setLabelTarget('')
   }
   async function saveAnnotation(): Promise<void> {
     if (!capture || !annotationText.trim() || !(await flush(true))) return
@@ -499,20 +519,29 @@ export default function NotesPanel({
       return
     }
     const key = `${focusAnnotationId}:${session.focusRevision}`
-    if (!view || commentDraft || annotationFocus.current === key) return
+    if (
+      !view ||
+      commentDraft ||
+      busy ||
+      unresolved.current ||
+      session.composition.current ||
+      annotationFocus.current === key
+    )
+      return
     annotationFocus.current = key
     const found = view.annotations.find((item) => item.id === focusAnnotationId)
     if (found) {
       setAnnotationId(found.id)
       setTab('annotations')
       if (found.state === 'archived') setShowArchivedAnnotations(true)
-    } else setMessage('The requested annotation is missing; no different comment was selected.')
+    } else
+      setMessage('The requested passage comment is missing; no different comment was selected.')
   })
   // Present only the latest committed navigation request, after retained regions update.
   useEffect(() => {
     const frame = requestAnimationFrame(() => onAnnotationNavigation())
     return () => cancelAnimationFrame(frame)
-  }, [focusAnnotationId, session.focusRevision, view, commentDraft])
+  }, [focusAnnotationId, session.focusRevision, view, commentDraft, busy, unresolvedValue])
   const annotation = view?.annotations.find((item) => item.id === annotationId)
   const relatedItems = researchData.view
     ? [
@@ -528,12 +557,12 @@ export default function NotesPanel({
       className="notes-panel"
       aria-label="Notes and annotations"
     >
-      <ResearchHeader title="Notes and annotations">
-        Capture your thoughts and keep passage comments separate from original quotes.
+      <ResearchHeader title="Notes and passage comments">
+        Keep your thoughts and comments connected to your writing.
       </ResearchHeader>
       {message ? <p role="status">{message}</p> : null}
       <div className="research-actions" role="group" aria-label="Note views">
-        {(['notes', 'annotations', 'labels'] as const).map((value) => (
+        {(['notes', 'annotations'] as const).map((value) => (
           <AppButton
             key={value}
             variant={tab === value ? 'default' : 'subtle'}
@@ -542,20 +571,11 @@ export default function NotesPanel({
               if (!session.composition.current) setTab(value)
             }}
           >
-            {value === 'notes'
-              ? 'Notes and inbox'
-              : value === 'annotations'
-                ? 'Passage annotations'
-                : 'Tags and categories'}
+            {value === 'notes' ? 'Notes' : 'Passage comments'}
           </AppButton>
         ))}
         {unresolvedValue ? (
-          <AppButton
-            disabled={disabled || busy}
-            onClick={() => {
-              void retryPending()
-            }}
-          >
+          <AppButton disabled={disabled || busy} onClick={() => void retryPending()}>
             Retry pending local change
           </AppButton>
         ) : null}
@@ -564,12 +584,7 @@ export default function NotesPanel({
         <ResearchLayout
           sidebar={
             <>
-              <AppButton
-                disabled={disabled || busy}
-                onClick={() => {
-                  void newNote()
-                }}
-              >
+              <AppButton disabled={locked} onClick={() => void newNote()}>
                 Capture a note
               </AppButton>
               <TextInput
@@ -630,6 +645,58 @@ export default function NotesPanel({
                   </li>
                 ))}
               </ul>
+              <details className="research-disclosure">
+                <summary>Tags and categories</summary>
+                <div className="research-actions">
+                  {(['tag', 'category'] as const).map((kind) => (
+                    <AppButton
+                      key={kind}
+                      variant="subtle"
+                      disabled={locked}
+                      onClick={() => openLabel(kind, 'create')}
+                    >
+                      New {kind}
+                    </AppButton>
+                  ))}
+                </div>
+                <ul className="note-label-list">
+                  {view?.labels
+                    .filter((item) => item.state === 'active')
+                    .map((item) => (
+                      <li key={item.id}>
+                        <span>
+                          {item.name} · {item.kind}
+                        </span>
+                        <ActionMenu
+                          label="Actions"
+                          accessibleLabel={`Actions for ${item.kind} ${item.name}`}
+                          disabled={locked}
+                          actions={[
+                            {
+                              id: 'rename',
+                              label: 'Rename…',
+                              onSelect: () => openLabel(item.kind, 'rename', item)
+                            },
+                            {
+                              id: 'merge',
+                              label: 'Merge into…',
+                              onSelect: () => openLabel(item.kind, 'merge', item)
+                            },
+                            {
+                              id: 'archive',
+                              label: 'Archive label',
+                              onSelect: () => {
+                                void flush().then((ok) => {
+                                  if (ok) void change({ type: 'archiveLabel', id: item.id })
+                                })
+                              }
+                            }
+                          ]}
+                        />
+                      </li>
+                    ))}
+                </ul>
+              </details>
             </>
           }
         >
@@ -643,19 +710,13 @@ export default function NotesPanel({
                   : ''}
               </p>
               {note.origin === 'imported-v1' ? (
-                <p>
-                  Imported note · original authorship is retained separately, not assumed to be
-                  human.
-                </p>
-              ) : null}
-              {note.origin === 'imported-v1' ? (
                 <ImportedOrigins key={note.id} kind="note" id={note.id} />
               ) : null}
               <TextInput
                 label="Note title"
                 value={title}
                 maxLength={500}
-                disabled={disabled || busy || !!pendingValue}
+                disabled={locked}
                 onChange={(event) => {
                   setTitle(event.currentTarget.value)
                   setDirty(true)
@@ -665,95 +726,92 @@ export default function NotesPanel({
                 key={`${note.id}:${noteEpoch}`}
                 noteMode
                 payload={note.body}
-                disabled={disabled || busy || !!pendingValue}
+                disabled={locked}
                 onReady={(value) => {
                   editor.current = value
                 }}
                 onChange={() => setDirty(true)}
                 onIssue={setMessage}
-                onBlur={() => {
-                  void flush(true)
-                }}
+                onBlur={() => void flush(true)}
                 imageUrl={() => undefined}
                 importImage={() => {}}
               />
               <div className="research-actions">
                 <AppButton
-                  disabled={disabled || busy}
-                  onClick={() => {
-                    void flush(true)
-                  }}
+                  disabled={disabled || busy || (!!unresolvedValue && !pendingValue)}
+                  onClick={() => void flush(true)}
                 >
                   {pendingValue ? 'Retry note save' : 'Save note'}
                 </AppButton>
                 <AppButton
                   variant="subtle"
-                  disabled={disabled || busy}
-                  onClick={() => {
+                  disabled={locked}
+                  onClick={() =>
                     void setNoteState(note.id, note.state === 'active' ? 'trashed' : 'active')
-                  }}
+                  }
                 >
                   {note.state === 'active' ? 'Move to trash' : 'Restore note'}
                 </AppButton>
                 {note.state === 'active' ? (
                   <AppButton
                     variant="subtle"
-                    disabled={disabled || busy}
-                    onClick={() => {
-                      void setNoteState(note.id, 'archived')
-                    }}
+                    disabled={locked}
+                    onClick={() => void setNoteState(note.id, 'archived')}
                   >
                     Archive note
                   </AppButton>
                 ) : null}
               </div>
-              <details className="research-disclosure">
-                <summary>Sections, tags and categories</summary>
-                <fieldset disabled={disabled || busy || !!pendingValue}>
-                  <legend>Linked sections</legend>
-                  <div className="research-checklist">
-                    {project.documents
-                      .filter((item) => isEditableKind(item.kind))
-                      .map((item) => (
-                        <Checkbox
-                          key={item.id}
-                          label={`${item.title} · ${item.state}`}
-                          checked={links.includes(item.id)}
-                          onChange={(event) => {
-                            setLinks(
-                              event.currentTarget.checked
-                                ? [...links, item.id]
-                                : links.filter((id) => id !== item.id)
-                            )
-                            setDirty(true)
-                          }}
-                        />
-                      ))}
-                  </div>
-                </fieldset>
-                <fieldset disabled={disabled || busy || !!pendingValue}>
-                  <legend>Tags and categories</legend>
-                  <div className="research-checklist">
-                    {view?.labels
-                      .filter((item) => item.state === 'active')
-                      .map((item) => (
-                        <Checkbox
-                          key={item.id}
-                          label={`${item.kind}: ${item.name}`}
-                          checked={labels.includes(item.id)}
-                          onChange={(event) => {
-                            setLabels(
-                              event.currentTarget.checked
-                                ? [...labels, item.id]
-                                : labels.filter((id) => id !== item.id)
-                            )
-                            setDirty(true)
-                          }}
-                        />
-                      ))}
-                  </div>
-                </fieldset>
-              </details>
+              <div className="research-form">
+                <MultiSelect
+                  label="Linked sections"
+                  searchable
+                  nothingFoundMessage="No matching sections"
+                  withScrollArea={false}
+                  value={links}
+                  disabled={locked}
+                  data={project.documents
+                    .filter(
+                      (item) =>
+                        links.includes(item.id) ||
+                        (isEditableKind(item.kind) && item.state === 'active')
+                    )
+                    .map((item) => ({
+                      value: item.id,
+                      label: `${item.title}${item.state === 'active' ? '' : ` (${item.state})`}`
+                    }))}
+                  onChange={(next) => {
+                    setLinks(next)
+                    setDirty(true)
+                  }}
+                />
+                <MultiSelect
+                  label="Tags and categories"
+                  searchable
+                  nothingFoundMessage="No matching labels"
+                  withScrollArea={false}
+                  value={labels}
+                  disabled={locked}
+                  data={(['tag', 'category'] as const).map((kind) => ({
+                    group: kind === 'tag' ? 'Tags' : 'Categories',
+                    items:
+                      view?.labels
+                        .filter(
+                          (item) =>
+                            item.kind === kind &&
+                            (item.state === 'active' || labels.includes(item.id))
+                        )
+                        .map((item) => ({
+                          value: item.id,
+                          label: `${kind}: ${item.name}${item.state === 'active' ? '' : ' (archived)'}`
+                        })) ?? []
+                  }))}
+                  onChange={(next) => {
+                    setLabels(next)
+                    setDirty(true)
+                  }}
+                />
+              </div>
               {baseRevisionValue !== note.revisionId ? (
                 <AppButton
                   variant="default"
@@ -765,13 +823,7 @@ export default function NotesPanel({
               ) : null}
               <h3>Connected context</h3>
               {note.documentIds.map((id) => (
-                <AppButton
-                  key={id}
-                  variant="subtle"
-                  onClick={() => {
-                    void navigate(id)
-                  }}
-                >
+                <AppButton key={id} variant="subtle" onClick={() => void navigate(id)}>
                   Open{' '}
                   {project.documents.find((item) => item.id === id)?.title ?? 'missing section'}
                 </AppButton>
@@ -816,7 +868,7 @@ export default function NotesPanel({
                       disabled={commentDraft}
                       onClick={() => setAnnotationId(null)}
                     >
-                      New selected-passage comment
+                      Comment on selected passage
                     </AppButton>
                     <ul className="research-item-list">
                       {view?.annotations
@@ -875,18 +927,18 @@ export default function NotesPanel({
                       </AppButton>
                       <AppButton
                         variant="subtle"
-                        disabled={disabled || busy || !!pendingValue || commentDraft}
+                        disabled={locked || commentDraft}
                         onClick={() => {
                           setAnnotationBaseValue(annotation)
                           setEditingAnnotation(annotation.id)
                           setEditText(annotation.interpretation)
                         }}
                       >
-                        Edit interpretation
+                        Edit comment
                       </AppButton>
                       <AppButton
                         variant="subtle"
-                        disabled={disabled || busy || !!pendingValue || commentDraft}
+                        disabled={locked || commentDraft}
                         onClick={() => {
                           void change({
                             type: 'updateAnnotation',
@@ -903,20 +955,18 @@ export default function NotesPanel({
                     {editingAnnotation === annotation.id ? (
                       <div className="research-form">
                         <Textarea
-                          label="Your interpretation"
-                          disabled={disabled || busy || !!pendingValue}
+                          label="Your comment"
+                          disabled={locked}
                           value={editText}
                           maxLength={100000}
                           onChange={(event) => setEditText(event.currentTarget.value)}
                         />
                         <div className="research-actions">
                           <AppButton
-                            disabled={disabled || busy || !!pendingValue}
-                            onClick={() => {
-                              void editAnnotation(annotation)
-                            }}
+                            disabled={locked}
+                            onClick={() => void editAnnotation(annotation)}
                           >
-                            Save interpretation
+                            Save comment
                           </AppButton>
                           <AppButton
                             variant="default"
@@ -926,7 +976,7 @@ export default function NotesPanel({
                               setEditText('')
                             }}
                           >
-                            Cancel interpretation changes
+                            Cancel comment changes
                           </AppButton>
                         </div>
                       </div>
@@ -937,27 +987,25 @@ export default function NotesPanel({
                     <h2>Comment on selected passage</h2>
                     <blockquote className="research-quote">{capture.quote}</blockquote>
                     <Textarea
-                      label="Your interpretation"
-                      disabled={disabled || busy || !!pendingValue}
+                      label="Your comment"
+                      disabled={locked}
                       value={annotationText}
                       maxLength={100000}
                       onChange={(event) => setAnnotationText(event.currentTarget.value)}
                     />
                     <div className="research-actions">
                       <AppButton
-                        disabled={disabled || busy || !annotationText.trim()}
-                        onClick={() => {
-                          void saveAnnotation()
-                        }}
+                        disabled={locked || !annotationText.trim()}
+                        onClick={() => void saveAnnotation()}
                       >
-                        Save passage annotation
+                        Save comment
                       </AppButton>
                       <AppButton
                         variant="default"
                         disabled={busy || !!unresolvedValue}
                         onClick={() => setAnnotationText('')}
                       >
-                        Clear annotation draft
+                        Discard comment draft
                       </AppButton>
                     </div>
                   </div>
@@ -968,66 +1016,6 @@ export default function NotesPanel({
                   </EmptyState>
                 )}
               </ResearchLayout>
-            </div>
-            <div hidden={tab !== 'labels'} inert={tab !== 'labels'}>
-              <h2>Tags and categories</h2>
-              <div className="research-actions">
-                {(['tag', 'category'] as const).map((kind) => (
-                  <AppButton
-                    key={kind}
-                    disabled={disabled || busy}
-                    onClick={() => {
-                      setLabelDialog({ kind, action: 'create' })
-                      setLabelName('')
-                      setLabelTarget('')
-                    }}
-                  >
-                    New {kind}
-                  </AppButton>
-                ))}
-              </div>
-              <ul className="note-label-list">
-                {view?.labels
-                  .filter((item) => item.state === 'active')
-                  .map((item) => (
-                    <li key={item.id}>
-                      <strong>{item.name}</strong> · {item.kind}
-                      <div className="research-actions">
-                        <AppButton
-                          variant="subtle"
-                          disabled={disabled || busy}
-                          onClick={() => {
-                            setLabelDialog({ kind: item.kind, action: 'rename', id: item.id })
-                            setLabelName(item.name)
-                          }}
-                        >
-                          Rename
-                        </AppButton>
-                        <AppButton
-                          variant="subtle"
-                          disabled={disabled || busy}
-                          onClick={() => {
-                            setLabelDialog({ kind: item.kind, action: 'merge', id: item.id })
-                            setLabelTarget('')
-                          }}
-                        >
-                          Merge into…
-                        </AppButton>
-                        <AppButton
-                          variant="subtle"
-                          disabled={disabled || busy || !!pendingValue}
-                          onClick={() => {
-                            void flush().then((ok) => {
-                              if (ok) void change({ type: 'archiveLabel', id: item.id })
-                            })
-                          }}
-                        >
-                          Remove label
-                        </AppButton>
-                      </div>
-                    </li>
-                  ))}
-              </ul>
             </div>
             <AppDialog
               opened={labelDialog !== null}

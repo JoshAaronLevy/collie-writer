@@ -482,7 +482,8 @@ export function changeEvidence(db: Database.Database, input: EvidenceChangeInput
           'SELECT * FROM research_decisions WHERE project_id=? AND question_id=? AND source_id=?'
         )
         .get(projectId, c.questionId, c.sourceId) as DecisionRow | undefined
-      if (before?.revision_id !== c.expectedRevisionId) throw new ProjectError('STALE_REVISION')
+      if ((before?.revision_id ?? null) !== c.expectedRevisionId)
+        throw new ProjectError('STALE_REVISION')
       if (before)
         revision(
           db,

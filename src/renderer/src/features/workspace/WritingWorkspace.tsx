@@ -30,13 +30,8 @@ export default function WritingWorkspace(): React.JSX.Element {
   const {
     project,
     writingView,
-    sectionTitle,
-    setSectionTitle,
-    sectionStatus,
-    setSectionStatus,
-    sectionSynopsis,
-    setSectionSynopsis,
-    sectionFields: sectionFieldsRef,
+    fields,
+    changeFields,
     busy,
     acting,
     closing,
@@ -415,7 +410,7 @@ export default function WritingWorkspace(): React.JSX.Element {
         >
           <div className={styles['writing-section-heading']}>
             <div>
-              <h2>{sectionTitle}</h2>
+              <h2>{fields.title}</h2>
               {readOnly ? <p>Reading only</p> : null}
             </div>
             <AppButton
@@ -443,23 +438,22 @@ export default function WritingWorkspace(): React.JSX.Element {
           >
             <TextInput
               label="Item title"
-              value={sectionTitle}
+              value={fields.title}
               maxLength={500}
               required
               disabled={blocked || outlineRetry || readOnly || !!metaPending.current}
               onChange={(event) => {
-                sectionFieldsRef.current.title = event.currentTarget.value
-                setSectionTitle(event.currentTarget.value)
+                changeFields({ title: event.currentTarget.value })
               }}
             />
             <SelectField
               label="Status"
-              value={sectionStatus}
+              value={fields.status}
               disabled={blocked || outlineRetry || readOnly || !!metaPending.current}
               onChange={(event) => {
-                sectionFieldsRef.current.status = event.currentTarget.value as
-                  'draft' | 'review' | 'complete'
-                setSectionStatus(sectionFieldsRef.current.status)
+                changeFields({
+                  status: event.currentTarget.value as 'draft' | 'review' | 'complete'
+                })
               }}
             >
               <option value="draft">Draft</option>
@@ -468,12 +462,11 @@ export default function WritingWorkspace(): React.JSX.Element {
             </SelectField>
             <Textarea
               label="Synopsis"
-              value={sectionSynopsis}
+              value={fields.synopsis}
               maxLength={10000}
               disabled={blocked || outlineRetry || readOnly || !!metaPending.current}
               onChange={(event) => {
-                sectionFieldsRef.current.synopsis = event.currentTarget.value
-                setSectionSynopsis(event.currentTarget.value)
+                changeFields({ synopsis: event.currentTarget.value })
               }}
             />
             <AppButton type="submit" disabled={blocked || readOnly}>

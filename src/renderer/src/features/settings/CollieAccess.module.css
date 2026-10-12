@@ -30,4 +30,6 @@
 }
 .purchase-connection {
   overflow-wrap: anywhere;
+  border-top: 1px solid var(--collie-border);
+  margin-top: var(--collie-space-4);
 }
