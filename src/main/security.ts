@@ -3,7 +3,7 @@ export const APP_URL = `${APP_ORIGIN}/index.html`
 // Mantine uses bundled static CSS. React's individual CSSOM property assignments
 // handle measured menu/transition values; inline style text and style tags stay denied.
 export const PRODUCTION_CSP =
-  "default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; style-src-elem 'self'; style-src-attr 'none'; img-src 'self' blob:; font-src 'self'; connect-src 'self' collie-source:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'"
+  "default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; style-src-elem 'self'; style-src-attr 'none'; img-src 'self' blob: collie-source:; media-src collie-source:; font-src 'self'; connect-src 'self' collie-source:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'"
 
 export function developmentOrigin(raw: string | undefined, packaged: boolean): string | undefined {
   if (!raw || packaged) return undefined
@@ -25,7 +25,7 @@ export function developmentOrigin(raw: string | undefined, packaged: boolean): s
 export function contentSecurityPolicy(devOrigin?: string): string {
   if (!devOrigin) return PRODUCTION_CSP
   // Vite React refresh uses an inline preamble; Vite injects styles during HMR.
-  return `default-src 'none'; script-src 'self' 'unsafe-inline'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src ${devOrigin} ${devOrigin.replace('http:', 'ws:')} collie-source:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'`
+  return `default-src 'none'; script-src 'self' 'unsafe-inline'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: collie-source:; media-src collie-source:; font-src 'self'; connect-src ${devOrigin} ${devOrigin.replace('http:', 'ws:')} collie-source:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'`
 }
 export function allowedRequest(raw: string, devOrigin?: string): boolean {
   try {

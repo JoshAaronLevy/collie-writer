@@ -273,6 +273,16 @@ Search opens from the workspace header. Results identify manuscript sections, no
 
 History opens its dated version list directly. RF13 compares earlier/current words with synopsis, placement and a short formatting summary, disclosing visual/reference differences a text preview cannot fully show. Restore this version replaces the whole manuscript/outline and keeps current writing first through the existing exact operation/checkpoint owner. Named versions, eligible dated automatic-version deletion and contextual passage-target repair remain; routine block/index accounting and the extra restore-confirmation branch are removed. Native/content/accessibility acceptance remains pending under the [RF13 guide](../manual-testing/refactor-RF13.md). RF12 Import separation is intentionally deferred until after the remaining refactor and further Import testing.
 
+### Current AI conversation presentation — R3-01/R3-02/R3-03
+
+A chat title opens the newest messages directly. Older paging stays in the same timeline, with complete imported text loaded automatically and stable reading anchors. User bubbles align right and assistant bubbles left, with distinct theme surfaces and accessible authorship. An unlabeled friendly timestamp uses the user's locale; date-only and unknown-zone originals keep their recorded precision. Invalid or absent dates are omitted.
+
+Imported messages, native prompts and assistant replies share the bundled CommonMark/GFM renderer. Headings, nested lists/emphasis, quotes, code, links and tables render inside the pane; wide code and tables scroll locally. Raw HTML does not execute. Exact parser-token positions preserve original answer text for Save reference; generated citations, footnote controls and image placeholders are not quotes. A selection whose mapping cannot be established is not offered as a saved reference. R3-03 displays supported images automatically and direct audio/video with native controls and no autoplay. Retained embedded bytes or exact filenames selected alongside the same accepted export work offline; public HTTPS media uses temporary scoped local display. Missing/unsupported media has a short fallback. PDF and hosted-player links stay ordinary links; no webpage embeds are added.
+
+Only confirmed active Research links expose the small Research icon. Sources opens from that icon or the message context menu; unsaved web references offer Add to Research there, and saved sources offer Open source and Cite. Possible matches and removed sources remain clearly labeled inside the disclosure. Routine messages have no permanent Copy/options row. Right-click, the context-menu key or Shift+F10 opens Copy and, for native turns, prompt reuse and sent context. Save reference appears only for an eligible text selection. Stop and genuine failure/recovery actions remain visible when applicable.
+
+Search the web is checked initially; an explicit per-chat off choice survives switching chats during the project session. Only Send dispatches AI. Archived conversations remain in Chat options. Earlier chat-search/preview and off-by-default descriptions are historical. R3 implementation and required code checks do not establish runtime acceptance; use the [R3-02](../manual-testing/uat-R3-02.md) and [R3-03 manual guides](../manual-testing/uat-R3-03.md).
+
 ### S07 — Export
 
 ```text

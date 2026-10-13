@@ -1,3 +1,4 @@
+import { mediaKind } from '../../../shared/chat-media'
 import { record } from '../../../shared/projects'
 import type { ImportFile } from '../../../shared/project-import'
 import {
@@ -540,6 +541,12 @@ export class GraphBuilder extends OriginalRecords {
     this.files.push(coverage)
     try {
       const bytes = await read()
+      if (mediaKind(file.mediaType)) {
+        coverage.issues = [
+          'Retained media; displayed only when a chat references this exact filename.'
+        ]
+        return
+      }
       let text: string
       try {
         text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)

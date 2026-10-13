@@ -1,85 +1,169 @@
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { OpenInput } from '../../../../shared/projects'
 import type { ImportedLinks } from '../../../../shared/imported-links'
+import type { TranscriptEntry } from '../../../../shared/conversation-transcript'
 import { AppButton } from '../../components/ui/Controls'
-export function ImportedMessageLinks({
-  scope,
-  messageId,
-  onSource
+import { ChatMessage } from '../ai/conversations/ChatMessage'
+import { useConversations } from '../ai/conversations/conversationState'
+import { useWorkspaceSession } from '../workspace/workspaceContext'
+
+function SourceLinks({
+  value,
+  scope
 }: {
+  value: ImportedLinks
   scope: OpenInput
-  messageId: string
-  onSource: (id: string) => void
 }): React.JSX.Element {
-  const [value, setValue] = useState<ImportedLinks | null>(null),
-    [issue, setIssue] = useState(''),
+  const session = useWorkspaceSession(),
+    c = useConversations()
+  const [page, setPage] = useState(value),
+    [offset, setOffset] = useState(0),
     [busy, setBusy] = useState(false),
-    [offset, setOffset] = useState(0)
-  const generation = useRef(0)
-  useEffect(
-    () => () => {
-      generation.current++
-    },
-    []
-  )
-  async function read(next: number): Promise<void> {
-    if (busy) return
-    const g = ++generation.current
-    setBusy(true)
+    [issue, setIssue] = useState('')
+  const [previous, setPrevious] = useState(value)
+  if (previous !== value) {
+    setPrevious(value)
+    setPage(value)
+    setOffset(0)
+    setBusy(false)
     setIssue('')
-    try {
-      const r = await window.collie.conversation({
+  }
+  useEffect(() => {
+    let current = true
+    if (!offset) return
+    void window.collie
+      .conversation({
         ...scope,
         action: 'imported-links',
-        messageId,
-        offset: next
+        messageId: value.target.messageId,
+        offset
       })
-      if (g !== generation.current) return
-      if (r.ok && r.value.type === 'imported-links') {
-        setValue(r.value)
-        setOffset(next)
-      } else setIssue('Linked Research could not be read.')
-    } catch {
-      if (g === generation.current) setIssue('Linked Research could not be read.')
-    } finally {
-      if (g === generation.current) setBusy(false)
+      .then((r) => {
+        if (!current) return
+        if (r.ok && r.value.type === 'imported-links' && r.value.revisionId === value.revisionId) {
+          setPage(r.value)
+          setIssue('')
+        } else setIssue('These links changed. Close sources and reopen them to refresh.')
+      })
+      .catch(() => {
+        if (current) setIssue('Source links could not be read. Close sources and try again.')
+      })
+      .finally(() => {
+        if (current) setBusy(false)
+      })
+    return () => {
+      current = false
     }
-  }
+  }, [offset, scope, value])
   return (
-    <div>
-      <AppButton variant="subtle" disabled={busy} onClick={() => void read(0)}>
-        Linked Research
-      </AppButton>
-      {issue ? <p role="status">{issue}</p> : null}
-      {value ? (
-        <>
-          <p>
-            {value.sources.length
-              ? 'Accepted sources linked to this original message.'
-              : 'No accepted source links for this message.'}
-          </p>
-          {value.sources.map((s) => (
-            <AppButton key={s.id} variant="subtle" onClick={() => onSource(s.id)}>
-              {s.title}
-              {s.state === 'trashed' ? ' (removed)' : ''}
-            </AppButton>
-          ))}
-          {offset > 0 ? (
+    <>
+      <strong>Saved in Research</strong>
+      <ul>
+        {page.sources.map((source) => (
+          <li key={source.id}>
+            {source.title}
+            {source.state === 'trashed' ? ' (removed)' : ''}
             <AppButton
               variant="subtle"
-              disabled={busy}
-              onClick={() => void read(Math.max(0, offset - 20))}
+              size="compact-sm"
+              onClick={() =>
+                void session.research({ kind: 'sources', sourceId: source.id, page: 'details' })
+              }
             >
-              Previous sources
+              Open source
             </AppButton>
+            {source.state === 'active' ? (
+              <AppButton
+                variant="subtle"
+                size="compact-sm"
+                disabled={c.readOnly}
+                onClick={() => void c.references.cite(source.id)}
+              >
+                Cite
+              </AppButton>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {issue ? <p role="status">{issue}</p> : null}
+      {offset ? (
+        <AppButton
+          variant="subtle"
+          disabled={busy}
+          onClick={() => {
+            setOffset(0)
+            setPage(value)
+            setIssue('')
+          }}
+        >
+          First sources
+        </AppButton>
+      ) : null}
+      {page.more ? (
+        <AppButton
+          variant="subtle"
+          disabled={busy || !!issue}
+          onClick={() => {
+            setBusy(true)
+            setOffset((n) => n + 20)
+          }}
+        >
+          More sources
+        </AppButton>
+      ) : null}
+    </>
+  )
+}
+export function ImportedMessageLinks({
+  entry,
+  value,
+  scope,
+  now,
+  retry,
+  textIssue
+}: {
+  entry: TranscriptEntry
+  value: ImportedLinks | null | undefined
+  scope: OpenInput
+  now: number
+  retry: () => void
+  textIssue: boolean
+}): React.JSX.Element {
+  const linked = !!value?.sources.some((source) => source.state === 'active')
+  return (
+    <ChatMessage
+      role={entry.role === 'unknown' ? entry.originalRole || 'Unknown author' : entry.role}
+      text={entry.text}
+      mediaTarget={{
+        ...scope,
+        messageId: entry.key.messageId,
+        messageRevision: entry.key.messageRevision
+      }}
+      time={entry.historicalTime}
+      now={now}
+      linked={linked}
+      sources={
+        linked && value ? (
+          <SourceLinks key={value.revisionId} value={value} scope={scope} />
+        ) : undefined
+      }
+      notice={
+        <>
+          {entry.text.length < entry.textUnits ? (
+            <p role="status">
+              {textIssue ? 'The remaining text could not be loaded.' : 'Loading remaining text…'}
+            </p>
           ) : null}
-          {value.more ? (
-            <AppButton variant="subtle" disabled={busy} onClick={() => void read(offset + 20)}>
-              More sources
-            </AppButton>
+          {value === null ? (
+            <p role="status">
+              Could not check linked Research.{' '}
+              <AppButton variant="subtle" size="compact-sm" onClick={retry}>
+                Retry
+              </AppButton>
+            </p>
           ) : null}
         </>
-      ) : null}
-    </div>
+      }
+    />
   )
 }

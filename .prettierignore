@@ -31,3 +31,6 @@ vitest.config.ts
 
 # User-owned import reference; retain the original bytes.
 /cultural-analysis.conversation-sample.json
+
+# User-authored UAT input; retain its original formatting.
+/uat-notes.md

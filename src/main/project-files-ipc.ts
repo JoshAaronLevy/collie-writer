@@ -52,7 +52,8 @@ export class ProjectFileIpc {
     private readonly owner: () => WebContents | undefined,
     private readonly location: WorkingLocation,
     private readonly storage: StorageWorker,
-    private readonly devOrigin?: string
+    private readonly devOrigin?: string,
+    private readonly scopeChanged?: () => void
   ) {}
   current(): FileStatus {
     return this.status
@@ -89,6 +90,7 @@ export class ProjectFileIpc {
   register(): void {
     this.storage.onFiles(
       (status) => {
+        if (!sameScope(status.scope, this.status.scope)) this.scopeChanged?.()
         this.status = status
         if (status.job?.state !== 'awaiting-consent') this.challenges.clear()
         const owner = this.owner()

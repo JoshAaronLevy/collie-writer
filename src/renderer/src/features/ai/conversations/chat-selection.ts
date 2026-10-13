@@ -6,14 +6,17 @@ export function selectedReference(
 ): { text: string; title: string } | null {
   const selection = window.getSelection()
   if (!host || !selection || selection.rangeCount !== 1 || selection.isCollapsed) return null
-  const range = selection.getRangeAt(0),
-    title = selection.toString().trim()
+  const range = selection.getRangeAt(0)
+  const fragment = range.cloneContents()
+  fragment.querySelectorAll('[data-chat-generated]').forEach((node) => node.remove())
+  fragment.querySelectorAll('br').forEach((node) => node.replaceWith('\n'))
+  const title = fragment.textContent?.trim() ?? ''
   if (!host.contains(range.commonAncestorContainer) || !title || title.length > 2000) return null
   let start = -1,
     end = -1,
     displayed = ''
-  for (const span of host.querySelectorAll<HTMLElement>('[data-chat-offset]')) {
-    if (!range.intersectsNode(span)) continue
+  for (const span of host.querySelectorAll<HTMLElement>('[data-chat-start][data-chat-end]')) {
+    if (!range.intersectsNode(span) || span.closest('[data-chat-generated]')) continue
     const part = document.createRange()
     part.selectNodeContents(span)
     if (range.compareBoundaryPoints(Range.START_TO_START, part) > 0)
@@ -25,15 +28,31 @@ export function selectedReference(
     const prefix = document.createRange()
     prefix.selectNodeContents(span)
     prefix.setEnd(part.startContainer, part.startOffset)
-    const offset = Number(span.dataset.chatOffset) + prefix.toString().length
+    const from = Number(span.dataset.chatStart),
+      to = Number(span.dataset.chatEnd)
+    const visible = span.textContent ?? ''
+    const prefixLength = prefix.toString().length
     if (
-      !Number.isSafeInteger(offset) ||
-      offset < 0 ||
-      answer.slice(offset, offset + text.length) !== text
+      !Number.isSafeInteger(from) ||
+      !Number.isSafeInteger(to) ||
+      from < 0 ||
+      to <= from ||
+      to > answer.length
     )
       return null
+    const direct = answer.slice(from, to) === visible
+    // Decoded entities/escapes and normalized whitespace map to their entire parser token.
+    if (!direct && (prefixLength !== 0 || text.length !== visible.length)) return null
+    const offset = direct ? from + prefixLength : from
+    const limit = direct ? offset + text.length : to
     if (start < 0) start = offset
-    end = offset + text.length
+    const splitsSurrogate = (at: number): boolean =>
+      at > 0 &&
+      at < answer.length &&
+      /[\uD800-\uDBFF]/.test(answer[at - 1]) &&
+      /[\uDC00-\uDFFF]/.test(answer[at])
+    if (end > offset || splitsSurrogate(offset) || splitsSurrogate(limit)) return null
+    end = limit
     displayed += text
   }
   if (

@@ -1,3 +1,4 @@
+import { mediaExtensions } from '../../shared/chat-media'
 import { constants } from 'node:fs'
 import { lstat, open } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
@@ -10,7 +11,15 @@ import {
 import { hasControlCharacters } from '../../shared/control-characters'
 import { ProjectError } from '../../domain/projects/errors'
 
-export const importExtensions = ['json', 'txt', 'md', 'markdown', 'bib', 'ris']
+export const importExtensions = [
+  'json',
+  'txt',
+  'md',
+  'markdown',
+  'bib',
+  'ris',
+  ...Object.keys(mediaExtensions)
+]
 export function selectedName(path: string): string {
   const name = basename(path)
   // An unsafe display name is never copied into IPC. The actual descriptor still refuses it.
@@ -23,7 +32,8 @@ export async function describeSelectedFile(path: string): Promise<ImportFileSele
   const originalName = basename(path),
     extension = extname(path).slice(1).toLowerCase()
   const mediaType =
-    extension === 'json'
+    mediaExtensions[extension] ??
+    (extension === 'json'
       ? 'application/json'
       : extension === 'bib'
         ? 'application/x-bibtex'
@@ -31,7 +41,7 @@ export async function describeSelectedFile(path: string): Promise<ImportFileSele
           ? 'application/x-research-info-systems'
           : ['md', 'markdown'].includes(extension)
             ? 'text/markdown'
-            : 'text/plain'
+            : 'text/plain')
   const selection: ImportFileSelection = {
     id: randomUUID(),
     assetId: randomUUID(),
@@ -59,7 +69,7 @@ export async function describeSelectedFile(path: string): Promise<ImportFileSele
       throw new ProjectError('EXTERNAL_CHANGE')
     const buffer = Buffer.alloc(64 * 1024),
       hash = createHash('sha256'),
-      decoder = new TextDecoder('utf-8', { fatal: true })
+      decoder = mediaExtensions[extension] ? null : new TextDecoder('utf-8', { fatal: true })
     let bytes = 0
     for (;;) {
       const chunk = await handle.read(buffer, 0, buffer.length, null)
@@ -69,13 +79,13 @@ export async function describeSelectedFile(path: string): Promise<ImportFileSele
       const value = buffer.subarray(0, chunk.bytesRead)
       hash.update(value)
       try {
-        decoder.decode(value, { stream: true })
+        decoder?.decode(value, { stream: true })
       } catch {
         throw new ProjectError('VALIDATION')
       }
     }
     try {
-      decoder.decode()
+      decoder?.decode()
     } catch {
       throw new ProjectError('VALIDATION')
     }

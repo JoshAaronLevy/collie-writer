@@ -1,3 +1,4 @@
+import { isMediaRequest, isMediaValue, type MediaRequest, type MediaValue } from './chat-media'
 import { isImportedLinks, type ImportedLinks } from './imported-links'
 import {
   isImportedMessage,
@@ -194,6 +195,7 @@ export type ConversationSubmit = OpenInput & {
 }
 export type ConversationGroup = { items: ConversationSummary[]; total: number }
 export type ConversationRequest =
+  | MediaRequest
   | TranscriptInput
   | (OpenInput & { action: 'imported-links'; messageId: string; offset: number })
   | (OpenInput & { action: 'reference-history'; sourceId: string; offset: number })
@@ -300,6 +302,7 @@ export type ConversationWorkerInput =
           }
       ))
 export type ConversationValue =
+  | MediaValue
   | TranscriptValue
   | ImportedLinks
   | { type: 'reference-history'; items: ReferenceReceipt[]; more: boolean }
@@ -356,7 +359,10 @@ export type ConversationEvent = OpenInput & {
   issue: string | null
 }
 export type ConversationAPI = ConversationDraftAPI & {
-  conversationPresentation(action: 'copy' | 'open-link', text: string): Promise<boolean>
+  conversationPresentation(
+    action: 'copy' | 'open-link' | 'release-media',
+    text: string
+  ): Promise<boolean>
   conversation(input: ConversationRequest): Promise<ProjectResult<ConversationValue>>
   onConversationChanged(listener: (event: ConversationEvent) => void): () => void
 }
@@ -822,6 +828,8 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
   if (!record(v) || !scope(v)) return false
   const fields = ['projectId', 'workspaceId', 'action']
   switch (v.action) {
+    case 'media':
+      return isMediaRequest(v)
     case 'imported-links':
       return (
         exact(v, [...fields, 'messageId', 'offset']) &&
@@ -1101,6 +1109,8 @@ export function isConversationWorkerInput(v: unknown): v is ConversationWorkerIn
   if (!record(v) || !scope(v)) return false
   const fields = ['projectId', 'workspaceId', 'action']
   switch (v.action) {
+    case 'media':
+      return isMediaRequest(v)
     case 'imported-links':
     case 'transcript-read':
     case 'transcript-text':
@@ -1182,7 +1192,7 @@ function isConversationSummary(v: unknown): v is ConversationSummary {
   )
 }
 export function isConversationValue(v: unknown): v is ConversationValue {
-  if (isTranscriptValue(v)) return true
+  if (isTranscriptValue(v) || isMediaValue(v)) return true
   if (!record(v)) return false
   switch (v.type) {
     case 'context-settings':

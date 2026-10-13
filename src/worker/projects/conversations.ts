@@ -1,3 +1,4 @@
+import { chatMedia } from './chat-media'
 import {
   loadImportedContext,
   validateImportedReference,
@@ -604,12 +605,14 @@ export async function conversationCommand(
           )
   }
   switch (input.action) {
+    case 'media':
+      return chatMedia(context, input, (id) => message(db, p, id))
     case 'imported-links': {
       const m = externalMessage(db, p, input.messageId),
         c = conversation(db, p, m.conversationId)
       const rows = db
         .prepare(
-          "SELECT DISTINCT s.id,json_extract(s.metadata,'$.title') AS title,s.state FROM imported_content_origins o JOIN sources original ON original.project_id=o.project_id AND original.id=o.source_id JOIN sources s ON s.project_id=original.project_id AND s.id=CASE WHEN original.state='merged' THEN coalesce((SELECT a.source_id FROM source_aliases a WHERE a.project_id=original.project_id AND a.alias=original.id),original.replacement_id) ELSE original.id END WHERE o.project_id=? AND o.message_id=? AND s.state<>'merged' ORDER BY s.id LIMIT 21 OFFSET ?"
+          "SELECT DISTINCT s.id,json_extract(s.metadata,'$.title') AS title,s.state FROM imported_content_origins o JOIN sources original ON original.project_id=o.project_id AND original.id=o.source_id JOIN sources s ON s.project_id=original.project_id AND s.id=CASE WHEN original.state='merged' THEN coalesce((SELECT a.source_id FROM source_aliases a WHERE a.project_id=original.project_id AND a.alias=original.id),original.replacement_id) ELSE original.id END WHERE o.project_id=? AND o.message_id=? AND s.state<>'merged' ORDER BY (s.state='active') DESC,s.id LIMIT 21 OFFSET ?"
         )
         .all(p, m.id, input.offset) as { id: string; title: string; state: 'active' | 'trashed' }[]
       return {
@@ -671,7 +674,9 @@ export async function conversationCommand(
                 ...linkedReferenceMatches(db, p, input.attemptId, ref.url, savedReferences)
               ].map((m) => [m.id, m])
             ).values()
-          ].slice(0, 20)
+          ]
+            .sort((a, b) => Number(b.status === 'exact') - Number(a.status === 'exact'))
+            .slice(0, 20)
         }))
       }
     }
@@ -685,7 +690,9 @@ export async function conversationCommand(
               ...linkedReferenceMatches(db, p, input.attemptId)
             ].map((m) => [m.id, m])
           ).values()
-        ].slice(0, 20)
+        ]
+          .sort((a, b) => Number(b.status === 'exact') - Number(a.status === 'exact'))
+          .slice(0, 20)
       }
     case 'context-change':
       return inWriteTransaction(db, () => {

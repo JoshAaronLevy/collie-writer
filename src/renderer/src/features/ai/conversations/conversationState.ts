@@ -1,3 +1,5 @@
+import { useImportedTranscript } from './useImportedTranscript'
+import type { TranscriptKey } from '../../../../../shared/conversation-transcript'
 import { isResearchCapture } from '../../../../../shared/conversations'
 import { useReferenceSave } from './useReferenceSave'
 import { MEMORY_PROMPT } from '../../../../../shared/conversation-memory'
@@ -8,7 +10,15 @@ import { useCallback, useMemo } from 'react'
 import { useConversationDrafts } from './useConversationDrafts'
 import type { ChatDraft } from '../../../../../shared/conversation-drafts'
 type ConversationControllerState = {
-  reveal: { conversationId: string; attemptId: string; requestId: string } | null
+  reveal: {
+    conversationId: string
+    target: { kind: 'native'; attemptId: string } | { kind: 'imported'; key: TranscriptKey }
+    requestId: string
+  } | null
+  opening: number
+  imported: ReturnType<typeof useImportedTranscript>
+  latest: () => void
+  showImported: (messageId: string) => Promise<boolean>
   references: ReturnType<typeof useReferenceSave>
   items: ConversationSummary[]
   total: number
@@ -20,8 +30,6 @@ type ConversationControllerState = {
   listOpen: boolean
   backToList: () => void
   listLoading: boolean
-  query: string
-  setQuery: React.Dispatch<React.SetStateAction<string>>
   view: 'active' | 'archived'
   setView: React.Dispatch<React.SetStateAction<'active' | 'archived'>>
   offset: number
@@ -36,9 +44,7 @@ type ConversationControllerState = {
     totalMessages: number
   } | null
   before: number | null
-  setBefore: React.Dispatch<React.SetStateAction<number | null>>
   loadOlder: () => Promise<void>
-  openMatch: (match: ConversationMatch) => void
   draftProtection: ReturnType<typeof useConversationDrafts>
   draft: Draft
   searchWeb: boolean
@@ -65,7 +71,6 @@ type ConversationControllerState = {
   canSend: boolean
   capability: AiActionAvailability | undefined
   scope: OpenInput | null
-  scroll: React.RefObject<Map<string, number>>
   composerRef: React.RefObject<HTMLTextAreaElement | null>
   choose: (id: string) => void
   change: (kind: 'create' | 'rename' | 'archive' | 'restore') => void
@@ -92,7 +97,6 @@ import {
   CONVERSATION_LIMITS,
   type Conversation,
   type ConversationSummary,
-  type ConversationMatch,
   type ConversationEvent,
   type ConversationRequest,
   type ConversationReview,
@@ -130,7 +134,6 @@ export function useConversationController(): ConversationControllerState {
     connections = useAiConnections()
   const [items, setItems] = useState<ConversationSummary[]>([]),
     [total, setTotal] = useState(0),
-    [query, setQuery] = useState(''),
     [view, setView] = useState<'active' | 'archived'>('active'),
     [offset, setOffset] = useState(0)
   const [currentItems, setCurrentItems] = useState<ConversationSummary[]>([]),
@@ -141,8 +144,9 @@ export function useConversationController(): ConversationControllerState {
   const [selected, setSelected] = useState<string | null>(null),
     [page, setPage] = useState<Extract<ConversationValue, { type: 'page' }> | null>(null),
     [before, setBefore] = useState<number | null>(null)
-  const [searchChoice, setSearchChoice] = useState<{ id: string; enabled: boolean } | null>(null)
-  const searchWeb = searchChoice?.id === selected && searchChoice.enabled
+  const [searchChoice, setSearchChoice] = useState<Record<string, boolean>>({})
+  const searchWeb = selected ? (searchChoice[selected] ?? true) : true
+  const [opening, setOpening] = useState(0)
   const [readRevision, setReadRevision] = useState(0)
   const [rename, setRename] = useState('')
   const [memoryEdit, setMemoryEdit] = useState<{
@@ -163,7 +167,7 @@ export function useConversationController(): ConversationControllerState {
     connectionRef.current = connections
   })
   const current = useRef(session),
-    state = useRef({ selected, query, view, offset, currentOffset, before, rename, memoryEdit }),
+    state = useRef({ selected, view, offset, currentOffset, before, rename, memoryEdit }),
     locked = useRef(false),
     pendingRef = useRef<ConversationRequest | null>(null)
   const readSequence = useRef(0),
@@ -174,14 +178,13 @@ export function useConversationController(): ConversationControllerState {
   const deferredRead = useRef<{ scope: OpenInput; id: string } | null>(null)
   const newChatFocus = useRef<string | null>(null)
   const focusOrigin = useRef<Element | null>(null)
-  const scroll = useRef(new Map<string, number>()),
-    composer = useRef<HTMLTextAreaElement>(null),
+  const composer = useRef<HTMLTextAreaElement>(null),
     composing = useRef(false)
   useLayoutEffect(() => {
     current.current = session
   })
   useLayoutEffect(() => {
-    state.current = { selected, query, view, offset, currentOffset, before, rename, memoryEdit }
+    state.current = { selected, view, offset, currentOffset, before, rename, memoryEdit }
   })
   useLayoutEffect(() => {
     pendingRef.current = pending
@@ -204,12 +207,14 @@ export function useConversationController(): ConversationControllerState {
   const belongs = useCallback((captured: OpenInput): boolean => {
     return sameScope(current.current.project, captured)
   }, [])
-  function show(attemptId?: string): void {
+  async function showTarget(
+    targetInput?: { kind: 'native'; attemptId: string } | { kind: 'imported'; messageId: string }
+  ): Promise<boolean> {
     const s = current.current
-    if (!s.project || composing.current || s.composition.current) return
+    if (!s.project || composing.current || s.composition.current) return false
     const captured = scopeOf(s.project),
       presentation = ++presentationSequence.current
-    void (async () => {
+    return (async (): Promise<boolean> => {
       if (
         !(await s.navigate({
           kind: 'workspace',
@@ -218,26 +223,31 @@ export function useConversationController(): ConversationControllerState {
           documentId: s.project!.documentId
         }))
       )
-        return
-      if (!belongs(captured) || presentation !== presentationSequence.current) return
+        return false
+      if (!belongs(captured) || presentation !== presentationSequence.current) return false
       s.writingView.revealPanel('ai')
       if (state.current.selected) {
         setListOpen(false)
         if (page?.conversation.state === 'active') rememberChat(captured, state.current.selected)
         setReadRevision((revision) => revision + 1)
       }
-      if (rename || pendingRef.current || locked.current) return
-      const target = attemptId ?? (run?.pending || run?.issue ? run.attemptId : null)
+      if (rename || pendingRef.current || locked.current) return false
+      const target =
+        targetInput ??
+        (run?.attemptId && (run.pending || run.issue)
+          ? { kind: 'native' as const, attemptId: run.attemptId }
+          : null)
       if (target) {
         const origin = state.current.selected
         const result = await window.collie.conversation({
           ...captured,
-          action: 'attempt',
-          attemptId: target
+          ...(target.kind === 'native'
+            ? { action: 'attempt' as const, attemptId: target.attemptId }
+            : { action: 'imported-links' as const, messageId: target.messageId, offset: 0 })
         })
         if (belongs(captured) && presentation === presentationSequence.current && !result.ok) {
           setIssue(result.error.message)
-          return
+          return false
         }
         if (
           belongs(captured) &&
@@ -252,33 +262,41 @@ export function useConversationController(): ConversationControllerState {
           !locked.current &&
           !pendingRef.current &&
           result.ok &&
-          result.value.type === 'turn'
+          (result.value.type === 'turn' || result.value.type === 'imported-links')
         ) {
-          const t = result.value.turn
-          if (choose(t.attempt.conversationId)) {
+          const value = result.value
+          const id =
+            value.type === 'turn' ? value.turn.attempt.conversationId : value.conversationId
+          if (choose(id)) {
             newChatFocus.current = null
-            openMatch({
-              attemptId: t.attempt.id,
-              messageId: t.user.id,
-              ordinal: t.user.ordinal,
-              role: 'user',
-              preview: ''
-            })
+            // Imported targets start at the native-prefix boundary, not an unrelated tail.
+            const cursor = value.type === 'turn' ? value.turn.user.ordinal + 1 : 1
+            state.current.before = cursor
+            setBefore(cursor)
             setReveal({
-              conversationId: t.attempt.conversationId,
-              attemptId: t.attempt.id,
-              requestId: crypto.randomUUID()
+              conversationId: id,
+              requestId: crypto.randomUUID(),
+              target:
+                value.type === 'turn'
+                  ? { kind: 'native', attemptId: value.turn.attempt.id }
+                  : { kind: 'imported', key: value.target }
             })
+            return true
           }
         }
       } else if (!drafts[selected ?? '']?.text) {
         const unsent = Object.entries(drafts).find(([, d]) => !!d.text)
         if (unsent) choose(unsent[0])
       }
+      return !target
     })().catch(() => {
       if (belongs(captured) && presentation === presentationSequence.current)
         setIssue('This saved message could not be opened. Your conversation is kept; try again.')
+      return false
     })
+  }
+  function show(attemptId?: string): void {
+    void showTarget(attemptId ? { kind: 'native', attemptId } : undefined)
   }
   // Await initial recovery, but a failed read has no newly editable text to lose.
   // Keep its on-disk copy and allow normal close rather than trapping the window.
@@ -329,7 +347,7 @@ export function useConversationController(): ConversationControllerState {
           ...captured,
           action: 'grouped-list',
           state: s.view,
-          query: s.query,
+          query: '',
           currentDocumentId: originOf(current.current.project),
           currentOffset: s.currentOffset,
           otherOffset: s.offset
@@ -350,7 +368,6 @@ export function useConversationController(): ConversationControllerState {
         seq !== listSequence.current ||
         generation !== groupGeneration.current ||
         context !== originOf(current.current.project) ||
-        s.query !== state.current.query ||
         s.view !== state.current.view ||
         s.offset !== state.current.offset ||
         s.currentOffset !== state.current.currentOffset
@@ -457,15 +474,6 @@ export function useConversationController(): ConversationControllerState {
         void read(deferred.scope, deferred.id, state.current.before)
     }
   }
-  function openMatch(match: ConversationMatch): void {
-    if (composing.current || locked.current || pendingRef.current) return
-    const cursor = match.ordinal + (match.role === 'user' ? 1 : 0)
-    readSequence.current++
-    state.current.before = cursor
-    setBefore(cursor)
-    setPage(null)
-    setReadRevision((r) => r + 1)
-  }
   const refresh = useCallback(
     async (captured: OpenInput): Promise<void> => {
       await current.current.refreshConversationHead(captured)
@@ -492,7 +500,7 @@ export function useConversationController(): ConversationControllerState {
     setBefore(null)
     setRename('')
     setMemoryEdit(null)
-    setSearchChoice(null)
+    setSearchChoice({})
     setIssue('')
     setNotice('')
     setPending(null)
@@ -506,7 +514,6 @@ export function useConversationController(): ConversationControllerState {
     newChatFocus.current = null
     readSequence.current++
     listSequence.current++
-    scroll.current.clear()
     if (!scope) return
     const captured = scope
     let alive = true
@@ -557,7 +564,7 @@ export function useConversationController(): ConversationControllerState {
       ? 'This chapter'
       : 'This section'
     : null
-  const groupKey = `${scope?.projectId}:${scope?.workspaceId}:${currentDocumentId}:${query}:${view}`
+  const groupKey = `${scope?.projectId}:${scope?.workspaceId}:${currentDocumentId}:${view}`
   const [lastGroupKey, setLastGroupKey] = useState(groupKey)
   if (lastGroupKey !== groupKey) {
     setLastGroupKey(groupKey)
@@ -582,7 +589,7 @@ export function useConversationController(): ConversationControllerState {
   }, [listPageKey])
   useEffect(() => {
     if (scope) void list(scope)
-  }, [scope, list, query, view, offset, currentOffset, currentDocumentId, project?.headCommitId])
+  }, [scope, list, view, offset, currentOffset, currentDocumentId, project?.headCommitId])
   const readKey = `${scope?.projectId ?? ''}:${scope?.workspaceId ?? ''}:${selected ?? ''}:${before ?? ''}:${readRevision}`
   const [lastReadKey, setLastReadKey] = useState(readKey)
   if (lastReadKey !== readKey) {
@@ -649,26 +656,30 @@ export function useConversationController(): ConversationControllerState {
     if (!selected || pendingRef.current || locked.current) return
     draftProtection.change(selected, patch)
   }
+  function latest(): void {
+    if (!state.current.selected) return
+    presentationSequence.current++
+    readSequence.current++
+    newChatFocus.current = null
+    setReveal(null)
+    state.current.before = null
+    setBefore(null)
+    setPage(null)
+    setOpening((n) => n + 1)
+    setReadRevision((revision) => revision + 1)
+  }
   function choose(id: string): boolean {
     if (composing.current || locked.current || pendingRef.current) return false
     if (rename || memoryEdit) {
       setIssue('Save or cancel the title or memory edit before opening another conversation.')
       return false
     }
-    presentationSequence.current++
-    setReveal(null)
-    const samePage = state.current.selected === id
-    newChatFocus.current = id
     focusOrigin.current = document.activeElement
     setListOpen(false)
     setSelected(id)
     state.current.selected = id
-    if (!samePage) {
-      state.current.before = null
-      setBefore(null)
-    }
-    if (samePage && scope) setReadRevision((revision) => revision + 1)
-    else setPage(null)
+    latest()
+    newChatFocus.current = id
     setRename('')
     setIssue('')
     setNotice(
@@ -732,6 +743,8 @@ export function useConversationController(): ConversationControllerState {
         state.current.before = null
       }
       if (input.action === 'submit') {
+        setReveal(null)
+        setOpening((n) => n + 1)
         const d = drafts[input.review.conversationId]
         if (
           d &&
@@ -1100,7 +1113,10 @@ export function useConversationController(): ConversationControllerState {
       return
     // Context and old account authority are never silently carried into another attempt.
     update({ text: t.capture.prompt })
-    setSearchChoice({ id: selected, enabled: !textOnly && isResearchCapture(t.capture) })
+    setSearchChoice((choices) => ({
+      ...choices,
+      [selected]: !textOnly && isResearchCapture(t.capture)
+    }))
     setNotice(
       textOnly
         ? 'Prompt copied with web search off. Press Send to ask without searching.'
@@ -1153,8 +1169,29 @@ export function useConversationController(): ConversationControllerState {
     session.available &&
     !session.closing &&
     !session.navigating
+  const importedTarget =
+    reveal?.conversationId === selected && reveal.target.kind === 'imported'
+      ? reveal.target.key
+      : null
+  const importedId =
+    !listOpen && page?.external && (page.olderThan === null || importedTarget)
+      ? page.conversation.id
+      : null
+  const importedRevision = importedId ? page?.conversation.revisionId : null
+  const importedSource = useMemo(
+    () =>
+      importedId && importedRevision
+        ? { kind: 'accepted' as const, conversationId: importedId, revisionId: importedRevision }
+        : null,
+    [importedId, importedRevision]
+  )
+  const imported = useImportedTranscript(scope, importedSource, opening, importedTarget)
   return {
     reveal,
+    opening,
+    imported,
+    latest,
+    showImported: (messageId) => showTarget({ kind: 'imported', messageId }),
     references,
     items,
     total,
@@ -1178,8 +1215,6 @@ export function useConversationController(): ConversationControllerState {
         if (scope) rememberChat(scope, null)
       }
     },
-    query,
-    setQuery,
     view,
     setView,
     offset,
@@ -1187,22 +1222,13 @@ export function useConversationController(): ConversationControllerState {
     selected,
     page,
     before,
-    setBefore: (next) => {
-      const cursor = typeof next === 'function' ? next(state.current.before) : next
-      state.current.before = cursor
-      readSequence.current++
-      setBefore(cursor)
-      setPage(null)
-      setReadRevision((r) => r + 1)
-    },
     loadOlder,
-    openMatch,
     draftProtection,
     draft,
     searchWeb: !!searchWeb,
     setSearchWeb: (enabled) => {
       if (selected && !busy && !pending && !active && !readOnly)
-        setSearchChoice({ id: selected, enabled })
+        setSearchChoice((choices) => ({ ...choices, [selected]: enabled }))
     },
     update,
     drafts,
@@ -1242,7 +1268,6 @@ export function useConversationController(): ConversationControllerState {
     canSend,
     capability,
     scope,
-    scroll,
     composerRef: composer,
     choose,
     change,

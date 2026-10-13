@@ -5,6 +5,7 @@ import { isGraphRecord, type GraphRecord } from './import-graph'
 
 export const TRANSCRIPT_LIMITS = {
   page: 20,
+  importedPage: 10,
   excerpt: 1500,
   slice: 8000,
   reply: 100000,
@@ -59,6 +60,7 @@ export type TranscriptCursor = {
 export type TranscriptSource = { kind: 'accepted'; conversationId: string; revisionId: string }
 export type TranscriptRequest = OpenInput & {
   action: 'transcript-read'
+  range?: 'imported'
   source: TranscriptSource
   cursor: TranscriptCursor | null
   direction: 'forward' | 'backward'
@@ -273,11 +275,15 @@ export function isTranscriptInput(v: Record<string, unknown>): boolean {
   if (!isTranscriptSource(v.source)) return false
   if (v.action === 'transcript-read')
     return (
-      exact(v, [...base, 'cursor', 'direction', 'target']) &&
+      exact(v, [...base, 'cursor', 'direction', 'target', ...('range' in v ? ['range'] : [])]) &&
+      (!('range' in v) || v.range === 'imported') &&
       (v.cursor === null || isTranscriptCursor(v.cursor)) &&
       ['forward', 'backward'].includes(String(v.direction)) &&
       (v.target === null || isTranscriptKey(v.target)) &&
-      !(v.cursor && v.target)
+      !(v.cursor && v.target) &&
+      (v.range !== 'imported' ||
+        ((!v.cursor || (isTranscriptCursor(v.cursor) && v.cursor.key.segment === 'imported')) &&
+          (!v.target || (isTranscriptKey(v.target) && v.target.segment === 'imported'))))
     )
   if (v.action === 'transcript-text')
     return (

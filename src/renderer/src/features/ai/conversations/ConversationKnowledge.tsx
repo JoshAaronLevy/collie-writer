@@ -8,10 +8,9 @@ import {
   type KnowledgeTarget,
   type KnowledgeItem,
   type KnowledgeSettings,
-  type KnowledgeChange,
-  type SourceMatch
+  type KnowledgeChange
 } from '../../../../../shared/conversation-knowledge'
-import type { ConversationTurn, ConversationValue } from '../../../../../shared/conversations'
+import type { ConversationValue } from '../../../../../shared/conversations'
 
 export function KnowledgeLink({ item }: { item: KnowledgeItem }): React.JSX.Element {
   const c = useConversations(),
@@ -272,101 +271,6 @@ export function ConversationKnowledge(): React.JSX.Element {
           ))}
         </details>
       ) : null}
-    </details>
-  )
-}
-export function ConversationReferences({
-  turn
-}: {
-  turn: ConversationTurn
-}): React.JSX.Element | null {
-  const c = useConversations(),
-    s = useWorkspaceSession(),
-    [matches, setMatches] = useState<SourceMatch[]>([]),
-    [issue, setIssue] = useState(''),
-    [revision, setRevision] = useState(0)
-  const scope = c.scope,
-    attemptId = turn.attempt.id,
-    head = s.project?.headCommitId
-  useEffect(() => {
-    if (!scope) return
-    let current = true
-    void window.collie
-      .conversation({ ...scope, action: 'source-matches', attemptId })
-      .then((r) => {
-        if (!current) return
-        if (r.ok && r.value.type === 'source-matches') {
-          setMatches(r.value.items)
-          setIssue('')
-        } else setIssue('Saved-source matches could not be checked.')
-      })
-      .catch(() => {
-        if (current) setIssue('Saved-source matches could not be checked.')
-      })
-    return () => {
-      current = false
-    }
-  }, [scope, attemptId, revision, head])
-  const related =
-    turn.capture.version === 4 || turn.capture.version === 5 || turn.capture.version === 6
-      ? (turn.capture.knowledge?.items.filter(
-          (i) => turn.assistant?.text.includes(i.id) && i.kind !== 'source'
-        ) ?? [])
-      : []
-  if (!matches.length && !related.length && !issue) return null
-  return (
-    <details>
-      <summary>
-        Project references{matches.length ? ` · ${matches.length} source matches` : ''}
-      </summary>
-      {issue ? (
-        <p role="status">
-          {issue}{' '}
-          <AppButton size="compact-sm" variant="subtle" onClick={() => setRevision((r) => r + 1)}>
-            Check again
-          </AppButton>
-        </p>
-      ) : null}
-      {matches.map((m) => (
-        <p key={m.id}>
-          <strong>
-            {m.status === 'exact'
-              ? 'In Research'
-              : m.status === 'trashed'
-                ? 'Removed source'
-                : 'Possible existing source'}
-          </strong>{' '}
-          · {m.title}
-          <br />
-          {m.reason}
-          <AppButton
-            size="compact-sm"
-            variant="subtle"
-            onClick={() => s.research({ kind: 'sources', sourceId: m.id })}
-          >
-            {m.status === 'possible' ? 'Review match' : 'Open source'}
-          </AppButton>
-          {m.status === 'exact' ? (
-            <AppButton
-              size="compact-sm"
-              variant="subtle"
-              disabled={c.readOnly}
-              onClick={() => void c.references.cite(m.id)}
-            >
-              Cite
-            </AppButton>
-          ) : null}
-        </p>
-      ))}
-      {related.map((item) => (
-        <p key={knowledgeKey(item)}>
-          {item.title} <KnowledgeLink item={item} />
-        </p>
-      ))}
-      <p>
-        Matches refer to saved project records, not verification of the answer. No match does not
-        prove a reference is new.
-      </p>
     </details>
   )
 }

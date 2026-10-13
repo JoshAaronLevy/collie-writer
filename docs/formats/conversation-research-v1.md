@@ -4,7 +4,7 @@ October 8, 2026. AC06 adds explicit web research to the existing development Cha
 
 ## Request and capability
 
-Search the web is off initially. Its explicit chat-scoped choice is session-only; reopening the application resets it. Send freezes that choice with the existing project context, account, selected model, catalog/session and capture digest. Changing context or models does not send a request. Context summaries always use text-only capture 4/execution 5, even when preparing a research message. The current route does not expose validated effort choices.
+Current R3 presentation: Search the web starts checked. Explicit per-chat changes remain session-only; reopening the application resets to checked. The earlier off-by-default presentation is historical, not current behavior. Send freezes that choice with the existing project context, account, selected model, catalog/session and capture digest. Changing context or models does not send a request. Context summaries always use text-only capture 4/execution 5, even when preparing a research message. The current route does not expose validated effort choices.
 
 The new capture 5 uses `conversation-research-v1` and purpose `chat`, with AC05's context/knowledge and AC04's memory semantics. Review delegates context assembly to the frozen capture-4 builder, then changes the version/template and computes a new digest. It never converts a saved capture. Main execution/binding 6 has framing 3, `responses-research-v1`, frozen research instructions and an explicit `researchPolicy` containing only the provider web-search tool, required tool choice and source inclusion. Its digest covers the exact policy and account/model/session/capture. Capture 1–4 and execution 1–5 readers/digests remain supported.
 

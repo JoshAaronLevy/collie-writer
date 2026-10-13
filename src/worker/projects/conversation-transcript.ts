@@ -123,7 +123,8 @@ function externalEntry(
 async function load(
   ctx: Context,
   source: TranscriptSource,
-  native: NativeTranscriptReaders
+  native: NativeTranscriptReaders,
+  importedOnly = false
 ): Promise<Loaded> {
   const c = native.conversation(source.conversationId)
   if (c.revisionId !== source.revisionId) return stale()
@@ -142,17 +143,22 @@ async function load(
         messageRevision: r.revision
       })
   if (keys.length > 50000) return corrupt()
-  for (const r of ctx.db
-    .prepare(
-      'SELECT id,ordinal,revision_id FROM conversation_messages WHERE project_id=? AND conversation_id=? ORDER BY ordinal LIMIT 100002'
-    )
-    .iterate(ctx.projectId, c.id) as Iterable<{ id: string; ordinal: number; revision_id: string }>)
-    keys.push({
-      segment: 'native',
-      sequence: r.ordinal,
-      messageId: r.id,
-      messageRevision: r.revision_id
-    })
+  if (!importedOnly)
+    for (const r of ctx.db
+      .prepare(
+        'SELECT id,ordinal,revision_id FROM conversation_messages WHERE project_id=? AND conversation_id=? ORDER BY ordinal LIMIT 100002'
+      )
+      .iterate(ctx.projectId, c.id) as Iterable<{
+      id: string
+      ordinal: number
+      revision_id: string
+    }>)
+      keys.push({
+        segment: 'native',
+        sequence: r.ordinal,
+        messageId: r.id,
+        messageRevision: r.revision_id
+      })
   if (keys.length > 150001) return corrupt()
   const reader = origin ? new OriginalTranscriptText(ctx, origin.batchId) : null
   const get = (key: TranscriptKey): GraphRecord | null => {
@@ -241,7 +247,13 @@ export async function transcriptCommand(
   input: TranscriptInput,
   native: NativeTranscriptReaders
 ): Promise<TranscriptValue> {
-  const loaded = await load(ctx, input.source, native)
+  const loaded = await load(
+    ctx,
+    input.source,
+    native,
+    (input.action === 'transcript-read' && input.range === 'imported') ||
+      (input.action === 'transcript-text' && input.target.segment === 'imported')
+  )
   const cursor = (key: TranscriptKey): TranscriptCursor => ({
     version: 1,
     conversationId: loaded.id,
@@ -270,7 +282,12 @@ export async function transcriptCommand(
     const entries: TranscriptEntry[] = []
     let first = -1,
       last = -1
-    while (index >= 0 && index < loaded.keys.length && entries.length < TRANSCRIPT_LIMITS.page) {
+    while (
+      index >= 0 &&
+      index < loaded.keys.length &&
+      entries.length <
+        (input.range === 'imported' ? TRANSCRIPT_LIMITS.importedPage : TRANSCRIPT_LIMITS.page)
+    ) {
       const entry = await loaded.entry(loaded.keys[index])
       if (JSON.stringify(entries).length + JSON.stringify(entry).length > 90000) break
       if (input.direction === 'forward') entries.push(entry)

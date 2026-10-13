@@ -63,7 +63,13 @@ protocol.registerSchemesAsPrivileged([
   },
   {
     scheme: 'collie-source',
-    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true
+    }
   }
 ])
 let window: BrowserWindow | undefined
@@ -73,7 +79,10 @@ const sourceAssets = new SourceAssets(
   devOrigin
 )
 const storage = new StorageWorker((status) => {
-  if (status.state === 'unavailable') files.unavailable()
+  if (status.state === 'unavailable') {
+    sourceAssets.revoke()
+    files.unavailable()
+  }
   if (status.state === 'ready') {
     void access.initialize()
     files.nudgeShellOpen()
@@ -175,7 +184,13 @@ storage.setAccessPolicy(
   },
   (command, value) => access.observe(command, value)
 )
-const files = new ProjectFileIpc(() => window?.webContents, location, storage, devOrigin)
+const files = new ProjectFileIpc(
+  () => window?.webContents,
+  location,
+  storage,
+  devOrigin,
+  () => sourceAssets.revoke()
+)
 const lifecycle = new ProjectLifecycle(
   () => window?.webContents,
   files,
@@ -228,9 +243,13 @@ function openWindow(): void {
   window = createWindow(devOrigin)
   const opened = window
   opened.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => {
-    if (isMainFrame) importAnalysis.pause('Analysis paused because the project window reloaded.')
+    if (isMainFrame) {
+      sourceAssets.revoke()
+      importAnalysis.pause('Analysis paused because the project window reloaded.')
+    }
   })
   opened.webContents.on('render-process-gone', () => {
+    sourceAssets.revoke()
     importAnalysis.pause('Analysis paused because the project window was interrupted.')
     lifecycle.rendererLost(opened.webContents)
     ai.suspend()
@@ -314,7 +333,8 @@ app
       conversations,
       conversationDrafts,
       devOrigin,
-      testMode
+      testMode,
+      sourceAssets
     )
     registerAiIpc(() => window?.webContents, ai, devOrigin)
     directAccess.register()

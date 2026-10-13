@@ -1,3 +1,4 @@
+import type { SourceAssets } from '../source-assets'
 import { confirmExternalLink } from '../menus'
 import { BrowserWindow, clipboard, dialog, ipcMain, type WebContents } from 'electron'
 import { isAbsolute } from 'node:path'
@@ -27,7 +28,8 @@ export function registerConversationIpc(
   service: ConversationService,
   drafts: ConversationDrafts,
   devOrigin?: string,
-  testMode = false
+  testMode = false,
+  sourceAssets?: SourceAssets
 ): void {
   ipcMain.handle(
     CONVERSATION_DRAFTS,
@@ -61,6 +63,10 @@ export function registerConversationIpc(
     )
       return false
     try {
+      if (payload.action === 'release-media') {
+        sourceAssets?.release(payload.text)
+        return true
+      }
       if (payload.action === 'copy') {
         clipboard.writeText(payload.text)
         return true
@@ -87,6 +93,7 @@ export function registerConversationIpc(
         return projectFailure('', 'VALIDATION')
       const { requestId, input } = payload
       try {
+        const mediaEpoch = sourceAssets?.epoch()
         let value: ConversationValue
         if (input.action === 'export') {
           const current = await service.command({
@@ -117,7 +124,14 @@ export function registerConversationIpc(
           // No-overwrite creation preserves a pre-existing file even if the native picker offers replacement.
           value = await service.worker({ ...input, destinationPath: picked.filePath })
         } else value = await service.command(input)
-        if (!isTrustedSender(event, owner(), devOrigin)) throw new ProjectError('UNAVAILABLE')
+        if (value.type === 'media-source') {
+          if (!sourceAssets || mediaEpoch === undefined) throw new ProjectError('UNAVAILABLE')
+          value = await sourceAssets.issueMedia(value, mediaEpoch)
+        }
+        if (!isTrustedSender(event, owner(), devOrigin)) {
+          if (value.type === 'media-asset') sourceAssets?.release(value.url)
+          throw new ProjectError('UNAVAILABLE')
+        }
         return { ok: true, requestId, value }
       } catch (error) {
         return projectFailure(requestId, projectError(error))

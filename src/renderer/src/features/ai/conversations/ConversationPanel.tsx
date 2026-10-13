@@ -1,8 +1,10 @@
-import { ImportTranscriptPreview } from '../../imports/ImportTranscriptPreview'
+import { ImportedMessageLinks } from '../../imports/ImportedMessageLinks'
+import { useImportedLinks } from '../../imports/useImportedLinks'
+import { ChatMessage } from './ChatMessage'
 import { isResearchCapture } from '../../../../../shared/conversations'
 import { sameScope } from '../../../../../shared/project-files'
 import { ResearchAnswer } from './ResearchAnswer'
-import { ConversationKnowledge, ConversationReferences } from './ConversationKnowledge'
+import { ConversationKnowledge } from './ConversationKnowledge'
 import { ConversationMemory } from './ConversationMemory'
 import {
   IconArrowLeft,
@@ -10,16 +12,14 @@ import {
   IconArrowUp,
   IconPlus,
   IconPlayerStop,
-  IconCopy,
-  IconDots,
-  IconWorld
+  IconDots
 } from '@tabler/icons-react'
 import { ActionMenu } from '../../../components/ui/ActionMenu'
 import { IconButton } from '../../../components/ui/IconButton'
 import { useProofreading } from '../proofreading/proofreadingState'
 import PresentationBoundary from '../../../components/PresentationBoundary'
-import { useLayoutEffect, useRef, useState } from 'react'
-import { NativeSelect, Popover, TextInput, Textarea } from '@mantine/core'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Checkbox, NativeSelect, Popover, TextInput, Textarea } from '@mantine/core'
 import { AppButton, SelectField } from '../../../components/ui/Controls'
 import { StatusBanner } from '../../../components/ui/Feedback'
 import { useWorkspaceSession } from '../../workspace/workspaceContext'
@@ -36,19 +36,34 @@ import {
   type ConversationContextPolicy
 } from '../../../../../shared/conversation-context'
 import { useConversations } from './conversationState'
-import { ConversationFind } from './ConversationFind'
 import { ConversationDraftRecovery } from './ConversationDraftRecovery'
 import styles from './Conversations.module.css'
 
 const activeStates = ['preparing', 'running', 'stopping']
-function readingPosition(target: HTMLDivElement): { id: string; offset: number } | null {
+function readingPosition(target: HTMLDivElement): {
+  id: string
+  offset: number
+  node: HTMLElement | null
+  nodeOffset: number
+} | null {
   const top = target.getBoundingClientRect().top
-  const item = [...target.querySelectorAll<HTMLElement>('[data-attempt]')].find(
+  const item = [...target.querySelectorAll<HTMLElement>('[data-chat-message]')].find(
     (node) => node.getBoundingClientRect().bottom > top
   )
-  return item?.dataset.attempt
-    ? { id: item.dataset.attempt, offset: item.getBoundingClientRect().top - top }
-    : null
+  if (!item?.dataset.chatMessage) return null
+  const node =
+    [...item.querySelectorAll<HTMLElement>('[data-chat-start], [data-chat-media]')].find(
+      (element) => {
+        const rect = element.getBoundingClientRect()
+        return rect.bottom > top && rect.top < target.getBoundingClientRect().bottom
+      }
+    ) ?? null
+  return {
+    id: item.dataset.chatMessage,
+    offset: item.getBoundingClientRect().top - top,
+    node,
+    nodeOffset: node ? node.getBoundingClientRect().top - top : 0
+  }
 }
 function requestReason(reason: AiReason, hasResponse = false): string {
   if (['auth-failed', 'session-expired', 'signed-out'].includes(reason))
@@ -100,49 +115,80 @@ function SentContext({ capture }: { capture: AiCapture }): React.JSX.Element {
     </div>
   )
 }
-function MessageTurn({ turn }: { turn: ConversationTurn }): React.JSX.Element {
+function MessageTurn({ turn, now }: { turn: ConversationTurn; now: number }): React.JSX.Element {
   if (
     (turn.capture.version !== 3 && turn.capture.version !== 4 && turn.capture.version !== 6) ||
     turn.capture.purpose === 'chat'
   )
-    return <MessageTurnContent turn={turn} />
+    return <MessageTurnContent turn={turn} now={now} />
   return (
     <details
-      data-attempt={turn.attempt.id}
+      data-chat-message={turn.attempt.id}
       className={styles['conversation-capture']}
       open={['failed', 'unknown', 'cancelled', 'not-sent'].includes(turn.attempt.state)}
     >
       <summary>Context preparation · {turn.attempt.state}</summary>
-      <MessageTurnContent turn={turn} />
+      <MessageTurnContent turn={turn} now={now} />
     </details>
   )
 }
-function MessageTurnContent({ turn }: { turn: ConversationTurn }): React.JSX.Element {
+function MessageTurnContent({
+  turn,
+  now
+}: {
+  turn: ConversationTurn
+  now: number
+}): React.JSX.Element {
   const c = useConversations(),
     connections = useAiConnections(),
-    [contextOpen, setContextOpen] = useState(false),
-    [copyNotice, setCopyNotice] = useState('')
+    [contextOpen, setContextOpen] = useState(false)
   const a = turn.attempt,
     active = activeStates.includes(a.state)
+  const actions = [
+    {
+      id: 'context',
+      label: contextOpen ? 'Hide sent context' : 'View sent context',
+      onSelect: () => setContextOpen(!contextOpen)
+    },
+    {
+      id: 'reuse',
+      label: 'Copy prompt to composer',
+      disabled:
+        active ||
+        c.busy ||
+        !!c.pending ||
+        c.readOnly ||
+        !!c.draft.text ||
+        ((turn.capture.version === 3 || turn.capture.version === 4 || turn.capture.version === 6) &&
+          turn.capture.purpose !== 'chat') ||
+        c.page?.conversation.state !== 'active',
+      onSelect: () => c.retryAsNew(turn)
+    }
+  ]
   return (
     <article
-      data-attempt={turn.attempt.id}
+      data-chat-message={
+        (turn.capture.version === 3 || turn.capture.version === 4 || turn.capture.version === 6) &&
+        turn.capture.purpose !== 'chat'
+          ? undefined
+          : turn.attempt.id
+      }
       className={styles['conversation-turn']}
-      aria-label={`Message from ${new Date(turn.user.createdAt).toLocaleString()}`}
+      aria-label="Conversation exchange"
     >
-      <div className={styles['conversation-message']} data-role="user">
-        <span className={styles['conversation-message-heading']}>You</span>
-        <div className={styles['conversation-message-text']}>{turn.user.text}</div>
-      </div>
-      {turn.assistant ? (
-        <div className={styles['conversation-message']} data-role="assistant">
-          <span className={styles['conversation-message-heading']}>Assistant</span>
-          <ResearchAnswer key={turn.assistant.revisionId} turn={turn} />
-        </div>
-      ) : null}
-      {a.state === 'completed' && turn.assistant ? (
-        <ConversationReferences key={turn.assistant.revisionId} turn={turn} />
-      ) : null}
+      <ChatMessage
+        role="user"
+        text={turn.user.text}
+        mediaTarget={
+          c.scope
+            ? { ...c.scope, messageId: turn.user.id, messageRevision: turn.user.revisionId }
+            : undefined
+        }
+        time={turn.user.createdAt}
+        now={now}
+        actions={actions}
+      />
+      {turn.assistant ? <ResearchAnswer turn={turn} now={now} actions={actions} /> : null}
       {active ? (
         <span className={styles['conversation-caption']} role="status">
           {a.state === 'stopping' ? 'Stopping…' : turn.assistant ? 'Responding…' : 'Thinking…'}
@@ -193,58 +239,6 @@ function MessageTurnContent({ turn }: { turn: ConversationTurn }): React.JSX.Ele
           View error details
         </AppButton>
       ) : null}
-      <div className={styles['message-tools']}>
-        {turn.assistant ? (
-          <IconButton
-            label="Copy response"
-            variant="subtle"
-            onClick={() => {
-              void window.collie
-                .conversationPresentation('copy', turn.assistant!.text)
-                .then((ok) =>
-                  setCopyNotice(
-                    ok ? 'Copied' : 'Could not copy. Select the text to copy it manually.'
-                  )
-                )
-                .catch(() => setCopyNotice('Could not copy. Select the text to copy it manually.'))
-            }}
-          >
-            <IconCopy aria-hidden="true" />
-          </IconButton>
-        ) : null}
-        <ActionMenu
-          label="Message"
-          accessibleLabel="Message options"
-          icon={<IconDots aria-hidden="true" />}
-          disabled={c.busy || !!c.pending}
-          actions={[
-            {
-              id: 'context',
-              label: contextOpen ? 'Hide message context' : 'View message context',
-              onSelect: () => setContextOpen(!contextOpen)
-            },
-            {
-              id: 'reuse',
-              label: 'Copy prompt to composer',
-              disabled:
-                active ||
-                c.readOnly ||
-                !!c.draft.text ||
-                ((turn.capture.version === 3 ||
-                  turn.capture.version === 4 ||
-                  turn.capture.version === 6) &&
-                  turn.capture.purpose !== 'chat') ||
-                c.page?.conversation.state !== 'active',
-              onSelect: () => c.retryAsNew(turn)
-            }
-          ]}
-        />
-        {copyNotice ? (
-          <span className={styles['conversation-caption']} role="status">
-            {copyNotice}
-          </span>
-        ) : null}
-      </div>
       {(c.run?.issue && c.run.attemptId === a.id) || a.reason === 'storage-unavailable' ? (
         <AppButton
           variant="subtle"
@@ -302,11 +296,7 @@ function ConversationGroup({
           </li>
         ))}
       </ul>
-      {!items.length ? (
-        <p>
-          No {c.view} conversations{c.query ? ' match this title' : ''}.
-        </p>
-      ) : null}
+      {!items.length ? <p>No {c.view} conversations.</p> : null}
       {total > 20 || offset > 0 ? (
         <div className={styles['conversation-actions']}>
           <AppButton
@@ -369,9 +359,11 @@ function ContextChoice({ blocked }: { blocked: boolean }): React.JSX.Element {
         </p>
         <p>View the exact snapshot from each message’s menu.</p>
         <ConversationKnowledge
-          key={`knowledge:${c.scope?.projectId}:${c.scope?.workspaceId}:${c.selected}`}
+          key={`knowledge:${c.scope?.projectId}:${c.scope?.workspaceId}:${c.selected}:${c.opening}`}
         />
-        <ConversationMemory key={`${c.scope?.projectId}:${c.scope?.workspaceId}:${c.selected}`} />
+        <ConversationMemory
+          key={`${c.scope?.projectId}:${c.scope?.workspaceId}:${c.selected}:${c.opening}`}
+        />
       </Popover.Dropdown>
     </Popover>
   )
@@ -382,19 +374,44 @@ export function ConversationPanel(): React.JSX.Element {
     connections = useAiConnections(),
     proofreading = useProofreading()
   const { composerRef, composingRef } = c
+  const importedLinks = useImportedLinks(
+    c.scope,
+    c.imported.page?.entries,
+    session.project?.headCommitId
+  )
+  const [now, setNow] = useState(() => Date.now())
   const transcript = useRef<HTMLDivElement>(null),
     library = useRef<HTMLDivElement>(null),
+    messages = useRef<HTMLDivElement>(null),
     returnFocus = useRef(false),
     follow = useRef(true),
     shownKey = useRef(''),
+    startedKey = useRef(''),
     revealed = useRef('')
-  const anchor = useRef<{ id: string; offset: number } | null>(null),
+  const anchor = useRef<ReturnType<typeof readingPosition>>(null),
     matchTarget = useRef<{ key: string; id: string; response?: boolean } | null>(null)
+  useEffect(() => {
+    if (c.listOpen) return
+    const tick = (): void => {
+      if (
+        document.visibilityState === 'visible' &&
+        transcript.current &&
+        !transcript.current.closest('[hidden],[inert]')
+      )
+        setNow(Date.now())
+    }
+    const first = setTimeout(tick, 0),
+      timer = setInterval(tick, 60_000)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      clearTimeout(first)
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  }, [c.listOpen, c.opening, session.destination])
   const [away, setAway] = useState(false),
     [renaming, setRenaming] = useState(false),
-    [findOpen, setFindOpen] = useState(false),
-    [draftsOpen, setDraftsOpen] = useState(false),
-    [importedOpen, setImportedOpen] = useState(false)
+    [draftsOpen, setDraftsOpen] = useState(false)
   const [disclosed, setDisclosed] = useState(() => {
     try {
       return localStorage.getItem('collie.chat-project-sharing.v1') === 'acknowledged'
@@ -402,15 +419,13 @@ export function ConversationPanel(): React.JSX.Element {
       return false
     }
   })
-  const key = `${c.scope?.projectId}:${c.scope?.workspaceId}:${c.selected}`
+  const key = `${c.scope?.projectId}:${c.scope?.workspaceId}:${c.selected}:${c.opening}`
   const [lastKey, setLastKey] = useState(key)
   if (lastKey !== key) {
     setLastKey(key)
     setRenaming(false)
     setAway(false)
-    setFindOpen(false)
     setDraftsOpen(false)
-    setImportedOpen(false)
   }
   useLayoutEffect(() => {
     if (!c.listOpen || !returnFocus.current) return
@@ -435,60 +450,91 @@ export function ConversationPanel(): React.JSX.Element {
   }, [c.listOpen, c.selected, composingRef, session.closing, session.navigating])
   useLayoutEffect(() => {
     const target = transcript.current
-    if (!target || c.listOpen || target.closest('[hidden],[inert]')) return
-    if (
-      c.reveal &&
-      c.reveal.conversationId === c.selected &&
-      c.reveal.requestId !== revealed.current
-    ) {
-      matchTarget.current = { key, id: c.reveal.attemptId, response: true }
-      revealed.current = c.reveal.requestId
-      follow.current = false
+    if (!target || c.listOpen || target.closest('[hidden],[inert]') || !c.page) return
+    if (startedKey.current !== key) {
+      startedKey.current = key
+      follow.current = true
+      anchor.current = null
     }
-    if (matchTarget.current?.key !== key) matchTarget.current = null
-    if (matchTarget.current) {
-      const hit = [...target.querySelectorAll<HTMLElement>('[data-attempt]')].find(
-        (node) => node.dataset.attempt === matchTarget.current?.id
-      )
-      if (hit) {
-        if (hit instanceof HTMLDetailsElement) hit.open = true
-        const response = matchTarget.current.response
-          ? hit.querySelector<HTMLElement>('[data-role="assistant"]')
-          : null
-        target.scrollTop +=
-          (response ?? hit).getBoundingClientRect().top - target.getBoundingClientRect().top
-        matchTarget.current = null
+    const align = (): void => {
+      if (
+        c.reveal &&
+        c.reveal.conversationId === c.selected &&
+        c.reveal.requestId !== revealed.current
+      ) {
+        matchTarget.current = {
+          key,
+          id:
+            c.reveal.target.kind === 'native'
+              ? c.reveal.target.attemptId
+              : c.reveal.target.key.messageId,
+          response: c.reveal.target.kind === 'native'
+        }
+        revealed.current = c.reveal.requestId
         follow.current = false
-        anchor.current = readingPosition(target)
-        if (
-          document.hasFocus() &&
-          document.visibilityState === 'visible' &&
-          !document.querySelector('[role="dialog"], [role="alertdialog"]') &&
-          (document.activeElement === document.body || document.activeElement === target)
+      }
+      if (matchTarget.current?.key !== key) matchTarget.current = null
+      if (matchTarget.current) {
+        const hit = [...target.querySelectorAll<HTMLElement>('[data-chat-message]')].find(
+          (node) => node.dataset.chatMessage === matchTarget.current?.id
         )
-          target.focus({ preventScroll: true })
+        if (hit && !c.imported.loading) {
+          if (hit instanceof HTMLDetailsElement) hit.open = true
+          const response = matchTarget.current.response
+            ? hit.querySelector<HTMLElement>('[data-role="assistant"]')
+            : null
+          target.scrollTop +=
+            (response ?? hit).getBoundingClientRect().top - target.getBoundingClientRect().top
+          matchTarget.current = null
+          follow.current = false
+          anchor.current = readingPosition(target)
+          if (
+            document.hasFocus() &&
+            document.visibilityState === 'visible' &&
+            !document.querySelector('[role="dialog"], [role="alertdialog"]') &&
+            (document.activeElement === document.body || document.activeElement === target)
+          )
+            target.focus({ preventScroll: true })
+          shownKey.current = key
+          return
+        }
+      }
+      if (shownKey.current !== key) {
+        if (c.loading || c.imported.loading || matchTarget.current) return
         shownKey.current = key
-        return
+      }
+      if (follow.current && c.before === null && !c.imported.page?.after)
+        target.scrollTop = target.scrollHeight
+      else if (anchor.current) {
+        const item = [...target.querySelectorAll<HTMLElement>('[data-chat-message]')].find(
+          (node) => node.dataset.chatMessage === anchor.current?.id
+        )
+        if (item) {
+          const saved = anchor.current
+          const node = saved.node?.isConnected && item.contains(saved.node) ? saved.node : null
+          target.scrollTop +=
+            (node ?? item).getBoundingClientRect().top -
+            target.getBoundingClientRect().top -
+            (node ? saved.nodeOffset : saved.offset)
+        }
       }
     }
-    if (shownKey.current !== key) {
-      shownKey.current = key
-      const saved = c.scroll.current.get(key)
-      target.scrollTop = saved ?? (c.before === null ? target.scrollHeight : 0)
-      follow.current = target.scrollHeight - target.clientHeight - target.scrollTop < 48
-      anchor.current = readingPosition(target)
-    } else if (follow.current && c.before === null) target.scrollTop = target.scrollHeight
-    else if (anchor.current) {
-      const item = [...target.querySelectorAll<HTMLElement>('[data-attempt]')].find(
-        (node) => node.dataset.attempt === anchor.current?.id
-      )
-      if (item)
-        target.scrollTop +=
-          item.getBoundingClientRect().top -
-          target.getBoundingClientRect().top -
-          anchor.current.offset
-    }
-  }, [key, c.page, c.listOpen, c.scroll, c.before, c.loading, c.reveal, c.selected])
+    align()
+    const observer = new ResizeObserver(align)
+    observer.observe(target)
+    if (messages.current) observer.observe(messages.current)
+    return () => observer.disconnect()
+  }, [
+    key,
+    c.page,
+    c.imported.page,
+    c.imported.loading,
+    c.listOpen,
+    c.before,
+    c.loading,
+    c.reveal,
+    c.selected
+  ])
   const blocked = c.busy || !!c.pending || session.closing || session.navigating,
     archived = c.page?.conversation.state === 'archived',
     catalog = connections.status?.catalog,
@@ -530,8 +576,7 @@ export function ConversationPanel(): React.JSX.Element {
     matchTarget.current = null
     follow.current = true
     setAway(false)
-    if (c.before !== null) c.setBefore(null)
-    else if (transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight
+    c.latest()
   }
   return (
     <PresentationBoundary
@@ -593,6 +638,16 @@ export function ConversationPanel(): React.JSX.Element {
               icon={<IconDots aria-hidden="true" />}
               disabled={blocked}
               actions={[
+                ...(c.listOpen
+                  ? [
+                      {
+                        id: 'history',
+                        label:
+                          c.view === 'active' ? 'Archived conversations' : 'Active conversations',
+                        onSelect: () => c.setView(c.view === 'active' ? 'archived' : 'active')
+                      }
+                    ]
+                  : []),
                 ...(c.references.draft
                   ? [
                       {
@@ -606,14 +661,6 @@ export function ConversationPanel(): React.JSX.Element {
                   : []),
                 ...(!c.listOpen && c.page
                   ? [
-                      {
-                        id: 'find',
-                        label: 'Find in this chat',
-                        onSelect: () => {
-                          setDraftsOpen(false)
-                          c.page?.external ? setImportedOpen(true) : setFindOpen((open) => !open)
-                        }
-                      },
                       {
                         id: 'rename',
                         label: 'Rename',
@@ -647,7 +694,6 @@ export function ConversationPanel(): React.JSX.Element {
                   id: 'drafts',
                   label: 'Saved drafts on this device',
                   onSelect: () => {
-                    setFindOpen(false)
                     setDraftsOpen((open) => !open)
                   }
                 },
@@ -706,7 +752,6 @@ export function ConversationPanel(): React.JSX.Element {
                 variant="subtle"
                 size="compact-sm"
                 onClick={() => {
-                  setFindOpen(false)
                   setDraftsOpen(true)
                 }}
               >
@@ -725,25 +770,6 @@ export function ConversationPanel(): React.JSX.Element {
               <summary>Saved drafts on this device</summary>
               <ConversationDraftRecovery />
             </details>
-          ) : null}
-          {findOpen && c.scope && c.selected && !c.listOpen ? (
-            <ConversationFind
-              key={key}
-              scope={c.scope}
-              conversationId={c.selected}
-              onClose={() => {
-                setFindOpen(false)
-                transcript.current?.focus({ preventScroll: true })
-              }}
-              onSelect={(hit) => {
-                if (composingRef.current || blocked) return
-                matchTarget.current = { key, id: hit.attemptId }
-                follow.current = false
-                setAway(true)
-                setFindOpen(false)
-                c.openMatch(hit)
-              }}
-            />
           ) : null}
           {c.notice ? (
             <p className={styles['conversation-caption']} role="status">
@@ -768,23 +794,6 @@ export function ConversationPanel(): React.JSX.Element {
               aria-label="Conversation list"
               className={styles['conversation-library-scroll']}
             >
-              <details className={styles['conversation-library']}>
-                <summary>Search and history</summary>
-                <TextInput
-                  label="Find by title"
-                  value={c.query}
-                  maxLength={160}
-                  onChange={(e) => c.setQuery(e.currentTarget.value)}
-                />
-                <SelectField
-                  label="Conversation history"
-                  value={c.view}
-                  onChange={(e) => c.setView(e.currentTarget.value as 'active' | 'archived')}
-                >
-                  <option value="active">Active</option>
-                  <option value="archived">Archived</option>
-                </SelectField>
-              </details>
               {c.listLoading ? (
                 <p role="status">Loading conversations…</p>
               ) : (
@@ -861,70 +870,93 @@ export function ConversationPanel(): React.JSX.Element {
                 aria-label="Conversation transcript"
                 onScroll={(e) => {
                   const target = e.currentTarget
-                  follow.current = target.scrollHeight - target.clientHeight - target.scrollTop < 48
+                  follow.current =
+                    c.before === null &&
+                    !c.imported.page?.after &&
+                    target.scrollHeight - target.clientHeight - target.scrollTop < 48
                   setAway(!follow.current)
-                  c.scroll.current.set(key, target.scrollTop)
-                  if (c.scroll.current.size > 128) {
-                    const oldest = c.scroll.current.keys().next().value
-                    if (oldest) c.scroll.current.delete(oldest)
-                  }
                   anchor.current = readingPosition(target)
                 }}
               >
-                {c.loading ? (
-                  <p className={styles['conversation-caption']} role="status">
-                    Loading…
-                  </p>
-                ) : null}
-                {c.page?.olderThan !== null && c.page ? (
-                  <AppButton
-                    variant="subtle"
-                    size="compact-sm"
-                    disabled={blocked || c.loading}
-                    onClick={() => {
-                      follow.current = false
-                      if (transcript.current) anchor.current = readingPosition(transcript.current)
-                      void c.loadOlder()
-                    }}
-                  >
-                    Load earlier messages
-                  </AppButton>
-                ) : null}
-                {c.page?.external && c.scope ? (
-                  <section aria-label="Imported history">
-                    <p className={styles['conversation-caption']}>
-                      Imported history · {c.page.external.messages} original messages
-                      {c.page.external.excluded ? ' · excluded from recall' : ''}. New Collie
-                      replies appear below.
+                <div ref={messages} className={styles['conversation-messages']}>
+                  {c.loading ? (
+                    <p className={styles['conversation-caption']} role="status">
+                      Loading…
                     </p>
-                    <AppButton variant="subtle" onClick={() => setImportedOpen((v) => !v)}>
-                      {importedOpen ? 'Hide original history' : 'Read / Find original history'}
+                  ) : null}
+                  {c.page && (c.page.olderThan !== null || c.imported.page?.before) ? (
+                    <AppButton
+                      variant="subtle"
+                      size="compact-sm"
+                      disabled={blocked || c.loading || c.imported.loading}
+                      onClick={() => {
+                        follow.current = false
+                        if (transcript.current) anchor.current = readingPosition(transcript.current)
+                        if (c.page?.olderThan !== null) void c.loadOlder()
+                        else c.imported.older()
+                      }}
+                    >
+                      Load earlier messages
                     </AppButton>
-                    {importedOpen ? (
-                      <ImportTranscriptPreview
-                        key={`${key}:${c.page.conversation.revisionId}`}
-                        scope={c.scope}
-                        accepted={{
-                          conversationId: c.selected!,
-                          revisionId: c.page.conversation.revisionId
-                        }}
-                        disabled={blocked}
-                        onClose={() => setImportedOpen(false)}
-                        onSource={(id) =>
-                          void session.research({ kind: 'sources', sourceId: id, page: 'details' })
-                        }
-                      />
-                    ) : null}
-                  </section>
-                ) : null}
-                {c.page?.turns.map((turn) => (
-                  <MessageTurn key={turn.attempt.id} turn={turn} />
-                ))}
-                {c.page && !c.page.external && !c.page.turns.length ? (
-                  <p className={styles['conversation-empty']}>What would you like to work on?</p>
-                ) : null}
+                  ) : null}
+                  {c.scope
+                    ? c.imported.page?.entries.map((entry) => (
+                        <article
+                          key={entry.key.messageId}
+                          data-chat-message={entry.key.messageId}
+                          className={styles['conversation-turn']}
+                          aria-label={`Imported message from ${entry.role}`}
+                        >
+                          <ImportedMessageLinks
+                            entry={entry}
+                            scope={c.scope!}
+                            value={importedLinks.values[entry.key.messageId]}
+                            now={now}
+                            retry={importedLinks.retry}
+                            textIssue={!!c.imported.issue}
+                          />
+                        </article>
+                      ))
+                    : null}
+                  {c.imported.loading && !c.imported.page ? (
+                    <p role="status">Loading messages…</p>
+                  ) : null}
+                  {c.imported.issue ? (
+                    <div role="status">
+                      <p>{c.imported.issue}</p>
+                      <AppButton
+                        variant="subtle"
+                        onClick={c.imported.retry}
+                        disabled={c.imported.loading}
+                      >
+                        Retry loading messages
+                      </AppButton>
+                    </div>
+                  ) : null}
+                  {c.imported.page?.after ? (
+                    <AppButton
+                      variant="subtle"
+                      size="compact-sm"
+                      disabled={c.imported.loading}
+                      onClick={() => {
+                        follow.current = false
+                        if (transcript.current) anchor.current = readingPosition(transcript.current)
+                        c.imported.newer()
+                      }}
+                    >
+                      Load later messages
+                    </AppButton>
+                  ) : (
+                    c.page?.turns.map((turn) => (
+                      <MessageTurn key={turn.attempt.id} turn={turn} now={now} />
+                    ))
+                  )}
+                  {c.page && !c.page.external && !c.page.turns.length ? (
+                    <p className={styles['conversation-empty']}>What would you like to work on?</p>
+                  ) : null}
+                </div>
               </div>
-              {away || c.before !== null ? (
+              {away || c.before !== null || c.imported.page?.after ? (
                 <AppButton variant="subtle" size="compact-sm" onClick={jump}>
                   <IconArrowDown size={16} aria-hidden="true" /> Jump to latest
                 </AppButton>
@@ -963,31 +995,24 @@ export function ConversationPanel(): React.JSX.Element {
                     <ContextChoice
                       blocked={blocked || c.readOnly || !!archived || !c.draftProtection.ready}
                     />
-                    {connections.status?.capabilities.binding.route === 'local-chatgpt-plan' ? (
-                      <AppButton
-                        className={styles['research-choice']}
-                        variant="subtle"
-                        size="compact-sm"
-                        aria-pressed={c.searchWeb}
-                        disabled={
-                          blocked ||
-                          c.readOnly ||
-                          !!archived ||
-                          !!stopId ||
-                          (!c.searchWeb &&
-                            connections.status.capabilities.webResearch.state !== 'available')
-                        }
-                        onClick={() => c.setSearchWeb(!c.searchWeb)}
-                      >
-                        <IconWorld size={16} aria-hidden="true" /> Search the web
-                      </AppButton>
-                    ) : null}
+                    <Checkbox
+                      label="Search the web"
+                      checked={c.searchWeb}
+                      disabled={blocked || c.readOnly || !!archived || !!stopId}
+                      onChange={(event) => c.setSearchWeb(event.currentTarget.checked)}
+                      description={
+                        c.searchWeb &&
+                        connections.status?.capabilities.webResearch.state !== 'available'
+                          ? connections.status?.capabilities.webResearch.reason ===
+                            'route-not-established'
+                            ? 'Web search is unavailable for this connection. Uncheck to send a text-only message.'
+                            : c.capability?.state === 'unavailable'
+                              ? connectionReason[c.capability.reason]
+                              : 'Checking web-search availability. You can uncheck to use text chat when available.'
+                          : undefined
+                      }
+                    />
                   </div>
-                  {c.searchWeb ? (
-                    <p className={styles['conversation-caption']}>
-                      Shared context may inform ChatGPT’s search queries.
-                    </p>
-                  ) : null}
                   <Textarea
                     ref={composerRef}
                     aria-label="Message"

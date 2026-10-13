@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ImportContentValue } from '../../../../shared/import-content'
-import type { ImportedLinks } from '../../../../shared/imported-links'
 import { AppButton } from '../../components/ui/Controls'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
-import { ImportTranscriptPreview } from './ImportTranscriptPreview'
+import { useConversations } from '../ai/conversations/conversationState'
 type Origins = Extract<ImportContentValue, { type: 'content-origins' }>
 export function ImportedOrigins({
   kind,
@@ -13,10 +12,10 @@ export function ImportedOrigins({
   id: string
 }): React.JSX.Element {
   const session = useWorkspaceSession(),
-    p = session.project
+    p = session.project,
+    conversations = useConversations()
   const [value, setValue] = useState<Origins | null>(null),
     [offset, setOffset] = useState(0),
-    [target, setTarget] = useState<ImportedLinks | null>(null),
     [busy, setBusy] = useState(false),
     [issue, setIssue] = useState('')
   const generation = useRef(0)
@@ -44,7 +43,6 @@ export function ImportedOrigins({
       if (r.ok && r.value.type === 'content-origins') {
         setValue(r.value)
         setOffset(next)
-        setTarget(null)
       } else setIssue('Imported origins could not be read.')
     } catch {
       if (g === generation.current) setIssue('Imported origins could not be read.')
@@ -58,16 +56,11 @@ export function ImportedOrigins({
     setBusy(true)
     setIssue('')
     try {
-      const r = await window.collie.conversation({
-        projectId: p.projectId,
-        workspaceId: p.workspaceId,
-        action: 'imported-links',
-        messageId,
-        offset: 0
-      })
-      if (g !== generation.current) return
-      if (r.ok && r.value.type === 'imported-links') setTarget(r.value)
-      else setIssue('The original message could not be opened.')
+      const opened = await conversations.showImported(messageId)
+      if (g === generation.current && !opened)
+        setIssue(
+          'The original message could not be opened. Finish any current edit, then try again.'
+        )
     } catch {
       if (g === generation.current) setIssue('The original message could not be opened.')
     } finally {
@@ -125,19 +118,6 @@ export function ImportedOrigins({
         <AppButton variant="subtle" disabled={busy} onClick={() => void read(value.nextOffset!)}>
           More origins
         </AppButton>
-      ) : null}
-      {target && p ? (
-        <ImportTranscriptPreview
-          key={`${target.conversationId}:${target.target.messageId}:${target.revisionId}`}
-          scope={{ projectId: p.projectId, workspaceId: p.workspaceId }}
-          accepted={{ conversationId: target.conversationId, revisionId: target.revisionId }}
-          initialTarget={target.target}
-          disabled={busy || session.navigating || session.accessTransition}
-          onClose={() => setTarget(null)}
-          onSource={(sourceId) =>
-            void session.research({ kind: 'sources', sourceId, page: 'details' })
-          }
-        />
       ) : null}
     </details>
   )
