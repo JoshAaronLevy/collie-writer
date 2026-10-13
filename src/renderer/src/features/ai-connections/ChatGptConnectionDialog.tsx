@@ -138,8 +138,11 @@ function DialogContents(): React.JSX.Element {
           </p>
           {!session.available ? (
             <p>
-              Set up local storage in Settings → Storage before connecting. You can close this
-              dialog to continue.
+              {session.storage.state === 'unavailable'
+                ? 'Local storage is unavailable, so connection controls are paused. Copy any unprotected writing before restarting Collie.'
+                : session.location?.state === 'required'
+                  ? 'Choose a local working folder in Settings → Storage before connecting.'
+                  : 'Waiting for local storage. Connection controls will be available when storage is ready.'}
             </p>
           ) : null}
           {waiting ? (

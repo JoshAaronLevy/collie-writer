@@ -115,7 +115,7 @@ export function ImportResults({
         ) : summary.outcome === 'empty' ? (
           <p>
             {local && summary.manifest.partial
-              ? 'Some requested work remains unresolved, so no usable findings are ready. Your originals and saved responses are kept; the reason appears below.'
+              ? 'No usable findings are ready. Your originals and saved responses are kept.'
               : analysisIncomplete
                 ? 'Analysis could not produce usable findings. This does not mean your files contain no conversations or sources.'
                 : 'No importable content was found for your selection.'}
@@ -126,6 +126,9 @@ export function ImportResults({
               ? 'Some requested content was left out. Accept imports these findings and finishes this selection; omitted material then needs a new import. To continue unfinished analysis later, Cancel and keep this selection paused.'
               : 'Some requested content could not be imported and was left out.'}
           </p>
+        ) : null}
+        {summary.reason && summary.reason !== issue ? (
+          <p className={styles.helper}>{summary.reason}</p>
         ) : null}
         {busy ? <p>{status}</p> : null}
         {issue ? (

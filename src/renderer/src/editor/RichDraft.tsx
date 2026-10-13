@@ -671,7 +671,7 @@ export default function RichDraft({
                   },
                   {
                     id: 'copy',
-                    label: 'Select all for copying',
+                    label: 'Select all',
                     onSelect: () => {
                       if (current && !editorIsComposing(current)) {
                         current.commands.selectAll()

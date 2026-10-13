@@ -40,6 +40,8 @@ import {
 } from './schema'
 import { contained, directory, syncFile, syncDirectory, writeJson } from './files'
 import { ProjectError } from '../../domain/projects/errors'
+import type { ImportedContentOrigin } from '../../shared/import-content'
+import { importIdentity } from '../projects/import-identities'
 
 import { rebuildCitations } from '../projects/citation-occurrences'
 import { seedOutline } from '../projects/manuscript'
@@ -543,6 +545,35 @@ const migrations: readonly Migration[] = [
     apply: (db) => {
       db.exec(importRefusalTable)
       db.prepare('UPDATE format SET schema_version=37,minimum_reader=37').run()
+    }
+  },
+  {
+    from: 37,
+    to: 38,
+    validateSource: (db) => {
+      validateProjectSchema(db, 37)
+      for (const r of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableImports(db, r.id)
+    },
+    apply: (db) => {
+      // Rekey only the accepted-item index in the retained candidate. Frozen originals,
+      // reviews, manifests, receipts and operation identities remain byte-for-byte intact.
+      const origins = db
+        .prepare(
+          "SELECT project_id,body FROM imported_content_origins WHERE json_extract(body,'$.record.contentType')='semantic-original-v1'"
+        )
+        .all() as { project_id: string; body: string }[]
+      const update = db.prepare(
+        'UPDATE import_accepted_items SET identity_key=? WHERE project_id=? AND identity_key=? AND fingerprint=?'
+      )
+      for (const row of origins) {
+        const { record } = JSON.parse(row.body) as ImportedContentOrigin,
+          prior = importIdentity(record, true),
+          current = importIdentity(record)
+        if (update.run(current.key, row.project_id, prior.key, prior.fingerprint).changes !== 1)
+          throw new ProjectError('CORRUPT_PROJECT')
+      }
+      db.prepare('UPDATE format SET schema_version=38,minimum_reader=38').run()
     }
   }
 ]

@@ -1,0 +1,23 @@
+# RF12 — User-owned Import review
+
+**Implementation complete — awaiting user testing.** This stage changes internal ownership, not the Import workflow. The assistant ran format, lint and node/web typechecks only; the observations below are pending.
+
+Use a disposable project or copy and source files whose expected contents you know. For development, launch Collie yourself from the repository with `npm run dev` using the pinned toolchain. Do not use your only project copy for Save/copy/recovery scenarios.
+
+1. **Open Import and edit the selection.** Add files, remove one from the selection, change categories and enter/clear instructions. Close and reopen Import. The populated selection and choices return; removing a file from the selection does not delete its original. Before Submit, no imported Chats/Research/Notes appear and no analysis starts. If manuscript edits were pending, returning to Write preserves them.
+
+2. **Submit a known local format.** Choose supported conversation or bibliography data, matching categories and blank instructions. Use content requiring no prose interpretation. Submit leads to a compact summary with plausible counts and a local/no-ChatGPT-request indication; this route also works without a connected account. No destination content appears before Accept. Missing/unsupported material produces an honest limitation rather than invented findings.
+
+3. **Cancel and reuse a summary.** From a healthy summary, choose Cancel, then Submit again without changing the selection. Cancel returns to the populated form; Submit reopens the saved findings. It does not accept them or repeat AI work. Change a category or selected file and Submit again; the summary reflects the new selection instead of silently accepting the old one.
+
+4. **Accept, Save and reopen.** Accept the reviewed summary once. Import closes with concise confirmation; ordinary Chats, Research and Notes show the accepted content and available original-source links. Confirm transcript order/text and source relationships against your originals. Save to a disposable `.collie`, close normally and reopen it. Content and origins remain available without being imported again. Reopening Import does not reapply that completed selection.
+
+5. **Check an unfinished selection across Save/copy.** In another disposable project, reach a summary and Cancel without accepting, then close Import, Save and reopen that file. Saved files/settings/findings remain available; Save did not add them to domain views. If you make an independent project copy through the existing copy action, opening its Import also reads retained work without starting analysis or Accept. Only an explicit later Accept commits the selected findings in that project.
+
+6. **Exercise AI only if desired.** With data you intend to send, select your own connected account/model and Submit unfamiliar structured data or supported interpretation instructions. The relevant structure/content progress appears, followed by findings or a specific limitation. Merely choosing/managing an account does not send. If you cancel during analysis, subsequent work stops after the retained outcome settles; Continue, where offered, requires an explicit action. If partial findings are offered, their summary explains omissions and Accept finalizes only that selection. This step can use account allowance.
+
+7. **Read existing historical/recovery work, if available.** Use a disposable copy with an older saved summary, unfinished import or naturally retained uncertain outcome. Reopen Import; saved findings or the applicable recovery action appears. Check status stays local, and an uncertain Accept resolves from its receipt without duplicates. Use new importer, when offered, explicitly creates fresh findings from retained originals; it does not silently apply earlier manual choices. Do not manufacture failures or delete recovery files for this review.
+
+8. **Check keyboard and layout.** Tab through setup and results, cancel back to setup, and open Manage ChatGPT from its contextual action. Focus moves to the available dialog/control without jumping to another project or stealing newer focus. At narrow window sizes and increased zoom, the body scrolls while primary actions remain reachable. Progress/errors are announced without duplicate routine status chatter; composition in the instructions field remains usable.
+
+Report the step, what you expected and what appeared. Native Save/reopen/copy, old-project compatibility, content quality, provider behavior and accessibility remain unverified until you supply observations. See the [implementation record](../validation/refactor-RF12.md).

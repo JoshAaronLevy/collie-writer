@@ -309,12 +309,15 @@ export const projectContextMessages = {
   'file-busy':
     'A project file operation is still finishing. Wait for it to finish before continuing.',
   'project-in-use':
-    'Another Collie process is using this project. Close that copy before reopening.'
+    'Another Collie process is using this project. Close that copy before reopening.',
+  'import-summary-invalid':
+    'Collie found inconsistent items or totals in its saved import summary. Nothing was imported. Keep this import and report this error for a fix; repeating analysis or using Save As will not resolve it.'
 } as const
 export type ProjectErrorContext = keyof typeof projectContextMessages
 export function isProjectErrorContext(code: ProjectCode, v: unknown): v is ProjectErrorContext {
   return (
     (code === 'DENIED' && v === 'owner-missing') ||
+    (code === 'VALIDATION' && v === 'import-summary-invalid') ||
     (code === 'PROJECT_LOCKED' && (v === 'file-busy' || v === 'project-in-use'))
   )
 }

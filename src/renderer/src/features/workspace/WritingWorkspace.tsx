@@ -534,7 +534,7 @@ export default function WritingWorkspace(): React.JSX.Element {
                 })
               }
             >
-              Select all for copying
+              Select all
             </AppButton>
           </div>
           {conflict ? (

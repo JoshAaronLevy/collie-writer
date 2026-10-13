@@ -46,7 +46,8 @@ export class GraphBuilder extends OriginalRecords {
     value: Record<string, unknown>,
     path: string,
     id: string | null,
-    namespace: GraphRecord['originNamespace'] = 'curated'
+    namespace: GraphRecord['originNamespace'] = 'curated',
+    localEnvelope = false
   ): GraphRecord {
     const r = this.add(
       'conversation',
@@ -55,13 +56,13 @@ export class GraphBuilder extends OriginalRecords {
     )
     r.originNamespace = namespace
     r.externalId = id
-    r.externalConversationId = id
+    r.externalConversationId = id ?? (localEnvelope ? `curated:${r.identityId}` : null)
     r.identityId = id ? graphId(['conversation-identity-v1', namespace, id]) : r.identityId
-    r.eligible = !!id && this.settings.categories.includes('chats')
-    if (!id) {
+    r.eligible = !!r.externalConversationId && this.settings.categories.includes('chats')
+    if (!r.externalConversationId) {
       r.disposition = 'unresolved'
       this.issue(r, 'Conversation identity is missing or contradictory.')
-    } else if (!this.conversationRecords.has(`${namespace}:${id}`))
+    } else if (id && !this.conversationRecords.has(`${namespace}:${id}`))
       this.conversationRecords.set(`${namespace}:${id}`, r)
     this.facts(r, value, path, [
       'id',
@@ -439,12 +440,20 @@ export class GraphBuilder extends OriginalRecords {
       if (id) byId.set(id, r)
     }
     const envelope = string(value.conversation_id)
+    let root = envelope ? byId.get(envelope) : undefined
     if (!threads.length) {
-      const c = this.conversation(value, path, envelope)
-      if (envelope) byId.set(envelope, c)
+      // A nested transcript proves membership without an exported provider ID.
+      // Explicit thread claims must still resolve against their own descriptors.
+      root = this.conversation(
+        value,
+        path,
+        envelope,
+        'curated',
+        value.conversation_id == null && messages.every((m) => object(m).conversation_id == null)
+      )
+      if (root.externalConversationId) byId.set(root.externalConversationId, root)
     }
-    const missing = messages.filter((m) => !string(object(m).conversation_id)),
-      root = envelope ? byId.get(envelope) : undefined
+    const missing = messages.filter((m) => !string(object(m).conversation_id))
     const firstExplicit = messages.findIndex((m) => !!string(object(m).conversation_id))
     const count = object(
       object(threads.find((t) => object(t).id === envelope)).message_counts
@@ -480,10 +489,11 @@ export class GraphBuilder extends OriginalRecords {
         )
       } else if (inferred && root) {
         this.attach(r, root)
-        this.issue(
-          r,
-          'Membership inferred from the explicit envelope and thread inventory; review this interpretation.'
-        )
+        if (threads.length)
+          this.issue(
+            r,
+            'Membership inferred from the explicit envelope and thread inventory; review this interpretation.'
+          )
       } else
         this.issue(
           r,

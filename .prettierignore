@@ -28,3 +28,6 @@ scripts/test-unpacked.mjs
 playwright.config.ts
 vitest.config.ts
 .github/disabled-workflows/
+
+# User-owned import reference; retain the original bytes.
+/cultural-analysis.conversation-sample.json

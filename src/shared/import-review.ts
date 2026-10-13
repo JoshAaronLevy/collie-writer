@@ -108,10 +108,23 @@ export type ImportSummary = {
   current: boolean
   outcome: 'ready' | 'empty' | 'already-present'
   omitted: number
+  reason: string | null
   conversations: Array<{ id: string; title: string; messages: number }>
   offset: number
   total: number
 }
+// Make missing or extra wire keys a type error when the summary contract changes.
+const importSummaryKeys = Object.keys({
+  type: true,
+  manifest: true,
+  current: true,
+  outcome: true,
+  omitted: true,
+  reason: true,
+  conversations: true,
+  offset: true,
+  total: true
+} satisfies Record<keyof ImportSummary, true>)
 export type ReviewRequest = OpenInput &
   (
     | AutomaticReviewRequest
@@ -551,20 +564,12 @@ export function isReviewValue(v: unknown): v is ReviewValue {
   if (!record(v) || JSON.stringify(v).length > 900000) return false
   if (v.type === 'import-summary')
     return (
-      exact(v, [
-        'type',
-        'manifest',
-        'current',
-        'outcome',
-        'omitted',
-        'conversations',
-        'offset',
-        'total'
-      ]) &&
+      exact(v, importSummaryKeys) &&
       isConfirmationManifest(v.manifest) &&
       typeof v.current === 'boolean' &&
       ['ready', 'empty', 'already-present'].includes(String(v.outcome)) &&
       uint(v.omitted, 50000) &&
+      (v.reason === null || text(v.reason, 4000)) &&
       Array.isArray(v.conversations) &&
       v.conversations.length <= 50 &&
       v.conversations.every(

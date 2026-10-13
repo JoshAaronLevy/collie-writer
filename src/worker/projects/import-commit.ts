@@ -24,15 +24,14 @@ import { IMPORT_LIMITS } from '../../shared/project-import'
 import { requestDigest } from '../storage/digest'
 import { inWriteTransaction } from '../storage/driver'
 import type { AnalysisContext } from './import-analysis-capture'
+import { prepareImportReview, manifestCurrent, importReviewCapacity } from './import-review'
 import {
   readImportReview,
   storedManifest,
-  prepareImportReview,
-  manifestCurrent,
-  importReviewCapacity,
   reviewGraphEvidence,
   validateReviewGraph
-} from './import-review'
+} from './import-review-admission'
+
 import { importIdentity, acceptedIdentities } from './import-identities'
 import { readImportBlob } from './import-graphs'
 import { OriginalTranscriptText } from './conversation-transcript'
@@ -142,15 +141,15 @@ export async function importCommitCommand(
   if (m.version >= 2 && !entries.some((e) => e.action !== 'exclude'))
     throw new ProjectError('VALIDATION')
   const prepared = await prepareImportReview(ctx, readImportReview(db, p, m.reviewId))
+  if (!manifestCurrent(ctx, m, prepared, entries) || prepared.manifestId !== m.id)
+    throw new ProjectError('STALE_REVISION')
   if (
-    !manifestCurrent(ctx, m, prepared, entries) ||
-    prepared.manifestId !== m.id ||
     prepared.blocking ||
     prepared.undecided ||
     requestDigest(prepared.counts) !== requestDigest(m.counts) ||
     requestDigest(entries.map((e) => prepared.choices.get(e.itemId))) !== m.choicesDigest
   )
-    throw new ProjectError('STALE_REVISION')
+    throw new ProjectError('VALIDATION', 'import-summary-invalid')
   validateReviewGraph(
     prepared.content.records,
     prepared.content.relations,
@@ -184,8 +183,9 @@ export async function importCommitCommand(
   for (const e of included) {
     const r = records.get(e.choice.recordId)!,
       identity = importIdentity(r)
-    if (identities.has(identity.key) || identityKeys.has(identity.key))
-      throw new ProjectError('STALE_REVISION')
+    if (identities.has(identity.key)) throw new ProjectError('STALE_REVISION')
+    if (identityKeys.has(identity.key))
+      throw new ProjectError('VALIDATION', 'import-summary-invalid')
     identityKeys.add(identity.key)
     if (e.kind === 'chat') {
       const origin: ExternalConversation = {
@@ -377,11 +377,10 @@ export function validateImportCommitOperation(
 }
 /** SQL admission proves every destination against its immutable original creation evidence, even after later edits. */
 export function validatePortableImportCommits(db: Database.Database, p: string): void {
-  if (
-    (db.prepare('SELECT schema_version AS v FROM format WHERE singleton=1').get() as { v: number })
-      .v < 29
-  )
-    return
+  const version = (
+    db.prepare('SELECT schema_version AS v FROM format WHERE singleton=1').get() as { v: number }
+  ).v
+  if (version < 29) return
   for (const table of ['import_receipts', 'import_accepted_items'])
     if (db.prepare(`SELECT 1 FROM ${table} WHERE project_id<>? LIMIT 1`).get(p)) return corrupt()
   const rows = db.prepare('SELECT * FROM import_receipts WHERE project_id=? LIMIT 1001').all(p) as {
@@ -499,7 +498,7 @@ export function validatePortableImportCommits(db: Database.Database, p: string):
           if (requestDigest(metadata) !== requestDigest(e.choice.metadata)) return corrupt()
         }
       } else return corrupt()
-      const identity = importIdentity(original),
+      const identity = importIdentity(original, version < 38),
         accepted = db
           .prepare(
             'SELECT fingerprint,receipt_id,item_id FROM import_accepted_items WHERE project_id=? AND identity_key=?'

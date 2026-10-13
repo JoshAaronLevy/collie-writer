@@ -144,7 +144,6 @@ export function useImportFlow(options: {
     reading = useRef(false),
     driving = useRef(false),
     cancelled = useRef(false),
-    mappedPrepare = useRef<SubmitInput['mapped'] | null>(null),
     submitted = useRef<SubmitInput | null>(null)
   useLayoutEffect(() => {
     latest.current = { session, connections, options }
@@ -182,6 +181,21 @@ export function useImportFlow(options: {
           'retained-outcome'
         ].includes(w.state)
     )
+  }
+  async function readSummary(
+    scope: OpenInput,
+    reviewId: string,
+    manifestId: string
+  ): Promise<ImportSummary> {
+    const value = await request({
+      ...scope,
+      action: 'import-summary',
+      reviewId,
+      manifestId,
+      offset: 0
+    })
+    if (value.type !== 'import-summary') throw new Error('Saved findings could not be read.')
+    return value
   }
   async function showSummary(scope: OpenInput, summary: ImportSummary): Promise<void> {
     const history = await request({
@@ -232,7 +246,7 @@ export function useImportFlow(options: {
       conversations,
       phase: 'ready',
       ...(!isCurrent
-        ? { issue: 'Your project changed. Check status to refresh the summary.' }
+        ? { issue: 'This summary needs refreshing. Check status to update it from saved findings.' }
         : summary.manifest.version < 3 && owned.current.page?.problem
           ? {
               issue: `${owned.current.page.problem} ${
@@ -264,14 +278,7 @@ export function useImportFlow(options: {
     if (!current(scope) || cancelled.current) return
     patch({ phase: 'saving', issue: '' })
     if (review.manifestId && !owned.current.pendingAutomatic) {
-      const saved = await request({
-        ...scope,
-        action: 'import-summary',
-        reviewId: review.review.id,
-        manifestId: review.manifestId,
-        offset: 0
-      })
-      if (saved.type !== 'import-summary') throw new Error('Saved findings could not be read.')
+      const saved = await readSummary(scope, review.review.id, review.manifestId)
       if (!current(scope) || cancelled.current) return
       if (saved.current) {
         await showSummary(scope, saved)
@@ -369,22 +376,41 @@ export function useImportFlow(options: {
       throw new Error(
         `ChatGPT is needed to interpret this content. ${input.readinessMessage || 'Connect ChatGPT and choose a model, then Submit again.'} Your files and findings are kept.`
       )
-    const command = {
-      ...input.scope,
-      action: 'semantic-start' as const,
-      graphId: value.graphId,
-      operationId: crypto.randomUUID(),
-      submission: input.binding
-    }
+    await startDiscovery(input.scope, input.binding, value)
+  }
+  async function startDiscovery(
+    scope: OpenInput,
+    binding: ImportSubmitBinding,
+    value: DiscoveryValue | SemanticValue
+  ): Promise<void> {
+    const semantic = value.type === 'semantic',
+      command = {
+        ...scope,
+        action: semantic ? ('semantic-start' as const) : ('discovery-start' as const),
+        graphId: value.graphId,
+        operationId: crypto.randomUUID(),
+        submission: binding
+      }
     patch({ pendingDiscovery: command, phase: 'analyzing', issue: '' })
     try {
       const started = await request(command)
-      if (started.type !== 'semantic')
-        throw new Error('Check saved interpretation status before continuing.')
-      if (!current(input.scope)) return
+      if (
+        (started.type !== 'discovery' && started.type !== 'semantic') ||
+        started.type !== value.type
+      )
+        throw new Error(
+          semantic
+            ? 'Check saved interpretation status before continuing.'
+            : 'Check status before continuing structure discovery.'
+        )
+      if (!current(scope)) return
       patch({ pendingDiscovery: null, discovery: started })
       if (cancelled.current)
-        await request({ ...input.scope, action: 'semantic-stop', graphId: value.graphId })
+        await request({
+          ...scope,
+          action: semantic ? 'semantic-stop' : 'discovery-stop',
+          graphId: value.graphId
+        })
     } catch (error) {
       if (refused(error)) patch({ pendingDiscovery: null })
       throw error
@@ -397,15 +423,16 @@ export function useImportFlow(options: {
   ): Promise<void> {
     if (!current(scope) || cancelled.current) return
     const revision = owned.current.restoreRevision
-    if (!revision || !mappedPrepare.current)
-      throw new Error('Submit explicitly to prepare your saved findings.')
+    if (!revision) throw new Error('Submit explicitly to prepare your saved findings.')
     const input = submitted.current
     if (!input || !sameScope(input.scope, scope) || input.intent !== owned.current.intent)
       throw new Error('Submit explicitly to prepare your saved findings.')
-    if (value.type === 'semantic') {
-      patch({ phase: 'extracting', issue: '' })
-      if (!(await flushEdits(scope)) || cancelled.current) return
-      const updated = await input.interpreted(
+    const issue = value.tasks.find((t) => t.reason)?.reason || value.reason
+    patch({ phase: 'extracting', issue: value.type === 'semantic' ? '' : issue })
+    if (!(await flushEdits(scope)) || cancelled.current) return
+    let updated: ImportRevision
+    if (value.type === 'semantic')
+      updated = await input.interpreted(
         revision,
         {
           planId: value.planId,
@@ -415,35 +442,21 @@ export function useImportFlow(options: {
         },
         value.graphId
       )
-      if (!current(scope) || cancelled.current) return
-      patch({ restoreRevision: updated })
-      await prepareLocalResults(scope, updated)
-      const issue = value.tasks.find((t) => t.reason)?.reason || value.reason
-      if (issue && current(scope)) patch({ issue })
-      return
+    else {
+      const mappings = value.tasks
+        .filter((t) => t.normalizationId && t.attemptId)
+        .map((t) => ({ normalizationId: t.normalizationId!, attemptId: t.attemptId! }))
+      updated = mappings.length ? await input.mapped(revision, mappings, value.graphId) : revision
     }
-    const mappings = value.tasks
-      .filter((t) => t.normalizationId && t.attemptId)
-      .map((t) => ({ normalizationId: t.normalizationId!, attemptId: t.attemptId! }))
-    const issue = value.tasks.find((t) => t.reason)?.reason || value.reason
-    patch({ phase: 'extracting', issue })
-    if (!(await flushEdits(scope)) || cancelled.current) return
-    const updated = mappings.length
-      ? await mappedPrepare.current(revision, mappings, value.graphId)
-      : revision
     if (!current(scope) || cancelled.current) return
     patch({ restoreRevision: updated })
-    if (partial) await prepareLocalResults(scope, updated)
+    if (value.type === 'semantic' || partial) await prepareLocalResults(scope, updated)
     else await prepareSemantic(input, updated)
     if (issue && current(scope)) patch({ issue })
   }
   async function prepareDiscovery(input: SubmitInput, revision: ImportRevision): Promise<void> {
     if (!revision.graphId) throw new Error('The selected files could not be read.')
-    if (revision.settings.instructions.trim()) {
-      await prepareSemantic(input, revision)
-      return
-    }
-    if (revision.version === 3 || revision.version === 4) {
+    if (revision.settings.instructions.trim() || revision.version === 3 || revision.version === 4) {
       await prepareSemantic(input, revision)
       return
     }
@@ -486,26 +499,7 @@ export function useImportFlow(options: {
       throw new Error(
         `ChatGPT is needed to understand this JSON structure. ${input.readinessMessage || 'Connect ChatGPT and choose an available model, then Submit again.'} Your files and local findings are kept.`
       )
-    const command = {
-      ...input.scope,
-      action: 'discovery-start' as const,
-      graphId: value.graphId,
-      operationId: crypto.randomUUID(),
-      submission: input.binding
-    }
-    patch({ pendingDiscovery: command, phase: 'analyzing', issue: '' })
-    try {
-      const started = await request(command)
-      if (started.type !== 'discovery')
-        throw new Error('Check status before continuing structure discovery.')
-      if (!current(input.scope)) return
-      patch({ pendingDiscovery: null, discovery: started })
-      if (cancelled.current)
-        await request({ ...input.scope, action: 'discovery-stop', graphId: value.graphId })
-    } catch (error) {
-      if (refused(error)) patch({ pendingDiscovery: null })
-      throw error
-    }
+    await startDiscovery(input.scope, input.binding, value)
   }
   /** Compatibility for already-retained AI results; new selections never create AI plans. */
   async function prepareResults(scope: OpenInput, page: PlanPage): Promise<void> {
@@ -739,15 +733,8 @@ export function useImportFlow(options: {
         }
       }
       if (found.reviewId && found.manifestId) {
-        const summary = await request({
-          ...scope,
-          action: 'import-summary',
-          reviewId: found.reviewId,
-          manifestId: found.manifestId,
-          offset: 0
-        })
+        const summary = await readSummary(scope, found.reviewId, found.manifestId)
         if (!current(scope)) return
-        if (summary.type !== 'import-summary') throw new Error('Saved findings could not be read.')
         patch({ summary, pendingCommit: confirmationCommand(summary.manifest) })
         const outcome = await request({
           ...scope,
@@ -805,14 +792,11 @@ export function useImportFlow(options: {
     patch({ phase: 'saving', issue: '' })
     try {
       if (s.summary) {
-        const summary = await request({
-          ...s.scope,
-          action: 'import-summary',
-          reviewId: s.summary.manifest.reviewId,
-          manifestId: s.summary.manifest.id,
-          offset: 0
-        })
-        if (summary.type !== 'import-summary') throw new Error('Saved findings could not be read.')
+        const summary = await readSummary(
+          s.scope,
+          s.summary.manifest.reviewId,
+          s.summary.manifest.id
+        )
         if (summary.current) await showSummary(s.scope, summary)
         else await updateSummary(s.scope)
       } else if (s.discovery) {
@@ -899,7 +883,6 @@ export function useImportFlow(options: {
     )
       return
     submitted.current = input
-    mappedPrepare.current = input.mapped
     driving.current = true
     cancelled.current = false
     const prior = owned.current,
@@ -937,23 +920,18 @@ export function useImportFlow(options: {
         return
       }
       if (sameIntent && prior.summary && !input.continueAnalysis) {
-        const saved = await request({
-          ...input.scope,
-          action: 'import-summary',
-          reviewId: prior.summary.manifest.reviewId,
-          manifestId: prior.summary.manifest.id,
-          offset: 0
-        })
+        const saved = await readSummary(
+          input.scope,
+          prior.summary.manifest.reviewId,
+          prior.summary.manifest.id
+        )
         if (!current(input.scope) || cancelled.current) return
-        if (saved.type === 'import-summary' && saved.current) {
+        if (saved.current) {
           await showSummary(input.scope, saved)
           return
         }
-        if (saved.type === 'import-summary') {
-          await updateSummary(input.scope)
-          return
-        }
-        throw new Error('The saved summary could not be confirmed. Check status to continue.')
+        await updateSummary(input.scope)
+        return
       }
       if (sameIntent && (prior.page || prior.legacyAttemptId)) {
         if (prior.page?.completed || prior.legacyValid) {
@@ -1033,19 +1011,14 @@ export function useImportFlow(options: {
           graphId: s.discovery.graphId
         })
         await latest.current.connections.checkStatus()
-      } else if (s.scope && s.page && current(s.scope)) {
+      } else if (s.scope && (s.page || s.legacyAttemptId) && current(s.scope)) {
         // Legacy grants do not survive an upgrade; only an exact retained operation can run.
         for (const work of latest.current.connections.status?.work.filter(
           (w) => w.feature === 'import' && sameScope(w.scope, s.scope) && w.state === 'running'
         ) ?? [])
           await request({ ...s.scope, action: 'cancel', attemptId: work.attemptId })
-        await refresh(false)
-      } else if (s.scope && s.legacyAttemptId && current(s.scope)) {
-        for (const work of latest.current.connections.status?.work.filter(
-          (w) => w.feature === 'import' && sameScope(w.scope, s.scope) && w.state === 'running'
-        ) ?? [])
-          await request({ ...s.scope, action: 'cancel', attemptId: work.attemptId })
-        await latest.current.connections.checkStatus()
+        if (s.page) await refresh(false)
+        else await latest.current.connections.checkStatus()
       }
       if (!driving.current && s.scope && !hasWork(s.scope)) patch({ phase: 'paused' })
     } catch (error) {
@@ -1059,7 +1032,7 @@ export function useImportFlow(options: {
     if (driving.current || reading.current) return
     const s = owned.current
     if (!s.scope || !current(s.scope) || s.phase === 'complete') return
-    if (s.discovery && !s.pendingCommit && !s.pendingLocal && !s.pendingAutomatic) {
+    if (s.discovery && !s.summary && !s.pendingCommit && !s.pendingLocal && !s.pendingAutomatic) {
       reading.current = true
       try {
         await request({ ...s.scope, action: 'reconcile' })
@@ -1111,15 +1084,7 @@ export function useImportFlow(options: {
           throw new Error('The saved local findings could not be checked.')
         patch({ pendingLocal: null, localReviewId: found.local ? found.reviewId : null })
         if (found.local && found.reviewId && found.manifestId) {
-          const summary = await request({
-            ...s.scope,
-            action: 'import-summary',
-            reviewId: found.reviewId,
-            manifestId: found.manifestId,
-            offset: 0
-          })
-          if (summary.type !== 'import-summary')
-            throw new Error('Saved findings could not be read.')
+          const summary = await readSummary(s.scope, found.reviewId, found.manifestId)
           await showSummary(s.scope, summary)
         } else
           patch({
@@ -1165,17 +1130,13 @@ export function useImportFlow(options: {
           })
       }
       if (s.summary && !s.pendingAutomatic && !cancelled.current) {
-        const summary = await request({
-          ...s.scope,
-          action: 'import-summary',
-          reviewId: s.summary.manifest.reviewId,
-          manifestId: s.summary.manifest.id,
-          offset: 0
-        })
-        if (summary.type === 'import-summary') {
-          if (summary.current) await showSummary(s.scope, summary)
-          else await updateSummary(s.scope)
-        }
+        const summary = await readSummary(
+          s.scope,
+          s.summary.manifest.reviewId,
+          s.summary.manifest.id
+        )
+        if (summary.current) await showSummary(s.scope, summary)
+        else await updateSummary(s.scope)
       }
       if (s.legacyAttemptId) {
         const attempt = await request({
@@ -1284,8 +1245,16 @@ export function useImportFlow(options: {
       patch({ page })
       await prepareResults(scope, page)
     }
-    if (current(scope))
-      patch({ issue: 'Your project changed. Review the updated summary and Accept again.' })
+    if (current(scope) && !cancelled.current) {
+      if (owned.current.summary?.manifest.id === summary.manifest.id)
+        throw new Error(
+          'Collie could not refresh these saved findings. Keep this import and report this error; repeating analysis or using Save As will not resolve it.'
+        )
+      patch({
+        issue:
+          'The summary was refreshed from saved findings. Review it, then select Accept. No new analysis was sent.'
+      })
+    }
   }
   async function complete(
     scope: OpenInput,
@@ -1373,15 +1342,7 @@ export function useImportFlow(options: {
           'Finish saving your project edits before accepting. Your findings are kept.'
         )
       if (!current(s.scope)) return
-      const saved = await request({
-        ...s.scope,
-        action: 'import-summary',
-        reviewId: s.summary.manifest.reviewId,
-        manifestId: s.summary.manifest.id,
-        offset: 0
-      })
-      if (saved.type !== 'import-summary')
-        throw new Error('The import summary could not be confirmed.')
+      const saved = await readSummary(s.scope, s.summary.manifest.reviewId, s.summary.manifest.id)
       if (!current(s.scope)) return
       if (!saved.current) {
         await updateSummary(s.scope)

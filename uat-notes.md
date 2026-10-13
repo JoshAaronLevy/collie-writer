@@ -1,7 +1,34 @@
-# UAT Notes - Test Round 2
+# UAT Notes - Test Round 3
 
 This document contains notes and observations from the User Acceptance Testing (UAT) of the application, highlighting general thoughts, specific issues, and feedback for improving the user experience. I included corresponding screenshots in the `tests/uat/screenshots` directory.
 
 For this task, I want you to thoroughly review everything below, including the general thoughts, specific issues, and feedback, and thoroughly review the existing codebase. Then, create a file in the root with a detailed implementation plan for addressing the issues and feedback noted in this document. The plan should have detailed context at the top, and be broken into manageable, yet detailed stages for implementing the code changes. Each stage should include the model and effort level recommended for that stage (Codex-specific model and effort), with the model choices of either Sol 6.1 and Astra 6, and the effort level choices between Medium, High, Extra High, and Ultra. NOTE: Do NOT use the maximum or highest model just because. I have often found that using an unnecessarily overpowered model or effort can often cause Codex to over-engineer the feature or bug fix, which can cause pretty big issues and headaches of their own. So please recommend the model and effort that is appropriate for the complexity of each task. Also, for the item list of specific issues below, you don't need to do 1 stage per item. If an item requires multiple stages, you can set it up as such. But don't do so for the sake of it. I feel like thus far there have been a few times where we took a relatively simple feature or bug fix and ended up generating an 8 stage plan for something that could have been done with a simpler implementation and just 1 or 2 stages. Also, it's possible more than one thing mentioned below can be done in a single stage. The point is, the code changes need to accomplish what is needed. The updates still need to work. But don't go way overboard. Finally, if you have any clarifying questions about what is being asked in the list below, or anything about the expected UX is unclear, please create a section at the top of the file with the clarifying questions. I will then answer them and have you review the answers and revise the plan according to those answers.
 
 ## Specific Issues/Feedback/Improvements
+
+The overall feedback in this round of UAT is that the AI chat functionality is not very user-friendly and has a lot of room for improvement.
+
+1. In the `tests/uat/screenshots/AI Chats 1.png` screenshot, please remove the section of code for the "Search and History" in the chat pane.
+
+2. When I click on a conversation, I see what is shown in `tests/uat/screenshots/AI Chats 2.png`. As a user, I expect to just see the conversation content without any additional steps or UI elements obstructing it. Please adjust the UI so it directly displays the conversation content, starting with the latest message (at the bottom of the chat pane) instead of this "Read / Find original history" button.
+
+3. Where it says "Search the web", it's not clear that's a toggle function (or at least not clear that it's disabled by default). Please change it to have a checkbox that is checked by default (the default behavior is that web search is enabled/turned on).
+
+4. `tests/uat/screenshots/AI Chats 3.png` is where the confusion and frustration quickly escalated. As a user, I literally just clicked on a "Read" button, and now I see yet another one asking me if I want to read the original history?? Is that a joke? The previous one was already one too many. That entire step with the read/view and find features should be removed. We can work on a better implementation of a search feature later. Again, to be clear, when I click the conversation title button from `tests/uat/screenshots/AI Chats 1.png`, I expect to be taken directly to the conversation content without any additional prompts or steps.
+
+5. In `tests/uat/screenshots/AI Chats 4.png`, the conversation pane contains a lot more than necessary, and is just formatted in an unintuitive way for a user. The following issues were noted:
+  - It should not have a title/header for each message that says "1. You - imported message" or similar.
+  - Why does it say "Historical time" with the timestamp in the most unfriendly format?
+  - Why is there a button that says "Read original text"??? If I see another button in this flow to "Read" the original text, I will rip my hair out. As a user, I expect to see the full message content. It almost feels like working with a frustrating salesman who just keeps leading you on, making you think it's the final step when it's not.
+  - The "Linked Research" button should only be visible when there is actually linked research to display from that message. I know this part might be tricky. But it's important.
+  - "Origin and variants"??? Again, why the excess, unnecessary complexity and information? This should be removed. I expanded it on several messages and it showed what you see in `tests/uat/screenshots/AI Chats 5.png`, which is not helpful and just adds clutter.
+  - The message content is showing in raw Markdown format, instead of being rendered as formatted text (e.g., headings, bold, italics, lists, links) for better readability.
+
+6. For the chat pane in general, the following improvements should be made:
+  - The messages should be displayed in a clean, user-friendly manner. Much like how most chat/messaging apps will have the user's message in a box that is right-aligned with a certain background color, and the other party's messages in a box that is left-aligned with a different background color. This helps visually distinguish between the user's messages and the AI's messages.
+  - It doesn't need to say "1. You - imported message" or similar for each message.
+  - The timestamp for each message should be displayed in a user-friendly format, such as "2 minutes ago" or "Yesterday at 3:45 PM", rather than a raw historical timestamp.
+  - Any buttons or actions related to reading or finding original text should be removed from the chat pane, as they create unnecessary friction and confusion for the user.
+  - The chat pane should automatically scroll to the latest message at the bottom, ensuring that users always see the most recent content without additional interaction.
+  - So to clarify, each message should just have the message content, user-friendly timestamp (just the timestamp. No label. A user knows what "2 minutes ago" or "Yesterday at 3:45 PM" means), and a small icon button for viewing any linked research if available.
+  - The chat pane should support rendering of rich content, such as images, links, and other media, inline with the message content, instead of raw Markdown, to provide a more engaging and informative user experience. If we need to install a parsing library, write the code ourselves, or a combination of both to do this right, I don't care. We need to get it right.

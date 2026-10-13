@@ -34,7 +34,10 @@ export function localRecordEvidence(
     relationsDigest: requestDigest(relations)
   }
 }
-function unresolvedLocalRecords(records: GraphRecord[], settings: ImportSettings): number {
+export function unresolvedLocalRecords(
+  records: GraphRecord[],
+  settings: ImportSettings
+): GraphRecord[] {
   return records.filter((r) => {
     const category =
       r.kind === 'conversation' || r.kind === 'message'
@@ -48,7 +51,7 @@ function unresolvedLocalRecords(records: GraphRecord[], settings: ImportSettings
       (!category || settings.categories.includes(category)) &&
       (r.disposition === 'unsupported' || r.disposition === 'unresolved' || r.path === 'unresolved')
     )
-  }).length
+  })
 }
 export const localHasOmissions = (
   e: LocalImportEvidence | MappedImportEvidence | SemanticImportEvidence
@@ -68,7 +71,7 @@ export function localCoverage(
     candidates,
     retained: records.length - candidates,
     unreadFiles: graph.files.filter((f) => f.status !== 'read').length,
-    unresolvedRecords: unresolvedLocalRecords(records, settings)
+    unresolvedRecords: unresolvedLocalRecords(records, settings).length
   }
 }
 export function localGraphSettings(
@@ -141,7 +144,7 @@ export function validateLocalRecords(
     e.coverage.records !== records.length ||
     e.coverage.candidates !== candidates ||
     e.coverage.retained !== records.length - candidates ||
-    e.coverage.unresolvedRecords !== unresolvedLocalRecords(records, e.settings)
+    e.coverage.unresolvedRecords !== unresolvedLocalRecords(records, e.settings).length
   )
     return corrupt()
 }

@@ -4,12 +4,21 @@ import { requestDigest } from '../storage/digest'
 
 export const alreadyImportedReason =
   'Already imported / Skip. The original accepted material remains in this project.'
-export function importIdentity(r: GraphRecord): { key: string; fingerprint: string } {
+export function importIdentity(
+  r: GraphRecord,
+  legacySemantic = false
+): { key: string; fingerprint: string } {
   // Strong exporter IDs survive another export; local-only records require the same original bytes/location.
+  // Several semantic sources/notes can share one JSON string. Keep their exact spans distinct;
+  // the pointer-only form is frozen for admitting and migrating pre-38 accepted receipts.
   const key = requestDigest(
     r.externalId && ['conversation', 'message'].includes(r.kind)
       ? [r.kind, r.originNamespace, r.identityId]
-      : [r.kind, r.locator.sha256, r.locator.pointer]
+      : ['source', 'note'].includes(r.kind) &&
+          r.contentType === 'semantic-original-v1' &&
+          !legacySemantic
+        ? [r.kind, r.locator.sha256, r.locator.pointer, r.texts.map((t) => [t.start, t.end])]
+        : [r.kind, r.locator.sha256, r.locator.pointer]
   )
   const fingerprint = requestDigest({
     kind: r.kind,
