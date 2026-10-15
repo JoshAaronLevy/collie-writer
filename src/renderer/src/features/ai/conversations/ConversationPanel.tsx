@@ -1,3 +1,9 @@
+import {
+  PlanningChatControls,
+  PlanningProgress,
+  PlanningOrigins
+} from '../../planning/PlanningChatControls'
+import { planningCoverageLabel } from '../../../../../shared/planning-conversation'
 import { ImportedMessageLinks } from '../../imports/ImportedMessageLinks'
 import { useImportedLinks } from '../../imports/useImportedLinks'
 import { ChatMessage } from './ChatMessage'
@@ -93,6 +99,15 @@ function SentContext({ capture }: { capture: AiCapture }): React.JSX.Element {
       {isResearchCapture(capture) ? (
         <p>Web search was requested. Shared context could inform search queries.</p>
       ) : null}
+      {capture.version === 7 ? (
+        <>
+          <p>
+            {capture.planning.label} ·{' '}
+            {planningCoverageLabel(capture.planning.coverage, capture.planning.mode)}
+          </p>
+          <PlanningOrigins runId={capture.planning.runId} origins={capture.planning.origins} />
+        </>
+      ) : null}
       {!capture.context.length ? <p>No writing or earlier messages included.</p> : null}
       {capture.context
         .filter((item) => !history || item.kind !== 'history')
@@ -118,7 +133,10 @@ function SentContext({ capture }: { capture: AiCapture }): React.JSX.Element {
 }
 function MessageTurn({ turn, now }: { turn: ConversationTurn; now: number }): React.JSX.Element {
   if (
-    (turn.capture.version !== 3 && turn.capture.version !== 4 && turn.capture.version !== 6) ||
+    (turn.capture.version !== 3 &&
+      turn.capture.version !== 4 &&
+      turn.capture.version !== 6 &&
+      turn.capture.version !== 7) ||
     turn.capture.purpose === 'chat'
   )
     return <MessageTurnContent turn={turn} now={now} />
@@ -160,7 +178,10 @@ function MessageTurnContent({
         !!c.pending ||
         c.readOnly ||
         !!c.draft.text ||
-        ((turn.capture.version === 3 || turn.capture.version === 4 || turn.capture.version === 6) &&
+        ((turn.capture.version === 3 ||
+          turn.capture.version === 4 ||
+          turn.capture.version === 6 ||
+          turn.capture.version === 7) &&
           turn.capture.purpose !== 'chat') ||
         c.page?.conversation.state !== 'active',
       onSelect: () => c.retryAsNew(turn)
@@ -169,7 +190,10 @@ function MessageTurnContent({
   return (
     <article
       data-chat-message={
-        (turn.capture.version === 3 || turn.capture.version === 4 || turn.capture.version === 6) &&
+        (turn.capture.version === 3 ||
+          turn.capture.version === 4 ||
+          turn.capture.version === 6 ||
+          turn.capture.version === 7) &&
         turn.capture.purpose !== 'chat'
           ? undefined
           : turn.attempt.id
@@ -185,7 +209,8 @@ function MessageTurnContent({
           !(
             (turn.capture.version === 3 ||
               turn.capture.version === 4 ||
-              turn.capture.version === 6) &&
+              turn.capture.version === 6 ||
+              turn.capture.version === 7) &&
             turn.capture.purpose !== 'chat'
           )
             ? {
@@ -794,9 +819,10 @@ export function ConversationPanel(): React.JSX.Element {
               ]}
             />
           </header>
+          <PlanningProgress />
           {c.preparingMemory ? (
             <div className={styles['conversation-actions']} role="status">
-              <span>Preparing context…</span>
+              <span>{c.planning ? 'Analyzing material…' : 'Preparing context…'}</span>
               <AppButton size="compact-sm" variant="subtle" onClick={c.stopPreparation}>
                 Stop
               </AppButton>
@@ -1105,9 +1131,15 @@ export function ConversationPanel(): React.JSX.Element {
                   }}
                 >
                   <div className={styles['context-controls']}>
-                    <ContextChoice
-                      blocked={blocked || c.readOnly || !!archived || !c.draftProtection.ready}
-                    />
+                    {c.planning ? (
+                      <PlanningChatControls
+                        blocked={blocked || c.readOnly || !!archived || !c.draftProtection.ready}
+                      />
+                    ) : (
+                      <ContextChoice
+                        blocked={blocked || c.readOnly || !!archived || !c.draftProtection.ready}
+                      />
+                    )}
                     <Checkbox
                       label="Search the web"
                       checked={c.searchWeb}

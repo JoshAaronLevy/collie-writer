@@ -386,6 +386,8 @@ export function memoryReview(
   knowledge: ProjectKnowledge | null = null,
   imported?: ImportedContext
 ): Extract<ConversationValue, { type: 'review' }> {
+  if (input.version === 8 || input.purpose === 'planning-summary')
+    throw new ProjectError('VALIDATION')
   let context: AiContext[],
     coverage: MemoryCoverage | null = null,
     memoryIds: string[] = [],

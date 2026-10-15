@@ -1,3 +1,5 @@
+import type { PlanningScope } from '../../../../shared/planning-conversation'
+import { ConversationSlot } from '../ai/conversations/ConversationSlot'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Checkbox, Select, TextInput, Textarea } from '@mantine/core'
 import { IconArrowDown, IconArrowUp, IconDots, IconPlus } from '@tabler/icons-react'
@@ -78,6 +80,7 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
   const [selectionFrom, setSelectionFrom] = useState<PlanningDestination | null>(null)
   const [relationOffset, setRelationOffset] = useState(0)
   const [destination, setDestination] = useState<string | null>(null)
+  const [chatOpen, setChatOpen] = useState(prefs.pane === 'chat')
   const [detail, setDetail] = useState<PlanningItem | null>(null)
   const [showAside, setShowAside] = useState(false)
   const [form, setForm, formRef] = useSynchronousState<Form | null>(null)
@@ -87,7 +90,8 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
   const root = useRef<HTMLElement>(null),
     materialPane = useRef<HTMLElement>(null),
     structurePane = useRef<HTMLElement>(null),
-    detailPane = useRef<HTMLElement>(null)
+    detailPane = useRef<HTMLElement>(null),
+    chatPane = useRef<HTMLElement>(null)
   const [focusRevision, setFocusRevision] = useState(0)
   const focusAfter = useRef<string | null>(null)
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -237,7 +241,11 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
     ).find((element) => element.dataset.materialKey === key || element.dataset.structureKey === key)
     const target =
       card?.querySelector<HTMLElement>('button') ??
-      (prefs.pane === 'detail' ? detailPane.current : structurePane.current)
+      (prefs.pane === 'chat'
+        ? chatPane.current
+        : prefs.pane === 'detail'
+          ? detailPane.current
+          : structurePane.current)
     if (target && !target.closest('[hidden],[inert]')) target.focus({ preventScroll: true })
   }, [
     visible,
@@ -276,16 +284,28 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
       160
     )
   }
-  function choosePane(pane: 'material' | 'structure' | 'detail'): void {
+  function choosePane(pane: 'material' | 'structure' | 'detail' | 'chat'): void {
     update({ pane })
+    if (pane === 'chat') {
+      setChatOpen(true)
+      setDetail(null)
+    }
     requestAnimationFrame(() =>
       (pane === 'material'
         ? materialPane.current
         : pane === 'structure'
           ? structurePane.current
-          : detailPane.current
+          : pane === 'chat'
+            ? chatPane.current
+            : detailPane.current
       )?.focus({ preventScroll: true })
     )
+  }
+  async function discuss(scope: PlanningScope, prompt?: string): Promise<void> {
+    await conversations.discussPlanning(scope, prompt)
+    setChatOpen(true)
+    setDetail(null)
+    choosePane('chat')
   }
   function chooseLocation(next: PlanningLocation): void {
     update({ location: next, detailOffset: 0, pane: 'structure' })
@@ -781,6 +801,11 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
             actions={[
               { id: 'open', label: 'Open original', onSelect: () => openOriginal(item) },
               {
+                id: 'discuss',
+                label: 'Discuss',
+                onSelect: () => void discuss({ kind: 'selection', items: [targetOf(item)] })
+              },
+              {
                 id: 'use',
                 label: 'Add to chapter or topic…',
                 onSelect: () => {
@@ -859,6 +884,17 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
         </div>
         <div className={styles['plan-actions']}>
           <WorkspaceModeSwitch />
+          <AppButton
+            variant={chatOpen ? 'default' : 'subtle'}
+            onClick={() => {
+              if (chatOpen) {
+                setChatOpen(false)
+                choosePane('structure')
+              } else choosePane('chat')
+            }}
+          >
+            ChatGPT
+          </AppButton>
           <SaveMenu />
           <AppButton variant="subtle" onClick={() => session.research({ kind: 'sources' })}>
             Research
@@ -926,14 +962,20 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
       ) : null}
       {narrow ? (
         <nav className={styles['plan-actions']} aria-label="Planning panes">
-          {(['material', 'structure', 'detail'] as const).map((pane) => (
+          {(['material', 'structure', 'detail', 'chat'] as const).map((pane) => (
             <AppButton
               key={pane}
               variant={prefs.pane === pane ? 'default' : 'subtle'}
               aria-pressed={prefs.pane === pane}
               onClick={() => choosePane(pane)}
             >
-              {pane === 'material' ? 'Material' : pane === 'structure' ? 'Structure' : 'Details'}
+              {pane === 'material'
+                ? 'Material'
+                : pane === 'structure'
+                  ? 'Structure'
+                  : pane === 'chat'
+                    ? 'Chat'
+                    : 'Details'}
             </AppButton>
           ))}
         </nav>
@@ -941,6 +983,13 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
       {selection.length ? (
         <section className={styles['selection-actions']} aria-label="Selected material">
           <strong>{selection.length} selected</strong>
+          <AppButton
+            variant="subtle"
+            disabled={conversations.busy}
+            onClick={() => void discuss({ kind: 'selection', items: targets })}
+          >
+            Discuss
+          </AppButton>
           <Select
             label="Destination"
             searchable
@@ -1000,7 +1049,7 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
           </div>
         </section>
       ) : null}
-      <div className={styles['plan-layout']} data-detail={!!detail}>
+      <div className={styles['plan-layout']} data-detail={!!detail || chatOpen}>
         <section
           ref={materialPane}
           className={styles['material-pane']}
@@ -1338,6 +1387,9 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
             <section className={styles['chapter-contents']} aria-label="Selected group material">
               <div className={styles['plan-actions']}>
                 <h3>{selectedDocument?.title ?? selectedTopic?.title ?? 'Selected group'}</h3>
+                <AppButton variant="subtle" onClick={() => void discuss(location)}>
+                  Discuss
+                </AppButton>
                 <AppButton variant="subtle" onClick={() => chooseLocation({ kind: 'pool' })}>
                   Close material
                 </AppButton>
@@ -1434,6 +1486,12 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
                 offset={relationOffset}
                 change={setRelationOffset}
               />
+              <AppButton
+                variant="subtle"
+                onClick={() => void discuss({ kind: 'selection', items: [targetOf(detail)] })}
+              >
+                Discuss
+              </AppButton>
               <AppButton variant="default" onClick={() => openOriginal(detail)}>
                 Open original
               </AppButton>
@@ -1452,16 +1510,28 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
                 variant="subtle"
                 onClick={() => {
                   setDetail(null)
-                  choosePane('structure')
+                  choosePane(chatOpen ? 'chat' : 'structure')
                 }}
               >
-                Return to structure
+                {chatOpen ? 'Return to chat' : 'Return to structure'}
               </AppButton>
             </>
           ) : (
             <p>Select material to see its preview and original references.</p>
           )}
         </section>
+        <aside
+          ref={chatPane}
+          tabIndex={-1}
+          className={styles['planning-chat-pane']}
+          hidden={narrow ? prefs.pane !== 'chat' : !chatOpen || !!detail}
+          inert={narrow ? prefs.pane !== 'chat' : !chatOpen || !!detail}
+          aria-label="Planning conversation"
+        >
+          <ConversationSlot
+            active={visible && (narrow ? prefs.pane === 'chat' : chatOpen && !detail)}
+          />
+        </aside>
       </div>
       <AppDialog
         onExited={() => setFocusRevision((n) => n + 1)}

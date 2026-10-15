@@ -24,9 +24,14 @@ export function commandCapability(command: ProjectCommand): Capability {
         ? 'edit'
         : 'read'
     case 'conversation':
-      return ['change', 'memory-edit', 'context-change', 'reference-save', 'append'].includes(
-        command.input.action
-      )
+      return [
+        'planning-start',
+        'change',
+        'memory-edit',
+        'context-change',
+        'reference-save',
+        'append'
+      ].includes(command.input.action)
         ? 'edit'
         : 'read'
     case 'planningChange':

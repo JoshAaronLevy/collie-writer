@@ -46,7 +46,12 @@ export class ConversationDrafts {
     this.value = stored
     const previous = stored.entries
       .filter((d) => sameScope(d, input))
-      .map(({ conversationId, text, contextPolicy }) => ({ conversationId, text, contextPolicy }))
+      .map(({ conversationId, text, contextPolicy, planning }) => ({
+        conversationId,
+        text,
+        contextPolicy,
+        ...(planning ? { planning } : {})
+      }))
     const entries = input.action === 'write' ? input.entries : previous
     // The worker checks the active project/workspace even for an empty list.
     const result = await this.conversations.command({
@@ -67,7 +72,7 @@ export class ConversationDrafts {
       )
         throw new ProjectError('NOT_FOUND')
       const next: DraftFile = {
-        version: 1,
+        version: 2,
         revision: randomUUID(),
         entries: [
           ...stored.entries.filter((d) => !sameScope(d, input)),

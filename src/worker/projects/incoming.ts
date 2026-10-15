@@ -119,6 +119,7 @@ export async function promoteIncoming(
             ? ['planning_topics', 'planning_topic_members', 'planning_dispositions']
             : []),
           ...(inspectVersion(db) >= 41 ? ['note_passages'] : []),
+          ...(inspectVersion(db) >= 42 ? ['planning_analyses'] : []),
           ...(inspectVersion(db) >= 39
             ? ['conversation_document_links', 'excerpt_document_links', 'chapter_material_history']
             : []),

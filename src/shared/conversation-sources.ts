@@ -1,3 +1,4 @@
+import { isPlanningDestination, type PlanningDestination } from './planning'
 import { isId } from '../domain/editor/schema'
 import { exact, record } from './projects'
 import { isSourceMetadata, type SourceMetadata } from './sources'
@@ -11,6 +12,8 @@ export type ReferenceOrigin = {
 }
 export type ReferenceCandidate = { id: string; revisionId: string; title: string; reason: string }
 export type ReferenceSave = {
+  association?: { version: 1; target: PlanningDestination }
+
   operationId: string
   origin: ReferenceOrigin
   metadata: SourceMetadata
@@ -19,7 +22,7 @@ export type ReferenceSave = {
   candidates: ReferenceCandidate[]
 }
 export type ReferenceReceipt = ReferenceSave & {
-  version: 1
+  version: 1 | 2
   digest: string
   sourceId: string
   conversationId: string
@@ -59,7 +62,20 @@ export function isReferenceCandidate(v: unknown): v is ReferenceCandidate {
 export function isReferenceSave(v: unknown): v is ReferenceSave {
   return (
     record(v) &&
-    exact(v, ['operationId', 'origin', 'metadata', 'verified', 'existingSourceId', 'candidates']) &&
+    exact(v, [
+      'operationId',
+      'origin',
+      'metadata',
+      'verified',
+      'existingSourceId',
+      'candidates',
+      ...(v.association === undefined ? [] : ['association'])
+    ]) &&
+    (v.association === undefined ||
+      (record(v.association) &&
+        exact(v.association, ['version', 'target']) &&
+        v.association.version === 1 &&
+        isPlanningDestination(v.association.target))) &&
     isId(v.operationId) &&
     isReferenceOrigin(v.origin) &&
     isSourceMetadata(v.metadata) &&
@@ -77,7 +93,7 @@ export function isReferenceReceipt(v: unknown): v is ReferenceReceipt {
   return (
     JSON.stringify(v).length <= 192000 &&
     isReferenceSave(save) &&
-    version === 1 &&
+    version === (save.association === undefined ? 1 : 2) &&
     typeof digest === 'string' &&
     /^[a-f0-9]{64}$/.test(digest) &&
     isId(sourceId) &&

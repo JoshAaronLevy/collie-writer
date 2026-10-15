@@ -8,6 +8,8 @@
 
 **PL03, October 15:** Plan drops open retained Import selection; paste and Add source reach the existing Research editors. Keep passage saves an editable note and offers Open note/Open in Plan. Its origin disclosure returns to the exact native/imported exchange. Use excerpt selects the existing excerpt in Plan for explicit assignment. Show all material restores the normal pool filters; original detail navigation retains board state. See the [PL03 guide](../manual-testing/planning-PL03.md); user acceptance remains pending.
 
+**PL04, October 15:** Plan → ChatGPT or Discuss presents the same retained chat used by Write. Scope is explicit; details return to Chat without losing its draft. Send/Continue alone authorizes bounded analysis. Coverage and original links stay with saved responses. Add to Research can also link the candidate to the scoped chapter/topic; Save as note and Save as question reuse their existing owners. See the [PL04 guide](../manual-testing/planning-PL04.md); user acceptance is pending.
+
 October 2, 2026. Implementation map, not a record of runtime acceptance. App navigation and project transitions use the persistent I03 session. Hidden destination owners remain mounted; unresolved explicit drafts and exact operations retain their guards.
 
 | Capability                                                    | Entry point and destination                                                                          | Ownership/safety note                                                                                                             |

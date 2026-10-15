@@ -68,6 +68,7 @@ export default function EvidencePanel({
   project,
   focusItem,
   focusSourceId,
+  createRequested,
   disabled,
   readOnly,
   onCommitted,
@@ -77,6 +78,7 @@ export default function EvidencePanel({
   project: OpenProject
   focusItem: { kind: ItemKind | 'link'; id: string } | null
   focusSourceId?: string
+  createRequested?: { id: string; text: string; documentId?: string }
   disabled: boolean
   readOnly: boolean
   onCommitted: () => Promise<void>
@@ -201,7 +203,30 @@ export default function EvidencePanel({
     if (contextualLink && item) choose('claim', item)
     setError('')
   }
+  const consumedCreation = useRef(new Set<string>())
   const onEvidenceNavigation = useEffectEvent(() => {
+    if (
+      createRequested &&
+      !consumedCreation.current.has(createRequested.id) &&
+      view &&
+      !dirty &&
+      !busy &&
+      !pending.current &&
+      !readOnly &&
+      !session.composition.current
+    ) {
+      consumedCreation.current.add(createRequested.id)
+      if (consumedCreation.current.size > 64)
+        consumedCreation.current.delete(consumedCreation.current.values().next().value!)
+      choose('question', null)
+      setDraft({
+        ...draftFor('question', null),
+        text: createRequested.text.slice(0, 10000),
+        documentId: createRequested.documentId ?? ''
+      })
+      return
+    }
+
     if (!focusItem) {
       focused.current = ''
       return
@@ -253,7 +278,17 @@ export default function EvidencePanel({
   useEffect(() => {
     const frame = requestAnimationFrame(() => onEvidenceNavigation())
     return () => cancelAnimationFrame(frame)
-  }, [focusItem, focusSourceId, session.focusRevision, view, dirty, busy, pendingValue])
+  }, [
+    focusItem,
+    focusSourceId,
+    createRequested,
+    session.focusRevision,
+    view,
+    dirty,
+    busy,
+    pendingValue,
+    readOnly
+  ])
 
   async function mutate(change: EvidenceChange, retry = false): Promise<void> {
     if (readOnly || disabled || busy || (!retry && !data.fresh)) {

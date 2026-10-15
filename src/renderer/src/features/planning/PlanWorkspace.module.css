@@ -150,3 +150,29 @@
   color: var(--mantine-color-dimmed);
   font-size: var(--mantine-font-size-sm);
 }
+.planning-chat-pane {
+  min-width: 0;
+  height: max(24rem, calc(100dvh - 16rem));
+  overflow: hidden;
+  border: 1px solid var(--collie-border);
+  border-radius: var(--mantine-radius-md);
+}
+.planning-chat-controls,
+.planning-progress {
+  display: grid;
+  gap: var(--collie-space-2);
+  min-width: 0;
+}
+.planning-progress {
+  padding: var(--collie-space-2);
+  max-height: 16rem;
+  overflow: auto;
+}
+.planning-progress p,
+.planning-chat-controls p {
+  margin: 0;
+}
+.chat-caption {
+  font-size: 0.8125rem;
+  color: var(--collie-text-secondary);
+}

@@ -1,3 +1,5 @@
+import { PlanningOrigins } from '../../planning/PlanningChatControls'
+import { planningCoverageLabel } from '../../../../../shared/planning-conversation'
 import { selectedReference } from './chat-selection'
 import { useEffect, useState, useRef } from 'react'
 import type { ConversationTurn, ConversationValue } from '../../../../../shared/conversations'
@@ -112,8 +114,23 @@ export function ResearchAnswer({
       </p>
     ) : null
   const sources =
-    references.length || matches.size || related.length || issue ? (
+    references.length || matches.size || related.length || issue || turn.capture.version === 7 ? (
       <>
+        {turn.capture.version === 7 ? (
+          <>
+            <p>
+              {planningCoverageLabel(turn.capture.planning.coverage, turn.capture.planning.mode)}
+            </p>
+            <PlanningOrigins
+              key={turn.attempt.id}
+              runId={turn.capture.planning.runId}
+              done={turn.capture.planning.coverage.done}
+              {...(turn.capture.planning.mode === 'question' && turn.capture.planning.origins.length
+                ? { origins: turn.capture.planning.origins }
+                : {})}
+            />
+          </>
+        ) : null}
         {references.length ? (
           <>
             <strong>Sources used in this answer</strong>
@@ -194,7 +211,8 @@ export function ResearchAnswer({
         !(
           (turn.capture.version === 3 ||
             turn.capture.version === 4 ||
-            turn.capture.version === 6) &&
+            turn.capture.version === 6 ||
+            turn.capture.version === 7) &&
           turn.capture.purpose !== 'chat'
         )
           ? {
@@ -213,7 +231,42 @@ export function ResearchAnswer({
       text={turn.assistant?.text ?? ''}
       time={turn.assistant?.createdAt ?? null}
       now={now}
-      actions={actions}
+      actions={[
+        ...actions,
+        ...(turn.assistant &&
+        completed &&
+        c.page &&
+        !(turn.capture.version === 7 && turn.capture.purpose === 'planning-summary')
+          ? [
+              {
+                id: 'save-note',
+                label: 'Save as note',
+                disabled:
+                  c.readOnly ||
+                  c.passages.unavailable ||
+                  c.passages.busy ||
+                  !!c.passages.pending ||
+                  turn.assistant.text.length > 20000,
+                onSelect: () => {
+                  if (turn.assistant && c.page)
+                    void c.passages.keep({
+                      conversationId: turn.attempt.conversationId,
+                      conversationRevisionId: c.page.conversation.revisionId,
+                      key: {
+                        segment: 'native',
+                        sequence: turn.assistant.ordinal,
+                        messageId: turn.assistant.id,
+                        messageRevision: turn.assistant.revisionId
+                      },
+                      start: 0,
+                      end: turn.assistant.text.length,
+                      quote: turn.assistant.text
+                    })
+                }
+              }
+            ]
+          : [])
+      ]}
       linked={[...matches.values()].some((m) => m.status === 'exact')}
       sources={sources}
       notice={
@@ -248,18 +301,41 @@ export function ResearchAnswer({
         />
       </div>
       {selection && completed ? (
-        <AppButton
-          data-chat-generated
-          variant="subtle"
-          size="compact-sm"
-          disabled={c.readOnly}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() =>
-            c.references.begin(turn, { kind: 'text', text: selection.text }, selection.title)
-          }
-        >
-          Save reference
-        </AppButton>
+        <>
+          <AppButton
+            data-chat-generated
+            variant="subtle"
+            size="compact-sm"
+            disabled={c.readOnly}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() =>
+              c.references.begin(turn, { kind: 'text', text: selection.text }, selection.title)
+            }
+          >
+            Save reference
+          </AppButton>
+          <AppButton
+            variant="subtle"
+            size="compact-sm"
+            data-chat-generated
+            disabled={c.readOnly}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() =>
+              session.research({
+                kind: 'evidence',
+                create: {
+                  id: crypto.randomUUID(),
+                  text: selection.text,
+                  ...(turn.capture.version === 7 && turn.capture.planning.scope.kind === 'chapter'
+                    ? { documentId: turn.capture.planning.scope.id }
+                    : {})
+                }
+              })
+            }
+          >
+            Save as question
+          </AppButton>
+        </>
       ) : null}
     </ChatMessage>
   )

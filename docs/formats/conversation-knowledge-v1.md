@@ -35,3 +35,7 @@ Completed answers are matched against the whole project's source inventory, not 
 Context → Project material exposes saved pins/exclusions, title search, refresh/unpin/include actions and the last sent coverage. Exact sent snapshots remain in the message menu. Project references offers In Research/Open source or Possible existing source/Review match; captured writing, note, excerpt and chat IDs link only to real scoped records through existing navigation. Discuss in chat opens a new local draft with the saved source pinned; it does not send or overwrite another draft. Actual citation insertion and saving newly discovered references remain AC07.
 
 The React controls retain the existing UI framework, async generation guards, project navigation/draft owners and composition handling. Runtime answer relevance, keyboard/focus, native migration/copy/Save and live provider behavior remain user-owned acceptance.
+
+## PL04 planning context
+
+October 15, 2026: planning uses a separate exact portable capture v7 and review v8; the older knowledge and imported whole-message contracts above stay frozen. Schema/minimum reader 42 stores bounded analysis snapshots in `planning_analyses`. The [PL04 record](../validation/planning-PL04.md) defines enumeration, original ranges, cumulative summaries, request limits, invalidation, continuation and portability. Existing direct conversation/research operation versions and account dispatch remain unchanged.

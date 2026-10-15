@@ -1,3 +1,9 @@
+import {
+  planningCommand,
+  planningReview,
+  validatePlanningAnalyses,
+  validatePlanningCapture
+} from './planning-conversation'
 import { hasChapterMaterial } from './material-links'
 import { chatMedia } from './chat-media'
 import {
@@ -35,7 +41,7 @@ import {
   validateKnowledgeSettings,
   validateKnowledgeCapture
 } from './conversation-knowledge'
-const visibleMessage = `NOT EXISTS (SELECT 1 FROM conversation_attempts ma JOIN ai_captures mc ON mc.project_id=ma.project_id AND mc.id=ma.capture_id WHERE ma.project_id=conversation_messages.project_id AND ma.id=conversation_messages.attempt_id AND json_extract(mc.body,'$.purpose') IN ('chat-summary','overview-summary'))`
+const visibleMessage = `NOT EXISTS (SELECT 1 FROM conversation_attempts ma JOIN ai_captures mc ON mc.project_id=ma.project_id AND mc.id=ma.capture_id WHERE ma.project_id=conversation_messages.project_id AND ma.id=conversation_messages.attempt_id AND json_extract(mc.body,'$.purpose') IN ('chat-summary','overview-summary','planning-summary'))`
 import {
   memoryPlan,
   memoryReview,
@@ -605,7 +611,22 @@ export async function conversationCommand(
               .map((t) => t.id)
           )
   }
+  const planned =
+    reviewed?.version === 8 &&
+    !(
+      input.action === 'append' &&
+      db
+        .prepare('SELECT 1 FROM conversation_attempts WHERE project_id=? AND id=?')
+        .get(p, input.submission.attemptId)
+    )
+      ? await planningReview(context, reviewed)
+      : null
   switch (input.action) {
+    case 'planning-start':
+    case 'planning-state':
+    case 'planning-origins':
+      return planningCommand(context, input)
+
     case 'media':
       return chatMedia(context, input, (id) => message(db, p, id))
     case 'imported-links': {
@@ -873,7 +894,9 @@ export async function conversationCommand(
       }
     }
     case 'review':
-      return review(db, p, input, false, imported)
+      return planned
+        ? { type: 'review', capture: planned, excludedMessages: 0 }
+        : review(db, p, input, false, imported)
     case 'get':
       return { type: 'turn', turn: turn(db, p, input.attemptId), fresh: false, ...head(db, p) }
     case 'bindings':
@@ -1021,7 +1044,7 @@ export async function conversationCommand(
           ).n
         )
           throw new ProjectError('ACCESS_BUSY')
-        const { capture } = review(db, p, s.review, false, imported)
+        const capture = planned ?? review(db, p, s.review, false, imported).capture
         if (capture.digest !== s.digest) throw new ProjectError('STALE_REVISION')
         const now = new Date().toISOString(),
           ordinal = (
@@ -1061,7 +1084,10 @@ export async function conversationCommand(
         }
         if (
           capture.version >= 2 &&
-          ((capture.version !== 3 && capture.version !== 4 && capture.version !== 6) ||
+          ((capture.version !== 3 &&
+            capture.version !== 4 &&
+            capture.version !== 6 &&
+            capture.version !== 7) ||
             capture.purpose === 'chat') &&
           !db
             .prepare(
@@ -1262,7 +1288,10 @@ export async function conversationCommand(
         .iterate(p, c.id) as Iterable<{ attempt_id: string }>) {
         const t = turn(db, p, row.attempt_id)
         if (
-          (t.capture.version === 3 || t.capture.version === 4 || t.capture.version === 6) &&
+          (t.capture.version === 3 ||
+            t.capture.version === 4 ||
+            t.capture.version === 6 ||
+            t.capture.version === 7) &&
           t.capture.purpose !== 'chat'
         )
           append('\nContext preparation (not a user chat message)\n')
@@ -1364,6 +1393,7 @@ export function interruptUnboundConversations(
   })
 }
 export function validatePortableConversations(db: Database.Database, p: string): void {
+  validatePlanningAnalyses(db, p)
   validateExternalConversations(db, p)
   if (schemaVersion(db) >= 21) validateReferenceReceipts(db, p, (id) => turn(db, p, id))
   for (const table of [
@@ -1404,7 +1434,8 @@ export function validatePortableConversations(db: Database.Database, p: string):
       (capture.version === 3 && schemaVersion(db) < 18) ||
       (capture.version === 4 && schemaVersion(db) < 19) ||
       (capture.version === 5 && schemaVersion(db) < 20) ||
-      (capture.version === 6 && schemaVersion(db) < 30)
+      (capture.version === 6 && schemaVersion(db) < 30) ||
+      (capture.version === 7 && schemaVersion(db) < 42)
     )
       corrupt()
   }
@@ -1435,6 +1466,7 @@ export function validatePortableConversations(db: Database.Database, p: string):
         if (ref.conversationId !== t.capture.conversationId) corrupt()
         validateImportedReference(db, p, ref, ref.text, t.capture.head)
       }
+    if (t.capture.version === 7) validatePlanningCapture(db, p, t.capture)
     for (const id of t.capture.historyIds) {
       const m = message(db, p, id)
       if (m.conversationId !== t.attempt.conversationId || m.ordinal >= t.user.ordinal) corrupt()

@@ -19,6 +19,7 @@ import {
   chapterMaterialTables,
   planningTables,
   notePassageTable,
+  planningAnalysisTables,
   importReviewTableV33,
   assetTable,
   outlineTables,
@@ -630,6 +631,19 @@ const migrations: readonly Migration[] = [
       db.prepare('UPDATE format SET schema_version=41,minimum_reader=41').run()
       for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
         validatePortablePassages(db, row.id)
+    }
+  },
+  {
+    from: 41,
+    to: 42,
+    validateSource: (db) => {
+      validateProjectSchema(db, 41)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortablePassages(db, row.id)
+    },
+    apply: (db) => {
+      for (const sql of planningAnalysisTables) db.exec(sql)
+      db.prepare('UPDATE format SET schema_version=42,minimum_reader=42').run()
     }
   }
 ]

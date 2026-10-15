@@ -1,3 +1,4 @@
+import { isPlanningScope, type PlanningScope } from './planning-conversation'
 import { isId } from '../domain/editor/schema'
 import { aiText, AI_LIMITS } from './ai'
 import { isContextPolicy, type ConversationContextPolicy } from './conversation-context'
@@ -5,10 +6,14 @@ import { exact, record, isOpenInput, type OpenInput, type ProjectResult } from '
 
 export const CONVERSATION_DRAFTS = 'conversations.drafts'
 export const DRAFT_LIMITS = { scope: 20, total: 128, characters: 500000 } as const
-export type ChatDraft = { text: string; contextPolicy: ConversationContextPolicy }
+export type ChatDraft = {
+  text: string
+  contextPolicy: ConversationContextPolicy
+  planning?: { version: 1; scope: PlanningScope; mode: 'collection' | 'question'; search: boolean }
+}
 export type StoredChatDraft = ChatDraft & { conversationId: string }
 export type DraftFile = {
-  version: 1
+  version: 1 | 2
   revision: string
   entries: (OpenInput & StoredChatDraft)[]
 }
@@ -25,7 +30,19 @@ export type ConversationDraftAPI = {
 export function isStoredChatDraft(v: unknown): v is StoredChatDraft {
   return (
     record(v) &&
-    exact(v, ['conversationId', 'text', 'contextPolicy']) &&
+    exact(v, [
+      'conversationId',
+      'text',
+      'contextPolicy',
+      ...(v.planning === undefined ? [] : ['planning'])
+    ]) &&
+    (v.planning === undefined ||
+      (record(v.planning) &&
+        exact(v.planning, ['version', 'scope', 'mode', 'search']) &&
+        v.planning.version === 1 &&
+        isPlanningScope(v.planning.scope) &&
+        ['question', 'collection'].includes(String(v.planning.mode)) &&
+        typeof v.planning.search === 'boolean')) &&
     isId(v.conversationId) &&
     aiText(v.text, AI_LIMITS.prompt) &&
     isContextPolicy(v.contextPolicy)
@@ -72,7 +89,7 @@ export function isDraftFile(v: unknown): v is DraftFile {
   if (
     !record(v) ||
     !exact(v, ['version', 'revision', 'entries']) ||
-    v.version !== 1 ||
+    (v.version !== 1 && v.version !== 2) ||
     !isId(v.revision) ||
     !Array.isArray(v.entries) ||
     v.entries.length > DRAFT_LIMITS.total
@@ -84,7 +101,12 @@ export function isDraftFile(v: unknown): v is DraftFile {
   for (const item of v.entries) {
     if (!record(item)) return false
     const { projectId, workspaceId, ...draft } = item
-    if (!isOpenInput({ projectId, workspaceId }) || !isStoredChatDraft(draft)) return false
+    if (
+      !isOpenInput({ projectId, workspaceId }) ||
+      !isStoredChatDraft(draft) ||
+      (v.version === 1 && draft.planning !== undefined)
+    )
+      return false
     const scope = `${projectId}:${workspaceId}`,
       key = `${scope}:${draft.conversationId}`
     const count = (scopes.get(scope) ?? 0) + 1

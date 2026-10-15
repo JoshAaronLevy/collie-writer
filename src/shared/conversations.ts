@@ -1,3 +1,15 @@
+import {
+  isPlanningContext,
+  isPlanningOrigin,
+  isPlanningScope,
+  isPlanningCapture,
+  isPlanningStep,
+  isPlanningAnalysisState,
+  type PlanningScope,
+  type PlanningCapture,
+  type PlanningStep,
+  type PlanningAnalysisState
+} from './planning-conversation'
 import { isMediaRequest, isMediaValue, type MediaRequest, type MediaValue } from './chat-media'
 import { isImportedLinks, type ImportedLinks } from './imported-links'
 import {
@@ -105,10 +117,18 @@ export type AiCaptureV6 = Omit<AiCaptureV4, 'version' | 'template'> & {
   template: 'conversation-imported-v1' | 'conversation-imported-research-v1'
   imported: ImportedContextMessage[]
 }
+export type AiCaptureV7 = Omit<AiCaptureV2, 'version' | 'template'> & {
+  version: 7
+  template: 'conversation-v2' | 'conversation-research-v1'
+  purpose: 'chat' | 'planning-summary'
+  planning: PlanningCapture
+}
 export const isResearchCapture = (c: AiCapture): boolean =>
-  c.version === 5 || (c.version === 6 && c.template === 'conversation-imported-research-v1')
+  (c.version === 7 && c.template === 'conversation-research-v1') ||
+  c.version === 5 ||
+  (c.version === 6 && c.template === 'conversation-imported-research-v1')
 export type AiCapture =
-  AiCaptureV6 | AiCaptureV1 | AiCaptureV2 | AiCaptureV3 | AiCaptureV4 | AiCaptureV5
+  AiCaptureV7 | AiCaptureV6 | AiCaptureV1 | AiCaptureV2 | AiCaptureV3 | AiCaptureV4 | AiCaptureV5
 export type Conversation = {
   version: 1 | 2
   /** v1 has no claimed origin; v2 always carries a nullable stable ID. */
@@ -161,8 +181,9 @@ export type ConversationTurn = {
 export type ConversationReview = OpenInput & {
   action: 'review'
   /** Omitted version retains the original manual-context contract. */
-  version?: 2 | 3 | 4 | 5 | 6 | 7
-  purpose?: MemoryPurpose
+  version?: 2 | 3 | 4 | 5 | 6 | 7 | 8
+  planning?: PlanningStep
+  purpose?: MemoryPurpose | 'planning-summary'
   contextPolicy?: ConversationContextPolicy
   conversationId: string
   expectedRevision: string
@@ -195,6 +216,18 @@ export type ConversationSubmit = OpenInput & {
 }
 export type ConversationGroup = { items: ConversationSummary[]; total: number }
 export type ConversationRequest =
+  | (OpenInput & {
+      action: 'planning-start'
+      runId: string
+      conversationId: string
+      expectedHead: string
+      scope: PlanningScope
+      prompt: string
+      search: boolean
+      mode: 'collection' | 'question'
+    })
+  | (OpenInput & { action: 'planning-state'; conversationId: string; runId: string | null })
+  | (OpenInput & { action: 'planning-origins'; runId: string; offset: number; done: number })
   | MediaRequest
   | TranscriptInput
   | (OpenInput & { action: 'imported-links'; messageId: string; offset: number })
@@ -302,6 +335,12 @@ export type ConversationWorkerInput =
           }
       ))
 export type ConversationValue =
+  | { type: 'planning-state'; analysis: PlanningAnalysisState | null }
+  | {
+      type: 'planning-origins'
+      items: import('./planning-conversation').PlanningOrigin[]
+      more: boolean
+    }
   | MediaValue
   | TranscriptValue
   | ImportedLinks
@@ -453,6 +492,45 @@ function isAiCaptureV1(v: unknown): v is AiCaptureV1 {
   )
 }
 export function isAiCapture(v: unknown, importedContract = false): v is AiCapture {
+  if (record(v) && v.version === 7) {
+    const { planning, purpose, ...base } = v
+    if (
+      !isPlanningCapture(planning) ||
+      !['chat', 'planning-summary'].includes(String(purpose)) ||
+      !['conversation-v2', 'conversation-research-v1'].includes(String(v.template)) ||
+      (v.template === 'conversation-research-v1' && purpose !== 'chat') ||
+      !Array.isArray(v.context) ||
+      !record(v.source) ||
+      v.source.kind !== 'none' ||
+      v.contextPolicy !== 'chat'
+    )
+      return false
+    const attached = v.context.filter((c) => record(c) && c.label === 'Planning material')
+    return (
+      attached.length === 1 &&
+      attached.every(
+        (c) =>
+          record(c) &&
+          exact(c, ['kind', 'id', 'revision', 'label', 'text']) &&
+          c.kind === 'note' &&
+          c.id === v.id &&
+          c.revision === v.head &&
+          text(c.text, AI_LIMITS.context) &&
+          isPlanningContext(c.text, planning)
+      ) &&
+      v.context.reduce(
+        (n, c) =>
+          n + (record(c) && typeof c.text === 'string' ? c.text.length : AI_LIMITS.context + 1),
+        0
+      ) <= AI_LIMITS.context &&
+      isAiCapture({
+        ...base,
+        version: 2,
+        template: 'conversation-v2',
+        context: v.context.filter((c) => !record(c) || c.label !== 'Planning material')
+      })
+    )
+  }
   if (record(v) && v.version === 6) {
     const { imported, ...base } = v
     if (
@@ -828,6 +906,39 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
   if (!record(v) || !scope(v)) return false
   const fields = ['projectId', 'workspaceId', 'action']
   switch (v.action) {
+    case 'planning-start':
+      return (
+        exact(v, [
+          ...fields,
+          'runId',
+          'conversationId',
+          'expectedHead',
+          'scope',
+          'prompt',
+          'search',
+          'mode'
+        ]) &&
+        [v.runId, v.conversationId, v.expectedHead].every(isId) &&
+        isPlanningScope(v.scope) &&
+        text(v.prompt, AI_LIMITS.prompt) &&
+        !!v.prompt.trim() &&
+        typeof v.search === 'boolean' &&
+        (v.mode === 'collection' || v.mode === 'question')
+      )
+    case 'planning-state':
+      return (
+        exact(v, [...fields, 'conversationId', 'runId']) &&
+        isId(v.conversationId) &&
+        (v.runId === null || isId(v.runId))
+      )
+    case 'planning-origins':
+      return (
+        exact(v, [...fields, 'runId', 'offset', 'done']) &&
+        isId(v.runId) &&
+        integer(v.offset, 20000) &&
+        integer(v.done, 20000)
+      )
+
     case 'media':
       return isMediaRequest(v)
     case 'imported-links':
@@ -970,6 +1081,36 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
         state(v.state)
       )
     case 'review':
+      if (v.version === 8)
+        return (
+          exact(v, [
+            ...fields,
+            'version',
+            'purpose',
+            'contextPolicy',
+            'conversationId',
+            'expectedRevision',
+            'expectedHead',
+            'captureId',
+            'createdAt',
+            'prompt',
+            'source',
+            'historyIds',
+            'planning'
+          ]) &&
+          [v.conversationId, v.expectedRevision, v.expectedHead, v.captureId].every(isId) &&
+          date(v.createdAt) &&
+          text(v.prompt, AI_LIMITS.prompt) &&
+          !!v.prompt.trim() &&
+          record(v.source) &&
+          exact(v.source, ['kind']) &&
+          v.source.kind === 'none' &&
+          v.contextPolicy === 'chat' &&
+          Array.isArray(v.historyIds) &&
+          !v.historyIds.length &&
+          isPlanningStep(v.planning) &&
+          v.purpose === (v.planning.step === 'summary' ? 'planning-summary' : 'chat')
+        )
       return (
         exact(v, [
           ...fields,
@@ -1109,6 +1250,10 @@ export function isConversationWorkerInput(v: unknown): v is ConversationWorkerIn
   if (!record(v) || !scope(v)) return false
   const fields = ['projectId', 'workspaceId', 'action']
   switch (v.action) {
+    case 'planning-start':
+    case 'planning-state':
+    case 'planning-origins':
+      return isConversationRequest(v)
     case 'media':
       return isMediaRequest(v)
     case 'imported-links':
@@ -1195,6 +1340,20 @@ export function isConversationValue(v: unknown): v is ConversationValue {
   if (isTranscriptValue(v) || isMediaValue(v)) return true
   if (!record(v)) return false
   switch (v.type) {
+    case 'planning-state':
+      return (
+        exact(v, ['type', 'analysis']) &&
+        (v.analysis === null || isPlanningAnalysisState(v.analysis))
+      )
+    case 'planning-origins':
+      return (
+        exact(v, ['type', 'items', 'more']) &&
+        Array.isArray(v.items) &&
+        v.items.length <= 20 &&
+        v.items.every(isPlanningOrigin) &&
+        typeof v.more === 'boolean'
+      )
+
     case 'context-settings':
       return (
         exact(v, ['type', 'settings', 'excludedTitles']) &&

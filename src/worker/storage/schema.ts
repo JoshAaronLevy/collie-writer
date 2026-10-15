@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 
 export const PROJECT_APPLICATION_ID = 1129270359
-export const PROJECT_SCHEMA_VERSION = 41
+export const PROJECT_SCHEMA_VERSION = 42
 // Persisted schema is app-owned; never execute DDL or migrations supplied by a project.
 export const projectTablesV1 = [
   `CREATE TABLE format (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, minimum_reader INTEGER NOT NULL, editor_version INTEGER NOT NULL) STRICT`,
@@ -184,7 +184,13 @@ export const planningTables = [
 ] as const
 export const projectTablesV40 = [...projectTablesV39, ...planningTables]
 export const notePassageTable = `CREATE TABLE note_passages (project_id TEXT NOT NULL, note_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,note_id), FOREIGN KEY(project_id,note_id) REFERENCES notes(project_id,id)) STRICT`
-export const projectTables = [...projectTablesV40, notePassageTable]
+export const projectTablesV41 = [...projectTablesV40, notePassageTable]
+export const planningAnalysisTables = [
+  `CREATE TABLE planning_analyses (project_id TEXT NOT NULL, id TEXT NOT NULL, conversation_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id,conversation_id) REFERENCES conversations(project_id,id)) STRICT`,
+  `CREATE INDEX planning_analysis_chat ON planning_analyses(project_id,conversation_id)`,
+  `CREATE INDEX planning_summary_prefix ON ai_captures(project_id,conversation_id,json_extract(body,'$.planning.prefix')) WHERE json_extract(body,'$.version')=7`
+]
+export const projectTables = [...projectTablesV41, ...planningAnalysisTables]
 const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export function createProjectSchema(db: Database.Database): void {
@@ -290,7 +296,10 @@ export function validateProjectSchema(
                                                                             ? projectTablesV39
                                                                             : expectedVersion === 40
                                                                               ? projectTablesV40
-                                                                              : projectTables
+                                                                              : expectedVersion ===
+                                                                                  41
+                                                                                ? projectTablesV41
+                                                                                : projectTables
     ).map(sqlKey)
   )
   if (

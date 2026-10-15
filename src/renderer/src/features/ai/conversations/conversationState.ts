@@ -1,3 +1,10 @@
+import {
+  PLANNING_ANALYSIS,
+  PLANNING_SUMMARY_PROMPT,
+  type PlanningScope,
+  type PlanningAnalysisState,
+  type PlanningOrigin
+} from '../../../../../shared/planning-conversation'
 import { useImportedTranscript } from './useImportedTranscript'
 import { usePassageCapture } from './usePassageCapture'
 import type { NotePassage } from '../../../../../shared/note-passage'
@@ -12,6 +19,13 @@ import { useCallback, useMemo } from 'react'
 import { useConversationDrafts } from './useConversationDrafts'
 import type { ChatDraft } from '../../../../../shared/conversation-drafts'
 type ConversationControllerState = {
+  planning: ChatDraft['planning'] | null
+  analysis: PlanningAnalysisState | null
+  setPlanningScope: (scope: PlanningScope) => void
+  setPlanningMode: (mode: 'question' | 'collection') => void
+  discussPlanning: (scope: PlanningScope, prompt?: string) => Promise<void>
+  continuePlanning: () => Promise<void>
+  openPlanningOrigin: (origin: PlanningOrigin) => Promise<void>
   passages: ReturnType<typeof usePassageCapture>
   showPassage: (passage: NotePassage) => Promise<boolean>
   reveal: {
@@ -152,7 +166,13 @@ export function useConversationController(): ConversationControllerState {
     [page, setPage] = useState<Extract<ConversationValue, { type: 'page' }> | null>(null),
     [before, setBefore] = useState<number | null>(null)
   const [searchChoice, setSearchChoice] = useState<Record<string, boolean>>({})
-  const searchWeb = selected ? (searchChoice[selected] ?? true) : true
+  const planVisible =
+    session.destination.kind === 'workspace' && session.destination.view === 'plan'
+  const [analysisResult, setAnalysisResult] = useState<{
+    chat: string
+    project: string
+    value: PlanningAnalysisState | null
+  } | null>(null)
   const [opening, setOpening] = useState(0)
   const [readRevision, setReadRevision] = useState(0)
   const [rename, setRename] = useState('')
@@ -209,6 +229,44 @@ export function useConversationController(): ConversationControllerState {
   const draftProtection = useConversationDrafts(scope),
     drafts = draftProtection.drafts,
     draft = selected ? (drafts[selected] ?? emptyDraft()) : emptyDraft()
+  const lastPlanning = [...(page?.turns ?? [])]
+    .reverse()
+    .find((t) => t.capture.version === 7)?.capture
+  const analysis =
+    analysisResult?.chat === selected && analysisResult.project === projectId
+      ? analysisResult.value
+      : null
+  const planning: ChatDraft['planning'] | null =
+    draft.planning ??
+    (lastPlanning?.version === 7
+      ? {
+          version: 1,
+          scope: lastPlanning.planning.scope,
+          mode: lastPlanning.planning.mode,
+          search: isResearchCapture(lastPlanning)
+        }
+      : analysis
+        ? { version: 1, scope: analysis.scope, mode: analysis.mode, search: analysis.search }
+        : planVisible
+          ? { version: 1, scope: { kind: 'project' }, mode: 'question', search: false }
+          : null)
+  const searchWeb = planning ? planning.search : selected ? (searchChoice[selected] ?? true) : true
+  useEffect(() => {
+    if (!scope || !selected) return
+    let active = true
+    void window.collie
+      .conversation({ ...scope, action: 'planning-state', conversationId: selected, runId: null })
+      .then((r) => {
+        if (active && r.ok && r.value.type === 'planning-state')
+          setAnalysisResult({ chat: selected, project: scope.projectId, value: r.value.analysis })
+      })
+      .catch(() => {
+        /* Existing conversation remains readable if this local projection fails. */
+      })
+    return () => {
+      active = false
+    }
+  }, [scope, selected, project?.headCommitId])
   const readOnly = session.accessReadOnly || session.accessTransition,
     active = !!page?.turns.some((t) => activeStates.includes(t.attempt.state))
   const belongs = useCallback((captured: OpenInput): boolean => {
@@ -686,6 +744,19 @@ export function useConversationController(): ConversationControllerState {
   const selectedConnection = reviewConnection(connections.status)
   function update(patch: Partial<Draft>): void {
     if (!selected || pendingRef.current || locked.current) return
+    if (planning && patch.text !== undefined && !patch.planning)
+      patch = {
+        ...patch,
+        contextPolicy: 'chat',
+        planning: {
+          ...planning,
+          mode: /\b(outline|themes|organize everything|whole collection|all (?:my |the )?material)\b/iu.test(
+            patch.text
+          )
+            ? 'collection'
+            : planning.mode
+        }
+      }
     draftProtection.change(selected, patch)
   }
   function latest(): void {
@@ -781,8 +852,12 @@ export function useConversationController(): ConversationControllerState {
         if (
           d &&
           d.text === input.review.prompt &&
-          (input.review.version === undefined || d.contextPolicy === input.review.contextPolicy) &&
-          ((input.review.version !== 3 && input.review.version !== 4) ||
+          (input.review.version === undefined ||
+            input.review.version === 8 ||
+            d.contextPolicy === input.review.contextPolicy) &&
+          ((input.review.version !== 3 &&
+            input.review.version !== 4 &&
+            input.review.version !== 8) ||
             input.review.purpose === 'chat')
         )
           draftProtection.change(input.review.conversationId, { text: '' })
@@ -827,16 +902,267 @@ export function useConversationController(): ConversationControllerState {
     const input: ConversationRequest = {
       ...scope,
       action: 'change',
-      ...(kind === 'create' ? { version: 2 as const, originDocumentId: originOf(project) } : {}),
+      ...(kind === 'create'
+        ? { version: 2 as const, originDocumentId: planVisible ? null : originOf(project) }
+        : {}),
       operationId: crypto.randomUUID(),
       conversationId: kind === 'create' ? crypto.randomUUID() : c!.id,
       expectedRevision: kind === 'create' ? null : c!.revisionId,
       title,
       state: kind === 'archive' ? 'archived' : kind === 'rename' ? c!.state : 'active'
     }
-    void request(input)
+    void request(input).then(() => {
+      if (
+        kind === 'create' &&
+        planVisible &&
+        input.action === 'change' &&
+        state.current.selected === input.conversationId
+      )
+        draftProtection.change(input.conversationId, {
+          contextPolicy: 'chat',
+          planning: { version: 1, scope: { kind: 'project' }, mode: 'question', search: false }
+        })
+    })
+  }
+  async function discussPlanning(next: PlanningScope, prompt?: string): Promise<void> {
+    if (!scope || readOnly || locked.current || pendingRef.current || composing.current) return
+    let id = selected
+    if (!id || !planning || page?.conversation.state !== 'active') {
+      id = crypto.randomUUID()
+      await request({
+        ...scope,
+        action: 'change',
+        version: 2,
+        originDocumentId: next.kind === 'chapter' ? next.id : null,
+        operationId: crypto.randomUUID(),
+        conversationId: id,
+        expectedRevision: null,
+        title: 'Planning chat',
+        state: 'active'
+      })
+      if (state.current.selected !== id) return
+    }
+    draftProtection.change(id, {
+      contextPolicy: 'chat',
+      planning: {
+        version: 1,
+        scope: next,
+        mode: prompt ? 'collection' : (planning?.mode ?? 'question'),
+        search: planning?.search ?? false
+      },
+      ...(prompt && !drafts[id]?.text ? { text: prompt } : {})
+    })
+    setListOpen(false)
+  }
+  async function sendPlanning(continuation?: PlanningAnalysisState): Promise<void> {
+    if (
+      !scope ||
+      !selected ||
+      !planning ||
+      !canSend ||
+      locked.current ||
+      pendingRef.current ||
+      composing.current ||
+      (!continuation && !draft.text.trim())
+    )
+      return
+    const id = selected,
+      submitted = { ...draft },
+      selection = structuredClone(planning),
+      account = reviewConnection(connectionRef.current.status)
+    const intent = { cancelled: false, attemptId: null as string | null }
+    preparationIntent.current = intent
+    locked.current = true
+    setBusy(true)
+    setPreparingMemory(true)
+    setIssue('')
+    const stillCurrent = (): boolean =>
+      !intent.cancelled &&
+      belongs(scope) &&
+      state.current.selected === id &&
+      !current.current.closing &&
+      !current.current.navigating &&
+      !current.current.accessTransition &&
+      sameReviewConnection(account, reviewConnection(connectionRef.current.status))
+    const readState = async (runId: string | null): Promise<PlanningAnalysisState> => {
+      const r = await window.collie.conversation({
+        ...scope,
+        action: 'planning-state',
+        conversationId: id,
+        runId
+      })
+      if (!r.ok) throw new Error(r.error.message)
+      if (r.value.type !== 'planning-state' || !r.value.analysis)
+        throw new Error('The saved analysis could not be read.')
+      setAnalysisResult({ chat: id, project: scope.projectId, value: r.value.analysis })
+      return r.value.analysis
+    }
+    try {
+      if (!(await draftProtection.flush())) return
+      const saved = await current.current.flush(false, 'save', ['conversations'])
+      if (!saved || !stillCurrent()) return
+      let analysis = continuation
+      if (!analysis) {
+        // This exact local start can be retried through the existing pending owner.
+        const start: ConversationRequest = {
+          ...scope,
+          action: 'planning-start',
+          runId: crypto.randomUUID(),
+          conversationId: id,
+          expectedHead: saved.headCommitId,
+          scope: selection.scope,
+          prompt: submitted.text,
+          search: selection.search,
+          mode: selection.mode
+        }
+        await request(start, true)
+        locked.current = true
+        setBusy(true)
+        if (pendingRef.current || !stillCurrent()) return
+        analysis = await readState(start.runId)
+      } else analysis = await readState(analysis.runId)
+      if (!analysis.current)
+        throw new Error(
+          'The material changed. Send a new analysis to use its current revisions; the previous result is kept.'
+        )
+      const runId = analysis.runId
+      for (let calls = 0; calls <= PLANNING_ANALYSIS.calls; calls++) {
+        if (!stillCurrent()) return
+        const summary =
+          analysis.mode === 'collection' &&
+          analysis.done < analysis.chunks &&
+          calls < PLANNING_ANALYSIS.calls
+        if (!summary && analysis.answered && continuation) break
+        await current.current.refreshConversationHead(scope)
+        const saved = await current.current.flush(false, 'save', ['conversations'])
+        const page = await window.collie.conversation({
+          ...scope,
+          action: 'read',
+          conversationId: id,
+          before: null
+        })
+        if (!saved || !page.ok || page.value.type !== 'page' || !stillCurrent()) return
+        const review: ConversationReview = {
+          ...scope,
+          action: 'review',
+          version: 8,
+          purpose: summary ? 'planning-summary' : 'chat',
+          contextPolicy: 'chat',
+          conversationId: id,
+          expectedRevision: page.value.conversation.revisionId,
+          expectedHead: saved.headCommitId,
+          captureId: crypto.randomUUID(),
+          createdAt: new Date().toISOString(),
+          prompt: summary ? PLANNING_SUMMARY_PROMPT : analysis.prompt,
+          source: { kind: 'none' },
+          historyIds: [],
+          planning: { runId, step: summary ? 'summary' : 'answer', done: analysis.done }
+        }
+        const reviewed = await window.collie.conversation(review)
+        if (!reviewed.ok)
+          throw new Error(
+            reviewed.error.code === 'STALE_REVISION'
+              ? 'The material or account changed. Progress is kept; send a new analysis when ready.'
+              : reviewed.error.message
+          )
+        if (reviewed.value.type !== 'review' || !stillCurrent()) return
+        const attemptId = crypto.randomUUID()
+        intent.attemptId = attemptId
+        await request(
+          {
+            ...scope,
+            action: 'submit',
+            attemptId,
+            review,
+            digest: reviewed.value.capture.digest,
+            send: true,
+            connectionId: account.connectionId,
+            model: account.model
+          },
+          true
+        )
+        locked.current = true
+        setBusy(true)
+        if (pendingRef.current) return
+        if (!summary) {
+          intent.attemptId = null
+          break
+        }
+        const deadline = Date.now() + 10 * 60 * 1000
+        let completed = false
+        while (Date.now() < deadline) {
+          if (!stillCurrent()) {
+            await window.collie.conversation({ ...scope, action: 'cancel', attemptId })
+            return
+          }
+          const actual = await window.collie.conversation({
+            ...scope,
+            action: 'attempt',
+            attemptId
+          })
+          if (!actual.ok || actual.value.type !== 'turn')
+            throw new Error(
+              'Progress could not be checked. Use the saved response recovery action; nothing will resend automatically.'
+            )
+          if (actual.value.turn.attempt.state === 'completed') {
+            const ack = await window.collie.conversation({
+              ...scope,
+              action: 'acknowledge',
+              attemptId
+            })
+            if (ack.ok) {
+              completed = true
+              break
+            }
+            if (ack.error.code !== 'ACCESS_BUSY')
+              throw new Error(
+                'The summary needs local protection. Use its recovery action before continuing.'
+              )
+          } else if (!activeStates.includes(actual.value.turn.attempt.state))
+            throw new Error(
+              'Analysis stopped. Completed progress and any partial response are kept. Continue starts another bounded run.'
+            )
+          await new Promise<void>((resolve) => setTimeout(resolve, 500))
+        }
+        if (!completed) {
+          await window.collie.conversation({ ...scope, action: 'cancel', attemptId })
+          throw new Error('Analysis timed out. Stop was requested; completed progress is kept.')
+        }
+        intent.attemptId = null
+        const previous = analysis.done
+        analysis = await readState(runId)
+        if (analysis.done <= previous)
+          throw new Error(
+            'The response exceeded the summary limit or could not become a complete checkpoint. Its text is kept; Continue explicitly tries this unfinished batch again.'
+          )
+        if (!analysis.current)
+          throw new Error(
+            'The material changed during analysis. Saved results remain available; send again to use the current collection.'
+          )
+      }
+    } catch (error) {
+      if (belongs(scope))
+        setIssue(
+          error instanceof Error
+            ? error.message
+            : 'Planning could not finish. Saved progress and your draft are kept.'
+        )
+    } finally {
+      preparationIntent.current = null
+      setPreparingMemory(false)
+      locked.current = false
+      setBusy(false)
+      if (belongs(scope)) {
+        await current.current.refreshConversationHead(scope)
+        await refresh(scope)
+      }
+    }
   }
   async function send(): Promise<void> {
+    if (planning) {
+      await sendPlanning()
+      return
+    }
     if (
       !scope ||
       !selected ||
@@ -1219,6 +1545,112 @@ export function useConversationController(): ConversationControllerState {
   )
   const imported = useImportedTranscript(scope, importedSource, opening, importedTarget)
   return {
+    planning,
+    analysis,
+    discussPlanning,
+    setPlanningScope: (next) => {
+      if (planning) update({ contextPolicy: 'chat', planning: { ...planning, scope: next } })
+    },
+    setPlanningMode: (mode) => {
+      if (planning) update({ contextPolicy: 'chat', planning: { ...planning, mode } })
+    },
+    continuePlanning: () => (analysis ? sendPlanning(analysis) : Promise.resolve()),
+    openPlanningOrigin: async (origin) => {
+      if (!scope) return
+      if (origin.kind === 'note') session.research({ kind: 'notes', noteId: origin.id })
+      else if (origin.kind === 'source')
+        session.research(
+          origin.versionId
+            ? {
+                kind: 'inspector',
+                sourceId: origin.id,
+                versionId: origin.versionId,
+                ...(origin.page === null ? {} : { pageIndex: origin.page })
+              }
+            : { kind: 'sources', sourceId: origin.id }
+        )
+      else if (origin.kind === 'excerpt')
+        await session.navigate({
+          kind: 'workspace',
+          scope,
+          view: 'plan',
+          material: { kind: 'excerpt', id: origin.id }
+        })
+      else if (origin.key) {
+        try {
+          const chat = await window.collie.conversation({
+            ...scope,
+            action: 'read',
+            conversationId: origin.id,
+            before: null
+          })
+          if (!chat.ok || chat.value.type !== 'page')
+            throw new Error('The original conversation is unavailable.')
+          const source = {
+            kind: 'accepted' as const,
+            conversationId: origin.id,
+            revisionId: chat.value.conversation.revisionId
+          }
+          const transcript = await window.collie.conversation({
+            ...scope,
+            action: 'transcript-read',
+            source,
+            cursor: null,
+            direction: 'forward',
+            target: origin.key
+          })
+          if (!transcript.ok || transcript.value.type !== 'transcript')
+            throw new Error('The original exchange could not be opened.')
+          const entry = transcript.value.entries.find((e) => e.key.messageId === origin.partId)
+          if (!entry || entry.key.messageRevision !== origin.revision)
+            throw new Error(
+              'The original exchange changed; its saved input remains in sent context.'
+            )
+          let quote = '',
+            offset = origin.start
+          while (offset < origin.end) {
+            const part = await window.collie.conversation({
+              ...scope,
+              action: 'transcript-text',
+              source,
+              target: origin.key,
+              offset
+            })
+            if (
+              !part.ok ||
+              part.value.type !== 'transcript-text' ||
+              part.value.offset !== offset ||
+              !part.value.text.length
+            )
+              throw new Error('The exact original passage is unavailable.')
+            quote += part.value.text.slice(0, origin.end - offset)
+            offset += part.value.text.length
+          }
+          const passage: NotePassage = {
+            version: 1,
+            conversationId: origin.id,
+            conversationRevisionId: source.revisionId,
+            conversationTitle: origin.title,
+            role: entry.originalRole ?? entry.role,
+            attemptId: entry.native?.attemptId ?? null,
+            key: origin.key,
+            start: origin.start,
+            end: origin.end,
+            quote
+          }
+          await showTarget(
+            entry.native
+              ? { kind: 'native', attemptId: entry.native.attemptId }
+              : { kind: 'imported', messageId: origin.partId },
+            passage
+          )
+        } catch (error) {
+          setIssue(
+            error instanceof Error ? error.message : 'The original passage could not be opened.'
+          )
+        }
+      }
+    },
     reveal,
     opening,
     imported,
@@ -1260,6 +1692,11 @@ export function useConversationController(): ConversationControllerState {
     draft,
     searchWeb: !!searchWeb,
     setSearchWeb: (enabled) => {
+      if (planning) {
+        if (!busy && !pending && !active && !readOnly)
+          update({ contextPolicy: 'chat', planning: { ...planning, search: enabled } })
+        return
+      }
       if (selected && !busy && !pending && !active && !readOnly)
         setSearchChoice((choices) => ({ ...choices, [selected]: enabled }))
     },

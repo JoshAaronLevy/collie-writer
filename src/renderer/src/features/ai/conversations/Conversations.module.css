@@ -398,3 +398,12 @@
   display: block;
   max-width: 100%;
 }
+.conversation-slot,
+.conversation-host {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex: 1;
+}

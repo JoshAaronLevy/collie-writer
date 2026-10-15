@@ -72,7 +72,8 @@ class DraftSession {
       ...this.snapshot.drafts,
       [id]: { ...(this.snapshot.drafts[id] ?? empty()), ...patch }
     }
-    if (!drafts[id].text && drafts[id].contextPolicy === 'project') delete drafts[id]
+    if (!drafts[id].text && drafts[id].contextPolicy === 'project' && !drafts[id].planning)
+      delete drafts[id]
     if (Object.keys(drafts).length > DRAFT_LIMITS.scope) {
       this.publish({
         issue:

@@ -223,7 +223,10 @@ async function load(
           attemptId: m.attemptId,
           state: t.attempt.state,
           preparation:
-            (t.capture.version === 3 || t.capture.version === 4 || t.capture.version === 6) &&
+            (t.capture.version === 3 ||
+              t.capture.version === 4 ||
+              t.capture.version === 6 ||
+              t.capture.version === 7) &&
             t.capture.purpose !== 'chat'
         }
       }

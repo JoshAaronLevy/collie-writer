@@ -61,7 +61,10 @@ export async function resolveNotePassage(ctx: Context, p: PassageSelection): Pro
       .get(ctx.projectId, m.attempt_id) as { body: string }
     const capture = JSON.parse(captureRow.body) as AiCapture
     if (
-      (capture.version === 3 || capture.version === 4 || capture.version === 6) &&
+      (capture.version === 3 ||
+        capture.version === 4 ||
+        capture.version === 6 ||
+        capture.version === 7) &&
       capture.purpose !== 'chat'
     )
       throw new ProjectError('VALIDATION')

@@ -696,6 +696,7 @@ export class AiContentService {
   async command(input: ContentRequest): Promise<ContentValue> {
     const changes = [
       'submit',
+      'planning-start',
       'change',
       'memory-edit',
       'context-change',
@@ -712,6 +713,7 @@ export class AiContentService {
       this.ai.isSettling() &&
       [
         'submit',
+        'planning-start',
         'change',
         'memory-edit',
         'context-change',

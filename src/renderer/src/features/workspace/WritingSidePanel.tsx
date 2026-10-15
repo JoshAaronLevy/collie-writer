@@ -1,4 +1,4 @@
-import { ConversationPanel } from '../ai/conversations/ConversationPanel'
+import { ConversationSlot } from '../ai/conversations/ConversationSlot'
 import { ChapterMaterialPanel } from './ChapterMaterialPanel'
 import type { SecondaryPanel } from './useWritingPreferences'
 import styles from './WritingWorkspace.module.css'
@@ -17,7 +17,7 @@ export function WritingSidePanel({
       data-conversation-visible={active && mode === 'ai'}
     >
       <div className={styles['writing-chat-slot']} hidden={mode !== 'ai'} inert={mode !== 'ai'}>
-        <ConversationPanel />
+        <ConversationSlot active={active && mode === 'ai'} />
       </div>
       <div hidden={mode !== 'material'} inert={mode !== 'material'}>
         <ChapterMaterialPanel active={active && mode === 'material'} />

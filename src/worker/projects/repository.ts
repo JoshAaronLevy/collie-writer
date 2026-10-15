@@ -319,6 +319,7 @@ export class ProjectRepository {
     return this.serial(async () => {
       this.fileContext(input)
       const mutating = [
+        'planning-start',
         'change',
         'memory-edit',
         'context-change',

@@ -1,3 +1,4 @@
+import type { PlanningDestination } from '../../../../../shared/planning'
 import { useState, useRef } from 'react'
 import type { ConversationTurn } from '../../../../../shared/conversations'
 import type {
@@ -22,6 +23,7 @@ type ReferenceDraft = {
   metadata: SourceMetadata
   verified: boolean
   authors: string
+  association: { target: PlanningDestination; label: string; selected: boolean } | null
 }
 type ReferenceController = {
   draft: ReferenceDraft | null
@@ -34,6 +36,7 @@ type ReferenceController = {
   unavailable: boolean
   begin: (turn: ConversationTurn, reference: ReferenceOrigin['reference'], title: string) => void
   update: (metadata: SourceMetadata, verified?: boolean, authors?: string) => void
+  associate: (selected: boolean) => void
   check: () => Promise<void>
   save: (sourceId: string | null) => Promise<void>
   cite: (sourceId: string) => Promise<void>
@@ -98,6 +101,16 @@ export function useReferenceSave(): ReferenceController {
       scope: { projectId: p.projectId, workspaceId: p.workspaceId },
       conversationId: turn.attempt.conversationId,
       origin: { attemptId: turn.attempt.id, revisionId: turn.assistant.revisionId, reference },
+      association:
+        turn.capture.version === 7 &&
+        (turn.capture.planning.scope.kind === 'chapter' ||
+          turn.capture.planning.scope.kind === 'topic')
+          ? {
+              target: turn.capture.planning.scope,
+              label: turn.capture.planning.label,
+              selected: true
+            }
+          : null,
       verified: false,
       authors: '',
       metadata: {
@@ -181,7 +194,10 @@ export function useReferenceSave(): ReferenceController {
         metadata: d.metadata,
         verified: d.verified,
         existingSourceId,
-        candidates
+        candidates,
+        ...(d.association?.selected
+          ? { association: { version: 1, target: d.association.target } }
+          : {})
       }
       setPending(input)
     }
@@ -323,6 +339,10 @@ export function useReferenceSave(): ReferenceController {
     pending,
     unavailable,
     begin,
+    associate: (selected) => {
+      if (current.current?.association && !lock.current && !pendingRef.current && !receipt)
+        setDraft({ ...current.current, association: { ...current.current.association, selected } })
+    },
     update,
     check,
     save,

@@ -1,3 +1,8 @@
+import { planningSnapshot } from './planning-data'
+import { materialDocuments } from './chapter-material'
+import { effectiveState } from '../../shared/outline'
+import { setMaterialLink } from './material-links'
+import { PLANNING_RECORD_LIMIT } from '../../shared/planning'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { ProjectError } from '../../domain/projects/errors'
@@ -107,9 +112,44 @@ export function saveReference(
         'AI conversation reference',
         now
       )
+    if (input.association) {
+      const target = input.association.target
+      if (
+        t.capture.version !== 7 ||
+        requestDigest(t.capture.planning.scope) !== requestDigest(target)
+      )
+        throw new ProjectError('VALIDATION')
+      if (target.kind === 'chapter') {
+        const docs = materialDocuments(db, p),
+          doc = docs.find((d) => d.id === target.id)
+        if (!doc || effectiveState(doc, docs) !== 'active') throw new ProjectError('STALE_REVISION')
+        setMaterialLink(db, p, { kind: 'source', id: sourceId, documentId: target.id }, true)
+      } else {
+        if (
+          !db.prepare('SELECT 1 FROM planning_topics WHERE project_id=? AND id=?').get(p, target.id)
+        )
+          throw new ProjectError('STALE_REVISION')
+        db.prepare('INSERT OR IGNORE INTO planning_topic_members VALUES (?,?,?,?)').run(
+          p,
+          target.id,
+          'source',
+          sourceId
+        )
+        if (
+          (
+            db
+              .prepare('SELECT count(*) AS n FROM planning_topic_members WHERE project_id=?')
+              .get(p) as { n: number }
+          ).n > PLANNING_RECORD_LIMIT
+        )
+          throw new ProjectError('LIMIT_EXCEEDED')
+      }
+      if (Buffer.byteLength(JSON.stringify(planningSnapshot(db, p))) > 32 * 1024 ** 2 - 1024)
+        throw new ProjectError('LIMIT_EXCEEDED')
+    }
     const receipt: ReferenceReceipt = {
       ...input,
-      version: 1,
+      version: input.association ? 2 : 1,
       digest,
       sourceId,
       conversationId: t.attempt.conversationId,
@@ -182,10 +222,18 @@ export function validateReferenceReceipts(
       metadata: v.metadata,
       verified: v.verified,
       existingSourceId: v.existingSourceId,
-      candidates: v.candidates
+      candidates: v.candidates,
+      ...(v.association ? { association: v.association } : {})
     }
     const t = readTurn(row.attempt_id)
     checkReference(t, v.origin)
+    if (
+      v.association &&
+      ((db.prepare('SELECT schema_version AS v FROM format').get() as { v: number }).v < 42 ||
+        t.capture.version !== 7 ||
+        requestDigest(t.capture.planning.scope) !== requestDigest(v.association.target))
+    )
+      throw new ProjectError('CORRUPT_PROJECT')
     if (
       row.operation_id !== v.operationId ||
       row.attempt_id !== v.origin.attemptId ||

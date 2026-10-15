@@ -265,6 +265,13 @@ export default function WorkspaceViews(): React.JSX.Element {
           <RetainedRegion name="research-evidence" label="Questions and claims">
             {project ? (
               <EvidencePanel
+                createRequested={
+                  destination.kind === 'workspace' &&
+                  destination.view === 'research' &&
+                  destination.target.kind === 'evidence'
+                    ? destination.target.create
+                    : undefined
+                }
                 readOnly={accessReadOnly || accessTransition}
                 key={`${project.projectId}:${project.workspaceId}`}
                 project={project}

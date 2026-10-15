@@ -23,6 +23,7 @@ export type ResearchTarget =
   | { kind: 'notes'; noteId?: string; annotationId?: string; create?: string; text?: string }
   | {
       kind: 'evidence'
+      create?: { id: string; text: string; documentId?: string }
       item?: { kind: 'question' | 'claim' | 'link'; id: string }
       sourceId?: string
     }

@@ -47,6 +47,9 @@ export function ReferenceReview(): React.JSX.Element {
                   ? 'Linked to the existing source in Research. Its metadata was kept.'
                   : 'Saved in Research.'}
               </p>
+              {r.receipt.association ? (
+                <p>Also added to the selected {r.receipt.association.target.kind}.</p>
+              ) : null}
               <AppButton onClick={() => void r.cite(r.receipt!.sourceId)} disabled={r.unavailable}>
                 Cite in writing
               </AppButton>
@@ -59,6 +62,25 @@ export function ReferenceReview(): React.JSX.Element {
                 }}
               >
                 Open source
+              </AppButton>
+              <AppButton
+                variant="subtle"
+                onClick={() => {
+                  const id = r.receipt!.sourceId
+                  r.discard()
+                  if (session.project)
+                    void session.navigate({
+                      kind: 'workspace',
+                      scope: {
+                        projectId: session.project.projectId,
+                        workspaceId: session.project.workspaceId
+                      },
+                      view: 'plan',
+                      material: { kind: 'source', id }
+                    })
+                }}
+              >
+                Use in Plan
               </AppButton>
               <AppButton variant="subtle" onClick={r.discard}>
                 Done
@@ -143,6 +165,13 @@ export function ReferenceReview(): React.JSX.Element {
                   {field('page', 'Pages')}
                   {field('ISSN', 'ISSN')}
                 </details>
+                {d.association ? (
+                  <Checkbox
+                    label={`Add to ${d.association.label}`}
+                    checked={d.association.selected}
+                    onChange={(e) => r.associate(e.currentTarget.checked)}
+                  />
+                ) : null}
                 <Checkbox
                   label="I checked these details against the source"
                   checked={d.verified}

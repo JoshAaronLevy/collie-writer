@@ -1,7 +1,10 @@
 import { ImportProvider } from './features/imports/ImportProvider'
 import { ProofreadingProvider } from './features/ai/proofreading/ProofreadingProvider'
 import { ProofreadingNotice } from './features/ai/proofreading/ProofreadingPanel'
-import { ConversationProvider } from './features/ai/conversations/ConversationProvider'
+import {
+  ConversationProvider,
+  ConversationPresentation
+} from './features/ai/conversations/ConversationProvider'
 import { ConversationNotice } from './features/ai/conversations/ConversationPanel'
 import { useEffect, useRef, useState } from 'react'
 import { IconBook, IconFolderOpen, IconMenu2, IconSettings } from '@tabler/icons-react'
@@ -69,6 +72,7 @@ export default function App(): React.JSX.Element {
           <ConversationProvider>
             <ProofreadingProvider>
               <AppShell info={info} failed={failed} />
+              <ConversationPresentation />
             </ProofreadingProvider>
           </ConversationProvider>
         </ImportProvider>

@@ -10,7 +10,7 @@ import {
 type Preferences = Pick<PlanningReadInput, 'filter' | 'kind' | 'status' | 'query'> & {
   location: PlanningLocation
   parentId: string | null
-  pane: 'material' | 'structure' | 'detail'
+  pane: 'material' | 'structure' | 'detail' | 'chat'
   poolOffset: number
   detailOffset: number
   chapterOffset: number
@@ -63,7 +63,7 @@ function read(scope: OpenInput): Preferences {
         offset: p.poolOffset
       }) &&
       (p.parentId === null || isId(p.parentId)) &&
-      ['material', 'structure', 'detail'].includes(String(p.pane)) &&
+      ['material', 'structure', 'detail', 'chat'].includes(String(p.pane)) &&
       [
         p.detailOffset,
         p.chapterOffset,
