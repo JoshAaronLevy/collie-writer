@@ -1,3 +1,4 @@
+import { outlineRequestPrompt } from '../../shared/outline-proposals'
 import {
   isAnalysisWorkerInput,
   isAnalysisValue,
@@ -44,6 +45,11 @@ type ContentSubmit = ConversationSubmit | ProofreadSubmit | AnalysisSubmit
 type ContentTurn = ConversationTurn | ProofreadBundle | AnalysisBundle
 type ContentRequest =
   Exclude<ConversationRequest, { action: 'export' }> | ProofreadRequest | AnalysisRequest
+function requestPrompt(capture: ContentTurn['capture']): string {
+  return 'planning' in capture && capture.version === 7 && capture.planning.version === 2
+    ? outlineRequestPrompt(capture.prompt)
+    : capture.prompt
+}
 type Bound = { scope: OpenInput; binding: ConversationBinding }
 const same = (a: OpenInput, b: OpenInput): boolean =>
   a.projectId === b.projectId && a.workspaceId === b.workspaceId
@@ -391,7 +397,7 @@ export class AiContentService {
           : this.kind === 'conversation'
             ? 'conversation'
             : 'proofread',
-      prompt: t.capture.prompt,
+      prompt: requestPrompt(t.capture),
       context: t.capture.context
     }
   }
@@ -642,7 +648,7 @@ export class AiContentService {
               : this.kind === 'conversation'
                 ? 'conversation'
                 : 'proofread',
-          prompt: stored.turn.capture.prompt,
+          prompt: requestPrompt(stored.turn.capture),
           context: stored.turn.capture.context
         }
       if (
@@ -801,7 +807,13 @@ export class AiContentService {
             ))
         )
           throw new ProjectError('UNAVAILABLE')
-        if (!this.ai.requestFits(result.capture, action, result.capture.template))
+        if (
+          !this.ai.requestFits(
+            { ...result.capture, prompt: requestPrompt(result.capture) },
+            action,
+            result.capture.template
+          )
+        )
           throw new ProjectError('LIMIT_EXCEEDED')
         if (this.reviews.size >= 64) this.reviews.delete(this.reviews.keys().next().value!)
         this.reviews.set(input.captureId, {

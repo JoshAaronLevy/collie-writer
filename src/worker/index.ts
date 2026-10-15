@@ -188,6 +188,9 @@ async function receive(message: unknown): Promise<void> {
         case 'planning':
           value = await repository.planning(command.input)
           break
+        case 'outlineProposal':
+          value = await repository.outlineProposal(command.input)
+          break
         case 'planningChange':
           value = await repository.planningChange(command.input)
           break

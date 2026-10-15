@@ -1,0 +1,35 @@
+.proposal-panel,
+.proposal-card,
+.proposal-dispositions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+}
+.proposal-cards {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--mantine-spacing-md);
+}
+.proposal-card {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  padding: var(--mantine-spacing-md);
+}
+.proposal-actions,
+.proposal-placement {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--mantine-spacing-sm);
+}
+.proposal-placement > * {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.proposal-caption {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-sm);
+  margin: 0;
+}

@@ -117,6 +117,7 @@ type WorkspaceControllerState = ManuscriptProtection &
     archive: (input: ArchiveInput) => Promise<boolean>
     captureAnnotation: () => Promise<void>
     afterNoteCommit: () => Promise<void>
+    adoptOutlineChange: () => Promise<boolean>
     changeAccess: (kind: 'designate' | 'finish' | 'import') => Promise<void>
     openTutorial: (reset: boolean) => Promise<void>
     prepareSetupCreation: () => Promise<SetupCompletion>
@@ -837,15 +838,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       destinationRef.current.view === 'plan' &&
       current.current
     ) {
-      const retained = await window.collie.openSection({
-        ...scopeOf(current.current),
-        documentId: current.current.documentId
-      })
-      if (!retained.ok) {
-        setError(retained.error.message)
-        return false
-      }
-      await select(retained.value, 'plan')
+      if (!(await adoptOutlineChange())) return false
     } else await select(result.value)
     outlinePending.current = null
     setOutlineRetry(false)
@@ -1425,6 +1418,17 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       })
       return
     }
+  }
+  async function adoptOutlineChange(): Promise<boolean> {
+    const p = current.current
+    if (!p) return false
+    const result = await window.collie.openSection({ ...scopeOf(p), documentId: p.documentId })
+    if (!result.ok) {
+      setError(result.error.message)
+      return false
+    }
+    await select(result.value, 'plan')
+    return true
   }
   async function afterNoteCommit(): Promise<void> {
     const p = current.current
@@ -2029,6 +2033,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     archive,
     captureAnnotation,
     afterNoteCommit,
+    adoptOutlineChange,
     changeAccess,
     openTutorial,
     prepareSetupCreation,

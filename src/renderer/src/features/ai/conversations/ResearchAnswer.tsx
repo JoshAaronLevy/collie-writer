@@ -37,6 +37,10 @@ export function ResearchAnswer({
   } | null>(null)
   const [failed, setFailed] = useState(''),
     [retry, setRetry] = useState(0)
+  const proposal =
+    turn.capture.version === 7 &&
+    turn.capture.planning.version === 2 &&
+    turn.capture.purpose === 'chat'
   const completed = turn.attempt.state === 'completed',
     hasResearch = !!turn.research
   useEffect(() => {
@@ -286,19 +290,42 @@ export function ResearchAnswer({
       }
     >
       <div ref={answer} onPointerUp={selectionChanged} onKeyUp={selectionChanged}>
-        <ChatMarkdown
-          text={turn.assistant?.text ?? ''}
-          citations={turn.research?.citations}
-          mediaTarget={
-            scope && turn.assistant && completed
-              ? {
-                  ...scope,
-                  messageId: turn.assistant.id,
-                  messageRevision: turn.assistant.revisionId
-                }
-              : undefined
-          }
-        />
+        {proposal && completed && scope ? (
+          <>
+            <p>Outline suggestion ready to review. Your current outline is unchanged.</p>
+            <AppButton
+              variant="default"
+              onClick={() =>
+                session.navigate({
+                  kind: 'workspace',
+                  scope,
+                  view: 'plan',
+                  proposalAttemptId: turn.attempt.id
+                })
+              }
+            >
+              Review outline
+            </AppButton>
+            <details>
+              <summary>Original response</summary>
+              <ChatMarkdown text={turn.assistant?.text ?? ''} />
+            </details>
+          </>
+        ) : (
+          <ChatMarkdown
+            text={turn.assistant?.text ?? ''}
+            citations={turn.research?.citations}
+            mediaTarget={
+              scope && turn.assistant && completed
+                ? {
+                    ...scope,
+                    messageId: turn.assistant.id,
+                    messageRevision: turn.assistant.revisionId
+                  }
+                : undefined
+            }
+          />
+        )}
       </div>
       {selection && completed ? (
         <>

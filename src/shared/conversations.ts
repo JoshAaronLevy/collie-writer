@@ -218,6 +218,7 @@ export type ConversationGroup = { items: ConversationSummary[]; total: number }
 export type ConversationRequest =
   | (OpenInput & {
       action: 'planning-start'
+      outline?: { version: 1; baseVersionId: string | null }
       runId: string
       conversationId: string
       expectedHead: string
@@ -497,6 +498,7 @@ export function isAiCapture(v: unknown, importedContract = false): v is AiCaptur
     if (
       !isPlanningCapture(planning) ||
       !['chat', 'planning-summary'].includes(String(purpose)) ||
+      (planning.version === 2 && (purpose !== 'chat' || planning.mode !== 'collection')) ||
       !['conversation-v2', 'conversation-research-v1'].includes(String(v.template)) ||
       (v.template === 'conversation-research-v1' && purpose !== 'chat') ||
       !Array.isArray(v.context) ||
@@ -908,6 +910,11 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
   switch (v.action) {
     case 'planning-start':
       return (
+        (v.outline === undefined ||
+          (record(v.outline) &&
+            exact(v.outline, ['version', 'baseVersionId']) &&
+            v.outline.version === 1 &&
+            (v.outline.baseVersionId === null || isId(v.outline.baseVersionId)))) &&
         exact(v, [
           ...fields,
           'runId',
@@ -916,7 +923,8 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
           'scope',
           'prompt',
           'search',
-          'mode'
+          'mode',
+          ...(v.outline === undefined ? [] : ['outline'])
         ]) &&
         [v.runId, v.conversationId, v.expectedHead].every(isId) &&
         isPlanningScope(v.scope) &&

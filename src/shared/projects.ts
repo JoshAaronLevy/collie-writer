@@ -1,4 +1,10 @@
 import {
+  isOutlineProposalRequest,
+  isOutlineProposalResult,
+  type OutlineProposalRequest,
+  type OutlineProposalResult
+} from './outline-proposals'
+import {
   isPlanningReadInput,
   isPlanningChangeInput,
   isPlanningView,
@@ -198,6 +204,7 @@ export const PROJECT_CHANNELS = {
   history: 'history.read',
   planning: 'planning.read',
   planningChange: 'planning.change',
+  outlineProposal: 'outline.proposal',
   chapterMaterial: 'chapter-material.read',
   chapterMaterialChange: 'chapter-material.change',
   notes: 'notes.read',
@@ -326,6 +333,8 @@ export const projectMessages: Record<ProjectCode, string> = {
     'This file exceeds the supported size or resource limits. The original and local work have been kept.'
 }
 export const projectContextMessages = {
+  'outline-input-limit':
+    'This outline input is too large for one editable proposal. Use a chapter scope or fewer linked items, or shorten the earlier proposal before refining. Existing work is kept.',
   'owner-missing':
     'This project must be reopened before Collie can continue. Keep any visible unsaved writing.',
   'file-busy':
@@ -339,6 +348,7 @@ export type ProjectErrorContext = keyof typeof projectContextMessages
 export function isProjectErrorContext(code: ProjectCode, v: unknown): v is ProjectErrorContext {
   return (
     (code === 'DENIED' && v === 'owner-missing') ||
+    (code === 'LIMIT_EXCEEDED' && v === 'outline-input-limit') ||
     (code === 'VALIDATION' && v === 'import-summary-invalid') ||
     (code === 'PROJECT_LOCKED' && (v === 'file-busy' || v === 'project-in-use'))
   )
@@ -444,6 +454,7 @@ export type ImageData = { mediaType: ImageAsset['mediaType']; base64: string }
 export type ProjectCommand =
   | { kind: 'planning'; input: PlanningReadInput }
   | { kind: 'planningChange'; input: PlanningChangeInput }
+  | { kind: 'outlineProposal'; input: OutlineProposalRequest }
   | { kind: 'chapterMaterial'; input: ChapterMaterialInput }
   | { kind: 'chapterMaterialChange'; input: ChapterMaterialChange }
   | { kind: 'importAnalysis'; input: AnalysisWorkerInput }
@@ -491,6 +502,7 @@ export type ProjectCommand =
   | { kind: 'importImage'; input: WorkerImageImport }
   | { kind: 'readImage'; input: ImageReadInput }
 export type ProjectValue =
+  | OutlineProposalResult
   | PlanningView
   | ChapterMaterialView
   | ChapterMaterialResult
@@ -559,6 +571,7 @@ export type ProjectAPI = {
     input: SourceAttachmentExportInput
   ) => Promise<ProjectResult<SourceExportReceipt>>
   onSourceProgress: (callback: (progress: SourceProgress) => void) => () => void
+  outlineProposal: (input: OutlineProposalRequest) => Promise<ProjectResult<OutlineProposalResult>>
   readPlanning: (input: PlanningReadInput) => Promise<ProjectResult<PlanningView>>
   changePlanning: (input: PlanningChangeInput) => Promise<ProjectResult<ChapterMaterialResult>>
   readChapterMaterial: (input: ChapterMaterialInput) => Promise<ProjectResult<ChapterMaterialView>>
@@ -764,6 +777,7 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (v.kind === 'outline') return isOutlineInput(v.input)
   if (v.kind === 'history') return isHistoryInput(v.input)
   if (v.kind === 'planning') return isPlanningReadInput(v.input)
+  if (v.kind === 'outlineProposal') return isOutlineProposalRequest(v.input)
   if (v.kind === 'planningChange') return isPlanningChangeInput(v.input)
   if (v.kind === 'chapterMaterial') return isChapterMaterialInput(v.input)
   if (v.kind === 'chapterMaterialChange') return isChapterMaterialChange(v.input)
@@ -880,6 +894,7 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
   if (kind === 'citations' || kind === 'citationStyle') return isCitationsView(v)
   if (!record(v)) return false
   if (kind === 'planning') return isPlanningView(v)
+  if (kind === 'outlineProposal') return isOutlineProposalResult(v)
   if (kind === 'planningChange') return isChapterMaterialResult(v)
   if (kind === 'chapterMaterial') return isChapterMaterialView(v)
   if (kind === 'chapterMaterialChange') return isChapterMaterialResult(v)

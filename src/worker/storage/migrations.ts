@@ -20,6 +20,7 @@ import {
   planningTables,
   notePassageTable,
   planningAnalysisTables,
+  outlineProposalTables,
   importReviewTableV33,
   assetTable,
   outlineTables,
@@ -644,6 +645,19 @@ const migrations: readonly Migration[] = [
     apply: (db) => {
       for (const sql of planningAnalysisTables) db.exec(sql)
       db.prepare('UPDATE format SET schema_version=42,minimum_reader=42').run()
+    }
+  },
+  {
+    from: 42,
+    to: 43,
+    validateSource: (db) => {
+      validateProjectSchema(db, 42)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableConversations(db, row.id)
+    },
+    apply: (db) => {
+      for (const sql of outlineProposalTables) db.exec(sql)
+      db.prepare('UPDATE format SET schema_version=43,minimum_reader=43').run()
     }
   }
 ]

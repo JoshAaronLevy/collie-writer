@@ -34,6 +34,8 @@ export function commandCapability(command: ProjectCommand): Capability {
       ].includes(command.input.action)
         ? 'edit'
         : 'read'
+    case 'outlineProposal':
+      return command.input.action === 'set' ? 'edit' : 'read'
     case 'planningChange':
     case 'chapterMaterialChange':
       return command.input.action === 'status' ? 'read' : 'edit'

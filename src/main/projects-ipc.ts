@@ -1,3 +1,4 @@
+import { isOutlineProposalRequest } from '../shared/outline-proposals'
 import { isPlanningReadInput, isPlanningChangeInput } from '../shared/planning'
 import { isChapterMaterialInput, isChapterMaterialChange } from '../shared/chapter-material'
 import { isWorkingCopyInput, isWorkingCopyReply } from '../shared/working-copy'
@@ -579,6 +580,12 @@ export function registerProjectIpc(
         exact(value, ['requestId', 'input']) &&
         kind === 'history' &&
         isHistoryInput(value.input)
+      )
+        command = { kind, input: value.input }
+      else if (
+        exact(value, ['requestId', 'input']) &&
+        kind === 'outlineProposal' &&
+        isOutlineProposalRequest(value.input)
       )
         command = { kind, input: value.input }
       else if (

@@ -1,3 +1,4 @@
+import { retainOutlineProposal, validatePortableProposals } from './outline-proposals'
 import {
   planningCommand,
   planningReview,
@@ -1263,6 +1264,7 @@ export async function conversationCommand(
         }
         writeAttempt(db, p, a)
         settleMemory(db, p, turn(db, p, a.id))
+        retainOutlineProposal(db, p, turn(db, p, a.id))
         return {
           type: 'turn' as const,
           turn: turn(db, p, a.id),
@@ -1435,7 +1437,7 @@ export function validatePortableConversations(db: Database.Database, p: string):
       (capture.version === 4 && schemaVersion(db) < 19) ||
       (capture.version === 5 && schemaVersion(db) < 20) ||
       (capture.version === 6 && schemaVersion(db) < 30) ||
-      (capture.version === 7 && schemaVersion(db) < 42)
+      (capture.version === 7 && schemaVersion(db) < (capture.planning.version === 2 ? 43 : 42))
     )
       corrupt()
   }
@@ -1527,5 +1529,6 @@ export function validatePortableConversations(db: Database.Database, p: string):
   if (messageCount !== counts('conversation_messages')) corrupt()
   if (schemaVersion(db) >= 20 && counts('conversation_research') !== researchCount) corrupt()
   if (schemaVersion(db) >= 19) validateKnowledgeSettings(db, p)
+  validatePortableProposals(db, p)
   if (schemaVersion(db) >= 18) validateMemory(db, p, (id) => turn(db, p, id))
 }

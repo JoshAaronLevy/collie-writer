@@ -1,3 +1,5 @@
+import { outlineProposalCommand } from './outline-proposals'
+import type { OutlineProposalRequest, OutlineProposalResult } from '../../shared/outline-proposals'
 import { readPlanning, changePlanning } from './planning'
 import type { PlanningReadInput, PlanningChangeInput, PlanningView } from '../../shared/planning'
 import { readChapterMaterial, changeChapterMaterial } from './chapter-material'
@@ -799,6 +801,16 @@ export class ProjectRepository {
     return this.serial(async () => {
       this.fileContext(input)
       return readPlanning(this.active!.db, input)
+    })
+  }
+  outlineProposal(input: OutlineProposalRequest): Promise<OutlineProposalResult> {
+    return this.serial(async () => {
+      if (input.action === 'set' && this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
+      this.fileContext(input)
+      const owned = this.active!
+      const result = await outlineProposalCommand({ ...owned, root: this.root }, input)
+      if (input.action === 'set') await this.discovery(owned)
+      return result
     })
   }
   planningChange(input: PlanningChangeInput): Promise<ChapterMaterialResult> {

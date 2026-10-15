@@ -1,3 +1,4 @@
+import { isOutlineProposalResult, type OutlineProposalResult } from '../shared/outline-proposals'
 import { isPlanningView, type PlanningView } from '../shared/planning'
 import {
   isChapterMaterialView,
@@ -285,6 +286,12 @@ const api: CollieAPI = {
     ipcRenderer.on(SOURCE_PROGRESS, listener)
     return () => ipcRenderer.removeListener(SOURCE_PROGRESS, listener)
   },
+  outlineProposal: (input) =>
+    projectCall<OutlineProposalResult>(
+      PROJECT_CHANNELS.outlineProposal,
+      isOutlineProposalResult,
+      input
+    ),
   readPlanning: (input) =>
     projectCall<PlanningView>(PROJECT_CHANNELS.planning, isPlanningView, input),
   changePlanning: (input) =>

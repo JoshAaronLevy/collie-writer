@@ -27,3 +27,7 @@ Find, draft recovery, exports and message details are contextual controls. Prote
 ## PL04 additive local format 2
 
 October 15, 2026: new writes use decrypted draft-file version 2. Entries optionally carry `planning: { version: 1, scope, mode, search }`, with exact project/topic/chapter/selection validation, collection/question mode and an explicit search boolean. Version-1 files retain their exact old entry shape. The encrypted file owner, filename, revision guard and capacity limits remain; old files are read without rewriting until a normal draft write. Planning choices with empty text remain retained. They confer no execution authority and never restart analysis. Portable run scope and progress are separate schema-42 project records.
+
+## PL05 additive local format 3
+
+New writes now use draft-file version 3. A planning entry may use nested version 2 with `outline: {version: 1, baseVersionId: string | null}` and collection mode. This retains the visible editable-outline choice and the exact saved proposal version selected for refinement. File versions 1 and 2 still reject extensions that did not exist in their contracts. The encrypted owner/path, capacity, revision guard and protection lifecycle are unchanged. These local choices never dispatch a request or apply a proposal on reopening. User-edited proposal versions themselves belong to the portable project, not this local draft file.

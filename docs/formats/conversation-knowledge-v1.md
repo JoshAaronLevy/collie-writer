@@ -39,3 +39,9 @@ The React controls retain the existing UI framework, async generation guards, pr
 ## PL04 planning context
 
 October 15, 2026: planning uses a separate exact portable capture v7 and review v8; the older knowledge and imported whole-message contracts above stay frozen. Schema/minimum reader 42 stores bounded analysis snapshots in `planning_analyses`. The [PL04 record](../validation/planning-PL04.md) defines enumeration, original ranges, cumulative summaries, request limits, invalidation, continuation and portability. Existing direct conversation/research operation versions and account dispatch remain unchanged.
+
+## PL05 outline proposal input
+
+Schema/minimum reader 43 permits analysis snapshot v2 and nested planning capture v2 within the existing capture v7/review v8. Older analysis/planning payload v1 readers remain exact. The new input freezes eligible outline metadata, canonical association references, sibling-order digests and an optional exact saved proposal version. No manuscript bodies or provider authority are added. Only completed final answers carry this output contract; preparation summaries remain PL04 payload v1.
+
+`outline-proposals.ts` defines the frozen proposal v1 output instructions and exact limits. Main appends those instructions to the dispatched request, consistently for admission, dispatch and reconciliation; the visible user message retains the user's text. The same output contract and structural data are inspectable in sent context. Existing direct text/research operation versions and account routes stay unchanged. Malformed output remains protected conversation text without structural writes or automatic repair. See [PL05 evidence](../validation/planning-PL05.md) for proposal versions, scoped inverses, portability and limits.

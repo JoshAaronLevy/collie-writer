@@ -101,10 +101,16 @@ export function PlanningChatControls({ blocked }: { blocked: boolean }): React.J
       <Checkbox
         label="Analyze the collection"
         checked={p.mode === 'collection'}
-        disabled={blocked}
+        disabled={blocked || p.version === 2}
         onChange={(event) =>
           c.setPlanningMode(event.currentTarget.checked ? 'collection' : 'question')
         }
+      />
+      <Checkbox
+        label="Create editable outline"
+        checked={p.version === 2}
+        disabled={blocked}
+        onChange={(event) => c.setOutlineProposal(event.currentTarget.checked)}
       />
       <p className={styles['chat-caption']}>
         {p.mode === 'collection'
@@ -122,6 +128,7 @@ export function PlanningChatControls({ blocked }: { blocked: boolean }): React.J
               onClick={() => {
                 c.update({ text })
                 c.setPlanningMode('collection')
+                if (text === 'Suggest an outline') c.setOutlineProposal(true)
               }}
             >
               {text}

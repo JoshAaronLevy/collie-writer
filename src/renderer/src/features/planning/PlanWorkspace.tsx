@@ -1,3 +1,4 @@
+import { OutlineProposalPanel } from './OutlineProposalPanel'
 import type { PlanningScope } from '../../../../shared/planning-conversation'
 import { ConversationSlot } from '../ai/conversations/ConversationSlot'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -1533,6 +1534,14 @@ export function PlanWorkspace({ project }: { project: OpenProject }): React.JSX.
           />
         </aside>
       </div>
+      <OutlineProposalPanel
+        project={project}
+        onDiscuss={() => {
+          setChatOpen(true)
+          setDetail(null)
+          choosePane('chat')
+        }}
+      />
       <AppDialog
         onExited={() => setFocusRevision((n) => n + 1)}
         opened={!!form}

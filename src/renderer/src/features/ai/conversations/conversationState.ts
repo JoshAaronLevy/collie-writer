@@ -24,6 +24,8 @@ type ConversationControllerState = {
   setPlanningScope: (scope: PlanningScope) => void
   setPlanningMode: (mode: 'question' | 'collection') => void
   discussPlanning: (scope: PlanningScope, prompt?: string) => Promise<void>
+  setOutlineProposal: (enabled: boolean) => void
+  refineOutline: (conversationId: string, scope: PlanningScope, versionId: string | null) => boolean
   continuePlanning: () => Promise<void>
   openPlanningOrigin: (origin: PlanningOrigin) => Promise<void>
   passages: ReturnType<typeof usePassageCapture>
@@ -98,7 +100,7 @@ type ConversationControllerState = {
   show: (attemptId?: string) => void
   openConversation: (id: string) => Promise<boolean>
   discussSource: (id: string, title: string) => Promise<void>
-  request: (input: ConversationRequest) => Promise<void>
+  request: (input: ConversationRequest) => Promise<boolean>
   refresh: (captured: OpenInput) => Promise<void>
   composingRef: React.RefObject<boolean>
   draftEvents: { onCompositionStartCapture: () => void; onCompositionEndCapture: () => void }
@@ -792,13 +794,13 @@ export function useConversationController(): ConversationControllerState {
     )
     return true
   }
-  async function request(input: ConversationRequest, prepared = false): Promise<void> {
+  async function request(input: ConversationRequest, prepared = false): Promise<boolean> {
     if (
       (!prepared && locked.current) ||
       composing.current ||
       (pendingRef.current && pendingRef.current !== input)
     )
-      return
+      return false
     locked.current = true
     setBusy(true)
     setIssue('')
@@ -807,24 +809,26 @@ export function useConversationController(): ConversationControllerState {
     pendingRef.current = input
     try {
       const result = await window.collie.conversation(input)
-      if (!belongs(input)) return
+      if (!belongs(input)) return false
       if (!result.ok) {
         if (!['UNAVAILABLE', 'DISK_FULL', 'PROJECT_LOCKED'].includes(result.error.code)) {
           setPending(null)
           pendingRef.current = null
         }
         setIssue(
-          result.error.code === 'LIMIT_EXCEEDED'
-            ? input.action === 'context-change'
-              ? 'This context selection has reached its storage or size limit. Existing pins are kept; reduce the selection when possible or start a new chat.'
-              : sizeMessage
-            : result.error.code === 'STALE_REVISION'
-              ? 'The writing, conversation or connection changed. Your draft is kept; press Send again when ready.'
-              : result.error.code === 'DESTINATION_EXISTS'
-                ? 'That file already exists. Export again using a new filename. The existing file was kept.'
-                : result.error.message
+          result.error.context
+            ? result.error.message
+            : result.error.code === 'LIMIT_EXCEEDED'
+              ? input.action === 'context-change'
+                ? 'This context selection has reached its storage or size limit. Existing pins are kept; reduce the selection when possible or start a new chat.'
+                : sizeMessage
+              : result.error.code === 'STALE_REVISION'
+                ? 'The writing, conversation or connection changed. Your draft is kept; press Send again when ready.'
+                : result.error.code === 'DESTINATION_EXISTS'
+                  ? 'That file already exists. Export again using a new filename. The existing file was kept.'
+                  : result.error.message
         )
-        return
+        return false
       }
       setPending(null)
       pendingRef.current = null
@@ -874,10 +878,12 @@ export function useConversationController(): ConversationControllerState {
       if (input.action === 'memory-edit' && result.value.type === 'memories') setMemoryEdit(null)
       if (result.value.type === 'exported') setNotice(`Transcript exported to ${result.value.path}`)
       await refresh({ projectId: input.projectId, workspaceId: input.workspaceId })
+      return true
     } catch {
       setIssue(
         'The local action is not confirmed. Keep this window open and retry the same action.'
       )
+      return false
     } finally {
       locked.current = false
       setBusy(false)
@@ -1013,9 +1019,10 @@ export function useConversationController(): ConversationControllerState {
           scope: selection.scope,
           prompt: submitted.text,
           search: selection.search,
-          mode: selection.mode
+          mode: selection.version === 2 ? 'collection' : selection.mode,
+          ...(selection.version === 2 ? { outline: selection.outline } : {})
         }
-        await request(start, true)
+        if (!(await request(start, true))) return
         locked.current = true
         setBusy(true)
         if (pendingRef.current || !stillCurrent()) return
@@ -1552,7 +1559,41 @@ export function useConversationController(): ConversationControllerState {
       if (planning) update({ contextPolicy: 'chat', planning: { ...planning, scope: next } })
     },
     setPlanningMode: (mode) => {
-      if (planning) update({ contextPolicy: 'chat', planning: { ...planning, mode } })
+      if (planning)
+        update({
+          contextPolicy: 'chat',
+          planning: { ...planning, mode: planning.version === 2 ? 'collection' : mode }
+        })
+    },
+    setOutlineProposal: (enabled) => {
+      if (planning)
+        update({
+          contextPolicy: 'chat',
+          planning: enabled
+            ? {
+                ...planning,
+                version: 2,
+                mode: 'collection',
+                outline: { version: 1, baseVersionId: null }
+              }
+            : { version: 1, scope: planning.scope, mode: planning.mode, search: planning.search }
+        })
+    },
+    refineOutline: (conversationId, next, versionId) => {
+      if (readOnly || !choose(conversationId)) return false
+      draftProtection.change(conversationId, {
+        contextPolicy: 'chat',
+        planning: {
+          version: 2,
+          scope: next,
+          mode: 'collection',
+          search: false,
+          outline: { version: 1, baseVersionId: versionId }
+        },
+        ...(!drafts[conversationId]?.text ? { text: 'Refine this outline proposal: ' } : {})
+      })
+      setListOpen(false)
+      return true
     },
     continuePlanning: () => (analysis ? sendPlanning(analysis) : Promise.resolve()),
     openPlanningOrigin: async (origin) => {

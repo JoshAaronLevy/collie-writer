@@ -2,6 +2,11 @@ import { isId } from '../domain/editor/schema'
 import { isMaterialTarget, type MaterialTarget } from './chapter-material'
 import { isTranscriptKey, type TranscriptKey } from './conversation-transcript'
 import { exact, record } from './projects'
+import {
+  isOutlineProposalInput,
+  OUTLINE_PROPOSAL_INSTRUCTIONS,
+  type OutlineProposalInput
+} from './outline-proposals'
 
 export const PLANNING_ANALYSIS = {
   calls: 10,
@@ -40,8 +45,7 @@ export type PlanningCoverage = {
   done: number
   chunks: number
 }
-export type PlanningCapture = {
-  version: 1
+export type PlanningCapture = ({ version: 1 } | { version: 2; proposal: OutlineProposalInput }) & {
   runId: string
   scope: PlanningScope
   label: string
@@ -166,7 +170,8 @@ export function isPlanningContext(textValue: unknown, planning: PlanningCapture)
         'instructions',
         'purpose',
         'previousDigest',
-        'originals'
+        'originals',
+        ...(planning.version === 2 ? ['outline'] : [])
       ]) &&
       v.scope === planning.label &&
       v.coverage === planningCoverageLabel(planning.coverage, planning.mode) &&
@@ -174,6 +179,8 @@ export function isPlanningContext(textValue: unknown, planning: PlanningCapture)
       text(v.instructions, 2000) &&
       text(v.purpose, 20000) &&
       text(v.previousDigest, PLANNING_ANALYSIS.summary) &&
+      (planning.version === 1 ||
+        JSON.stringify(v.outline) === JSON.stringify(outlineContext(planning.proposal))) &&
       Array.isArray(v.originals) &&
       v.originals.length === planning.origins.length &&
       v.originals.every(
@@ -203,9 +210,10 @@ export function isPlanningCapture(v: unknown): v is PlanningCapture {
       'previousAttemptId',
       'coverage',
       'origins',
-      'mode'
+      'mode',
+      ...(v.version === 2 ? ['proposal'] : [])
     ]) &&
-    v.version === 1 &&
+    (v.version === 1 || (v.version === 2 && isOutlineProposalInput(v.proposal))) &&
     isId(v.runId) &&
     isPlanningScope(v.scope) &&
     text(v.label, 200) &&
@@ -220,6 +228,14 @@ export function isPlanningCapture(v: unknown): v is PlanningCapture {
     v.origins.every(isPlanningOrigin) &&
     (v.mode === 'collection' || v.mode === 'question')
   )
+}
+export function outlineContext(input: OutlineProposalInput): object {
+  return {
+    instructions: OUTLINE_PROPOSAL_INSTRUCTIONS,
+    documents: input.documents,
+    links: input.links,
+    earlierProposal: input.base
+  }
 }
 export function isPlanningStep(v: unknown): v is PlanningStep {
   return (

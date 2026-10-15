@@ -72,7 +72,7 @@ export class ConversationDrafts {
       )
         throw new ProjectError('NOT_FOUND')
       const next: DraftFile = {
-        version: 2,
+        version: 3,
         revision: randomUUID(),
         entries: [
           ...stored.entries.filter((d) => !sameScope(d, input)),

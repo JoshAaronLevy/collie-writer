@@ -51,6 +51,7 @@ export type AppDestination =
       anchorId?: string
       exportResultId?: string
       material?: MaterialTarget
+      proposalAttemptId?: string
     }
 
 // These keys identify presentation regions, never filesystem authority or domain entities.
