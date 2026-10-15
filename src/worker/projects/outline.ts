@@ -1,3 +1,4 @@
+import { hasChapterMaterial, mergeMaterialLinks, restoreMaterialLinks } from './material-links'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { ProjectError } from '../../domain/projects/errors'
@@ -140,6 +141,7 @@ export function changeOutline(db: Database.Database, input: OutlineInput): strin
       after = structuredClone(before),
       docs = after.documents,
       c = input.change
+    let restoredDocumentIds: Set<string> | null = null
     const editable = (kind: unknown): boolean =>
       input.hierarchyVersion === 2 ? isEditableKind(kind) : kind === 'text'
     if (
@@ -245,6 +247,7 @@ export function changeOutline(db: Database.Database, input: OutlineInput): strin
           },
           footnotesById: { ...target.payload.footnotesById, ...source.payload.footnotesById }
         })
+        mergeMaterialLinks(db, input.projectId, source.id, target.id)
         source.state = 'merged'
         source.replacementId = target.id
         selectedId = target.id
@@ -291,6 +294,7 @@ export function changeOutline(db: Database.Database, input: OutlineInput): strin
         }).snapshot!
         // Later content lives in the protected pre-restore checkpoint. Keep document identities as tombstones.
         const retainedIds = new Set(restored.documents.map((d) => d.id))
+        restoredDocumentIds = retainedIds
         after.documents = structuredClone(restored.documents)
         for (const d of before.documents)
           if (!retainedIds.has(d.id))
@@ -320,6 +324,11 @@ export function changeOutline(db: Database.Database, input: OutlineInput): strin
         if (c.checkpointIds.some((id) => !eligible.has(id)))
           throw new ProjectError('STALE_REVISION')
         const unused = historyStorage(db, input.projectId, new Set(c.checkpointIds)).unreferenced
+        if (hasChapterMaterial(db))
+          for (const id of c.checkpointIds)
+            db.prepare(
+              'DELETE FROM chapter_material_history WHERE project_id=? AND checkpoint_id=?'
+            ).run(input.projectId, id)
         for (const id of c.checkpointIds)
           db.prepare('DELETE FROM history_checkpoints WHERE project_id=? AND id=?').run(
             input.projectId,
@@ -344,6 +353,8 @@ export function changeOutline(db: Database.Database, input: OutlineInput): strin
     if (!['checkpoint', 'prune'].includes(c.type)) {
       writeManuscript(db, input.projectId, after)
       reconcileAnnotationAnchors(db, input.projectId)
+      if (c.type === 'restore' && restoredDocumentIds)
+        restoreMaterialLinks(db, input.projectId, c.checkpointId, restoredDocumentIds)
     }
     let selected = after.documents.find(
       (d) =>

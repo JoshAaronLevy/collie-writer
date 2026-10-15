@@ -185,6 +185,12 @@ async function receive(message: unknown): Promise<void> {
         case 'history':
           value = await repository.history(command.input)
           break
+        case 'chapterMaterial':
+          value = await repository.chapterMaterial(command.input)
+          break
+        case 'chapterMaterialChange':
+          value = await repository.chapterMaterialChange(command.input)
+          break
         case 'notes':
           value = await repository.notes(command.input)
           break

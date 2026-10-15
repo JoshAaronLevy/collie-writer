@@ -1,3 +1,10 @@
+import { readChapterMaterial, changeChapterMaterial } from './chapter-material'
+import type {
+  ChapterMaterialInput,
+  ChapterMaterialChange,
+  ChapterMaterialView,
+  ChapterMaterialResult
+} from '../../shared/chapter-material'
 import { readDiscoveryHint, recoveryTitle } from './project-discovery'
 import { importAnalysisCommand, interruptUnboundImportAnalysis } from './import-analysis'
 import type { AnalysisWorkerInput, AnalysisValue } from '../../shared/import-analysis'
@@ -778,6 +785,21 @@ export class ProjectRepository {
     return this.serial(async () => {
       this.fileContext(input)
       return readHistory(this.active!.db, input)
+    })
+  }
+  chapterMaterial(input: ChapterMaterialInput): Promise<ChapterMaterialView> {
+    return this.serial(async () => {
+      this.fileContext(input)
+      return readChapterMaterial(this.active!.db, input)
+    })
+  }
+  chapterMaterialChange(input: ChapterMaterialChange): Promise<ChapterMaterialResult> {
+    return this.serial(async () => {
+      if (input.action === 'set' && this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
+      this.fileContext(input)
+      const result = changeChapterMaterial(this.active!.db, input)
+      if (input.action === 'set') await this.discovery(this.active!)
+      return result
     })
   }
   notes(input: OpenInput): Promise<NotesView> {

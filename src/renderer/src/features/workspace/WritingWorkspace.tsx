@@ -317,22 +317,19 @@ export default function WritingWorkspace(): React.JSX.Element {
           role="group"
           aria-label="Writing companion"
         >
-          {(['notes', 'source'] as const).map((mode) => (
-            <AppButton
-              variant={preferences.panel === mode ? 'default' : 'subtle'}
-              aria-pressed={preferences.panel === mode}
-              key={mode}
-              onClick={() =>
-                panel(
-                  preferences.panel === mode && (!narrow || mobilePane === 'panel')
-                    ? 'closed'
-                    : mode
-                )
-              }
-            >
-              {mode === 'notes' ? 'Notes' : 'Sources'}
-            </AppButton>
-          ))}
+          <AppButton
+            variant={preferences.panel === 'material' ? 'default' : 'subtle'}
+            aria-pressed={preferences.panel === 'material'}
+            onClick={() =>
+              panel(
+                preferences.panel === 'material' && (!narrow || mobilePane === 'panel')
+                  ? 'closed'
+                  : 'material'
+              )
+            }
+          >
+            Chapter material
+          </AppButton>
           <AiProviderIndicator
             active={preferences.panel === 'ai'}
             onOpen={() =>

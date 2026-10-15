@@ -1,24 +1,6 @@
 import type { EvidenceLink, EvidenceView } from '../../../../shared/evidence'
 import type { OutlineDocument } from '../../../../shared/outline'
 
-export function ownBodyIds(documents: OutlineDocument[], id: string): string[] {
-  const root = documents.find((item) => item.id === id)
-  if (!root) return []
-  return root.kind === 'chapter' || root.kind === 'text' ? [root.id] : []
-}
-export function containingChapter(
-  documents: OutlineDocument[],
-  id: string
-): OutlineDocument | undefined {
-  let item = documents.find((doc) => doc.id === id)
-  const visited = new Set<string>()
-  while (item && !visited.has(item.id)) {
-    if (item.kind === 'chapter') return item
-    visited.add(item.id)
-    item = documents.find((doc) => doc.id === item?.parentId)
-  }
-  return undefined
-}
 export function sectionPath(documents: OutlineDocument[], id: string): string {
   let item = documents.find((doc) => doc.id === id)
   const titles: string[] = [],

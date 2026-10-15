@@ -225,8 +225,9 @@ export default function HistoryPanel({
                 </div>
               ) : null}
               <p>
-                Restoring replaces the whole manuscript and outline. Your current writing is kept as
-                a version first.
+                Restoring replaces the whole manuscript and outline, including chapter material
+                links saved with that version. Versions from before chapter material keep the
+                current links. Your current writing and links are kept as a version first.
               </p>
               <AppButton
                 variant="filled"

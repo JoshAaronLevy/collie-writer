@@ -1,3 +1,4 @@
+import { validatePortableMaterial } from './material-links'
 import { validateImportCommitOperation } from './import-commit'
 import { IMPORT_GRAPH_MEDIA, type ImportArtifactRef } from './import-graphs'
 import { hasControlCharacters } from '../../shared/control-characters'
@@ -285,6 +286,13 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
     } catch {
       return invalid()
     }
+  if (version >= 39) {
+    try {
+      validatePortableMaterial(db, projectId)
+    } catch {
+      return invalid()
+    }
+  }
   let importArtifacts: ImportArtifactRef[] = []
   if (version >= 22) {
     try {

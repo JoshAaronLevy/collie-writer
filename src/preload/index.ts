@@ -1,3 +1,9 @@
+import {
+  isChapterMaterialView,
+  isChapterMaterialResult,
+  type ChapterMaterialView,
+  type ChapterMaterialResult
+} from '../shared/chapter-material'
 import { importAnalysisApi } from './import-analysis'
 import { isWorkingCopyReply, type WorkingCopyReply } from '../shared/working-copy'
 import { isRetentionView, type RetentionView } from '../shared/retained-versions'
@@ -278,6 +284,18 @@ const api: CollieAPI = {
     ipcRenderer.on(SOURCE_PROGRESS, listener)
     return () => ipcRenderer.removeListener(SOURCE_PROGRESS, listener)
   },
+  readChapterMaterial: (input) =>
+    projectCall<ChapterMaterialView>(
+      PROJECT_CHANNELS.chapterMaterial,
+      isChapterMaterialView,
+      input
+    ),
+  changeChapterMaterial: (input) =>
+    projectCall<ChapterMaterialResult>(
+      PROJECT_CHANNELS.chapterMaterialChange,
+      isChapterMaterialResult,
+      input
+    ),
   readNotes: (input) => projectCall<NotesView>(PROJECT_CHANNELS.notes, isNotesView, input),
   changeNote: (input) => projectCall<NotesView>(PROJECT_CHANNELS.noteChange, isNotesView, input),
   onEditorAction: (callback) => {

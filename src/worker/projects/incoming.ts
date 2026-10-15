@@ -115,6 +115,9 @@ export async function promoteIncoming(
               ]
             : []),
           ...(inspectVersion(db) >= 37 ? ['import_analysis_refusals'] : []),
+          ...(inspectVersion(db) >= 39
+            ? ['conversation_document_links', 'excerpt_document_links', 'chapter_material_history']
+            : []),
           ...(inspectVersion(db) >= 26 ? ['import_analysis_captures', 'import_analysis_runs'] : []),
           ...(inspectVersion(db) >= 23 ? ['import_graphs', 'import_graph_pages'] : []),
           ...(inspectVersion(db) >= 22

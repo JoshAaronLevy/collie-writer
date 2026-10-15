@@ -1,3 +1,4 @@
+import { isChapterMaterialInput, isChapterMaterialChange } from '../shared/chapter-material'
 import { isWorkingCopyInput, isWorkingCopyReply } from '../shared/working-copy'
 import type { AiService } from './ai/service'
 import { isRetentionInput } from '../shared/retained-versions'
@@ -577,6 +578,18 @@ export function registerProjectIpc(
         exact(value, ['requestId', 'input']) &&
         kind === 'history' &&
         isHistoryInput(value.input)
+      )
+        command = { kind, input: value.input }
+      else if (
+        exact(value, ['requestId', 'input']) &&
+        kind === 'chapterMaterial' &&
+        isChapterMaterialInput(value.input)
+      )
+        command = { kind, input: value.input }
+      else if (
+        exact(value, ['requestId', 'input']) &&
+        kind === 'chapterMaterialChange' &&
+        isChapterMaterialChange(value.input)
       )
         command = { kind, input: value.input }
       else if (exact(value, ['requestId', 'input']) && kind === 'notes' && isOpenInput(value.input))

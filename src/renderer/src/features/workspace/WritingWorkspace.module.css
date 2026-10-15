@@ -143,17 +143,6 @@
   margin: 0;
   color: var(--collie-text-secondary);
 }
-.writing-reference-text {
-  white-space: pre-wrap;
-  font-family: var(--collie-font-manuscript);
-  line-height: 1.6;
-}
-.writing-source-excerpt {
-  margin: 0;
-  padding-left: var(--collie-space-3);
-  border-left: 2px solid var(--collie-accent);
-  white-space: pre-wrap;
-}
 .writing-workspace [hidden] {
   display: none;
 }
@@ -177,17 +166,6 @@
   .workspace-pane-resizer {
     border-inline-start: 1px solid ButtonText;
   }
-}
-
-.writing-source-excerpt .writing-excerpt-origin {
-  font-size: 0.75rem;
-  margin-top: 0.5rem;
-}
-
-.writing-related-item {
-  height: auto;
-  white-space: normal;
-  text-align: left;
 }
 
 .writing-companion-pane[data-chat='true'] {

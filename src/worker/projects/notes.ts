@@ -209,6 +209,40 @@ export function reconcileAnnotationAnchors(db: Database.Database, projectId: str
       )
   }
 }
+export function retainNoteRevision(
+  db: Database.Database,
+  projectId: string,
+  id: string,
+  now: string
+): void {
+  const n = db.prepare('SELECT * FROM notes WHERE project_id=? AND id=?').get(projectId, id) as
+    NoteRow | undefined
+  if (!n) throw new ProjectError('NOT_FOUND')
+  const links = (
+    db
+      .prepare('SELECT document_id FROM note_links WHERE project_id=? AND note_id=?')
+      .all(projectId, n.id) as { document_id: string }[]
+  ).map((x) => x.document_id)
+  const labels = (
+    db
+      .prepare('SELECT label_id FROM note_label_links WHERE project_id=? AND note_id=?')
+      .all(projectId, n.id) as { label_id: string }[]
+  ).map((x) => x.label_id)
+  db.prepare('INSERT OR IGNORE INTO note_revisions VALUES (?,?,?,?,?)').run(
+    projectId,
+    n.id,
+    n.revision_id,
+    JSON.stringify({
+      title: n.title,
+      body: JSON.parse(n.body),
+      state: n.state,
+      documentIds: links,
+      labelIds: labels
+    }),
+    now
+  )
+}
+
 export function changeNote(db: Database.Database, input: NoteChangeInput): NotesView {
   return inWriteTransaction(db, () => {
     const projectId = input.projectId,
@@ -232,31 +266,6 @@ export function changeNote(db: Database.Database, input: NoteChangeInput): Notes
       if (!n) throw new ProjectError('NOT_FOUND')
       return n
     }
-    const checkpointNote = (n: NoteRow): void => {
-      const links = (
-        db
-          .prepare('SELECT document_id FROM note_links WHERE project_id=? AND note_id=?')
-          .all(projectId, n.id) as { document_id: string }[]
-      ).map((x) => x.document_id)
-      const labels = (
-        db
-          .prepare('SELECT label_id FROM note_label_links WHERE project_id=? AND note_id=?')
-          .all(projectId, n.id) as { label_id: string }[]
-      ).map((x) => x.label_id)
-      db.prepare('INSERT OR IGNORE INTO note_revisions VALUES (?,?,?,?,?)').run(
-        projectId,
-        n.id,
-        n.revision_id,
-        JSON.stringify({
-          title: n.title,
-          body: JSON.parse(n.body),
-          state: n.state,
-          documentIds: links,
-          labelIds: labels
-        }),
-        now
-      )
-    }
     if (c.type === 'createNote') {
       if (db.prepare('SELECT 1 FROM notes WHERE project_id=? AND id=?').get(projectId, c.id))
         throw new ProjectError('OPERATION_CONFLICT')
@@ -274,7 +283,7 @@ export function changeNote(db: Database.Database, input: NoteChangeInput): Notes
     } else if (c.type === 'updateNote' || c.type === 'stateNote') {
       const n = getNote(c.id)
       if (n.revision_id !== c.expectedRevisionId) throw new ProjectError('STALE_REVISION')
-      checkpointNote(n)
+      retainNoteRevision(db, projectId, n.id, now)
       if (c.type === 'stateNote')
         db.prepare(
           'UPDATE notes SET state=?,revision_id=?,updated_at=? WHERE project_id=? AND id=?'
@@ -353,7 +362,7 @@ export function changeNote(db: Database.Database, input: NoteChangeInput): Notes
         .prepare('SELECT note_id FROM note_label_links WHERE project_id=? AND label_id=?')
         .all(projectId, c.id) as { note_id: string }[]) {
         const note = getNote(row.note_id)
-        checkpointNote(note)
+        retainNoteRevision(db, projectId, note.id, now)
         db.prepare('UPDATE notes SET revision_id=?,updated_at=? WHERE project_id=? AND id=?').run(
           randomUUID(),
           now,

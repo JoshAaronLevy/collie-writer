@@ -72,11 +72,12 @@ type ConversationControllerState = {
   capability: AiActionAvailability | undefined
   scope: OpenInput | null
   composerRef: React.RefObject<HTMLTextAreaElement | null>
-  choose: (id: string) => void
+  choose: (id: string) => boolean
   change: (kind: 'create' | 'rename' | 'archive' | 'restore') => void
   send: () => Promise<void>
   retryAsNew: (t: ConversationTurn, textOnly?: boolean) => void
   show: (attemptId?: string) => void
+  openConversation: (id: string) => Promise<boolean>
   discussSource: (id: string, title: string) => Promise<void>
   request: (input: ConversationRequest) => Promise<void>
   refresh: (captured: OpenInput) => Promise<void>
@@ -208,7 +209,8 @@ export function useConversationController(): ConversationControllerState {
     return sameScope(current.current.project, captured)
   }, [])
   async function showTarget(
-    targetInput?: { kind: 'native'; attemptId: string } | { kind: 'imported'; messageId: string }
+    targetInput?:
+      { kind: 'native'; attemptId: string } | { kind: 'imported'; messageId: string } | null
   ): Promise<boolean> {
     const s = current.current
     if (!s.project || composing.current || s.composition.current) return false
@@ -233,10 +235,12 @@ export function useConversationController(): ConversationControllerState {
       }
       if (rename || pendingRef.current || locked.current) return false
       const target =
-        targetInput ??
-        (run?.attemptId && (run.pending || run.issue)
-          ? { kind: 'native' as const, attemptId: run.attemptId }
-          : null)
+        targetInput === null
+          ? null
+          : (targetInput ??
+            (run?.attemptId && (run.pending || run.issue)
+              ? { kind: 'native' as const, attemptId: run.attemptId }
+              : null))
       if (target) {
         const origin = state.current.selected
         const result = await window.collie.conversation({
@@ -1192,6 +1196,7 @@ export function useConversationController(): ConversationControllerState {
     imported,
     latest,
     showImported: (messageId) => showTarget({ kind: 'imported', messageId }),
+    openConversation: async (id) => choose(id) && (await showTarget(null)),
     references,
     items,
     total,

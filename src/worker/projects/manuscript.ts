@@ -1,3 +1,4 @@
+import { checkpointMaterialLinks, hasChapterMaterial } from './material-links'
 import { rebuildCitations } from './citation-occurrences'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
@@ -348,6 +349,7 @@ export function checkpoint(
     payload,
     Buffer.byteLength(payload)
   )
+  checkpointMaterialLinks(db, projectId, checkpointId)
   return checkpointId
 }
 export function automaticCheckpoint(db: Database.Database, projectId: string, force = false): void {
@@ -514,6 +516,16 @@ export function historyStorage(
     totalBytes += row.byte_size
     if (remove.has(row.id)) prunableBytes += row.byte_size
     else for (const ref of checkpointReferences(row.snapshot)) retained.add(ref.contentId)
+  }
+  if (hasChapterMaterial(db)) {
+    for (const row of db
+      .prepare(
+        'SELECT checkpoint_id,length(CAST(body AS BLOB)) AS bytes FROM chapter_material_history WHERE project_id=?'
+      )
+      .iterate(projectId) as Iterable<{ checkpoint_id: string; bytes: number }>) {
+      totalBytes += row.bytes
+      if (remove.has(row.checkpoint_id)) prunableBytes += row.bytes
+    }
   }
   const unreferenced: string[] = []
   for (const raw of db

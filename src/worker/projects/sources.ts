@@ -571,6 +571,17 @@ function oldRevision(db: Database.Database, projectId: string, row: Row, now: st
     now
   )
 }
+export function retainSourceRevision(
+  db: Database.Database,
+  projectId: string,
+  id: string,
+  now: string
+): void {
+  const row = db.prepare('SELECT * FROM sources WHERE project_id=? AND id=?').get(projectId, id) as
+    Row | undefined
+  if (!row) throw new ProjectError('NOT_FOUND')
+  oldRevision(db, projectId, row, now)
+}
 export function commitSourceOperation(
   db: Database.Database,
   projectId: string,

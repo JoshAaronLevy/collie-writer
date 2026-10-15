@@ -1,3 +1,4 @@
+import { validatePortableMaterial } from '../projects/material-links'
 import { importRefusalTable } from './schema'
 import { importPlanTables, importReviewTables, importCommitTables } from './schema'
 import { validatePortableProofreading } from '../projects/proofreading'
@@ -13,6 +14,7 @@ import { readFile } from 'node:fs/promises'
 import { backupStorageDatabase, inWriteTransaction, openStorageDatabase } from './driver'
 import {
   PROJECT_SCHEMA_VERSION,
+  chapterMaterialTables,
   importReviewTableV33,
   assetTable,
   outlineTables,
@@ -575,6 +577,26 @@ const migrations: readonly Migration[] = [
       }
       db.prepare('UPDATE format SET schema_version=38,minimum_reader=38').run()
     }
+  },
+  {
+    from: 38,
+    to: 39,
+    validateSource: (db) => {
+      validateProjectSchema(db, 38)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[]) {
+        validatePortableConversations(db, row.id)
+        validatePortableImports(db, row.id)
+      }
+    },
+    apply: (db) => {
+      for (const sql of chapterMaterialTables) db.exec(sql)
+      db.exec(
+        `INSERT INTO conversation_document_links SELECT c.project_id,c.id,d.id FROM conversations c JOIN documents d ON d.project_id=c.project_id AND d.id=c.origin_document_id WHERE d.kind IN ('chapter','text')`
+      )
+      db.prepare('UPDATE format SET schema_version=39,minimum_reader=39').run()
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableMaterial(db, row.id)
+    }
   }
 ]
 
@@ -653,6 +675,7 @@ export async function openProjectDatabase(
         for (const row of candidate.prepare('SELECT id FROM projects').all() as { id: string }[]) {
           manuscript(candidate, row.id)
           readProjectDetails(candidate, row.id)
+          validatePortableMaterial(candidate, row.id)
           validatePortableConversations(candidate, row.id)
           validatePortableProofreading(candidate, row.id)
           await validateImportArtifactFiles(

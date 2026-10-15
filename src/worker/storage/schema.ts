@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 
 export const PROJECT_APPLICATION_ID = 1129270359
-export const PROJECT_SCHEMA_VERSION = 38
+export const PROJECT_SCHEMA_VERSION = 39
 // Persisted schema is app-owned; never execute DDL or migrations supplied by a project.
 export const projectTablesV1 = [
   `CREATE TABLE format (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, minimum_reader INTEGER NOT NULL, editor_version INTEGER NOT NULL) STRICT`,
@@ -170,7 +170,13 @@ export const projectTablesV36 = [...projectTablesV35]
 export const importRefusalTable = `CREATE TABLE import_analysis_refusals (project_id TEXT NOT NULL, attempt_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,attempt_id), FOREIGN KEY(project_id,attempt_id) REFERENCES import_analysis_runs(project_id,id)) STRICT`
 export const projectTablesV37 = [...projectTablesV36, importRefusalTable]
 // Span-specific accepted identities change persisted meaning, not the frozen DDL.
-export const projectTables = [...projectTablesV37]
+export const projectTablesV38 = [...projectTablesV37]
+export const chapterMaterialTables = [
+  `CREATE TABLE conversation_document_links (project_id TEXT NOT NULL, conversation_id TEXT NOT NULL, document_id TEXT NOT NULL, PRIMARY KEY(project_id,conversation_id,document_id), FOREIGN KEY(project_id,conversation_id) REFERENCES conversations(project_id,id), FOREIGN KEY(project_id,document_id) REFERENCES documents(project_id,id)) STRICT`,
+  `CREATE TABLE excerpt_document_links (project_id TEXT NOT NULL, excerpt_id TEXT NOT NULL, document_id TEXT NOT NULL, PRIMARY KEY(project_id,excerpt_id,document_id), FOREIGN KEY(project_id,excerpt_id) REFERENCES source_excerpts(project_id,id), FOREIGN KEY(project_id,document_id) REFERENCES documents(project_id,id)) STRICT`,
+  `CREATE TABLE chapter_material_history (project_id TEXT NOT NULL, checkpoint_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,checkpoint_id), FOREIGN KEY(project_id,checkpoint_id) REFERENCES history_checkpoints(project_id,id)) STRICT`
+] as const
+export const projectTables = [...projectTablesV38, ...chapterMaterialTables]
 const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export function createProjectSchema(db: Database.Database): void {
@@ -270,7 +276,9 @@ export function validateProjectSchema(
                                                                       ? projectTablesV34
                                                                       : expectedVersion === 37
                                                                         ? projectTablesV37
-                                                                        : projectTables
+                                                                        : expectedVersion === 38
+                                                                          ? projectTablesV38
+                                                                          : projectTables
     ).map(sqlKey)
   )
   if (

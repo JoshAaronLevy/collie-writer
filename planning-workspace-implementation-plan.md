@@ -1,8 +1,8 @@
 # Collie Writer planning workspace implementation plan
 
-October 14, 2026. **Planning complete; implementation has not started.**
+October 14, 2026. **PL01 implementation complete — awaiting user testing. PL02–PL06 not started.**
 
-This plan adds a separate visual workspace for turning accumulated conversations, research, sources, and loose ideas into a book or article. It also connects that structure to the existing writing experience. This is a proposed product design grounded in source inspection, not an implemented interface or a runtime acceptance record.
+This plan adds a separate visual workspace for turning accumulated conversations, research, sources, and loose ideas into a book or article. It also connects that structure to the existing writing experience. The full journey remains the intended design; only PL01 is implemented. This document does not establish runtime acceptance.
 
 ## 1. The experience to build
 
@@ -82,11 +82,11 @@ The default Material filter is **Unplaced**, meaning material with no active cha
 
 Support three editorial dispositions, separate from source verification and manuscript status:
 
-| Disposition | Meaning | Presentation |
-| --- | --- | --- |
-| Keep | Available to organize and use; the default | No repeated Keep badge |
-| Needs development | Promising but incomplete, unclear, or insufficiently supported | A small label and optional short reason |
-| Set aside | Excluded from ordinary planning suggestions and chapter drafting context | Hidden from the normal pool; recoverable through Set aside |
+| Disposition       | Meaning                                                                  | Presentation                                               |
+| ----------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| Keep              | Available to organize and use; the default                               | No repeated Keep badge                                     |
+| Needs development | Promising but incomplete, unclear, or insufficiently supported           | A small label and optional short reason                    |
+| Set aside         | Excluded from ordinary planning suggestions and chapter drafting context | Hidden from the normal pool; recoverable through Set aside |
 
 Do not require people to classify every item, impose the example 70/10/20 proportions, or present AI judgments as objective quality scores. “Needs development” can still be assigned to a chapter. A chapter can have useful material and unresolved gaps at the same time.
 
@@ -132,19 +132,19 @@ Inspected in the working checkout on October 14, 2026. These are source findings
 
 Read alongside [repository guidance](AGENTS.md), the [experience specification](docs/design/app-experience.md), [Import recovery contract](docs/formats/import-recovery-v1.md), [project knowledge contract](docs/formats/conversation-knowledge-v1.md), and [current conversation presentation plan](uat-round-3-implementation-plan.md). Their earlier implementation records retain their existing acceptance status.
 
-| Area | Existing foundation | Required change |
-| --- | --- | --- |
-| Retained project session | `WorkspaceSession.tsx`, `useWorkspaceController.ts`, `useWorkspaceNavigation.ts`, `RetainedRegion.tsx` | Add Plan within the same session; preserve manuscript, source/note, and conversation draft owners |
-| Navigation and writing layout | `src/renderer/src/app/navigation.ts`, `WorkspaceViews.tsx`, `WorkspaceNavigation.tsx`, `WritingWorkspace.tsx` | Add the mode switch, Plan region, and chapter material presentation |
-| Outline | `src/shared/outline.ts`, `src/worker/projects/outline.ts`, `manuscript.ts`, `document-commit.ts` | Reuse document IDs, hierarchy, title, synopsis, order, history, and guarded mutations; add a bounded atomic proposal application |
-| Notes and sources | `src/shared/notes.ts`, `sources.ts`, worker `notes.ts`/`sources.ts` | Existing `documentIds`, `note_links`, and `source_links` already represent chapter/section associations; reuse them |
-| Conversations | Shared/worker `conversations.ts`, renderer `ConversationProvider.tsx` and `conversationState.ts` | Add many-to-many chapter associations; `originDocumentId` records where a chat began and cannot represent later organization |
-| Imported history | `conversation-transcript.ts`, `external-conversations.ts`, `imported-context.ts`, `imported-provenance.ts` | Preserve exact conversation/message identity and original ancestry; add a distinct passage contract where needed |
-| Import | `ImportProvider`, `useImportSelection`, `useImportFlow`, worker import owners | Reuse files/categories/instructions/model → Submit → summary → Accept; accepted content appears in Plan without a second import |
-| Research and AI context | `conversation-knowledge.ts`, `conversation-memory.ts`, `conversation-research.ts`, `conversation-sources.ts` and corresponding worker/main owners | Add explicit board/chapter scope and corpus coverage; reuse source saving and evidence navigation |
-| AI execution | `src/main/conversations/service.ts`, `src/main/ai/content-service.ts`, `direct-conversation.ts`, `direct-research.ts` | Extend existing request/capture/output contracts; keep the selected own-account route and existing durable operation owner |
-| Editor insertion | `src/renderer/src/editor/selection.ts`, `adapter.ts`, `RichDraft.tsx`, `useManuscriptProtection.ts` | Add a normal reversible editor insertion with exact target checks; retain manuscript protection and history |
-| Portable storage | `src/worker/storage/schema.ts`, `migrations.ts`, project `portable-db.ts`, `incoming.ts`, `snapshot.ts`, retained-version owners | Add validated portable records and complete copy/migration handling; current SQL schema is 38 |
+| Area                          | Existing foundation                                                                                                                               | Required change                                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Retained project session      | `WorkspaceSession.tsx`, `useWorkspaceController.ts`, `useWorkspaceNavigation.ts`, `RetainedRegion.tsx`                                            | Add Plan within the same session; preserve manuscript, source/note, and conversation draft owners                                |
+| Navigation and writing layout | `src/renderer/src/app/navigation.ts`, `WorkspaceViews.tsx`, `WorkspaceNavigation.tsx`, `WritingWorkspace.tsx`                                     | Add the mode switch, Plan region, and chapter material presentation                                                              |
+| Outline                       | `src/shared/outline.ts`, `src/worker/projects/outline.ts`, `manuscript.ts`, `document-commit.ts`                                                  | Reuse document IDs, hierarchy, title, synopsis, order, history, and guarded mutations; add a bounded atomic proposal application |
+| Notes and sources             | `src/shared/notes.ts`, `sources.ts`, worker `notes.ts`/`sources.ts`                                                                               | Existing `documentIds`, `note_links`, and `source_links` already represent chapter/section associations; reuse them              |
+| Conversations                 | Shared/worker `conversations.ts`, renderer `ConversationProvider.tsx` and `conversationState.ts`                                                  | Add many-to-many chapter associations; `originDocumentId` records where a chat began and cannot represent later organization     |
+| Imported history              | `conversation-transcript.ts`, `external-conversations.ts`, `imported-context.ts`, `imported-provenance.ts`                                        | Preserve exact conversation/message identity and original ancestry; add a distinct passage contract where needed                 |
+| Import                        | `ImportProvider`, `useImportSelection`, `useImportFlow`, worker import owners                                                                     | Reuse files/categories/instructions/model → Submit → summary → Accept; accepted content appears in Plan without a second import  |
+| Research and AI context       | `conversation-knowledge.ts`, `conversation-memory.ts`, `conversation-research.ts`, `conversation-sources.ts` and corresponding worker/main owners | Add explicit board/chapter scope and corpus coverage; reuse source saving and evidence navigation                                |
+| AI execution                  | `src/main/conversations/service.ts`, `src/main/ai/content-service.ts`, `direct-conversation.ts`, `direct-research.ts`                             | Extend existing request/capture/output contracts; keep the selected own-account route and existing durable operation owner       |
+| Editor insertion              | `src/renderer/src/editor/selection.ts`, `adapter.ts`, `RichDraft.tsx`, `useManuscriptProtection.ts`                                               | Add a normal reversible editor insertion with exact target checks; retain manuscript protection and history                      |
+| Portable storage              | `src/worker/storage/schema.ts`, `migrations.ts`, project `portable-db.ts`, `incoming.ts`, `snapshot.ts`, retained-version owners                  | Add validated portable records and complete copy/migration handling; current SQL schema is 38                                    |
 
 Current AI recall is not a whole-project planning engine. The inspected knowledge collector limits its selected result to 24 items, ordinarily uses a 16,000-character serialization budget, and bounds several candidate scans to 200 items. Imported recall also has explicit message windows and skips oversized messages. Reusing that collector unchanged would miss older material in precisely the use case this feature must serve.
 
@@ -158,17 +158,17 @@ There is a pre-existing local edit to `ConversationPanel.tsx` removing routine d
 
 The board is a projection of the project's existing records. It must not own copied note bodies, a second source library, duplicate conversations, or a second persistent chapter tree.
 
-| Concept | Owner and persistence |
-| --- | --- |
-| Accepted chapter/section | Existing outline document; reuse `title`, `synopsis`, parent, position, and revision |
-| Note/source chapter assignment | Existing canonical link tables; changes from either view use the same mutation authority |
-| Chat/excerpt chapter assignment | Small project-scoped link records for associations not currently represented; stable target identities and uniqueness |
-| Material disposition | Sparse project-scoped metadata keyed by material identity; missing row means Keep; optional development reason |
-| Topic group | Small portable group record and membership references; no nested general graph or independent content body |
-| Captured chat passage | Ordinary note content plus a versioned origin reference to retained native/imported messages, revisions, and exact text ranges |
-| Outline proposal | Versioned retained suggestion tied to its producing AI attempt, input revisions, and proposed changes; not live outline state |
-| Analysis summaries | Retained AI output with exact covered identities/ranges and revisions; reusable when inputs are unchanged; never original evidence |
-| Layout preferences | Device-local mode/pane/filter/scroll preferences; the meaningful chapter/topic order remains project data |
+| Concept                         | Owner and persistence                                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Accepted chapter/section        | Existing outline document; reuse `title`, `synopsis`, parent, position, and revision                                               |
+| Note/source chapter assignment  | Existing canonical link tables; changes from either view use the same mutation authority                                           |
+| Chat/excerpt chapter assignment | Small project-scoped link records for associations not currently represented; stable target identities and uniqueness              |
+| Material disposition            | Sparse project-scoped metadata keyed by material identity; missing row means Keep; optional development reason                     |
+| Topic group                     | Small portable group record and membership references; no nested general graph or independent content body                         |
+| Captured chat passage           | Ordinary note content plus a versioned origin reference to retained native/imported messages, revisions, and exact text ranges     |
+| Outline proposal                | Versioned retained suggestion tied to its producing AI attempt, input revisions, and proposed changes; not live outline state      |
+| Analysis summaries              | Retained AI output with exact covered identities/ranges and revisions; reusable when inputs are unchanged; never original evidence |
+| Layout preferences              | Device-local mode/pane/filter/scroll preferences; the meaningful chapter/topic order remains project data                          |
 
 Use a small typed material reference shared by read projections and commands. Extend existing target contracts only where their semantics fit; avoid a generic graph framework or universal workflow engine. Persist only missing relationships and meaningful user decisions. Do not duplicate note/source links into a new board store that must then be synchronized.
 
@@ -237,18 +237,20 @@ Retain existing access policy. Read-only projects still expose saved planning co
 
 ## 5. Implementation sequence
 
-The six stages below are separate implementation requests. They are ordered for useful, reviewable increments; none is authorized for execution by this planning request. Migration, accessibility, recovery, and removal of superseded code belong in each affected stage, not in an unspecified cleanup phase.
+The six stages below are separate implementation requests. They are ordered for useful, reviewable increments. PL01 was explicitly requested and is the current implementation boundary; PL02–PL06 remain separate requests. Migration, accessibility, recovery, and removal of superseded code belong in each affected stage, not in an unspecified cleanup phase.
 
-| Stage | Result | Dependencies | Status |
-| --- | --- | --- | --- |
-| PL01 | Shared chapter material associations and a usable chapter material panel | Existing outline/research/conversation owners | Not started |
-| PL02 | Manual visual Plan workspace, topics, and editorial dispositions | PL01 | Not started |
-| PL03 | Integrated collection and precise passage cards | PL02 and existing Import | Not started |
-| PL04 | Scoped planning chat, corpus coverage, and research/development | PL03 | Not started |
-| PL05 | Editable outline proposals and atomic reversible application | PL04 | Not started |
-| PL06 | Chapter-aware drafting and safe insertion into Write | PL05 | Not started |
+| Stage | Result                                                                   | Dependencies                                  | Status                                          |
+| ----- | ------------------------------------------------------------------------ | --------------------------------------------- | ----------------------------------------------- |
+| PL01  | Shared chapter material associations and a usable chapter material panel | Existing outline/research/conversation owners | Implementation complete — awaiting user testing |
+| PL02  | Manual visual Plan workspace, topics, and editorial dispositions         | PL01                                          | Not started                                     |
+| PL03  | Integrated collection and precise passage cards                          | PL02 and existing Import                      | Not started                                     |
+| PL04  | Scoped planning chat, corpus coverage, and research/development          | PL03                                          | Not started                                     |
+| PL05  | Editable outline proposals and atomic reversible application             | PL04                                          | Not started                                     |
+| PL06  | Chapter-aware drafting and safe insertion into Write                     | PL05                                          | Not started                                     |
 
 ### PL01 — Connect material to chapters
+
+**Status:** Implementation complete — awaiting user testing. See the [PL01 record](docs/validation/planning-PL01.md) and [manual guide](docs/manual-testing/planning-PL01.md).
 
 **Outcome:** A selected chapter has one place to find its associated notes, sources, excerpts, and chats. The same item can support several chapters.
 
@@ -410,22 +412,23 @@ The most useful early design feedback is whether the card board gives enough fre
 
 - Created this root-level implementation plan from the user's requested journey, repository guidance, and source inspection.
 - Proposed the Write/Plan interaction, material/topic/chapter model, AI proposal boundary, large-collection context behavior, and six implementation stages.
-- No application source, schema, existing plan status, or working-tree edit was changed.
-- No format/lint/typecheck commands were needed for this documentation-only change. No tests, builds, launches, AI requests, or runtime acceptance were performed.
-- All PL stages are **not started**. Existing Import, conversation, provider, and release acceptance remains at its recorded status.
+- The initial planning-only change did not change application source, schema, existing plan status, or working-tree edits.
+- The initial documentation-only change required no code checks. No tests, builds, launches, AI requests, or runtime acceptance were performed.
+- October 14 PL01: chapter-material associations and the writing companion are implemented, awaiting user testing. SQL/minimum reader 39 adds chat/excerpt links and association history; note/source links remain canonical. Format, lint and both typechecks passed. See the [completion evidence](docs/validation/planning-PL01.md).
+- PL02–PL06 are **not started**. Existing Import, conversation, provider, and release acceptance remains at its recorded status.
 
 ## Model and Effort
 
 These are recommendations for the Codex session implementing each stage, separate from Collie's in-app AI model. They are engineering judgments based on the stage contracts and [OpenAI's model-selection guidance](https://developers.openai.com/api/docs/guides/model-selection), not measured performance on this repository. The guidance positions 6 Astra for demanding reasoning and 6.1 Sol for complex work where time and cost also matter.
 
-| Stage | Model | Effort | Status |
-| --- | --- | --- | --- |
-| PL01 | 6 Astra | Extra-High | Not started |
-| PL02 | 6.1 Sol | High | Not started |
-| PL03 | 6.1 Sol | High | Not started |
-| PL04 | 6 Astra | Extra-High | Not started |
-| PL05 | 6 Astra | Extra-High | Not started |
-| PL06 | 6 Astra | High | Not started |
+| Stage | Model   | Effort     | Status                                          |
+| ----- | ------- | ---------- | ----------------------------------------------- |
+| PL01  | 6 Astra | Extra-High | Implementation complete — awaiting user testing |
+| PL02  | 6.1 Sol | High       | Not started                                     |
+| PL03  | 6.1 Sol | High       | Not started                                     |
+| PL04  | 6 Astra | Extra-High | Not started                                     |
+| PL05  | 6 Astra | Extra-High | Not started                                     |
+| PL06  | 6 Astra | High       | Not started                                     |
 
 - **PL01:** Establishes canonical relationships across notes, sources, chats, and chapters, including migration, portability, and merge/split/restore history. Extra-High is justified by the ownership decisions that every later stage depends on.
 - **PL02:** Primarily UI and interaction work on PL01's established contracts: board layout, retained navigation, topic groups, drag/keyboard actions, and scoped metadata. Sol with High is a proportionate choice for this bounded implementation.

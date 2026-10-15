@@ -1,4 +1,14 @@
 import {
+  isChapterMaterialInput,
+  isChapterMaterialChange,
+  isChapterMaterialView,
+  isChapterMaterialResult,
+  type ChapterMaterialInput,
+  type ChapterMaterialChange,
+  type ChapterMaterialView,
+  type ChapterMaterialResult
+} from './chapter-material'
+import {
   isAnalysisWorkerInput,
   isAnalysisValue,
   type AnalysisWorkerInput,
@@ -178,6 +188,8 @@ export const PROJECT_CHANNELS = {
   citationStyle: 'citations.style',
   outline: 'outline.change',
   history: 'history.read',
+  chapterMaterial: 'chapter-material.read',
+  chapterMaterialChange: 'chapter-material.change',
   notes: 'notes.read',
   noteChange: 'notes.change',
   location: 'projects.location',
@@ -420,6 +432,8 @@ export type ImageAsset = {
 }
 export type ImageData = { mediaType: ImageAsset['mediaType']; base64: string }
 export type ProjectCommand =
+  | { kind: 'chapterMaterial'; input: ChapterMaterialInput }
+  | { kind: 'chapterMaterialChange'; input: ChapterMaterialChange }
   | { kind: 'importAnalysis'; input: AnalysisWorkerInput }
   | { kind: 'importSession'; input: ImportWorkerInput }
   | { kind: 'proofreading'; input: ProofreadWorkerInput }
@@ -465,6 +479,8 @@ export type ProjectCommand =
   | { kind: 'importImage'; input: WorkerImageImport }
   | { kind: 'readImage'; input: ImageReadInput }
 export type ProjectValue =
+  | ChapterMaterialView
+  | ChapterMaterialResult
   | ImportValue
   | AnalysisValue
   | WorkingCopyReply
@@ -530,6 +546,10 @@ export type ProjectAPI = {
     input: SourceAttachmentExportInput
   ) => Promise<ProjectResult<SourceExportReceipt>>
   onSourceProgress: (callback: (progress: SourceProgress) => void) => () => void
+  readChapterMaterial: (input: ChapterMaterialInput) => Promise<ProjectResult<ChapterMaterialView>>
+  changeChapterMaterial: (
+    input: ChapterMaterialChange
+  ) => Promise<ProjectResult<ChapterMaterialResult>>
   readNotes: (input: OpenInput) => Promise<ProjectResult<NotesView>>
   changeNote: (input: NoteChangeInput) => Promise<ProjectResult<NotesView>>
   changeOutline: (input: OutlineInput) => Promise<ProjectResult<OpenProject>>
@@ -728,6 +748,8 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (v.kind === 'citationStyle') return isCitationStyleInput(v.input)
   if (v.kind === 'outline') return isOutlineInput(v.input)
   if (v.kind === 'history') return isHistoryInput(v.input)
+  if (v.kind === 'chapterMaterial') return isChapterMaterialInput(v.input)
+  if (v.kind === 'chapterMaterialChange') return isChapterMaterialChange(v.input)
   if (v.kind === 'notes') return isOpenInput(v.input)
   if (v.kind === 'sources' || v.kind === 'evidence' || v.kind === 'searchActivity')
     return isOpenInput(v.input)
@@ -840,6 +862,8 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
   if (kind === 'interchangeCommit') return isProjectValue('open', v)
   if (kind === 'citations' || kind === 'citationStyle') return isCitationsView(v)
   if (!record(v)) return false
+  if (kind === 'chapterMaterial') return isChapterMaterialView(v)
+  if (kind === 'chapterMaterialChange') return isChapterMaterialResult(v)
   if (kind === 'history') return isHistoryView(v)
   if (kind === 'notes' || kind === 'noteChange') return isNotesView(v)
   if (kind === 'evidence' || kind === 'evidenceChange') return isEvidenceView(v)

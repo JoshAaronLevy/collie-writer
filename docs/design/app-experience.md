@@ -27,7 +27,7 @@ The opening experience should communicate care through typography, space, and a 
 
 Application destinations are **Setup**, **Projects**, **Workspace**, **Settings**, and **Help**. Workspace has **Write** and **Research**. Research has **Sources**, **Notes**, and **Questions & claims**. Search, Export, Project details, and History are focused destinations with a remembered return target. Their presentation can be a view or dialog as specified below; they do not create another project session.
 
-The workspace secondary panel has exactly one mode: Closed, Notes, Source, or AI. Expanding AI temporarily gives the conversation the primary reading area and supplies Return to writing. Keep the current editor/draft alive. Changing panels never creates a second note/source draft or silently broadens AI context.
+The workspace secondary panel has exactly one mode: Closed, Chapter material, or AI. Expanding AI temporarily gives the conversation the primary reading area and supplies Return to writing. Keep the current editor/draft alive. Changing panels never creates a second note/source draft or silently broadens AI context.
 
 Global Projects, Settings, and Help remain reachable. The workspace header adds project title/menu, save status, Search, Save, and Export. At narrow widths, secondary commands move to a labeled Project menu; urgent status never moves out of sight. Native app menus continue to call the same session actions.
 
@@ -212,7 +212,7 @@ Primary action: resume a chosen row; New project is the main creation action. Ro
 ```text
 WIDE
 Projects / Project title [Project ▾]     Save status [▾]   Search Save Export
-Write  Research                                [Notes] [Source] [AI]
+Write  Research                                [Chapter material] [AI]
 Outline                 Section title                         Optional panel
 Introduction            Style ▾  B I  Lists  Insert ▾  More ▾   Notes OR Source
 Chapter 1               ┌────────────────────────────┐         OR conversation
@@ -240,6 +240,12 @@ Empty section shows a quiet prompt outside persisted content, e.g. “Start your
 Common toolbar: block style, bold/italic, lists, Insert, More. More includes remaining supported formatting and Find/replace; Insert includes references, footnotes, managed images, tables, links, and supported breaks. Image/table controls appear contextually. Section status/synopsis move to Section details. History and outline restore remain reachable. Selection-dependent dialogs capture a valid target before stealing focus and recheck it on apply.
 
 AI is closed by default. The retained companion shows provider/account, context summary with inspectable exact content and prior messages, messages, a composer, Send, and Stop during generation. Chat input never implies an edit. Expanded chat provides Return to writing. Proofreading separately previews section/chapter scope and offers before/after proposals with Accept, Reject, explicit grouped Apply, and stale-target explanations. Reading stored conversations/proposals needs no provider session; no hidden reasoning is shown.
+
+### PL01 — Chapter material (October 14, 2026)
+
+Write → Chapter material replaces the separate Notes/Source companions. It shows the selected outline item’s linked notes, sources, excerpts and chats, followed by inherited parent material, deduplicated by original identity. Labels identify direct use, inherited parent titles and historical chat origin. Add material offers title search, type filtering and pages of 20 items; Add/Remove applies only to the selected chapter, section or part. Select a parent to remove its inherited link. Open original uses retained Research/chat navigation. Questions, claims, annotations and detailed source usage remain in Research; linked material does not imply a citation or an AI context selection.
+
+The panel retains an uncertain link change through the workspace draft owner; Check change reads its outcome without sending another mutation. Read-only access retains inspection. Old device-local Notes/Source panel preferences open Chapter material and preserve pane widths/focus. Existing manuscript, conversation and Research drafts keep their owners. PL01 is implemented, awaiting the [user walkthrough](../manual-testing/planning-PL01.md); the Plan board and chapter-aware AI are later stages.
 
 ### S06 — Research
 
@@ -271,7 +277,7 @@ Loading/error: retain the draft and report position; show extraction/attachment 
 
 Search opens from the workspace header. Results identify manuscript sections, notes, sources, questions/claims, and prepared original text. RF13 updates the local projection through the existing owner on entry and saved changes. Preserve query/filter/page/scroll state and origin; Open uses the exact target through the same draft guard. Incomplete results explicitly remain inconclusive; complete no-match results suggest revising the phrase/filters and disclose unsearchable originals. Stop is contextual and stays stopped until Continue. Rebuild is offered only for an actual index problem. Metadata-only bibliography records are not unread originals; stale results retain their locator and explain missing/changed content.
 
-History opens its dated version list directly. RF13 compares earlier/current words with synopsis, placement and a short formatting summary, disclosing visual/reference differences a text preview cannot fully show. Restore this version replaces the whole manuscript/outline and keeps current writing first through the existing exact operation/checkpoint owner. Named versions, eligible dated automatic-version deletion and contextual passage-target repair remain; routine block/index accounting and the extra restore-confirmation branch are removed. Native/content/accessibility acceptance remains pending under the [RF13 guide](../manual-testing/refactor-RF13.md). RF12 Import separation is intentionally deferred until after the remaining refactor and further Import testing.
+History opens its dated version list directly. RF13 compares earlier/current words with synopsis, placement and a short formatting summary, disclosing visual/reference differences a text preview cannot fully show. Restore this version replaces the whole manuscript/outline and, for versions created since PL01, its saved material links; current writing and links are retained first through the existing exact operation/checkpoint owner. Named versions, eligible dated automatic-version deletion and contextual passage-target repair remain; routine block/index accounting and the extra restore-confirmation branch are removed. Native/content/accessibility acceptance remains pending under the [RF13 guide](../manual-testing/refactor-RF13.md). RF12 Import separation is intentionally deferred until after the remaining refactor and further Import testing.
 
 ### Current AI conversation presentation — R3-01/R3-02/R3-03
 

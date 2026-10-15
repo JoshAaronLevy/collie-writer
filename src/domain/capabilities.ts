@@ -29,6 +29,8 @@ export function commandCapability(command: ProjectCommand): Capability {
       )
         ? 'edit'
         : 'read'
+    case 'chapterMaterialChange':
+      return command.input.action === 'status' ? 'read' : 'edit'
     case 'create':
       return 'create'
     case 'recipeChange':
@@ -62,6 +64,7 @@ export function commandCapability(command: ProjectCommand): Capability {
     case 'open':
     case 'section':
     case 'history':
+    case 'chapterMaterial':
     case 'notes':
     case 'sources':
     case 'sourceExport':

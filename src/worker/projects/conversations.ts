@@ -1,3 +1,4 @@
+import { hasChapterMaterial } from './material-links'
 import { chatMedia } from './chat-media'
 import {
   loadImportedContext,
@@ -802,12 +803,11 @@ export async function conversationCommand(
         current: boolean,
         offset: number
       ): { items: ConversationSummary[]; total: number } => {
-        const match = current
-          ? 'origin_document_id=?'
-          : '(? IS NULL OR origin_document_id IS NULL OR origin_document_id<>?)'
-        const args = current
-          ? [p, input.state, input.query, currentDocumentId]
-          : [p, input.state, input.query, currentDocumentId, currentDocumentId]
+        const linked = hasChapterMaterial(db)
+          ? 'EXISTS (SELECT 1 FROM conversation_document_links l WHERE l.project_id=conversations.project_id AND l.conversation_id=conversations.id AND l.document_id=?)'
+          : 'coalesce(origin_document_id= ?,0)'
+        const match = current ? linked : `NOT (${linked})`
+        const args = [p, input.state, input.query, currentDocumentId]
         const filter = `project_id=? AND state=? AND instr(lower(title),lower(?))>0 AND ${match}`
         const rows = db
           .prepare(
@@ -945,6 +945,12 @@ export async function conversationCommand(
           db.prepare(
             'INSERT INTO conversations (project_id,id,revision_id,title,state,created_at,updated_at,origin_document_id) VALUES (?,?,?,?,?,?,?,?)'
           ).run(p, input.conversationId, randomUUID(), input.title, input.state, now, now, origin)
+          if (origin && hasChapterMaterial(db))
+            db.prepare('INSERT INTO conversation_document_links VALUES (?,?,?)').run(
+              p,
+              input.conversationId,
+              origin
+            )
         } else {
           const c = conversation(db, p, input.conversationId)
           if (c.revisionId !== input.expectedRevision) throw new ProjectError('STALE_REVISION')

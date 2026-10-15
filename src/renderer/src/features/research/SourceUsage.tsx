@@ -1,15 +1,7 @@
-import { useState } from 'react'
-import { AppButton, SelectField } from '../../components/ui/Controls'
+import { AppButton } from '../../components/ui/Controls'
 import { useWorkspaceSession } from '../workspace/workspaceContext'
 import { useResearchData } from './researchContext'
-import {
-  containingChapter,
-  linkDocument,
-  linkWarnings,
-  sectionPath,
-  ownBodyIds,
-  sourceCounts
-} from './usage'
+import { linkWarnings, sectionPath, sourceCounts } from './usage'
 import './SourceUsage.css'
 
 export function UsageSummary({ sourceId }: { sourceId: string }): React.JSX.Element {
@@ -253,112 +245,6 @@ export function SourceUsage({ sourceId }: { sourceId: string }): React.JSX.Eleme
             </p>
           )}
         </>
-      ) : null}
-    </section>
-  )
-}
-
-export function SectionSources({
-  chooseSource
-}: {
-  chooseSource: (id: string) => void
-}): React.JSX.Element {
-  const { project, research, dirty } = useWorkspaceSession()
-  const { view, fresh } = useResearchData()
-  const [selection, setSelection] = useState(project?.documentId ?? '')
-  const selectionKey = `${project?.projectId ?? ''}:${project?.documentId ?? ''}`
-  const [lastSelectionKey, setLastSelectionKey] = useState(selectionKey)
-  if (lastSelectionKey !== selectionKey) {
-    setLastSelectionKey(selectionKey)
-    setSelection(project?.documentId ?? '')
-  }
-  if (!project) return <></>
-  const ids = new Set(ownBodyIds(project.documents, selection))
-  const chapter = containingChapter(project.documents, project.documentId)
-  const citations = view?.citations.filter((item) => ids.has(item.documentId)) ?? []
-  const sections = view?.sourceSections.filter((item) => ids.has(item.documentId)) ?? []
-  const links =
-    view?.links.filter(
-      (item) => item.state === 'active' && ids.has(linkDocument(view!, item) ?? '')
-    ) ?? []
-  const decisions =
-    view?.decisions.filter((item) =>
-      ids.has(view!.questions.find((question) => question.id === item.questionId)?.documentId ?? '')
-    ) ?? []
-  const sourceIds = [
-    ...new Set([...citations, ...sections, ...links, ...decisions].map((item) => item.sourceId))
-  ]
-  return (
-    <section className="source-usage" aria-label="Sources for this section or chapter">
-      <h3>Sources in your writing</h3>
-      <UsageStatus />
-      <SelectField
-        label="Section or chapter"
-        value={selection}
-        onChange={(event) => setSelection(event.currentTarget.value)}
-      >
-        {project.documents
-          .filter((item) => item.kind === 'text' || item.kind === 'chapter')
-          .map((item) => (
-            <option key={item.id} value={item.id}>
-              {sectionPath(project.documents, item.id)} ·{' '}
-              {item.kind === 'text' ? 'section' : 'chapter'}
-              {item.state !== 'active' ? ` (${item.state})` : ''}
-            </option>
-          ))}
-      </SelectField>
-      {chapter ? (
-        <AppButton variant="subtle" onClick={() => setSelection(chapter.id)}>
-          Show this chapter
-        </AppButton>
-      ) : null}
-      <p className="source-usage-state">
-        Saved writing and research associations for this item’s own body, retaining archived/removed
-        states. Select a child separately to review its sources.
-        {dirty ? ' Protect current edits to update saved usage.' : ''}
-      </p>
-      {view ? (
-        sourceIds.length ? (
-          <ul>
-            {sourceIds.map((id) => {
-              const source = view.sources.find((item) => item.id === id)
-              const count = new Set(
-                citations
-                  .filter((item) => item.sourceId === id)
-                  .map((item) => `${item.documentId}:${item.citationId}`)
-              ).size
-              return (
-                <li key={id}>
-                  <strong>{source?.title ?? 'Missing source'}</strong>
-                  {source?.state !== 'active' ? <span> · {source?.state ?? 'missing'}</span> : null}
-                  <p>
-                    {count} citations · {sections.filter((item) => item.sourceId === id).length}{' '}
-                    manual section links · {links.filter((item) => item.sourceId === id).length}{' '}
-                    evidence links · {decisions.filter((item) => item.sourceId === id).length}{' '}
-                    question decisions
-                  </p>
-                  <AppButton
-                    variant="subtle"
-                    onClick={() => research({ kind: 'sources', sourceId: id, page: 'usage' })}
-                  >
-                    See where and why
-                  </AppButton>
-                  {source?.state === 'active' ? (
-                    <AppButton variant="subtle" onClick={() => chooseSource(id)}>
-                      Read saved excerpts
-                    </AppButton>
-                  ) : null}
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <p>
-            {fresh
-              ? 'No saved source connections for this selection yet. Add sources in Research, insert a citation, or record a manual relationship.'
-              : 'Connections are updating.'}
-          </p>
-        )
       ) : null}
     </section>
   )
