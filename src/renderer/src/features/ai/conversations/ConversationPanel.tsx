@@ -1123,13 +1123,13 @@ export function ConversationPanel(): React.JSX.Element {
                       {requestReason(connections.issue)}
                     </p>
                   ) : null}
-                  {!disclosed ? (
+                  {/* {!disclosed ? (
                     <p className={styles['conversation-caption']}>
                       Send shares your message and relevant writing, research and active chats from
                       this project with your ChatGPT account. Long context may need up to two extra
                       AI requests to prepare memory. Inspect or edit it in Context.
                     </p>
-                  ) : null}
+                  ) : null} */}
                 </form>
               ) : null}
             </>
