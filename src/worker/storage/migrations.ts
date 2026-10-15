@@ -659,6 +659,18 @@ const migrations: readonly Migration[] = [
       for (const sql of outlineProposalTables) db.exec(sql)
       db.prepare('UPDATE format SET schema_version=43,minimum_reader=43').run()
     }
+  },
+  {
+    from: 43,
+    to: 44,
+    validateSource: (db) => {
+      validateProjectSchema(db, 43)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableConversations(db, row.id)
+    },
+    apply: (db) => {
+      db.prepare('UPDATE format SET schema_version=44,minimum_reader=44').run()
+    }
   }
 ]
 

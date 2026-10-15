@@ -31,3 +31,9 @@ October 15, 2026: new writes use decrypted draft-file version 2. Entries optiona
 ## PL05 additive local format 3
 
 New writes now use draft-file version 3. A planning entry may use nested version 2 with `outline: {version: 1, baseVersionId: string | null}` and collection mode. This retains the visible editable-outline choice and the exact saved proposal version selected for refinement. File versions 1 and 2 still reject extensions that did not exist in their contracts. The encrypted owner/path, capacity, revision guard and protection lifecycle are unchanged. These local choices never dispatch a request or apply a proposal on reopening. User-edited proposal versions themselves belong to the portable project, not this local draft file.
+
+## PL06 — Draft file v4
+
+The encrypted device-local file writes version 4. A nested planning choice v3 selects writing-preview mode, requires question mode, and retains the explicit material scope/search choice. Optional `previews` hold at most 20 unique attempt IDs with exact assistant message revision and editable plain text up to 128,000 UTF-16 units each. Preview text counts toward the existing 500,000-unit aggregate draft limit; earlier edits are never evicted to admit new ones. Existing scope/chat limits, serialized revision checks, recovery, Copy and guarded flush remain. Discard removes the entire chosen draft only explicitly; individual previews can separately discard edits. Insertion accepts at most 32,000 units, so larger answers can be shortened locally without rerunning AI.
+
+Files v1–v3 refuse these new fields and preserve their earlier exact contracts. No editor reference, selection bookmark, pending insertion or execution authority is serialized. Original answers/context remain portable conversation records; uninserted edits remain device-local drafts.

@@ -692,6 +692,43 @@ export function ConversationPanel(): React.JSX.Element {
           }}
         >
           <header className={styles['conversation-heading']}>
+            {session.destination.kind === 'workspace' && session.destination.view === 'write' ? (
+              <ActionMenu
+                label="Help me write"
+                accessibleLabel="Writing help"
+                disabled={blocked || c.readOnly || c.active || !c.draftProtection.ready}
+                actions={[
+                  {
+                    id: 'start-writing',
+                    label: 'Help me start',
+                    onSelect: () => {
+                      void c.beginWriting(
+                        'Help me start this chapter with a short opening passage.'
+                      )
+                    }
+                  },
+                  {
+                    id: 'continue-writing',
+                    label: 'Continue here',
+                    onSelect: () => {
+                      void c.beginWriting(
+                        'Continue the writing at this position with a short passage.'
+                      )
+                    }
+                  },
+                  {
+                    id: 'connect-writing',
+                    label: 'Connect these points',
+                    onSelect: () => {
+                      void c.beginWriting(
+                        'Write a connecting paragraph between the points in the nearby writing. If text is selected, draft a replacement for that selection.'
+                      )
+                    }
+                  }
+                ]}
+              />
+            ) : null}
+
             {!c.listOpen ? (
               <IconButton
                 label="Back to conversations"
@@ -1140,6 +1177,15 @@ export function ConversationPanel(): React.JSX.Element {
                         blocked={blocked || c.readOnly || !!archived || !c.draftProtection.ready}
                       />
                     )}
+                    {session.destination.kind === 'workspace' &&
+                    session.destination.view === 'write' ? (
+                      <Checkbox
+                        label="Preview for insertion"
+                        checked={c.planning?.version === 3}
+                        disabled={blocked || c.readOnly || !!archived || !c.draftProtection.ready}
+                        onChange={(e) => c.setWriting(e.currentTarget.checked)}
+                      />
+                    ) : null}
                     <Checkbox
                       label="Search the web"
                       checked={c.searchWeb}

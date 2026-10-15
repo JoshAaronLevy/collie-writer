@@ -1,3 +1,4 @@
+import { isWritingInput, type WritingInput } from './writing-assistance'
 import {
   isPlanningContext,
   isPlanningOrigin,
@@ -219,6 +220,7 @@ export type ConversationRequest =
   | (OpenInput & {
       action: 'planning-start'
       outline?: { version: 1; baseVersionId: string | null }
+      writing?: WritingInput
       runId: string
       conversationId: string
       expectedHead: string
@@ -499,6 +501,7 @@ export function isAiCapture(v: unknown, importedContract = false): v is AiCaptur
       !isPlanningCapture(planning) ||
       !['chat', 'planning-summary'].includes(String(purpose)) ||
       (planning.version === 2 && (purpose !== 'chat' || planning.mode !== 'collection')) ||
+      (planning.version === 3 && (purpose !== 'chat' || planning.mode !== 'question')) ||
       !['conversation-v2', 'conversation-research-v1'].includes(String(v.template)) ||
       (v.template === 'conversation-research-v1' && purpose !== 'chat') ||
       !Array.isArray(v.context) ||
@@ -910,6 +913,8 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
   switch (v.action) {
     case 'planning-start':
       return (
+        (v.writing === undefined ||
+          (isWritingInput(v.writing) && v.outline === undefined && v.mode === 'question')) &&
         (v.outline === undefined ||
           (record(v.outline) &&
             exact(v.outline, ['version', 'baseVersionId']) &&
@@ -924,7 +929,8 @@ export function isConversationRequest(v: unknown): v is ConversationRequest {
           'prompt',
           'search',
           'mode',
-          ...(v.outline === undefined ? [] : ['outline'])
+          ...(v.outline === undefined ? [] : ['outline']),
+          ...(v.writing === undefined ? [] : ['writing'])
         ]) &&
         [v.runId, v.conversationId, v.expectedHead].every(isId) &&
         isPlanningScope(v.scope) &&

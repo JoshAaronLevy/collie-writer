@@ -35,7 +35,10 @@ export function ConversationDraftRecovery(): React.JSX.Element {
                 {chat?.state === 'archived' ? ' · Archived' : ''}
               </strong>
               <p className={styles['draft-preview']}>
-                {draft.text.slice(0, 300) || 'Context choice only'}
+                {draft.text.slice(0, 300) ||
+                  (draft.previews?.length
+                    ? `${draft.previews.length} edited writing previews`
+                    : 'Context choice only')}
               </p>
               {draft.text ? (
                 <details>
@@ -47,6 +50,16 @@ export function ConversationDraftRecovery(): React.JSX.Element {
                   />
                 </details>
               ) : null}
+              {draft.previews?.map((preview, index) => (
+                <details key={preview.attemptId}>
+                  <summary>Edited writing preview {index + 1}</summary>
+                  <textarea
+                    aria-label={`Edited writing preview ${index + 1}`}
+                    readOnly
+                    value={preview.text}
+                  />
+                </details>
+              ))}
               <div className={styles['conversation-actions']}>
                 {chat ? (
                   <AppButton
@@ -93,16 +106,14 @@ export function ConversationDraftRecovery(): React.JSX.Element {
               {confirm?.id === id ? (
                 <div>
                   <p>
-                    Discard this device’s unsent draft and context choice? Saved messages are kept.
+                    Discard this device’s unsent draft, edited previews and context choice? Saved
+                    messages are kept.
                   </p>
                   <AppButton
                     size="compact-sm"
                     disabled={blocked}
                     onClick={() => {
-                      if (
-                        draft.text === confirm.draft.text &&
-                        draft.contextPolicy === confirm.draft.contextPolicy
-                      )
+                      if (JSON.stringify(draft) === JSON.stringify(confirm.draft))
                         c.draftProtection.clear(id)
                       else setNotice('The draft changed. Review it before discarding.')
                       setConfirm(null)

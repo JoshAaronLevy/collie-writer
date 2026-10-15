@@ -1,5 +1,7 @@
 # Local navigation after I09
 
+**PL06, October 15:** Write → AI → Help me write prepares chapter-aware drafting. Review writing preview → Insert here / Replace selection is explicit and reversible with editor Undo. A stale or reopened target requires Use current cursor or selection. The same chat presentation and draft owner remain; Plan can switch a writing chat back to discussion without insertion. See the [combined walkthrough](../manual-testing/planning-PL06.md); user acceptance remains pending.
+
 **UI01–UI06 current navigation, October 5:** project creation is Project type → Project details → writing after confirmed access, with recovery preserving the exact request/project. ChatGPT setup is app-wide and independent of projects. Startup preparation/prompt suppression use main-lifetime markers and profile preferences; header, Settings, tutorial and tool controls share one modal. Write → AI still opens its companion. RF11 replaces slot administration with AI work → View response / Open import, named affected-project links and contextual Finish saving response; eligible local handoff is automatic. See the [RF11 guide](../manual-testing/refactor-RF11.md). See the [combined walkthrough](../manual-testing/ui-improvements-UI06.md); runtime acceptance remains pending.
 
 **PL01, October 14:** Write → Chapter material replaces the separate note/source companions. Direct and inherited links share the existing library; Add/Remove and Open original preserve draft guards. See the [PL01 guide](../manual-testing/planning-PL01.md). User acceptance is pending.

@@ -1437,7 +1437,9 @@ export function validatePortableConversations(db: Database.Database, p: string):
       (capture.version === 4 && schemaVersion(db) < 19) ||
       (capture.version === 5 && schemaVersion(db) < 20) ||
       (capture.version === 6 && schemaVersion(db) < 30) ||
-      (capture.version === 7 && schemaVersion(db) < (capture.planning.version === 2 ? 43 : 42))
+      (capture.version === 7 &&
+        schemaVersion(db) <
+          (capture.planning.version === 3 ? 44 : capture.planning.version === 2 ? 43 : 42))
     )
       corrupt()
   }

@@ -1,3 +1,4 @@
+import { isWritingContext, type WritingContext } from './writing-assistance'
 import { isId } from '../domain/editor/schema'
 import { isMaterialTarget, type MaterialTarget } from './chapter-material'
 import { isTranscriptKey, type TranscriptKey } from './conversation-transcript'
@@ -45,7 +46,11 @@ export type PlanningCoverage = {
   done: number
   chunks: number
 }
-export type PlanningCapture = ({ version: 1 } | { version: 2; proposal: OutlineProposalInput }) & {
+export type PlanningCapture = (
+  | { version: 1 }
+  | { version: 2; proposal: OutlineProposalInput }
+  | { version: 3; writing: WritingContext }
+) & {
   runId: string
   scope: PlanningScope
   label: string
@@ -171,7 +176,7 @@ export function isPlanningContext(textValue: unknown, planning: PlanningCapture)
         'purpose',
         'previousDigest',
         'originals',
-        ...(planning.version === 2 ? ['outline'] : [])
+        ...(planning.version === 2 ? ['outline'] : planning.version === 3 ? ['writing'] : [])
       ]) &&
       v.scope === planning.label &&
       v.coverage === planningCoverageLabel(planning.coverage, planning.mode) &&
@@ -179,8 +184,9 @@ export function isPlanningContext(textValue: unknown, planning: PlanningCapture)
       text(v.instructions, 2000) &&
       text(v.purpose, 20000) &&
       text(v.previousDigest, PLANNING_ANALYSIS.summary) &&
-      (planning.version === 1 ||
+      (planning.version !== 2 ||
         JSON.stringify(v.outline) === JSON.stringify(outlineContext(planning.proposal))) &&
+      (planning.version !== 3 || JSON.stringify(v.writing) === JSON.stringify(planning.writing)) &&
       Array.isArray(v.originals) &&
       v.originals.length === planning.origins.length &&
       v.originals.every(
@@ -211,9 +217,11 @@ export function isPlanningCapture(v: unknown): v is PlanningCapture {
       'coverage',
       'origins',
       'mode',
-      ...(v.version === 2 ? ['proposal'] : [])
+      ...(v.version === 2 ? ['proposal'] : v.version === 3 ? ['writing'] : [])
     ]) &&
-    (v.version === 1 || (v.version === 2 && isOutlineProposalInput(v.proposal))) &&
+    (v.version === 1 ||
+      (v.version === 2 && isOutlineProposalInput(v.proposal)) ||
+      (v.version === 3 && isWritingContext(v.writing) && v.mode === 'question')) &&
     isId(v.runId) &&
     isPlanningScope(v.scope) &&
     text(v.label, 200) &&

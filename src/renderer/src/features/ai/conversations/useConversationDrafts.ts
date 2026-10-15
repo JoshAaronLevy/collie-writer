@@ -72,7 +72,14 @@ class DraftSession {
       ...this.snapshot.drafts,
       [id]: { ...(this.snapshot.drafts[id] ?? empty()), ...patch }
     }
-    if (!drafts[id].text && drafts[id].contextPolicy === 'project' && !drafts[id].planning)
+    if (drafts[id].planning === undefined) delete drafts[id].planning
+    if (drafts[id].previews === undefined) delete drafts[id].previews
+    if (
+      !drafts[id].text &&
+      drafts[id].contextPolicy === 'project' &&
+      !drafts[id].planning &&
+      !drafts[id].previews?.length
+    )
       delete drafts[id]
     if (Object.keys(drafts).length > DRAFT_LIMITS.scope) {
       this.publish({
@@ -89,7 +96,8 @@ class DraftSession {
       void this.flush()
     }, 600)
   }
-  clear = (id: string): void => this.change(id, empty())
+  clear = (id: string): void =>
+    this.change(id, { ...empty(), planning: undefined, previews: undefined })
   flush = (): Promise<boolean> => {
     if (this.timer) clearTimeout(this.timer)
     this.timer = undefined

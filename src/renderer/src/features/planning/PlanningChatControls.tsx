@@ -43,7 +43,7 @@ export function PlanningChatControls({ blocked }: { blocked: boolean }): React.J
         ? `${p.scope.items.length} selected items`
         : p.scope.kind === 'topic'
           ? 'This topic'
-          : 'This chapter'
+          : `Chapter: ${s.project?.documents.find((d) => d.id === (p.scope.kind === 'chapter' ? p.scope.id : ''))?.title ?? 'Unavailable'}`
   return (
     <div className={styles['planning-chat-controls']}>
       <Popover opened={opened} onChange={setOpened} position="top-start" width={300} withinPortal>
@@ -98,26 +98,37 @@ export function PlanningChatControls({ blocked }: { blocked: boolean }): React.J
           </p>
         </Popover.Dropdown>
       </Popover>
-      <Checkbox
-        label="Analyze the collection"
-        checked={p.mode === 'collection'}
-        disabled={blocked || p.version === 2}
-        onChange={(event) =>
-          c.setPlanningMode(event.currentTarget.checked ? 'collection' : 'question')
-        }
-      />
-      <Checkbox
-        label="Create editable outline"
-        checked={p.version === 2}
-        disabled={blocked}
-        onChange={(event) => c.setOutlineProposal(event.currentTarget.checked)}
-      />
+      {p.version !== 3 ? (
+        <>
+          <Checkbox
+            label="Analyze the collection"
+            checked={p.mode === 'collection'}
+            disabled={blocked || p.version === 2}
+            onChange={(event) =>
+              c.setPlanningMode(event.currentTarget.checked ? 'collection' : 'question')
+            }
+          />
+          <Checkbox
+            label="Create editable outline"
+            checked={p.version === 2}
+            disabled={blocked}
+            onChange={(event) => c.setOutlineProposal(event.currentTarget.checked)}
+          />
+        </>
+      ) : (
+        <p className={styles['chat-caption']}>
+          Writing preview · nearby prose captured at Send. Material scope stays as shown when you
+          change chapters.
+        </p>
+      )}
       <p className={styles['chat-caption']}>
         {p.mode === 'collection'
           ? 'Send may use up to 10 preparation requests, then one response. Stop keeps completed progress.'
-          : 'Uses relevant passages. Turn on collection analysis for themes or an outline across all available material.'}
+          : p.version === 3
+            ? 'Uses a relevant selection of material; the full chapter collection may not be included.'
+            : 'Uses relevant passages. Turn on collection analysis for themes or an outline across all available material.'}
       </p>
-      {!c.draft.text ? (
+      {!c.draft.text && p.version !== 3 ? (
         <div className={styles['plan-actions']}>
           {['Find themes', 'What needs development?', 'Suggest an outline'].map((text) => (
             <AppButton
@@ -135,6 +146,16 @@ export function PlanningChatControls({ blocked }: { blocked: boolean }): React.J
             </AppButton>
           ))}
         </div>
+      ) : null}
+      {p.version === 3 && s.destination.kind === 'workspace' && s.destination.view === 'plan' ? (
+        <AppButton
+          variant="subtle"
+          size="compact-sm"
+          disabled={blocked}
+          onClick={() => c.setWriting(false)}
+        >
+          Discuss without insertion
+        </AppButton>
       ) : null}
     </div>
   )

@@ -1,3 +1,4 @@
+import { WritingPreview } from './WritingPreview'
 import { PlanningOrigins } from '../../planning/PlanningChatControls'
 import { planningCoverageLabel } from '../../../../../shared/planning-conversation'
 import { selectedReference } from './chat-selection'
@@ -327,6 +328,7 @@ export function ResearchAnswer({
           />
         )}
       </div>
+      <WritingPreview turn={turn} />
       {selection && completed ? (
         <>
           <AppButton

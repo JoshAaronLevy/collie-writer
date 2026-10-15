@@ -407,3 +407,10 @@
   height: 100%;
   flex: 1;
 }
+
+.writing-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+}

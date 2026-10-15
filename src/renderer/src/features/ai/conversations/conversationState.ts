@@ -1,3 +1,4 @@
+import { useWritingAssistance } from './useWritingAssistance'
 import {
   PLANNING_ANALYSIS,
   PLANNING_SUMMARY_PROMPT,
@@ -19,6 +20,9 @@ import { useCallback, useMemo } from 'react'
 import { useConversationDrafts } from './useConversationDrafts'
 import type { ChatDraft } from '../../../../../shared/conversation-drafts'
 type ConversationControllerState = {
+  writing: ReturnType<typeof useWritingAssistance>
+  beginWriting: (prompt: string) => Promise<void>
+  setWriting: (enabled: boolean) => void
   planning: ChatDraft['planning'] | null
   analysis: PlanningAnalysisState | null
   setPlanningScope: (scope: PlanningScope) => void
@@ -199,6 +203,7 @@ export function useConversationController(): ConversationControllerState {
     state = useRef({ selected, view, offset, currentOffset, before, rename, memoryEdit }),
     locked = useRef(false),
     pendingRef = useRef<ConversationRequest | null>(null)
+  const writing = useWritingAssistance(current)
   const readSequence = useRef(0),
     listSequence = useRef(0),
     groupGeneration = useRef(0),
@@ -242,7 +247,7 @@ export function useConversationController(): ConversationControllerState {
     draft.planning ??
     (lastPlanning?.version === 7
       ? {
-          version: 1,
+          version: lastPlanning.planning.version === 3 ? 3 : 1,
           scope: lastPlanning.planning.scope,
           mode: lastPlanning.planning.mode,
           search: isResearchCapture(lastPlanning)
@@ -752,11 +757,14 @@ export function useConversationController(): ConversationControllerState {
         contextPolicy: 'chat',
         planning: {
           ...planning,
-          mode: /\b(outline|themes|organize everything|whole collection|all (?:my |the )?material)\b/iu.test(
-            patch.text
-          )
-            ? 'collection'
-            : planning.mode
+          mode:
+            planning.version === 3
+              ? 'question'
+              : /\b(outline|themes|organize everything|whole collection|all (?:my |the )?material)\b/iu.test(
+                    patch.text
+                  )
+                ? 'collection'
+                : planning.mode
         }
       }
     draftProtection.change(selected, patch)
@@ -960,6 +968,53 @@ export function useConversationController(): ConversationControllerState {
     })
     setListOpen(false)
   }
+  async function beginWriting(prompt: string): Promise<void> {
+    if (
+      !scope ||
+      readOnly ||
+      locked.current ||
+      pendingRef.current ||
+      composing.current ||
+      !draftProtection.ready
+    )
+      return
+    try {
+      const target = writing.capture()
+      let id = selected
+      if (!id || planning?.version !== 3 || draft.text || page?.conversation.state !== 'active') {
+        id = crypto.randomUUID()
+        if (
+          !(await request({
+            ...scope,
+            action: 'change',
+            version: 2,
+            originDocumentId: target.project.documentId,
+            operationId: crypto.randomUUID(),
+            conversationId: id,
+            expectedRevision: null,
+            title: `Writing · ${target.title}`.slice(0, 160),
+            state: 'active'
+          }))
+        )
+          return
+      }
+      draftProtection.change(id, {
+        text: prompt,
+        contextPolicy: 'chat',
+        planning: {
+          version: 3,
+          scope: { kind: 'chapter', id: target.project.documentId },
+          mode: 'question',
+          search: false
+        }
+      })
+      setListOpen(false)
+      setIssue('')
+      requestAnimationFrame(() => composer.current?.focus())
+    } catch (e) {
+      setIssue(e instanceof Error ? e.message : 'Choose a writing position first.')
+    }
+  }
   async function sendPlanning(continuation?: PlanningAnalysisState): Promise<void> {
     if (
       !scope ||
@@ -1004,6 +1059,7 @@ export function useConversationController(): ConversationControllerState {
       return r.value.analysis
     }
     try {
+      const target = selection.version === 3 ? writing.capture() : null
       if (!(await draftProtection.flush())) return
       const saved = await current.current.flush(false, 'save', ['conversations'])
       if (!saved || !stillCurrent()) return
@@ -1020,7 +1076,8 @@ export function useConversationController(): ConversationControllerState {
           prompt: submitted.text,
           search: selection.search,
           mode: selection.version === 2 ? 'collection' : selection.mode,
-          ...(selection.version === 2 ? { outline: selection.outline } : {})
+          ...(selection.version === 2 ? { outline: selection.outline } : {}),
+          ...(target ? { writing: writing.input(target, saved) } : {})
         }
         if (!(await request(start, true))) return
         locked.current = true
@@ -1075,6 +1132,7 @@ export function useConversationController(): ConversationControllerState {
         if (reviewed.value.type !== 'review' || !stillCurrent()) return
         const attemptId = crypto.randomUUID()
         intent.attemptId = attemptId
+        if (!summary && target) writing.remember(attemptId, target)
         await request(
           {
             ...scope,
@@ -1552,6 +1610,26 @@ export function useConversationController(): ConversationControllerState {
   )
   const imported = useImportedTranscript(scope, importedSource, opening, importedTarget)
   return {
+    writing,
+    beginWriting,
+    setWriting: (enabled) => {
+      if (enabled) {
+        const p = current.current.project
+        if (!p || !originOf(p)) return
+        update({
+          contextPolicy: 'chat',
+          planning: {
+            version: 3,
+            scope: { kind: 'chapter', id: p.documentId },
+            mode: 'question',
+            search: false
+          }
+        })
+      } else if (planning)
+        update({
+          planning: { version: 1, scope: planning.scope, mode: 'question', search: planning.search }
+        })
+    },
     planning,
     analysis,
     discussPlanning,
@@ -1562,7 +1640,10 @@ export function useConversationController(): ConversationControllerState {
       if (planning)
         update({
           contextPolicy: 'chat',
-          planning: { ...planning, mode: planning.version === 2 ? 'collection' : mode }
+          planning: {
+            ...planning,
+            mode: planning.version === 3 ? 'question' : planning.version === 2 ? 'collection' : mode
+          }
         })
     },
     setOutlineProposal: (enabled) => {

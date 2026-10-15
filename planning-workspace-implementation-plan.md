@@ -1,8 +1,8 @@
 # Collie Writer planning workspace implementation plan
 
-October 15, 2026. **PL01–PL05 implementation complete — awaiting user testing. PL06 not started.**
+October 15, 2026. **PL01–PL06 implementation complete — awaiting user testing.**
 
-This plan adds a separate visual workspace for turning accumulated conversations, research, sources, and loose ideas into a book or article. It also connects that structure to the existing writing experience. The full journey remains the intended design; PL01–PL05 are implemented. This document does not establish runtime acceptance.
+This plan adds a separate visual workspace for turning accumulated conversations, research, sources, and loose ideas into a book or article. It also connects that structure to the existing writing experience. The full journey remains the intended design; PL01–PL06 are implemented. This document does not establish runtime acceptance.
 
 ## 1. The experience to build
 
@@ -229,7 +229,7 @@ Map citations only to retained project sources and exact supported anchors throu
 
 All new content-bearing records are project-scoped and included in `.collie` Save, independent copy, Backup/Restore, retained migration, and relevant portable readers. Update incoming-copy table/remapping lists and exact validators alongside schema changes. Credentials, local paths, live bindings, and UI preferences remain device-local.
 
-Current schema/minimum reader is 43 after PL05. Allocate additive versions from the live baseline when each stage is implemented; do not preassign competing migration numbers here. Preserve earlier readers and retained originals, and let older apps refuse new formats through established compatibility behavior instead of silently losing planning records.
+Current schema/minimum reader is 44 after PL06. Allocate additive versions from the live baseline when each stage is implemented; do not preassign competing migration numbers here. Preserve earlier readers and retained originals, and let older apps refuse new formats through established compatibility behavior instead of silently losing planning records.
 
 Offline users can collect locally supported material, create/edit notes and chapters, organize, read retained chats and suggestions, and write. AI unavailability disables only dependent requests. Imported content becomes usable only after the existing Accept transaction; canceled/unaccepted imports remain in their current recovery flow. Supported local extraction remains local, with actual unavailable-AI constraints disclosed.
 
@@ -237,7 +237,7 @@ Retain existing access policy. Read-only projects still expose saved planning co
 
 ## 5. Implementation sequence
 
-The six stages below are separate implementation requests. They are ordered for useful, reviewable increments. PL01–PL05 were explicitly requested. PL05 is the current implementation boundary; PL06 remains a separate request. Migration, accessibility, recovery, and removal of superseded code belong in each affected stage, not in an unspecified cleanup phase.
+The six stages below are separate implementation requests. They are ordered for useful, reviewable increments. PL01–PL06 were explicitly requested and are implemented; user acceptance remains pending. Migration, accessibility, recovery, and removal of superseded code belong in each affected stage, not in an unspecified cleanup phase.
 
 | Stage | Result                                                                   | Dependencies                                  | Status                                          |
 | ----- | ------------------------------------------------------------------------ | --------------------------------------------- | ----------------------------------------------- |
@@ -246,7 +246,7 @@ The six stages below are separate implementation requests. They are ordered for 
 | PL03  | Integrated collection and precise passage cards                          | PL02 and existing Import                      | Implementation complete — awaiting user testing |
 | PL04  | Scoped planning chat, corpus coverage, and research/development          | PL03                                          | Implementation complete — awaiting user testing |
 | PL05  | Editable outline proposals and atomic reversible application             | PL04                                          | Implementation complete — awaiting user testing |
-| PL06  | Chapter-aware drafting and safe insertion into Write                     | PL05                                          | Not started                                     |
+| PL06  | Chapter-aware drafting and safe insertion into Write                     | PL05                                          | Implementation complete — awaiting user testing |
 
 ### PL01 — Connect material to chapters
 
@@ -367,6 +367,8 @@ Implement atomic application, exact retry reconciliation, and scoped Undo includ
 
 ### PL06 — Write with the chapter's context
 
+**Status:** Implementation complete — awaiting user testing. See the [PL06 record](docs/validation/planning-PL06.md) and [combined walkthrough](docs/manual-testing/planning-PL06.md).
+
 **Outcome:** Planning flows into actual drafting, with material-aware assistance at the user's writing position.
 
 Use the PL01 chapter-material reader and PL04 context assembly for the writing companion. Add concise help actions for starting, continuing, and connecting passages. Default a new chapter-writing request to its visible chapter scope; keep explicit scope choices visible and avoid silent broadening when navigating elsewhere.
@@ -423,7 +425,7 @@ The most useful early design feedback is whether the card board gives enough fre
 - October 15 PL03: Plan file drops reuse retained Import selection and explicit Submit/Accept; paste/source intents reuse existing editors; native/imported selections become editable passage notes with immutable exact origins; Use excerpt opens the existing excerpt in Plan. SQL/minimum reader 41 adds only passage origins and retains schema-40 readers. Format, lint and node/web typechecks passed; runtime acceptance is pending. See the [PL03 record](docs/validation/planning-PL03.md) and [walkthrough](docs/manual-testing/planning-PL03.md).
 - October 15 PL04: one retained chat presentation serves Write/Plan; explicit scopes, bounded corpus analysis, retained coverage and Continue, invalidation and source-range navigation are implemented. Research saves can atomically add the source to the discussion’s chapter/topic. SQL/minimum reader 42 adds analysis snapshots; portable capture v7, reference receipt v2 and local draft v2 preserve older readers. Format, lint and node/web typechecks passed; runtime acceptance is pending. See the [PL04 record](docs/validation/planning-PL04.md) and [walkthrough](docs/manual-testing/planning-PL04.md).
 - October 15 PL05: editable, immutable proposal versions, atomic structure/link/disposition application, exact receipt reconciliation and scoped Undo are implemented. SQL/minimum reader 43 adds proposal versions and inverse records; analysis/planning payload v2 and local draft-file v3 retain earlier readers. Existing prose and unspecified chapters remain; one response cannot create its outline twice. Format, lint and node/web typechecks passed; runtime acceptance is pending. See the [PL05 record](docs/validation/planning-PL05.md) and [walkthrough](docs/manual-testing/planning-PL05.md).
-- PL06 is **not started**. Existing Import, conversation, provider, and release acceptance remains at its recorded status.
+- October 15 PL06: chapter-scoped writing starters, bounded nearby-writing context, editable protected previews and explicit editor insertion/replacement are implemented. Exact session targets refuse stale work; one Undo reverses insertion. SQL/minimum reader 44 retains writing-context v3 in existing analyses/captures, with unchanged DDL; local draft-file v4 protects edited previews without portable insertion authority. Format, lint and node/web typechecks passed; runtime acceptance remains pending. See the [PL06 record](docs/validation/planning-PL06.md) and [combined walkthrough](docs/manual-testing/planning-PL06.md). Existing Import, conversation, provider, and release acceptance remains at its recorded status.
 
 ## Model and Effort
 
@@ -436,7 +438,7 @@ These are recommendations for the Codex session implementing each stage, separat
 | PL03  | 6.1 Sol | High       | Implementation complete — awaiting user testing |
 | PL04  | 6 Astra | Extra-High | Implementation complete — awaiting user testing |
 | PL05  | 6 Astra | Extra-High | Implementation complete — awaiting user testing |
-| PL06  | 6 Astra | High       | Not started                                     |
+| PL06  | 6 Astra | High       | Implementation complete — awaiting user testing |
 
 - **PL01:** Establishes canonical relationships across notes, sources, chats, and chapters, including migration, portability, and merge/split/restore history. Extra-High is justified by the ownership decisions that every later stage depends on.
 - **PL02:** Primarily UI and interaction work on PL01's established contracts: board layout, retained navigation, topic groups, drag/keyboard actions, and scoped metadata. Sol with High is a proportionate choice for this bounded implementation.

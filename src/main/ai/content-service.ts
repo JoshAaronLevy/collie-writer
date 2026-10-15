@@ -1,3 +1,4 @@
+import { writingRequestPrompt } from '../../shared/writing-assistance'
 import { outlineRequestPrompt } from '../../shared/outline-proposals'
 import {
   isAnalysisWorkerInput,
@@ -48,7 +49,9 @@ type ContentRequest =
 function requestPrompt(capture: ContentTurn['capture']): string {
   return 'planning' in capture && capture.version === 7 && capture.planning.version === 2
     ? outlineRequestPrompt(capture.prompt)
-    : capture.prompt
+    : 'planning' in capture && capture.version === 7 && capture.planning.version === 3
+      ? writingRequestPrompt(capture.prompt)
+      : capture.prompt
 }
 type Bound = { scope: OpenInput; binding: ConversationBinding }
 const same = (a: OpenInput, b: OpenInput): boolean =>
@@ -814,7 +817,14 @@ export class AiContentService {
             result.capture.template
           )
         )
-          throw new ProjectError('LIMIT_EXCEEDED')
+          throw new ProjectError(
+            'LIMIT_EXCEEDED',
+            'planning' in result.capture &&
+              result.capture.version === 7 &&
+              result.capture.planning.version === 3
+              ? 'writing-input-limit'
+              : undefined
+          )
         if (this.reviews.size >= 64) this.reviews.delete(this.reviews.keys().next().value!)
         this.reviews.set(input.captureId, {
           reviewStamp,

@@ -333,6 +333,8 @@ export const projectMessages: Record<ProjectCode, string> = {
     'This file exceeds the supported size or resource limits. The original and local work have been kept.'
 }
 export const projectContextMessages = {
+  'writing-input-limit':
+    'This writing request is too large. Shorten the prompt or selected passage, or choose fewer materials. Your draft and existing writing are kept.',
   'outline-input-limit':
     'This outline input is too large for one editable proposal. Use a chapter scope or fewer linked items, or shorten the earlier proposal before refining. Existing work is kept.',
   'owner-missing':
@@ -348,7 +350,7 @@ export type ProjectErrorContext = keyof typeof projectContextMessages
 export function isProjectErrorContext(code: ProjectCode, v: unknown): v is ProjectErrorContext {
   return (
     (code === 'DENIED' && v === 'owner-missing') ||
-    (code === 'LIMIT_EXCEEDED' && v === 'outline-input-limit') ||
+    (code === 'LIMIT_EXCEEDED' && (v === 'outline-input-limit' || v === 'writing-input-limit')) ||
     (code === 'VALIDATION' && v === 'import-summary-invalid') ||
     (code === 'PROJECT_LOCKED' && (v === 'file-busy' || v === 'project-in-use'))
   )
