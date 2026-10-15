@@ -18,6 +18,7 @@ import {
 } from './projects'
 
 export const PROJECT_IMPORT_CHANNEL = 'project-import.command'
+export const PROJECT_IMPORT_DROP_CHANNEL = 'project-import.drop'
 export const IMPORT_LIMITS = {
   files: 100,
   fileBytes: 25 * 1024 ** 2,
@@ -195,6 +196,10 @@ export type ImportValue =
   | { type: 'receipt'; operationId: string; receipt: ImportSessionReceipt | null }
 export type ProjectImportAPI = {
   projectImport: (input: ImportServiceRequest) => Promise<ProjectResult<ImportValue>>
+  dropImportFiles: (
+    input: Extract<ImportServiceRequest, { action: 'pick-files' }>,
+    files: File[]
+  ) => Promise<ProjectResult<ImportValue>>
 }
 export type ImportServiceRequest =
   | ImportRequest

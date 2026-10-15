@@ -38,6 +38,7 @@ import {
 import { useConversations } from './conversationState'
 import { ConversationDraftRecovery } from './ConversationDraftRecovery'
 import styles from './Conversations.module.css'
+import type { NotePassage } from '../../../../../shared/note-passage'
 
 const activeStates = ['preparing', 'running', 'stopping']
 function readingPosition(target: HTMLDivElement): {
@@ -179,6 +180,26 @@ function MessageTurnContent({
       <ChatMessage
         role="user"
         text={turn.user.text}
+        passageTarget={
+          c.page &&
+          !(
+            (turn.capture.version === 3 ||
+              turn.capture.version === 4 ||
+              turn.capture.version === 6) &&
+            turn.capture.purpose !== 'chat'
+          )
+            ? {
+                conversationId: turn.attempt.conversationId,
+                conversationRevisionId: c.page.conversation.revisionId,
+                key: {
+                  segment: 'native',
+                  sequence: turn.user.ordinal,
+                  messageId: turn.user.id,
+                  messageRevision: turn.user.revisionId
+                }
+              }
+            : undefined
+        }
         mediaTarget={
           c.scope
             ? { ...c.scope, messageId: turn.user.id, messageRevision: turn.user.revisionId }
@@ -389,7 +410,12 @@ export function ConversationPanel(): React.JSX.Element {
     startedKey = useRef(''),
     revealed = useRef('')
   const anchor = useRef<ReturnType<typeof readingPosition>>(null),
-    matchTarget = useRef<{ key: string; id: string; response?: boolean } | null>(null)
+    matchTarget = useRef<{
+      key: string
+      id: string
+      response?: boolean
+      passage?: NotePassage
+    } | null>(null)
   useEffect(() => {
     if (c.listOpen) return
     const tick = (): void => {
@@ -468,7 +494,8 @@ export function ConversationPanel(): React.JSX.Element {
             c.reveal.target.kind === 'native'
               ? c.reveal.target.attemptId
               : c.reveal.target.key.messageId,
-          response: c.reveal.target.kind === 'native'
+          response: c.reveal.target.kind === 'native',
+          passage: c.reveal.passage
         }
         revealed.current = c.reveal.requestId
         follow.current = false
@@ -483,8 +510,50 @@ export function ConversationPanel(): React.JSX.Element {
           const response = matchTarget.current.response
             ? hit.querySelector<HTMLElement>('[data-role="assistant"]')
             : null
-          target.scrollTop +=
-            (response ?? hit).getBoundingClientRect().top - target.getBoundingClientRect().top
+          const passage = matchTarget.current.passage
+          const importedEntry =
+            passage?.key.segment === 'imported'
+              ? c.imported.page?.entries.find(
+                  (entry) => entry.key.messageId === passage.key.messageId
+                )
+              : null
+          if (
+            passage &&
+            importedEntry &&
+            importedEntry.text.length < passage.end &&
+            !c.imported.issue
+          )
+            return
+          const original = passage
+            ? [...hit.querySelectorAll<HTMLElement>('[data-message-id]')].find(
+                (node) => node.dataset.messageId === passage.key.messageId
+              )
+            : null
+          const span =
+            passage && original
+              ? [
+                  ...original.querySelectorAll<HTMLElement>('[data-chat-start][data-chat-end]')
+                ].find(
+                  (node) =>
+                    Number(node.dataset.chatEnd) > passage.start &&
+                    Number(node.dataset.chatStart) < passage.end
+                )
+              : null
+          let top = (span ?? original ?? response ?? hit).getBoundingClientRect().top
+          if (
+            span &&
+            passage &&
+            span.firstChild?.nodeType === Node.TEXT_NODE &&
+            span.textContent?.length ===
+              Number(span.dataset.chatEnd) - Number(span.dataset.chatStart)
+          ) {
+            const range = document.createRange()
+            const offset = Math.max(0, passage.start - Number(span.dataset.chatStart))
+            range.setStart(span.firstChild, offset)
+            range.setEnd(span.firstChild, Math.min(offset + 1, span.textContent.length))
+            top = range.getBoundingClientRect().top
+          }
+          target.scrollTop += top - target.getBoundingClientRect().top
           matchTarget.current = null
           follow.current = false
           anchor.current = readingPosition(target)
@@ -529,6 +598,7 @@ export function ConversationPanel(): React.JSX.Element {
     c.page,
     c.imported.page,
     c.imported.loading,
+    c.imported.issue,
     c.listOpen,
     c.before,
     c.loading,
@@ -776,6 +846,48 @@ export function ConversationPanel(): React.JSX.Element {
               {c.notice}
             </p>
           ) : null}
+          {c.passages.issue ? (
+            <p role="alert" className={styles['conversation-error']}>
+              {c.passages.issue}
+            </p>
+          ) : null}
+          {c.passages.pending ? (
+            <AppButton
+              disabled={c.passages.busy || c.passages.unavailable}
+              onClick={() => void c.passages.keep()}
+            >
+              {c.passages.busy ? 'Keeping passage…' : 'Retry passage save'}
+            </AppButton>
+          ) : null}
+          {c.passages.saved ? (
+            <div role="status" className={styles['conversation-caption']}>
+              Passage kept in Plan.{' '}
+              <AppButton
+                variant="subtle"
+                size="compact-sm"
+                onClick={() =>
+                  session.research({ kind: 'notes', noteId: c.passages.saved!.noteId })
+                }
+              >
+                Open note
+              </AppButton>
+              <AppButton
+                variant="subtle"
+                size="compact-sm"
+                onClick={() => {
+                  if (c.scope)
+                    void session.navigate({
+                      kind: 'workspace',
+                      scope: c.scope,
+                      view: 'plan',
+                      material: { kind: 'note', id: c.passages.saved!.noteId }
+                    })
+                }}
+              >
+                Open in Plan
+              </AppButton>
+            </div>
+          ) : null}
           {c.pending && !c.busy ? (
             <AppButton disabled={c.busy} onClick={c.retry}>
               Retry saved action
@@ -909,6 +1021,7 @@ export function ConversationPanel(): React.JSX.Element {
                         >
                           <ImportedMessageLinks
                             entry={entry}
+                            conversation={c.page?.conversation}
                             scope={c.scope!}
                             value={importedLinks.values[entry.key.messageId]}
                             now={now}

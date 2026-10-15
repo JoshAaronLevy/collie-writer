@@ -9,6 +9,10 @@ import { useVisualPreferences } from '../../../theme/visualPreferencesContext'
 import { ChatMarkdown } from './ChatMarkdown'
 import { messageTime } from './message-time'
 import styles from './Conversations.module.css'
+import { selectedPassage } from './chat-selection'
+import { useConversations } from './conversationState'
+import type { PassageSelection } from '../../../../../shared/note-passage'
+import { AppButton } from '../../../components/ui/Controls'
 
 /** Shared presentation only; conversation, source and draft owners stay outside the bubble. */
 export function ChatMessage({
@@ -21,7 +25,8 @@ export function ChatMessage({
   sources,
   linked = false,
   notice,
-  mediaTarget
+  mediaTarget,
+  passageTarget
 }: {
   role: string
   text: string
@@ -33,7 +38,23 @@ export function ChatMessage({
   linked?: boolean
   notice?: ReactNode
   mediaTarget?: MediaTarget
+  passageTarget?: Omit<PassageSelection, 'start' | 'end' | 'quote'>
 }): React.JSX.Element {
+  const { passages } = useConversations()
+  const [passage, setPassage] = useState<PassageSelection | null>(null)
+  function captureSelection(): void {
+    const selected = passageTarget && selectedPassage(bubble.current, text)
+    setPassage(
+      selected && passageTarget
+        ? {
+            ...passageTarget,
+            start: selected.start,
+            end: selected.end,
+            quote: selected.text
+          }
+        : null
+    )
+  }
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null)
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [copyNotice, setCopyNotice] = useState('')
@@ -76,6 +97,16 @@ export function ChatMessage({
       }
     },
     ...actions,
+    ...(passage
+      ? [
+          {
+            id: 'keep-passage',
+            label: 'Keep passage',
+            disabled: passages.unavailable || passages.busy || !!passages.pending,
+            onSelect: () => void passages.keep(passage)
+          }
+        ]
+      : []),
     ...(sources ? [{ id: 'sources', label: 'Sources', onSelect: () => setSourcesOpen(true) }] : [])
   ]
   return (
@@ -83,13 +114,17 @@ export function ChatMessage({
       ref={bubble}
       className={styles['conversation-message']}
       data-role={role}
+      data-message-id={mediaTarget?.messageId}
       tabIndex={0}
       role="group"
       aria-label={`${author}'s message`}
       aria-haspopup="menu"
+      onPointerUp={captureSelection}
+      onKeyUp={captureSelection}
       onContextMenu={(event) => {
         event.preventDefault()
         event.stopPropagation()
+        captureSelection()
         const rect = event.currentTarget.getBoundingClientRect()
         setMenu({ left: event.clientX - rect.left, top: event.clientY - rect.top })
       }}
@@ -104,7 +139,21 @@ export function ChatMessage({
     >
       <VisuallyHidden>Message options: Shift+F10 or the context-menu key.</VisuallyHidden>
       {children ?? <ChatMarkdown text={text} mediaTarget={mediaTarget} />}
-      <div className={styles['message-footer']}>
+      <div className={styles['message-footer']} data-chat-generated>
+        {passage ? (
+          <AppButton
+            variant="subtle"
+            size="compact-sm"
+            disabled={passages.unavailable || passages.busy || !!passages.pending}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              void passages.keep(passage)
+              setPassage(null)
+            }}
+          >
+            Keep passage
+          </AppButton>
+        ) : null}
         {timestamp ? (
           <time dateTime={timestamp.machine} title={timestamp.exact} aria-label={timestamp.exact}>
             {timestamp.label}

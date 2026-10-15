@@ -57,3 +57,9 @@
 .file-summary p {
   color: var(--collie-text-secondary);
 }
+
+.workspace-mode-switch {
+  display: flex;
+  gap: var(--collie-space-1);
+  align-items: center;
+}

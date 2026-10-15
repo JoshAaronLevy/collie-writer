@@ -37,7 +37,9 @@ export type WorkspaceNavigation = {
   ) => void
   captureOrigin: (previous: AppDestination) => AppDestination
   rememberOrigin: (previous: AppDestination) => void
-  workspace: (view: 'write' | 'search' | 'export' | 'history' | 'details') => AppDestination | null
+  workspace: (
+    view: 'write' | 'plan' | 'search' | 'export' | 'history' | 'details'
+  ) => AppDestination | null
   research: (target: ResearchTarget) => void
   returnToWork: () => void
   navigateSection: (documentId: string, anchorId?: string) => Promise<void>
@@ -182,7 +184,7 @@ export function useWorkspaceNavigation({
     return true
   }
   function workspace(
-    view: 'write' | 'search' | 'export' | 'history' | 'details'
+    view: 'write' | 'plan' | 'search' | 'export' | 'history' | 'details'
   ): AppDestination | null {
     const p = current.current
     return p ? { kind: 'workspace', scope: scopeOf(p), view, documentId: p.documentId } : null

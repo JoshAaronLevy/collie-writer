@@ -1,3 +1,5 @@
+import { readPlanning, changePlanning } from './planning'
+import type { PlanningReadInput, PlanningChangeInput, PlanningView } from '../../shared/planning'
 import { readChapterMaterial, changeChapterMaterial } from './chapter-material'
 import type {
   ChapterMaterialInput,
@@ -41,6 +43,11 @@ import { readCitations, changeCitationStyle } from './citations'
 import type { CitationStyleInput, CitationsView } from '../../shared/citations'
 import { changeOutline, readHistory } from './outline'
 import { changeNote, readNotes } from './notes'
+import {
+  resolveNotePassage,
+  validatePortablePassages,
+  validatePassageOriginals
+} from './note-passages'
 import type { NoteChangeInput, NotesView } from '../../shared/notes'
 import { seedOutline, automaticCheckpoint, manuscript, indexDocumentIds } from './manuscript'
 import { commitManuscript } from './document-commit'
@@ -787,6 +794,21 @@ export class ProjectRepository {
       return readHistory(this.active!.db, input)
     })
   }
+  planning(input: PlanningReadInput): Promise<PlanningView> {
+    return this.serial(async () => {
+      this.fileContext(input)
+      return readPlanning(this.active!.db, input)
+    })
+  }
+  planningChange(input: PlanningChangeInput): Promise<ChapterMaterialResult> {
+    return this.serial(async () => {
+      if (input.action === 'set' && this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
+      this.fileContext(input)
+      const result = changePlanning(this.active!.db, input)
+      if (input.action === 'set') await this.discovery(this.active!)
+      return result
+    })
+  }
   chapterMaterial(input: ChapterMaterialInput): Promise<ChapterMaterialView> {
     return this.serial(async () => {
       this.fileContext(input)
@@ -812,7 +834,17 @@ export class ProjectRepository {
     return this.serial(async () => {
       if (this.fileBusy) throw new ProjectError('PROJECT_LOCKED')
       this.fileContext(input)
-      const view = changeNote(this.active!.db, input)
+      const prior = this.active!.db.prepare(
+        'SELECT 1 FROM domain_operations WHERE project_id=? AND operation_id=?'
+      ).get(input.projectId, input.operationId)
+      const passage =
+        input.change.type === 'capturePassage' && !prior
+          ? await resolveNotePassage(
+              { ...this.active!, ...input, root: this.root },
+              input.change.passage
+            )
+          : undefined
+      const view = changeNote(this.active!.db, input, passage)
       await this.discovery(this.active!)
       return view
     })
@@ -1286,6 +1318,8 @@ export class ProjectRepository {
       validatePortableProofreading(db, input.projectId)
       interruptUnboundProofreading(db, operations, input.projectId)
       validatePortableConversations(db, input.projectId)
+      validatePortablePassages(db, input.projectId)
+      await validatePassageOriginals({ db, projectId: input.projectId, root: this.root, workspace })
       await validateImportArtifactFiles(
         this.root,
         workspace,

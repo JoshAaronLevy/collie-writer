@@ -1,4 +1,6 @@
 import { useImportedTranscript } from './useImportedTranscript'
+import { usePassageCapture } from './usePassageCapture'
+import type { NotePassage } from '../../../../../shared/note-passage'
 import type { TranscriptKey } from '../../../../../shared/conversation-transcript'
 import { isResearchCapture } from '../../../../../shared/conversations'
 import { useReferenceSave } from './useReferenceSave'
@@ -10,7 +12,10 @@ import { useCallback, useMemo } from 'react'
 import { useConversationDrafts } from './useConversationDrafts'
 import type { ChatDraft } from '../../../../../shared/conversation-drafts'
 type ConversationControllerState = {
+  passages: ReturnType<typeof usePassageCapture>
+  showPassage: (passage: NotePassage) => Promise<boolean>
   reveal: {
+    passage?: NotePassage
     conversationId: string
     target: { kind: 'native'; attemptId: string } | { kind: 'imported'; key: TranscriptKey }
     requestId: string
@@ -128,6 +133,7 @@ function originOf(project: ReturnType<typeof useWorkspaceSession>['project']): s
 }
 const activeStates = ['preparing', 'running', 'stopping']
 export function useConversationController(): ConversationControllerState {
+  const passages = usePassageCapture()
   const references = useReferenceSave()
   const [reveal, setReveal] = useState<ConversationControllerState['reveal']>(null)
   const presentationSequence = useRef(0)
@@ -210,7 +216,8 @@ export function useConversationController(): ConversationControllerState {
   }, [])
   async function showTarget(
     targetInput?:
-      { kind: 'native'; attemptId: string } | { kind: 'imported'; messageId: string } | null
+      { kind: 'native'; attemptId: string } | { kind: 'imported'; messageId: string } | null,
+    passage?: NotePassage
   ): Promise<boolean> {
     const s = current.current
     if (!s.project || composing.current || s.composition.current) return false
@@ -271,6 +278,26 @@ export function useConversationController(): ConversationControllerState {
           const value = result.value
           const id =
             value.type === 'turn' ? value.turn.attempt.conversationId : value.conversationId
+          if (passage) {
+            const message =
+              value.type === 'turn'
+                ? [value.turn.user, value.turn.assistant].find(
+                    (m) => m?.id === passage.key.messageId
+                  )
+                : null
+            const unchanged =
+              value.type === 'turn'
+                ? message?.revisionId === passage.key.messageRevision &&
+                  message.text.slice(passage.start, passage.end) === passage.quote
+                : value.target.messageId === passage.key.messageId &&
+                  value.target.messageRevision === passage.key.messageRevision
+            if (id !== passage.conversationId || !unchanged) {
+              setIssue(
+                'The original exchange has changed. Your exact kept quote remains in the note.'
+              )
+              return false
+            }
+          }
           if (choose(id)) {
             newChatFocus.current = null
             // Imported targets start at the native-prefix boundary, not an unrelated tail.
@@ -278,6 +305,7 @@ export function useConversationController(): ConversationControllerState {
             state.current.before = cursor
             setBefore(cursor)
             setReveal({
+              ...(passage ? { passage } : {}),
               conversationId: id,
               requestId: crypto.randomUUID(),
               target:
@@ -1329,6 +1357,14 @@ export function useConversationController(): ConversationControllerState {
         change: { mode: 'pin', target: { kind: 'source', id: sourceId } }
       })
     },
+    passages,
+    showPassage: (p) =>
+      showTarget(
+        p.attemptId
+          ? { kind: 'native', attemptId: p.attemptId }
+          : { kind: 'imported', messageId: p.key.messageId },
+        p
+      ),
     show,
     request,
     refresh,

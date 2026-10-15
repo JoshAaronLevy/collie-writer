@@ -189,8 +189,10 @@ export function ImportProvider({ children }: { children: ReactNode }): React.JSX
     <ImportContext.Provider
       value={{
         open: intake.open,
+        dropFiles: intake.dropFiles,
         showAnalysis: intake.showAnalysis,
-        busy: state.busy
+        busy: state.busy,
+        accepted: success
       }}
     >
       {children}

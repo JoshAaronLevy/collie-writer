@@ -1,3 +1,4 @@
+import { isPlanningView, type PlanningView } from '../shared/planning'
 import {
   isChapterMaterialView,
   isChapterMaterialResult,
@@ -284,6 +285,14 @@ const api: CollieAPI = {
     ipcRenderer.on(SOURCE_PROGRESS, listener)
     return () => ipcRenderer.removeListener(SOURCE_PROGRESS, listener)
   },
+  readPlanning: (input) =>
+    projectCall<PlanningView>(PROJECT_CHANNELS.planning, isPlanningView, input),
+  changePlanning: (input) =>
+    projectCall<ChapterMaterialResult>(
+      PROJECT_CHANNELS.planningChange,
+      isChapterMaterialResult,
+      input
+    ),
   readChapterMaterial: (input) =>
     projectCall<ChapterMaterialView>(
       PROJECT_CHANNELS.chapterMaterial,

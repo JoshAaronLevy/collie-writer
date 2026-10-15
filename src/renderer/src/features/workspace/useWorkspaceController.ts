@@ -18,7 +18,11 @@ type WorkspaceControllerState = ManuscriptProtection &
     drafts: DraftRegistry
     navigating: boolean
     blocker: DraftBlocker | null
-    navigate: (next: AppDestination, remember?: boolean) => Promise<boolean>
+    navigate: (
+      next: AppDestination,
+      remember?: boolean,
+      presentation?: 'top' | 'resume'
+    ) => Promise<boolean>
     returnToDraft: () => void
     showAccess: () => void
     startupPending: boolean
@@ -95,7 +99,7 @@ type WorkspaceControllerState = ManuscriptProtection &
     reviewRecovery: () => Promise<ProjectResult<DataLocations> | null>
     importImage: (details: { alt: string; caption: string }) => Promise<void>
     loadHistory: (checkpointId: string | null) => Promise<void>
-    performOutline: (change?: OutlineChange) => Promise<boolean>
+    performOutline: (change?: OutlineChange, excludeDrafts?: string[]) => Promise<boolean>
     saveSectionMeta: () => Promise<void>
     flush: (
       forAccess?: boolean,
@@ -593,7 +597,7 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
   }
   async function select(
     next: OpenProject,
-    after: 'write' | 'setup' | 'details' = 'write'
+    after: 'write' | 'plan' | 'setup' | 'details' = 'write'
   ): Promise<void> {
     positionBinding.current?.capture()
     const retainEditor =
@@ -663,15 +667,15 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     setError(imageIssue)
     if (!(
       retainEditor &&
-      after === 'write' &&
+      (after === 'write' || after === 'plan') &&
       destinationRef.current.kind === 'workspace' &&
-      destinationRef.current.view === 'write'
+      destinationRef.current.view === after
     ))
       showDestination(
         after === 'setup'
           ? { kind: 'setup' }
-          : after === 'details'
-            ? { kind: 'workspace', scope: scopeOf(next), view: 'details' }
+          : after === 'details' || after === 'plan'
+            ? { kind: 'workspace', scope: scopeOf(next), view: after }
             : writingDestination(next, next.documentId)
       )
     await refreshFiles()
@@ -769,11 +773,14 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
     if (result.ok) setHistory(result.value)
     else setError(result.error.message)
   }
-  async function performOutline(change?: OutlineChange): Promise<boolean> {
+  async function performOutline(
+    change?: OutlineChange,
+    excludeDrafts: string[] = []
+  ): Promise<boolean> {
     if (!(await waitActive())) return false
     setBusy(true)
     if (!outlinePending.current) {
-      const p = await flush()
+      const p = await flush(false, 'save', excludeDrafts)
       if (!p || !change) return false
       // Refresh revisions after the editor/metadata flush; no buffered content is overwritten.
       const latest = await window.collie.openSection({ ...scopeOf(p), documentId: p.documentId })
@@ -825,9 +832,23 @@ export function useWorkspaceController(storage: StorageStatus): WorkspaceControl
       )
       return false
     }
+    if (
+      destinationRef.current.kind === 'workspace' &&
+      destinationRef.current.view === 'plan' &&
+      current.current
+    ) {
+      const retained = await window.collie.openSection({
+        ...scopeOf(current.current),
+        documentId: current.current.documentId
+      })
+      if (!retained.ok) {
+        setError(retained.error.message)
+        return false
+      }
+      await select(retained.value, 'plan')
+    } else await select(result.value)
     outlinePending.current = null
     setOutlineRetry(false)
-    await select(result.value)
     setHistory(null)
     await refresh()
     if (destinationRef.current.kind === 'workspace' && destinationRef.current.view === 'history')

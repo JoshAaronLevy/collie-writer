@@ -1,9 +1,10 @@
 /** Map a visible Markdown selection back to exact retained answer text.
  * Only rendered text spans carry offsets; generated badges/images confer no provenance. */
-export function selectedReference(
+export function selectedPassage(
   host: HTMLElement | null,
-  answer: string
-): { text: string; title: string } | null {
+  answer: string,
+  limit = 20_000
+): { text: string; title: string; start: number; end: number } | null {
   const selection = window.getSelection()
   if (!host || !selection || selection.rangeCount !== 1 || selection.isCollapsed) return null
   const range = selection.getRangeAt(0)
@@ -11,7 +12,7 @@ export function selectedReference(
   fragment.querySelectorAll('[data-chat-generated]').forEach((node) => node.remove())
   fragment.querySelectorAll('br').forEach((node) => node.replaceWith('\n'))
   const title = fragment.textContent?.trim() ?? ''
-  if (!host.contains(range.commonAncestorContainer) || !title || title.length > 2000) return null
+  if (!host.contains(range.commonAncestorContainer) || !title || title.length > limit) return null
   let start = -1,
     end = -1,
     displayed = ''
@@ -58,9 +59,17 @@ export function selectedReference(
   if (
     start < 0 ||
     end <= start ||
-    end - start > 2000 ||
+    end - start > limit ||
     displayed.replace(/\s/gu, '') !== title.replace(/\s/gu, '')
   )
     return null
-  return { text: answer.slice(start, end), title }
+  return { text: answer.slice(start, end), title, start, end }
+}
+
+export function selectedReference(
+  host: HTMLElement | null,
+  answer: string
+): { text: string; title: string } | null {
+  const selected = selectedPassage(host, answer, 2000)
+  return selected ? { text: selected.text, title: selected.title } : null
 }

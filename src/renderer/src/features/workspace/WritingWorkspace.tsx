@@ -1,3 +1,4 @@
+import { WorkspaceModeSwitch } from './WorkspaceModeSwitch'
 import { ImportButton } from '../imports/ImportButton'
 import {
   IconBook,
@@ -221,6 +222,7 @@ export default function WritingWorkspace(): React.JSX.Element {
           ) : null}
         </div>
         <div className={styles['writing-header-actions']}>
+          <WorkspaceModeSwitch />
           <SaveMenu />
           <ImportButton />
           <IconButton

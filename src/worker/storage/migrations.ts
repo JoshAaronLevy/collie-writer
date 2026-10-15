@@ -1,3 +1,5 @@
+import { validatePortablePlanning } from '../projects/planning-data'
+import { validatePortablePassages, validatePassageOriginals } from '../projects/note-passages'
 import { validatePortableMaterial } from '../projects/material-links'
 import { importRefusalTable } from './schema'
 import { importPlanTables, importReviewTables, importCommitTables } from './schema'
@@ -15,6 +17,8 @@ import { backupStorageDatabase, inWriteTransaction, openStorageDatabase } from '
 import {
   PROJECT_SCHEMA_VERSION,
   chapterMaterialTables,
+  planningTables,
+  notePassageTable,
   importReviewTableV33,
   assetTable,
   outlineTables,
@@ -597,6 +601,36 @@ const migrations: readonly Migration[] = [
       for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
         validatePortableMaterial(db, row.id)
     }
+  },
+  {
+    from: 39,
+    to: 40,
+    validateSource: (db) => {
+      validateProjectSchema(db, 39)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortableMaterial(db, row.id)
+    },
+    apply: (db) => {
+      for (const sql of planningTables) db.exec(sql)
+      db.prepare('UPDATE format SET schema_version=40,minimum_reader=40').run()
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortablePlanning(db, row.id)
+    }
+  },
+  {
+    from: 40,
+    to: 41,
+    validateSource: (db) => {
+      validateProjectSchema(db, 40)
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortablePlanning(db, row.id)
+    },
+    apply: (db) => {
+      db.exec(notePassageTable)
+      db.prepare('UPDATE format SET schema_version=41,minimum_reader=41').run()
+      for (const row of db.prepare('SELECT id FROM projects').all() as { id: string }[])
+        validatePortablePassages(db, row.id)
+    }
   }
 ]
 
@@ -676,6 +710,9 @@ export async function openProjectDatabase(
           manuscript(candidate, row.id)
           readProjectDetails(candidate, row.id)
           validatePortableMaterial(candidate, row.id)
+          validatePortablePlanning(candidate, row.id)
+          validatePortablePassages(candidate, row.id)
+          await validatePassageOriginals({ db: candidate, projectId: row.id, root, workspace })
           validatePortableConversations(candidate, row.id)
           validatePortableProofreading(candidate, row.id)
           await validateImportArtifactFiles(

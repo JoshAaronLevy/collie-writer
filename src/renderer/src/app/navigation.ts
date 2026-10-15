@@ -1,4 +1,5 @@
 import type { OpenInput } from '../../../shared/projects'
+import type { MaterialTarget } from '../../../shared/chapter-material'
 
 /** Transient presentation intent, separate from a saved destination or writing hint. */
 export type DestinationPresentation = {
@@ -13,8 +14,13 @@ export function pageDestination(destination: AppDestination): AppDestination {
 }
 
 export type ResearchTarget =
-  | { kind: 'sources'; sourceId?: string; page?: 'details' | 'usage' | 'files' }
-  | { kind: 'notes'; noteId?: string; annotationId?: string }
+  | {
+      kind: 'sources'
+      sourceId?: string
+      page?: 'details' | 'usage' | 'files'
+      create?: { id: string; url?: string }
+    }
+  | { kind: 'notes'; noteId?: string; annotationId?: string; create?: string; text?: string }
   | {
       kind: 'evidence'
       item?: { kind: 'question' | 'claim' | 'link'; id: string }
@@ -28,7 +34,8 @@ export type ResearchTarget =
       pageIndex?: number
     }
 
-export type WorkspaceView = 'write' | 'research' | 'search' | 'export' | 'history' | 'details'
+export type WorkspaceView =
+  'write' | 'plan' | 'research' | 'search' | 'export' | 'history' | 'details'
 export type AppDestination =
   | { kind: 'setup' }
   | { kind: 'library' }
@@ -42,6 +49,7 @@ export type AppDestination =
       documentId?: string
       anchorId?: string
       exportResultId?: string
+      material?: MaterialTarget
     }
 
 // These keys identify presentation regions, never filesystem authority or domain entities.

@@ -55,7 +55,7 @@ export class OriginalTranscriptText {
   private cached: { id: string; hash: string; value: unknown } | null = null
   private message: { id: string; digest: string; text: string } | null = null
   constructor(
-    private readonly ctx: Context,
+    private readonly ctx: Pick<Context, 'db' | 'projectId' | 'root' | 'workspace'>,
     private readonly batchId: string
   ) {}
   async read(r: GraphRecord): Promise<string> {

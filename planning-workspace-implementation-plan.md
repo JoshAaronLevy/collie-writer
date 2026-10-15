@@ -1,8 +1,8 @@
 # Collie Writer planning workspace implementation plan
 
-October 14, 2026. **PL01 implementation complete — awaiting user testing. PL02–PL06 not started.**
+October 15, 2026. **PL01–PL03 implementation complete — awaiting user testing. PL04–PL06 not started.**
 
-This plan adds a separate visual workspace for turning accumulated conversations, research, sources, and loose ideas into a book or article. It also connects that structure to the existing writing experience. The full journey remains the intended design; only PL01 is implemented. This document does not establish runtime acceptance.
+This plan adds a separate visual workspace for turning accumulated conversations, research, sources, and loose ideas into a book or article. It also connects that structure to the existing writing experience. The full journey remains the intended design; PL01–PL03 are implemented. This document does not establish runtime acceptance.
 
 ## 1. The experience to build
 
@@ -144,7 +144,7 @@ Read alongside [repository guidance](AGENTS.md), the [experience specification](
 | Research and AI context       | `conversation-knowledge.ts`, `conversation-memory.ts`, `conversation-research.ts`, `conversation-sources.ts` and corresponding worker/main owners | Add explicit board/chapter scope and corpus coverage; reuse source saving and evidence navigation                                |
 | AI execution                  | `src/main/conversations/service.ts`, `src/main/ai/content-service.ts`, `direct-conversation.ts`, `direct-research.ts`                             | Extend existing request/capture/output contracts; keep the selected own-account route and existing durable operation owner       |
 | Editor insertion              | `src/renderer/src/editor/selection.ts`, `adapter.ts`, `RichDraft.tsx`, `useManuscriptProtection.ts`                                               | Add a normal reversible editor insertion with exact target checks; retain manuscript protection and history                      |
-| Portable storage              | `src/worker/storage/schema.ts`, `migrations.ts`, project `portable-db.ts`, `incoming.ts`, `snapshot.ts`, retained-version owners                  | Add validated portable records and complete copy/migration handling; current SQL schema is 38                                    |
+| Portable storage              | `src/worker/storage/schema.ts`, `migrations.ts`, project `portable-db.ts`, `incoming.ts`, `snapshot.ts`, retained-version owners                  | Add validated portable records and complete copy/migration handling; current SQL schema is 40 after PL02                         |
 
 Current AI recall is not a whole-project planning engine. The inspected knowledge collector limits its selected result to 24 items, ordinarily uses a 16,000-character serialization budget, and bounds several candidate scans to 200 items. Imported recall also has explicit message windows and skips oversized messages. Reusing that collector unchanged would miss older material in precisely the use case this feature must serve.
 
@@ -229,7 +229,7 @@ Map citations only to retained project sources and exact supported anchors throu
 
 All new content-bearing records are project-scoped and included in `.collie` Save, independent copy, Backup/Restore, retained migration, and relevant portable readers. Update incoming-copy table/remapping lists and exact validators alongside schema changes. Credentials, local paths, live bindings, and UI preferences remain device-local.
 
-Current schema/minimum reader is 38. Allocate additive versions from the live baseline when each stage is implemented; do not preassign competing migration numbers here. Preserve earlier readers and retained originals, and let older apps refuse new formats through established compatibility behavior instead of silently losing planning records.
+Current schema/minimum reader is 40 after PL02. Allocate additive versions from the live baseline when each stage is implemented; do not preassign competing migration numbers here. Preserve earlier readers and retained originals, and let older apps refuse new formats through established compatibility behavior instead of silently losing planning records.
 
 Offline users can collect locally supported material, create/edit notes and chapters, organize, read retained chats and suggestions, and write. AI unavailability disables only dependent requests. Imported content becomes usable only after the existing Accept transaction; canceled/unaccepted imports remain in their current recovery flow. Supported local extraction remains local, with actual unavailable-AI constraints disclosed.
 
@@ -237,13 +237,13 @@ Retain existing access policy. Read-only projects still expose saved planning co
 
 ## 5. Implementation sequence
 
-The six stages below are separate implementation requests. They are ordered for useful, reviewable increments. PL01 was explicitly requested and is the current implementation boundary; PL02–PL06 remain separate requests. Migration, accessibility, recovery, and removal of superseded code belong in each affected stage, not in an unspecified cleanup phase.
+The six stages below are separate implementation requests. They are ordered for useful, reviewable increments. PL01–PL03 were explicitly requested. PL03 is the current implementation boundary; PL04–PL06 remain separate requests. Migration, accessibility, recovery, and removal of superseded code belong in each affected stage, not in an unspecified cleanup phase.
 
 | Stage | Result                                                                   | Dependencies                                  | Status                                          |
 | ----- | ------------------------------------------------------------------------ | --------------------------------------------- | ----------------------------------------------- |
 | PL01  | Shared chapter material associations and a usable chapter material panel | Existing outline/research/conversation owners | Implementation complete — awaiting user testing |
-| PL02  | Manual visual Plan workspace, topics, and editorial dispositions         | PL01                                          | Not started                                     |
-| PL03  | Integrated collection and precise passage cards                          | PL02 and existing Import                      | Not started                                     |
+| PL02  | Manual visual Plan workspace, topics, and editorial dispositions         | PL01                                          | Implementation complete — awaiting user testing |
+| PL03  | Integrated collection and precise passage cards                          | PL02 and existing Import                      | Implementation complete — awaiting user testing |
 | PL04  | Scoped planning chat, corpus coverage, and research/development          | PL03                                          | Not started                                     |
 | PL05  | Editable outline proposals and atomic reversible application             | PL04                                          | Not started                                     |
 | PL06  | Chapter-aware drafting and safe insertion into Write                     | PL05                                          | Not started                                     |
@@ -271,6 +271,8 @@ Seed valid legacy chat origins into associations without rewriting historical or
 5. Save and reopen the disposable `.collie` file. Associations remain, and historical chat origins are still distinct from current organization.
 
 ### PL02 — Build the manual Plan workspace
+
+**Status:** Implementation complete — awaiting user testing. See the [PL02 record](docs/validation/planning-PL02.md) and [manual guide](docs/manual-testing/planning-PL02.md).
 
 **Outcome:** The user can visually organize an existing project before using AI.
 
@@ -415,7 +417,9 @@ The most useful early design feedback is whether the card board gives enough fre
 - The initial planning-only change did not change application source, schema, existing plan status, or working-tree edits.
 - The initial documentation-only change required no code checks. No tests, builds, launches, AI requests, or runtime acceptance were performed.
 - October 14 PL01: chapter-material associations and the writing companion are implemented, awaiting user testing. SQL/minimum reader 39 adds chat/excerpt links and association history; note/source links remain canonical. Format, lint and both typechecks passed. See the [completion evidence](docs/validation/planning-PL01.md).
-- PL02–PL06 are **not started**. Existing Import, conversation, provider, and release acceptance remains at its recorded status.
+- October 14 PL02: retained Plan mode, paged material/structure/detail panes, topics, editorial dispositions, batch assignments, drag/keyboard actions and atomic topic conversion are implemented. SQL/minimum reader 40 adds planning metadata; new history captures it alongside links. Format, lint and node/web typechecks passed; runtime acceptance is pending. See the [PL02 record](docs/validation/planning-PL02.md).
+- October 15 PL03: Plan file drops reuse retained Import selection and explicit Submit/Accept; paste/source intents reuse existing editors; native/imported selections become editable passage notes with immutable exact origins; Use excerpt opens the existing excerpt in Plan. SQL/minimum reader 41 adds only passage origins and retains schema-40 readers. Format, lint and node/web typechecks passed; runtime acceptance is pending. See the [PL03 record](docs/validation/planning-PL03.md) and [walkthrough](docs/manual-testing/planning-PL03.md).
+- PL04–PL06 are **not started**. Existing Import, conversation, provider, and release acceptance remains at its recorded status.
 
 ## Model and Effort
 
@@ -424,8 +428,8 @@ These are recommendations for the Codex session implementing each stage, separat
 | Stage | Model   | Effort     | Status                                          |
 | ----- | ------- | ---------- | ----------------------------------------------- |
 | PL01  | 6 Astra | Extra-High | Implementation complete — awaiting user testing |
-| PL02  | 6.1 Sol | High       | Not started                                     |
-| PL03  | 6.1 Sol | High       | Not started                                     |
+| PL02  | 6.1 Sol | High       | Implementation complete — awaiting user testing |
+| PL03  | 6.1 Sol | High       | Implementation complete — awaiting user testing |
 | PL04  | 6 Astra | Extra-High | Not started                                     |
 | PL05  | 6 Astra | Extra-High | Not started                                     |
 | PL06  | 6 Astra | High       | Not started                                     |

@@ -226,8 +226,9 @@ export default function HistoryPanel({
               ) : null}
               <p>
                 Restoring replaces the whole manuscript and outline, including chapter material
-                links saved with that version. Versions from before chapter material keep the
-                current links. Your current writing and links are kept as a version first.
+                links saved with that version. New Plan versions also restore topics and editorial
+                status. Earlier versions keep the planning records they did not capture. Current
+                writing, links and Plan records are kept as a version first.
               </p>
               <AppButton
                 variant="filled"

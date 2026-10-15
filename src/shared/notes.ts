@@ -1,6 +1,12 @@
 import { hasControlCharacters } from './control-characters'
 import { isId, readDocument, type DocumentPayload } from '../domain/editor/schema'
 import { exact, record, type OpenInput } from './projects'
+import {
+  isNotePassage,
+  isPassageSelection,
+  type NotePassage,
+  type PassageSelection
+} from './note-passage'
 
 export type NoteState = 'active' | 'archived' | 'trashed'
 export type Note = {
@@ -9,11 +15,12 @@ export type Note = {
   title: string
   body: DocumentPayload
   state: NoteState
-  origin: 'human' | 'imported-v1'
+  origin: 'human' | 'imported-v1' | 'chat-passage-v1'
   createdAt: string
   updatedAt: string
   documentIds: string[]
   labelIds: string[]
+  passage?: NotePassage
 }
 export type NoteLabel = {
   id: string
@@ -38,6 +45,7 @@ export type Annotation = {
 export type NotesView = { notes: Note[]; labels: NoteLabel[]; annotations: Annotation[] }
 export type NoteChange =
   | { type: 'createNote'; id: string; title: string; body: DocumentPayload }
+  | { type: 'capturePassage'; id: string; passage: PassageSelection }
   | {
       type: 'updateNote'
       id: string
@@ -104,6 +112,8 @@ export function isNoteChangeInput(v: unknown): v is NoteChangeInput {
     return false
   const c = v.change
   if (!isId(c.id)) return false
+  if (c.type === 'capturePassage')
+    return exact(c, ['type', 'id', 'passage']) && isPassageSelection(c.passage)
   if (c.type === 'createNote')
     return exact(c, ['type', 'id', 'title', 'body']) && line(c.title, 500) && noteBody(c.body)
   if (c.type === 'updateNote')
@@ -186,7 +196,8 @@ export function isNotesView(v: unknown): v is NotesView {
         line(n.title, 500) &&
         noteBody(n.body) &&
         ['active', 'archived', 'trashed'].includes(String(n.state)) &&
-        ['human', 'imported-v1'].includes(String(n.origin)) &&
+        ['human', 'imported-v1', 'chat-passage-v1'].includes(String(n.origin)) &&
+        (n.origin === 'chat-passage-v1' ? isNotePassage(n.passage) : n.passage === undefined) &&
         typeof n.createdAt === 'string' &&
         typeof n.updatedAt === 'string' &&
         Array.isArray(n.documentIds) &&
@@ -221,4 +232,22 @@ export function isNotesView(v: unknown): v is NotesView {
         ['active', 'orphaned'].includes(String(a.anchorState))
     )
   )
+}
+
+export function textNoteBody(text: string, id: () => string): DocumentPayload {
+  return {
+    schemaVersion: 1,
+    ast: {
+      type: 'doc',
+      content: text
+        .replace(/\r\n?/gu, '\n')
+        .split('\n')
+        .map((line) => ({
+          type: 'paragraph',
+          attrs: { blockId: id() },
+          ...(line ? { content: [{ type: 'text', text: line }] } : {})
+        }))
+    },
+    footnotesById: {}
+  }
 }

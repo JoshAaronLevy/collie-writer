@@ -12,6 +12,12 @@ import {
 } from '../../shared/chapter-material'
 import { retainNoteRevision } from './notes'
 import { retainSourceRevision } from './sources'
+import {
+  planningSnapshot,
+  restorePlanningSnapshot,
+  validatePlanningSnapshot
+} from './planning-data'
+import { isPlanningSnapshot, type PlanningSnapshot } from '../../shared/planning'
 
 export const materialTables = {
   note: { table: 'notes', links: 'note_links', column: 'note_id' },
@@ -147,24 +153,40 @@ export function checkpointMaterialLinks(
   checkpointId: string
 ): void {
   if (!hasChapterMaterial(db)) return
-  const body = JSON.stringify({ version: 1, links: materialLinks(db, p) })
-  if (Buffer.byteLength(body) > 32 * 1024 ** 2) throw new ProjectError('LIMIT_EXCEEDED')
+  const modern =
+    (db.prepare('SELECT schema_version FROM format').get() as { schema_version: number })
+      .schema_version >= 40
+  const body = JSON.stringify(
+    modern
+      ? { version: 2, links: materialLinks(db, p), planning: planningSnapshot(db, p) }
+      : { version: 1, links: materialLinks(db, p) }
+  )
+  if (Buffer.byteLength(body) > (modern ? 64 : 32) * 1024 ** 2)
+    throw new ProjectError('LIMIT_EXCEEDED')
   db.prepare('INSERT INTO chapter_material_history VALUES (?,?,?)').run(p, checkpointId, body)
 }
-function readMaterialHistory(body: string): MaterialLink[] {
-  if (Buffer.byteLength(body) > 32 * 1024 ** 2) throw new ProjectError('CORRUPT_PROJECT')
+function readMaterialHistory(body: string): {
+  links: MaterialLink[]
+  planning: PlanningSnapshot | null
+} {
+  if (Buffer.byteLength(body) > 64 * 1024 ** 2) throw new ProjectError('CORRUPT_PROJECT')
   const value: unknown = JSON.parse(body)
   if (
     !record(value) ||
-    !exact(value, ['version', 'links']) ||
-    value.version !== 1 ||
+    !exact(value, value.version === 2 ? ['version', 'links', 'planning'] : ['version', 'links']) ||
+    (value.version !== 1 && value.version !== 2) ||
+    (value.version === 1 && Buffer.byteLength(body) > 32 * 1024 ** 2) ||
+    (value.version === 2 && !isPlanningSnapshot(value.planning)) ||
     !Array.isArray(value.links) ||
     value.links.length > MATERIAL_LINK_LIMIT ||
     !value.links.every(isMaterialLink) ||
     new Set(value.links.map(linkKey)).size !== value.links.length
   )
     throw new ProjectError('CORRUPT_PROJECT')
-  return value.links
+  return {
+    links: value.links,
+    planning: value.version === 2 ? (value.planning as PlanningSnapshot) : null
+  }
 }
 export function restoreMaterialLinks(
   db: Database.Database,
@@ -180,9 +202,10 @@ export function restoreMaterialLinks(
   if (!row) return
   const saved = readMaterialHistory(row.body)
   replaceMaterialLinks(db, p, [
-    ...saved,
+    ...saved.links,
     ...materialLinks(db, p).filter((l) => !documentIds.has(l.documentId))
   ])
+  if (saved.planning) restorePlanningSnapshot(db, p, saved.planning)
 }
 export function validatePortableMaterial(db: Database.Database, p: string): void {
   for (const table of [
@@ -213,6 +236,15 @@ export function validatePortableMaterial(db: Database.Database, p: string): void
     .iterate(p) as Iterable<{ checkpoint_id: string; body: string; snapshot: string }>) {
     if (!isId(row.checkpoint_id)) throw new ProjectError('CORRUPT_PROJECT')
     const snapshot = JSON.parse(row.snapshot) as { documents: { documentId: string }[] }
-    validate(readMaterialHistory(row.body), new Set(snapshot.documents.map((d) => d.documentId)))
+    const saved = readMaterialHistory(row.body)
+    validate(saved.links, new Set(snapshot.documents.map((d) => d.documentId)))
+    if (saved.planning) {
+      if (
+        (db.prepare('SELECT schema_version FROM format').get() as { schema_version: number })
+          .schema_version < 40
+      )
+        throw new ProjectError('CORRUPT_PROJECT')
+      validatePlanningSnapshot(db, p, saved.planning)
+    }
   }
 }

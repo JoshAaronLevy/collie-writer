@@ -28,3 +28,9 @@
   display: grid;
   gap: 1rem;
 }
+.notes-panel .note-original-passage {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 18rem;
+  overflow: auto;
+}

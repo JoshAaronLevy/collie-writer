@@ -65,9 +65,10 @@ type ImportSelection = {
   writable: boolean
   blocked: boolean
   dirty: boolean
-  success: { id: string; text: string } | null
+  success: { id: string; text: string; scope: OpenInput } | null
   dismissSuccess: () => void
   open: (trigger: HTMLElement, category?: ImportCategory) => void
+  dropFiles: (trigger: HTMLElement, files: File[]) => void
   showAnalysis: (attemptId: string) => void
   close: (manage?: boolean) => Promise<void>
   exited: () => void
@@ -96,7 +97,7 @@ export function useImportSelection(): ImportSelection {
     latestSession.current = session
   })
   const [state, render] = useState<State>(initial),
-    [success, setSuccess] = useState<{ id: string; text: string } | null>(null)
+    [success, setSuccess] = useState<{ id: string; text: string; scope: OpenInput } | null>(null)
   useEffect(() => {
     if (!success) return
     const timer = setTimeout(() => setSuccess(null), 8000)
@@ -185,7 +186,7 @@ export function useImportSelection(): ImportSelection {
       )
         return
       patch({ opened: false, issue: '' })
-      setSuccess({ id: crypto.randomUUID(), text: importNotice(counts) })
+      setSuccess({ id: crypto.randomUUID(), text: importNotice(counts), scope })
     }
   })
   async function request(input: ImportServiceRequest): Promise<ImportValue> {
@@ -358,7 +359,12 @@ export function useImportSelection(): ImportSelection {
     } else if (owned.current.revision && !dirty(owned.current))
       await loadBatch(owned.current.revision.batchId)
   }
-  function open(element: HTMLElement, attemptId?: string, category?: ImportCategory): void {
+  function open(
+    element: HTMLElement,
+    attemptId?: string,
+    category?: ImportCategory,
+    files?: File[]
+  ): void {
     if (
       !session.project ||
       session.closing ||
@@ -432,6 +438,7 @@ export function useImportSelection(): ImportSelection {
         !dirty(owned.current)
       )
         patch({ settings: { ...owned.current.settings, categories: [category] } })
+      if (files) await selectFiles(files)
     })
   }
   async function close(toManage = false): Promise<void> {
@@ -531,40 +538,67 @@ export function useImportSelection(): ImportSelection {
   async function addFiles(): Promise<void> {
     if (!flow.canEdit()) return
     if (!(await protect())) return
-    await run(async () => {
-      if (!owned.current.revision)
-        await write({
-          version: 1,
-          action: 'create',
-          operationId: crypto.randomUUID(),
-          batchId: crypto.randomUUID(),
-          settings: structuredClone(owned.current.settings)
-        })
-      const revision = owned.current.revision!
-      patch({ uncertainPicker: true, results: [] })
-      const result = await request({
-        ...scope(),
-        action: 'pick-files',
-        batchId: revision.batchId,
-        expectedRevision: revision.id
+    await run(() => selectFiles())
+  }
+  async function selectFiles(files?: File[]): Promise<void> {
+    const live = latestSession.current
+    if (
+      !flow.canEdit() ||
+      owned.current.pending ||
+      owned.current.uncertainPicker ||
+      live.accessReadOnly ||
+      live.accessTransition ||
+      live.fileActive ||
+      !live.available
+    )
+      throw new Error('Finish the current import action, then add your files again.')
+    if (!isImportSettings(owned.current.settings))
+      throw new Error('Choose valid import settings before adding files.')
+    if (owned.current.revision && dirty(owned.current))
+      await write({
+        version: 1,
+        action: 'configure',
+        operationId: crypto.randomUUID(),
+        batchId: owned.current.revision.batchId,
+        expectedRevision: owned.current.revision.id,
+        settings: structuredClone(owned.current.settings),
+        selectedFileIds: [...owned.current.selected]
       })
-      if (result.type !== 'picked')
-        throw new Error(
-          'File intake acknowledgment was lost. Check the saved outcome before adding more files.'
-        )
-      patch({
-        uncertainPicker: false,
-        results: result.results,
-        issue: ''
+    if (!owned.current.revision)
+      await write({
+        version: 1,
+        action: 'create',
+        operationId: crypto.randomUUID(),
+        batchId: crypto.randomUUID(),
+        settings: structuredClone(owned.current.settings)
       })
-      await recover()
-      await loadBatch(revision.batchId)
-      const selected = new Set(owned.current.selected)
-      for (const file of result.results) if (file.fileId) selected.add(file.fileId)
-      patch({ selected: [...selected] })
-      await session.refreshConversationHead(scope())
-      await loadList()
+    const revision = owned.current.revision!
+    patch({ uncertainPicker: true, results: [] })
+    const input = {
+      ...scope(),
+      action: 'pick-files' as const,
+      batchId: revision.batchId,
+      expectedRevision: revision.id
+    }
+    const response = files ? await window.collie.dropImportFiles(input, files) : null
+    if (response && !response.ok) throw new Error(response.error.message)
+    const result = response?.ok ? response.value : await request(input)
+    if (result.type !== 'picked')
+      throw new Error(
+        'File intake acknowledgment was lost. Check the saved outcome before adding more files.'
+      )
+    patch({
+      uncertainPicker: false,
+      results: result.results,
+      issue: ''
     })
+    await recover()
+    await loadBatch(revision.batchId)
+    const selected = new Set(owned.current.selected)
+    for (const file of result.results) if (file.fileId) selected.add(file.fileId)
+    patch({ selected: [...selected] })
+    await session.refreshConversationHead(scope())
+    await loadList()
   }
   async function submit(continueAnalysis = false, viewAvailable = false): Promise<void> {
     const current = owned.current,
@@ -806,6 +840,7 @@ export function useImportSelection(): ImportSelection {
     success,
     dismissSuccess: () => setSuccess(null),
     open: (trigger, category) => open(trigger, undefined, category),
+    dropFiles: (trigger, files) => open(trigger, undefined, undefined, files),
     showAnalysis,
     close,
     exited,

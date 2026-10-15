@@ -48,6 +48,7 @@ export type SourcesProps = {
   project: OpenProject
   focusSourceId: string | null
   focusPage?: 'details' | 'usage' | 'files'
+  createRequested?: { id: string; url?: string }
   disabled: boolean
   readOnly: boolean
   onCommitted: () => Promise<void>
@@ -113,6 +114,7 @@ export function useSources({
   focusPage,
   disabled,
   readOnly,
+  createRequested,
   onCommitted
 }: SourcesProps): SourcesOwner {
   const session = useWorkspaceSession(),
@@ -235,6 +237,50 @@ export function useSources({
     setError('')
     setMessage('')
   }
+  const createdForNavigation = useRef(new Set<string>())
+  const onCreateNavigation = useEffectEvent(() => {
+    if (
+      !createRequested ||
+      !view ||
+      disabled ||
+      readOnly ||
+      busy ||
+      dirty ||
+      pending.current ||
+      mutation.current ||
+      attachmentPending.current ||
+      session.navigating ||
+      session.composition.current ||
+      createdForNavigation.current.has(createRequested.id)
+    )
+      return
+    createdForNavigation.current.add(createRequested.id)
+    if (createdForNavigation.current.size > 64)
+      createdForNavigation.current.delete(createdForNavigation.current.values().next().value!)
+    choose(null)
+    if (createRequested.url) {
+      setDraft({ ...blank(), type: 'webpage', URL: createRequested.url })
+      setDirty(true)
+      setMessage('URL added. Enter the source details; the page has not been fetched.')
+    }
+  })
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => onCreateNavigation())
+    return () => cancelAnimationFrame(frame)
+  }, [
+    createRequested,
+    view,
+    disabled,
+    readOnly,
+    busy,
+    dirty,
+    pendingValue,
+    mutationValue,
+    attachmentPendingValue,
+    session.navigating,
+    session.focusRevision,
+    session.composition
+  ])
   const onSourceNavigation = useEffectEvent(() => {
     if (!focusSourceId) {
       focusedRequest.current = null

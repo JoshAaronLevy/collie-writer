@@ -7,9 +7,11 @@ export function WorkspaceNavigation(): React.JSX.Element {
     useWorkspaceSession()
   return (
     <>
-      {project && destination.kind === 'workspace' && destination.view !== 'write' ? (
+      {project &&
+      destination.kind === 'workspace' &&
+      !['write', 'plan'].includes(destination.view) ? (
         <nav aria-label="Project sections" className={styles['workspace-navigation']}>
-          {(['write', 'research', 'search', 'export', 'history', 'details'] as const).map(
+          {(['write', 'plan', 'research', 'search', 'export', 'history', 'details'] as const).map(
             (view) => (
               <AppButton
                 key={view}

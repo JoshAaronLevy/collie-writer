@@ -4,6 +4,7 @@ import { isId, readDocument, type DocumentPayload } from '../../domain/editor/sc
 import { ProjectError } from '../../domain/projects/errors'
 import {
   noteBody,
+  textNoteBody,
   type Annotation,
   type Note,
   type NoteChangeInput,
@@ -12,6 +13,8 @@ import {
 } from '../../shared/notes'
 import { requestDigest } from '../storage/digest'
 import { inWriteTransaction } from '../storage/driver'
+import type { NotePassage } from '../../shared/note-passage'
+import { readNotePassage, samePassage } from './note-passages'
 
 type NoteRow = {
   id: string
@@ -68,30 +71,37 @@ function blockText(payload: DocumentPayload, id: string): string | null {
   return found
 }
 export function readNotes(db: Database.Database, projectId: string): NotesView {
+  const schema = (
+    db.prepare('SELECT schema_version AS v FROM format WHERE singleton=1').get() as { v: number }
+  ).v
   const notes = (
     db
       .prepare('SELECT * FROM notes WHERE project_id=? ORDER BY updated_at DESC')
       .all(projectId) as NoteRow[]
-  ).map((n) => ({
-    id: n.id,
-    revisionId: n.revision_id,
-    title: n.title,
-    body: readDocument(JSON.parse(n.body)),
-    state: n.state,
-    origin: n.origin,
-    createdAt: n.created_at,
-    updatedAt: n.updated_at,
-    documentIds: (
-      db
-        .prepare('SELECT document_id FROM note_links WHERE project_id=? AND note_id=?')
-        .all(projectId, n.id) as { document_id: string }[]
-    ).map((x) => x.document_id),
-    labelIds: (
-      db
-        .prepare('SELECT label_id FROM note_label_links WHERE project_id=? AND note_id=?')
-        .all(projectId, n.id) as { label_id: string }[]
-    ).map((x) => x.label_id)
-  }))
+  ).map((n) => {
+    const passage = schema >= 41 ? readNotePassage(db, projectId, n.id) : undefined
+    return {
+      id: n.id,
+      revisionId: n.revision_id,
+      title: n.title,
+      body: readDocument(JSON.parse(n.body)),
+      state: n.state,
+      origin: n.origin,
+      ...(passage ? { passage } : {}),
+      createdAt: n.created_at,
+      updatedAt: n.updated_at,
+      documentIds: (
+        db
+          .prepare('SELECT document_id FROM note_links WHERE project_id=? AND note_id=?')
+          .all(projectId, n.id) as { document_id: string }[]
+      ).map((x) => x.document_id),
+      labelIds: (
+        db
+          .prepare('SELECT label_id FROM note_label_links WHERE project_id=? AND note_id=?')
+          .all(projectId, n.id) as { label_id: string }[]
+      ).map((x) => x.label_id)
+    }
+  })
   const labels = db
     .prepare('SELECT id,kind,name,state FROM note_labels WHERE project_id=? ORDER BY name')
     .all(projectId) as {
@@ -243,7 +253,11 @@ export function retainNoteRevision(
   )
 }
 
-export function changeNote(db: Database.Database, input: NoteChangeInput): NotesView {
+export function changeNote(
+  db: Database.Database,
+  input: NoteChangeInput,
+  passage?: NotePassage
+): NotesView {
   return inWriteTransaction(db, () => {
     const projectId = input.projectId,
       c = input.change,
@@ -266,20 +280,32 @@ export function changeNote(db: Database.Database, input: NoteChangeInput): Notes
       if (!n) throw new ProjectError('NOT_FOUND')
       return n
     }
-    if (c.type === 'createNote') {
+    if (c.type === 'createNote' || c.type === 'capturePassage') {
       if (db.prepare('SELECT 1 FROM notes WHERE project_id=? AND id=?').get(projectId, c.id))
         throw new ProjectError('OPERATION_CONFLICT')
+      if (c.type === 'capturePassage' && (!passage || !samePassage(passage, c.passage)))
+        throw new ProjectError('VALIDATION')
+      const title =
+        c.type === 'createNote' ? c.title : c.passage.quote.replace(/\s+/gu, ' ').slice(0, 100)
+      const body = c.type === 'createNote' ? c.body : textNoteBody(c.passage.quote, randomUUID)
+      if (!noteBody(body)) throw new ProjectError('VALIDATION')
       db.prepare('INSERT INTO notes VALUES (?,?,?,?,?,?,?,?,?)').run(
         projectId,
         c.id,
         revision,
-        c.title.trim(),
-        JSON.stringify(c.body),
+        title.trim(),
+        JSON.stringify(body),
         'active',
-        'human',
+        c.type === 'capturePassage' ? 'chat-passage-v1' : 'human',
         now,
         now
       )
+      if (c.type === 'capturePassage')
+        db.prepare('INSERT INTO note_passages VALUES (?,?,?)').run(
+          projectId,
+          c.id,
+          JSON.stringify(passage)
+        )
     } else if (c.type === 'updateNote' || c.type === 'stateNote') {
       const n = getNote(c.id)
       if (n.revision_id !== c.expectedRevisionId) throw new ProjectError('STALE_REVISION')
@@ -490,7 +516,9 @@ export function validatePortableNotes(db: Database.Database, projectId: string):
       !isId(n.revisionId) ||
       !noteBody(n.body) ||
       !['active', 'archived', 'trashed'].includes(n.state) ||
-      (n.origin !== 'human' && !(schema >= 25 && n.origin === 'imported-v1')) ||
+      (n.origin !== 'human' &&
+        !(schema >= 25 && n.origin === 'imported-v1') &&
+        !(schema >= 41 && n.origin === 'chat-passage-v1' && n.passage)) ||
       n.title.length > 500 ||
       !Number.isFinite(Date.parse(n.createdAt)) ||
       !Number.isFinite(Date.parse(n.updatedAt))

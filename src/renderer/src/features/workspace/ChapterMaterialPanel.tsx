@@ -1,3 +1,5 @@
+import { usePlanningPage } from '../planning/usePlanningPage'
+import type { PlanningItem } from '../../../../shared/planning'
 import { useEffect, useState } from 'react'
 import { TextInput } from '@mantine/core'
 import { AppButton, SelectField } from '../../components/ui/Controls'
@@ -33,7 +35,11 @@ export function ChapterMaterialPanel({ active }: { active: boolean }): React.JSX
   const [query, setQuery] = useState('')
   const [offset, setOffset] = useState(0)
   const [revision, setRevision] = useState(0)
-  const [loaded, setLoaded] = useState<{ key: string; value: ChapterMaterialView } | null>(null)
+  const [loaded, setLoaded] = useState<{
+    key: string
+    value: ChapterMaterialView
+    planning: PlanningItem[]
+  } | null>(null)
   const [loadError, setLoadError] = useState<{ key: string; message: string } | null>(null)
   const [issue, setIssue] = useState('')
   const [pending, setPending, pendingRef] = useSynchronousState<ChapterMaterialChange | null>(null)
@@ -56,10 +62,31 @@ export function ChapterMaterialPanel({ active }: { active: boolean }): React.JSX
     if (!active || !projectId || !workspaceId || !documentId) return
     let current = true
     void window.collie
-      .readChapterMaterial({ projectId, workspaceId, documentId, mode, kind, query, offset })
+      .readPlanning({
+        projectId,
+        workspaceId,
+        location: mode === 'linked' ? { kind: 'chapter', id: documentId } : { kind: 'pool' },
+        filter: 'all',
+        kind,
+        status: 'all',
+        query,
+        offset
+      })
       .then((result) => {
         if (!current) return
-        if (result.ok) setLoaded({ key, value: result.value })
+        if (result.ok)
+          setLoaded({
+            key,
+            value: {
+              documentId,
+              headCommitId: result.value.headCommitId,
+              scopes: result.value.scopes,
+              items: result.value.items.map((i) => i.material),
+              total: result.value.total,
+              offset: result.value.offset
+            },
+            planning: result.value.items
+          })
         else setLoadError({ key, message: result.error.message })
       })
       .catch(() => {
@@ -286,6 +313,14 @@ export function ChapterMaterialPanel({ active }: { active: boolean }): React.JSX
                       Used in {item.documentIds.length} outline items
                     </p>
                   ) : null}
+                  {loaded?.planning.some(
+                    (i) =>
+                      i.material.id === item.id &&
+                      i.material.kind === item.kind &&
+                      i.disposition === 'develop'
+                  ) ? (
+                    <p className={styles['material-detail']}>Needs development</p>
+                  ) : null}
                   {item.preview ? (
                     <p className={styles['material-preview']}>{item.preview}</p>
                   ) : null}
@@ -345,6 +380,17 @@ export function ChapterMaterialPanel({ active }: { active: boolean }): React.JSX
           ) : null}
         </>
       ) : null}
+      {mode === 'linked' && project ? (
+        <AsideChapterMaterial
+          key={`${project.projectId}:${project.workspaceId}:${project.documentId}`}
+          projectId={project.projectId}
+          workspaceId={project.workspaceId}
+          documentId={project.documentId}
+          active={active}
+          revision={`${head}:${revision}`}
+          open={open}
+        />
+      ) : null}
       <AppButton variant="subtle" onClick={() => setRevision((n) => n + 1)}>
         Refresh
       </AppButton>
@@ -372,5 +418,85 @@ export function ChapterMaterialPanel({ active }: { active: boolean }): React.JSX
         Open Research
       </AppButton>
     </section>
+  )
+}
+
+function AsideChapterMaterial({
+  projectId,
+  workspaceId,
+  documentId,
+  active,
+  revision,
+  open
+}: {
+  projectId: string
+  workspaceId: string
+  documentId: string
+  active: boolean
+  revision: string
+  open: (item: ChapterMaterialItem) => void
+}): React.JSX.Element {
+  const [opened, setOpened] = useState(false),
+    [offset, setOffset] = useState(0)
+  const page = usePlanningPage(
+    {
+      projectId,
+      workspaceId,
+      location: { kind: 'chapter', id: documentId },
+      filter: 'aside',
+      kind: 'all',
+      status: 'all',
+      query: '',
+      offset
+    },
+    active && opened,
+    revision
+  )
+  return (
+    <details onToggle={(event) => setOpened(event.currentTarget.open)}>
+      <summary>Set-aside material</summary>
+      <p>These originals and links are kept. Restore their availability in Plan.</p>
+      {page.loading ? <p role="status">Loading set-aside material…</p> : null}
+      {page.issue ? <p role="alert">{page.issue}</p> : null}
+      {page.view ? (
+        <>
+          <ul className={styles['material-list']}>
+            {page.view.items.map(({ material }) => (
+              <li className={styles['material-item']} key={`${material.kind}:${material.id}`}>
+                <h3>{material.title}</h3>
+                <p>
+                  {material.documentIds.includes(documentId)
+                    ? 'Directly linked here'
+                    : `Inherited from ${page.view?.scopes
+                        .filter((s) => material.documentIds.includes(s.id))
+                        .map((s) => s.title)
+                        .join(' / ')}`}
+                </p>
+                <AppButton variant="subtle" onClick={() => open(material)}>
+                  Open original
+                </AppButton>
+              </li>
+            ))}
+          </ul>
+          {!page.view.total ? <p>No set-aside material here.</p> : null}
+          <div className={styles['material-actions']}>
+            <AppButton
+              variant="subtle"
+              disabled={!offset}
+              onClick={() => setOffset(Math.max(0, offset - MATERIAL_PAGE_SIZE))}
+            >
+              Previous
+            </AppButton>
+            <AppButton
+              variant="subtle"
+              disabled={offset + MATERIAL_PAGE_SIZE >= page.view.total}
+              onClick={() => setOffset(offset + MATERIAL_PAGE_SIZE)}
+            >
+              Next
+            </AppButton>
+          </div>
+        </>
+      ) : null}
+    </details>
   )
 }

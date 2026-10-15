@@ -119,36 +119,7 @@ export function isChapterMaterialView(v: unknown): v is ChapterMaterialView {
   )
     return false
   return (
-    v.items.every(
-      (item) =>
-        record(item) &&
-        exact(item, [
-          'kind',
-          'id',
-          'title',
-          'preview',
-          'state',
-          'documentIds',
-          'sourceId',
-          'versionId',
-          'originDocumentId'
-        ]) &&
-        isMaterialTarget({ kind: item.kind, id: item.id }) &&
-        text(item.title, 2000) &&
-        text(item.preview, 400) &&
-        ['active', 'archived', 'trashed', 'merged'].includes(String(item.state)) &&
-        Array.isArray(item.documentIds) &&
-        item.documentIds.length <= 10000 &&
-        item.documentIds.every(isId) &&
-        new Set(item.documentIds).size === item.documentIds.length &&
-        nullableId(item.originDocumentId) &&
-        nullableId(item.sourceId) &&
-        nullableId(item.versionId) &&
-        (item.kind === 'excerpt'
-          ? isId(item.sourceId) && isId(item.versionId)
-          : item.sourceId === null && item.versionId === null) &&
-        (item.kind === 'chat' || item.originDocumentId === null)
-    ) &&
+    v.items.every(isChapterMaterialItem) &&
     new Set(v.items.map((item) => `${item.kind}:${item.id}`)).size === v.items.length &&
     v.items.length <= Number(v.total)
   )
@@ -161,5 +132,37 @@ export function isChapterMaterialResult(v: unknown): v is ChapterMaterialResult 
       (record(v.receipt) &&
         exact(v.receipt, ['projectId', 'documentId', 'revisionId', 'headCommitId']) &&
         Object.values(v.receipt).every(isId)))
+  )
+}
+
+export function isChapterMaterialItem(v: unknown): v is ChapterMaterialItem {
+  return (
+    record(v) &&
+    exact(v, [
+      'kind',
+      'id',
+      'title',
+      'preview',
+      'state',
+      'documentIds',
+      'sourceId',
+      'versionId',
+      'originDocumentId'
+    ]) &&
+    isMaterialTarget({ kind: v.kind, id: v.id }) &&
+    text(v.title, 2000) &&
+    text(v.preview, 400) &&
+    ['active', 'archived', 'trashed', 'merged'].includes(String(v.state)) &&
+    Array.isArray(v.documentIds) &&
+    v.documentIds.length <= 10000 &&
+    v.documentIds.every(isId) &&
+    new Set(v.documentIds).size === v.documentIds.length &&
+    nullableId(v.originDocumentId) &&
+    nullableId(v.sourceId) &&
+    nullableId(v.versionId) &&
+    (v.kind === 'excerpt'
+      ? isId(v.sourceId) && isId(v.versionId)
+      : v.sourceId === null && v.versionId === null) &&
+    (v.kind === 'chat' || v.originDocumentId === null)
   )
 }

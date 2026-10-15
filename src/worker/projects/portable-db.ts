@@ -1,3 +1,6 @@
+import { validatePortablePlanning } from './planning-data'
+import { validatePortablePassages, validatePassageOriginals } from './note-passages'
+import { dirname } from 'node:path'
 import { validatePortableMaterial } from './material-links'
 import { validateImportCommitOperation } from './import-commit'
 import { IMPORT_GRAPH_MEDIA, type ImportArtifactRef } from './import-graphs'
@@ -293,6 +296,20 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
       return invalid()
     }
   }
+  if (version >= 40) {
+    try {
+      validatePortablePlanning(db, projectId)
+    } catch {
+      return invalid()
+    }
+  }
+  if (version >= 41) {
+    try {
+      validatePortablePassages(db, projectId)
+    } catch {
+      return invalid()
+    }
+  }
   let importArtifacts: ImportArtifactRef[] = []
   if (version >= 22) {
     try {
@@ -373,11 +390,21 @@ export function readPortableGraph(db: Database.Database): PortableGraph {
     blobs: [...blobs.values()].sort((a, b) => a.sha256.localeCompare(b.sha256))
   }
 }
-export function inspectPortableDatabase(path: string, nativeBinding?: string): PortableGraph {
+export async function inspectPortableDatabase(
+  path: string,
+  nativeBinding?: string
+): Promise<PortableGraph> {
   const db = new Database(path, { readonly: true, fileMustExist: true, nativeBinding })
   try {
     db.pragma('trusted_schema=OFF')
-    return readPortableGraph(db)
+    const graph = readPortableGraph(db)
+    await validatePassageOriginals({
+      db,
+      projectId: graph.projectId,
+      root: dirname(path),
+      workspace: dirname(path)
+    })
+    return graph
   } finally {
     db.close()
   }

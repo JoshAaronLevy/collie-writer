@@ -1,4 +1,12 @@
 import {
+  isPlanningReadInput,
+  isPlanningChangeInput,
+  isPlanningView,
+  type PlanningReadInput,
+  type PlanningChangeInput,
+  type PlanningView
+} from './planning'
+import {
   isChapterMaterialInput,
   isChapterMaterialChange,
   isChapterMaterialView,
@@ -188,6 +196,8 @@ export const PROJECT_CHANNELS = {
   citationStyle: 'citations.style',
   outline: 'outline.change',
   history: 'history.read',
+  planning: 'planning.read',
+  planningChange: 'planning.change',
   chapterMaterial: 'chapter-material.read',
   chapterMaterialChange: 'chapter-material.change',
   notes: 'notes.read',
@@ -432,6 +442,8 @@ export type ImageAsset = {
 }
 export type ImageData = { mediaType: ImageAsset['mediaType']; base64: string }
 export type ProjectCommand =
+  | { kind: 'planning'; input: PlanningReadInput }
+  | { kind: 'planningChange'; input: PlanningChangeInput }
   | { kind: 'chapterMaterial'; input: ChapterMaterialInput }
   | { kind: 'chapterMaterialChange'; input: ChapterMaterialChange }
   | { kind: 'importAnalysis'; input: AnalysisWorkerInput }
@@ -479,6 +491,7 @@ export type ProjectCommand =
   | { kind: 'importImage'; input: WorkerImageImport }
   | { kind: 'readImage'; input: ImageReadInput }
 export type ProjectValue =
+  | PlanningView
   | ChapterMaterialView
   | ChapterMaterialResult
   | ImportValue
@@ -546,6 +559,8 @@ export type ProjectAPI = {
     input: SourceAttachmentExportInput
   ) => Promise<ProjectResult<SourceExportReceipt>>
   onSourceProgress: (callback: (progress: SourceProgress) => void) => () => void
+  readPlanning: (input: PlanningReadInput) => Promise<ProjectResult<PlanningView>>
+  changePlanning: (input: PlanningChangeInput) => Promise<ProjectResult<ChapterMaterialResult>>
   readChapterMaterial: (input: ChapterMaterialInput) => Promise<ProjectResult<ChapterMaterialView>>
   changeChapterMaterial: (
     input: ChapterMaterialChange
@@ -748,6 +763,8 @@ export function isProjectCommand(v: unknown): v is ProjectCommand {
   if (v.kind === 'citationStyle') return isCitationStyleInput(v.input)
   if (v.kind === 'outline') return isOutlineInput(v.input)
   if (v.kind === 'history') return isHistoryInput(v.input)
+  if (v.kind === 'planning') return isPlanningReadInput(v.input)
+  if (v.kind === 'planningChange') return isPlanningChangeInput(v.input)
   if (v.kind === 'chapterMaterial') return isChapterMaterialInput(v.input)
   if (v.kind === 'chapterMaterialChange') return isChapterMaterialChange(v.input)
   if (v.kind === 'notes') return isOpenInput(v.input)
@@ -862,6 +879,8 @@ export function isProjectValue(kind: ProjectCommand['kind'], v: unknown): v is P
   if (kind === 'interchangeCommit') return isProjectValue('open', v)
   if (kind === 'citations' || kind === 'citationStyle') return isCitationsView(v)
   if (!record(v)) return false
+  if (kind === 'planning') return isPlanningView(v)
+  if (kind === 'planningChange') return isChapterMaterialResult(v)
   if (kind === 'chapterMaterial') return isChapterMaterialView(v)
   if (kind === 'chapterMaterialChange') return isChapterMaterialResult(v)
   if (kind === 'history') return isHistoryView(v)

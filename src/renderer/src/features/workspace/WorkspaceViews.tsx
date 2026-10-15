@@ -1,3 +1,4 @@
+import { PlanWorkspace } from '../planning/PlanWorkspace'
 import { ImportButton } from '../imports/ImportButton'
 import ConnectionSettings from '../settings/ConnectionSettings'
 import UpdateSettings from '../settings/UpdateSettings'
@@ -123,6 +124,11 @@ export default function WorkspaceViews(): React.JSX.Element {
         <RetainedRegion name="write" label="Writing">
           <WritingWorkspace />
         </RetainedRegion>
+        <RetainedRegion name="plan" label="Planning">
+          {project ? (
+            <PlanWorkspace key={`${project.projectId}:${project.workspaceId}`} project={project} />
+          ) : null}
+        </RetainedRegion>
         <RetainedRegion name="history" label="Manuscript history">
           {project ? (
             <HistoryPanel
@@ -182,6 +188,20 @@ export default function WorkspaceViews(): React.JSX.Element {
                 key={`${project.projectId}:${project.workspaceId}`}
                 project={project}
                 capture={annotationCapture}
+                createText={
+                  destination.kind === 'workspace' &&
+                  destination.view === 'research' &&
+                  destination.target.kind === 'notes'
+                    ? destination.target.text
+                    : undefined
+                }
+                createRequested={
+                  destination.kind === 'workspace' &&
+                  destination.view === 'research' &&
+                  destination.target.kind === 'notes'
+                    ? (destination.target.create ?? null)
+                    : null
+                }
                 focusAnnotationId={
                   destination.kind === 'workspace' &&
                   destination.view === 'research' &&
@@ -215,6 +235,13 @@ export default function WorkspaceViews(): React.JSX.Element {
                 readOnly={accessReadOnly || accessTransition}
                 key={`${project.projectId}:${project.workspaceId}`}
                 project={project}
+                createRequested={
+                  destination.kind === 'workspace' &&
+                  destination.view === 'research' &&
+                  destination.target.kind === 'sources'
+                    ? destination.target.create
+                    : undefined
+                }
                 focusPage={
                   destination.kind === 'workspace' &&
                   destination.view === 'research' &&

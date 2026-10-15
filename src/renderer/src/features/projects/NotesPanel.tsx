@@ -1,4 +1,5 @@
 import { ImportedOrigins } from '../imports/ImportedOrigins'
+import { useConversations } from '../ai/conversations/conversationState'
 import { isEditableKind } from '../../../../shared/outline'
 import PresentationBoundary from '../../components/PresentationBoundary'
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
@@ -17,7 +18,14 @@ import type { Editor } from '@tiptap/core'
 import { emptyDocument } from '../../../../domain/projects/templates'
 import type { DocumentPayload } from '../../../../domain/editor/schema'
 import type { OpenProject } from '../../../../shared/projects'
-import type { Annotation, Note, NoteChange, NoteLabel, NotesView } from '../../../../shared/notes'
+import {
+  textNoteBody,
+  type Annotation,
+  type Note,
+  type NoteChange,
+  type NoteLabel,
+  type NotesView
+} from '../../../../shared/notes'
 import RichDraft from '../../editor/RichDraft'
 import { serializeEditor } from '../../editor/adapter'
 
@@ -37,6 +45,8 @@ export default function NotesPanel({
   capture,
   focusNoteId,
   focusAnnotationId,
+  createRequested = null,
+  createText = '',
   onCommitted,
   navigate,
   disabled
@@ -45,11 +55,14 @@ export default function NotesPanel({
   capture: AnnotationCapture | null
   focusNoteId: string | null
   focusAnnotationId: string | null
+  createRequested?: string | null
+  createText?: string
   onCommitted: () => Promise<void>
   navigate: (documentId: string, blockId?: string) => Promise<void>
   disabled: boolean
 }): React.JSX.Element {
   const session = useWorkspaceSession(),
+    conversations = useConversations(),
     researchData = useResearchData()
   const [tab, setTab] = useState<'notes' | 'annotations'>('notes'),
     [query, setQuery] = useState(''),
@@ -360,16 +373,51 @@ export default function NotesPanel({
     }, 5000)
     return () => clearInterval(timer)
   }, [disabled])
-  async function newNote(): Promise<void> {
+  async function newNote(text = ''): Promise<void> {
     if (!(await flush())) return
     const id = crypto.randomUUID(),
-      body = blank()
-    if (await change({ type: 'createNote', id, title: 'Untitled note', body })) {
+      body = text ? textNoteBody(text, () => crypto.randomUUID()) : blank()
+    if (
+      await change({
+        type: 'createNote',
+        id,
+        title: text ? text.replace(/\s+/gu, ' ').trim().slice(0, 100) : 'Untitled note',
+        body
+      })
+    ) {
       const created = latest.current.view?.notes.find((item) => item.id === id)
       if (created) choose(created)
       setFilter('all')
     }
   }
+  const createdForNavigation = useRef(new Set<string>())
+  const onCreateNavigation = useEffectEvent(() => {
+    if (
+      !createRequested ||
+      !view ||
+      locked ||
+      session.navigating ||
+      session.composition.current ||
+      createdForNavigation.current.has(createRequested)
+    )
+      return
+    createdForNavigation.current.add(createRequested)
+    if (createdForNavigation.current.size > 64)
+      createdForNavigation.current.delete(createdForNavigation.current.values().next().value!)
+    void newNote(createText)
+  })
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => onCreateNavigation())
+    return () => cancelAnimationFrame(frame)
+  }, [
+    createRequested,
+    createText,
+    view,
+    locked,
+    session.navigating,
+    session.focusRevision,
+    session.composition
+  ])
   async function setNoteState(id: string, state: Note['state']): Promise<void> {
     if (!(await flush())) return
     const latestNote = latest.current.view?.notes.find((n) => n.id === id)
@@ -704,13 +752,45 @@ export default function NotesPanel({
             <>
               <p className="research-state">
                 {note.state} ·{' '}
-                {note.origin === 'imported-v1' ? 'Imported note' : 'Human-authored note'}
+                {note.passage
+                  ? 'Kept chat passage'
+                  : note.origin === 'imported-v1'
+                    ? 'Imported note'
+                    : 'Human-authored note'}
                 {baseRevisionValue !== note.revisionId
                   ? ' · Stored revision changed; the current editor is retained.'
                   : ''}
               </p>
               {note.origin === 'imported-v1' ? (
                 <ImportedOrigins key={note.id} kind="note" id={note.id} />
+              ) : null}
+              {note.passage ? (
+                <details className="research-disclosure">
+                  <summary>
+                    Kept from {note.passage.conversationTitle} ·{' '}
+                    {note.passage.key.segment === 'imported'
+                      ? `Imported ${note.passage.role}`
+                      : note.passage.role === 'user'
+                        ? 'You'
+                        : note.passage.role === 'assistant'
+                          ? 'Assistant'
+                          : note.passage.role}
+                  </summary>
+                  <blockquote
+                    tabIndex={0}
+                    aria-label="Original kept passage"
+                    className="note-original-passage"
+                  >
+                    {note.passage.quote}
+                  </blockquote>
+                  <AppButton
+                    variant="subtle"
+                    disabled={locked}
+                    onClick={() => void conversations.showPassage(note.passage!)}
+                  >
+                    Open original exchange
+                  </AppButton>
+                </details>
               ) : null}
               <TextInput
                 label="Note title"

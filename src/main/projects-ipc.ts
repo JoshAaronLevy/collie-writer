@@ -1,3 +1,4 @@
+import { isPlanningReadInput, isPlanningChangeInput } from '../shared/planning'
 import { isChapterMaterialInput, isChapterMaterialChange } from '../shared/chapter-material'
 import { isWorkingCopyInput, isWorkingCopyReply } from '../shared/working-copy'
 import type { AiService } from './ai/service'
@@ -578,6 +579,18 @@ export function registerProjectIpc(
         exact(value, ['requestId', 'input']) &&
         kind === 'history' &&
         isHistoryInput(value.input)
+      )
+        command = { kind, input: value.input }
+      else if (
+        exact(value, ['requestId', 'input']) &&
+        kind === 'planning' &&
+        isPlanningReadInput(value.input)
+      )
+        command = { kind, input: value.input }
+      else if (
+        exact(value, ['requestId', 'input']) &&
+        kind === 'planningChange' &&
+        isPlanningChangeInput(value.input)
       )
         command = { kind, input: value.input }
       else if (

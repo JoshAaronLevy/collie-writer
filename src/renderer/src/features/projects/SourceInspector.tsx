@@ -282,6 +282,22 @@ export default function SourceInspector(
                   ) : null}
                   <div className="research-actions">
                     <AppButton
+                      disabled={loading || readOnly || draftPending}
+                      onClick={() =>
+                        void session.navigate({
+                          kind: 'workspace',
+                          scope: {
+                            projectId: props.project.projectId,
+                            workspaceId: props.project.workspaceId
+                          },
+                          view: 'plan',
+                          material: { kind: 'excerpt', id: chosenExcerpt.id }
+                        })
+                      }
+                    >
+                      Use excerpt
+                    </AppButton>
+                    <AppButton
                       variant="light"
                       disabled={loading || readOnly}
                       onClick={() => {

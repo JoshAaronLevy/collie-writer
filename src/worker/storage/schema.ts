@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { ProjectError } from '../../domain/projects/errors'
 
 export const PROJECT_APPLICATION_ID = 1129270359
-export const PROJECT_SCHEMA_VERSION = 39
+export const PROJECT_SCHEMA_VERSION = 41
 // Persisted schema is app-owned; never execute DDL or migrations supplied by a project.
 export const projectTablesV1 = [
   `CREATE TABLE format (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, minimum_reader INTEGER NOT NULL, editor_version INTEGER NOT NULL) STRICT`,
@@ -176,7 +176,15 @@ export const chapterMaterialTables = [
   `CREATE TABLE excerpt_document_links (project_id TEXT NOT NULL, excerpt_id TEXT NOT NULL, document_id TEXT NOT NULL, PRIMARY KEY(project_id,excerpt_id,document_id), FOREIGN KEY(project_id,excerpt_id) REFERENCES source_excerpts(project_id,id), FOREIGN KEY(project_id,document_id) REFERENCES documents(project_id,id)) STRICT`,
   `CREATE TABLE chapter_material_history (project_id TEXT NOT NULL, checkpoint_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,checkpoint_id), FOREIGN KEY(project_id,checkpoint_id) REFERENCES history_checkpoints(project_id,id)) STRICT`
 ] as const
-export const projectTables = [...projectTablesV38, ...chapterMaterialTables]
+export const projectTablesV39 = [...projectTablesV38, ...chapterMaterialTables]
+export const planningTables = [
+  `CREATE TABLE planning_topics (project_id TEXT NOT NULL, id TEXT NOT NULL, title TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id)) STRICT`,
+  `CREATE TABLE planning_topic_members (project_id TEXT NOT NULL, topic_id TEXT NOT NULL, material_kind TEXT NOT NULL, material_id TEXT NOT NULL, PRIMARY KEY(project_id,topic_id,material_kind,material_id), FOREIGN KEY(project_id,topic_id) REFERENCES planning_topics(project_id,id)) STRICT`,
+  `CREATE TABLE planning_dispositions (project_id TEXT NOT NULL, material_kind TEXT NOT NULL, material_id TEXT NOT NULL, state TEXT NOT NULL, reason TEXT NOT NULL, PRIMARY KEY(project_id,material_kind,material_id), FOREIGN KEY(project_id) REFERENCES projects(id)) STRICT`
+] as const
+export const projectTablesV40 = [...projectTablesV39, ...planningTables]
+export const notePassageTable = `CREATE TABLE note_passages (project_id TEXT NOT NULL, note_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,note_id), FOREIGN KEY(project_id,note_id) REFERENCES notes(project_id,id)) STRICT`
+export const projectTables = [...projectTablesV40, notePassageTable]
 const sqlKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export function createProjectSchema(db: Database.Database): void {
@@ -278,7 +286,11 @@ export function validateProjectSchema(
                                                                         ? projectTablesV37
                                                                         : expectedVersion === 38
                                                                           ? projectTablesV38
-                                                                          : projectTables
+                                                                          : expectedVersion === 39
+                                                                            ? projectTablesV39
+                                                                            : expectedVersion === 40
+                                                                              ? projectTablesV40
+                                                                              : projectTables
     ).map(sqlKey)
   )
   if (

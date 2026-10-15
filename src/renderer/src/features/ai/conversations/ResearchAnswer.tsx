@@ -187,6 +187,28 @@ export function ResearchAnswer({
     ) : undefined
   return (
     <ChatMessage
+      passageTarget={
+        turn.assistant &&
+        completed &&
+        c.page &&
+        !(
+          (turn.capture.version === 3 ||
+            turn.capture.version === 4 ||
+            turn.capture.version === 6) &&
+          turn.capture.purpose !== 'chat'
+        )
+          ? {
+              conversationId: turn.attempt.conversationId,
+              conversationRevisionId: c.page.conversation.revisionId,
+              key: {
+                segment: 'native',
+                sequence: turn.assistant.ordinal,
+                messageId: turn.assistant.id,
+                messageRevision: turn.assistant.revisionId
+              }
+            }
+          : undefined
+      }
       role="assistant"
       text={turn.assistant?.text ?? ''}
       time={turn.assistant?.createdAt ?? null}
@@ -227,6 +249,7 @@ export function ResearchAnswer({
       </div>
       {selection && completed ? (
         <AppButton
+          data-chat-generated
           variant="subtle"
           size="compact-sm"
           disabled={c.readOnly}

@@ -115,6 +115,7 @@ function SourceLinks({
   )
 }
 export function ImportedMessageLinks({
+  conversation,
   entry,
   value,
   scope,
@@ -122,6 +123,7 @@ export function ImportedMessageLinks({
   retry,
   textIssue
 }: {
+  conversation?: { id: string; revisionId: string }
   entry: TranscriptEntry
   value: ImportedLinks | null | undefined
   scope: OpenInput
@@ -132,6 +134,15 @@ export function ImportedMessageLinks({
   const linked = !!value?.sources.some((source) => source.state === 'active')
   return (
     <ChatMessage
+      passageTarget={
+        conversation && entry.visibility === 'visible'
+          ? {
+              conversationId: conversation.id,
+              conversationRevisionId: conversation.revisionId,
+              key: entry.key
+            }
+          : undefined
+      }
       role={entry.role === 'unknown' ? entry.originalRole || 'Unknown author' : entry.role}
       text={entry.text}
       mediaTarget={{

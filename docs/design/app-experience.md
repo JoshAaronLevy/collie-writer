@@ -25,7 +25,7 @@ The opening experience should communicate care through typography, space, and a 
 
 ## Navigation and visual hierarchy
 
-Application destinations are **Setup**, **Projects**, **Workspace**, **Settings**, and **Help**. Workspace has **Write** and **Research**. Research has **Sources**, **Notes**, and **Questions & claims**. Search, Export, Project details, and History are focused destinations with a remembered return target. Their presentation can be a view or dialog as specified below; they do not create another project session.
+Application destinations are **Setup**, **Projects**, **Workspace**, **Settings**, and **Help**. Workspace has **Write**, **Plan** and **Research**. Research has **Sources**, **Notes**, and **Questions & claims**. Search, Export, Project details, and History are focused destinations with a remembered return target. Their presentation can be a view or dialog as specified below; they do not create another project session.
 
 The workspace secondary panel has exactly one mode: Closed, Chapter material, or AI. Expanding AI temporarily gives the conversation the primary reading area and supplies Return to writing. Keep the current editor/draft alive. Changing panels never creates a second note/source draft or silently broadens AI context.
 
@@ -246,6 +246,28 @@ AI is closed by default. The retained companion shows provider/account, context 
 Write → Chapter material replaces the separate Notes/Source companions. It shows the selected outline item’s linked notes, sources, excerpts and chats, followed by inherited parent material, deduplicated by original identity. Labels identify direct use, inherited parent titles and historical chat origin. Add material offers title search, type filtering and pages of 20 items; Add/Remove applies only to the selected chapter, section or part. Select a parent to remove its inherited link. Open original uses retained Research/chat navigation. Questions, claims, annotations and detailed source usage remain in Research; linked material does not imply a citation or an AI context selection.
 
 The panel retains an uncertain link change through the workspace draft owner; Check change reads its outcome without sending another mutation. Read-only access retains inspection. Old device-local Notes/Source panel preferences open Chapter material and preserve pane widths/focus. Existing manuscript, conversation and Research drafts keep their owners. PL01 is implemented, awaiting the [user walkthrough](../manual-testing/planning-PL01.md); the Plan board and chapter-aware AI are later stages.
+
+### PL02 — Manual Plan (October 14, 2026)
+
+Write and Plan share a compact mode switch, project identity, Save controls and one retained manuscript editor. Opening a project still starts in Write. Plan uses a material rail, an automatically arranged outline grid and an optional material-detail pane; narrow windows show Material, Structure or Details through a named switch. Panes retain local filter, page, level and scroll hints for the last project. Entering Plan sends no AI request.
+
+The default pool is Unplaced: active material with no active chapter/section assignment, regardless of topic membership. All includes assigned material; Set aside is separate. Type/title/development filters apply to the full project pool, with 20-item pages. Cards preview saved originals; source files and transcripts open through existing Research/chat owners. Direct and inherited references are labeled in selected outline contents. Existing Import material/Add note actions open the retained import/Notes owners. PL03 adds direct collection below.
+
+Topic groups are optional, ordered one-level collections of references. Material can support multiple topics/chapters. Add to and Also use in add a reference; Move to removes only the indicated source assignment. Internal dragging follows those same meanings. Chapters use the actual outline order, titles and purposes; parts/children open through breadcrumbs. Make chapter creates an empty real chapter/section and transfers the topic references in one transaction, then removes only the superseded topic.
+
+Keep is implicit; Needs development supports a short optional reason. Set aside preserves originals, citations and assignments and hides material from the ordinary pool. Chapter contents offer Show set-aside material; Write uses a separate expandable group. Restore to Keep restores ordinary planning availability. These editorial states do not alter Research verification/claim decisions. Planning AI and context assembly remain PL04/PL06.
+
+Batch selection, named destination controls, Move earlier/later, original navigation, status announcements and contained keyboard focus accompany dragging. Uncertain changes remain with the retained Plan owner; Check change reads a recorded outcome. Draft forms require Save or Cancel. Read-only projects retain saved board inspection and original access. See the [PL02 guide](../manual-testing/planning-PL02.md); runtime acceptance remains pending.
+
+### PL03 — Collection and kept passages (October 15, 2026)
+
+Drop files anywhere on Plan to select them in the existing Import dialog. Nothing is analyzed until Submit or added to the library until Accept. The existing short result notice confirms acceptance; Plan returns to the unplaced material pool without assigning a hidden/current chapter. Unsupported files retain the intake owner’s explanations and recovery.
+
+Add note and Add source open the retained Research forms. Paste as note accepts prose or a URL; normal paste on the board follows the same path. Prose creates one ordinary note. An HTTP(S) URL pre-fills source details without fetching the page; the user completes and saves the source. Text pasted into an existing field keeps its normal editing behavior.
+
+Select text in a native or imported message and choose Keep passage, from its selection action or message menu. This immediately keeps an editable note; a short notice offers Open note and Open in Plan. Completed assistant text, user messages and visible imported messages keep their authorship and exact canonical range. The note’s unchanged original quote and Open original exchange remain under its origin disclosure after edits. These are chat passages, not verified source quotations. An uncertain write retains one exact Retry passage save action.
+
+Use excerpt in the source inspector opens that exact existing excerpt selected in Plan. Choose an Add to destination to associate it; no citation or verification is created. Focused material can be released with Show all material. Original source/version/page and earlier-version excerpts keep their existing owners. Ordinary detail navigation retains the board’s selection and scroll. See the [PL03 walkthrough](../manual-testing/planning-PL03.md); runtime acceptance remains pending.
 
 ### S06 — Research
 

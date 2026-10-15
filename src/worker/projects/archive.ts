@@ -275,7 +275,7 @@ export async function extractArchive(
     for (const ref of manifest.citationAssets)
       await validateCitationFile(join(staging, 'citation-assets', ref.sha256), ref, signal)
     cancelled(signal)
-    const graph = inspectPortableDatabase(join(staging, 'project.sqlite'), nativeBinding)
+    const graph = await inspectPortableDatabase(join(staging, 'project.sqlite'), nativeBinding)
     await validateImportArtifactFiles(staging, staging, graph.importArtifacts)
     const manifestBlobs = new Map(manifest.blobs.map((ref) => [ref.sha256, ref]))
     if (
